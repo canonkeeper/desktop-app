@@ -52,9 +52,12 @@ func main() {
 func productDataRoot() (string, error) {
 	switch runtime.GOOS {
 	case "windows":
-		base, err := localAppData()
-		if err != nil {
-			return "", err
+		base := os.Getenv("LOCALAPPDATA")
+		if base == "" {
+			var err error
+			if base, err = localAppData(); err != nil {
+				return "", err
+			}
 		}
 		return filepath.Join(base, "Тест", "CanonKeeper"), nil
 	case "darwin":

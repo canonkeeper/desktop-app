@@ -140,20 +140,31 @@ jobs:
           icacls $root /grant '*S-1-5-32-545:(OI)(CI)RX' /T /Q | Out-Null
           icacls "$root\out" /grant "${name}:(OI)(CI)M" /Q | Out-Null
           $cred = New-Object System.Management.Automation.PSCredential(".\$name", $secure)
-          $runs = @(
-            # Data under a Cyrillic folder the user owns: the process, its account and the path are non-ASCII.
-            @{ label = 'pg-cyrillic-user'; args = @('pg', '-bin', "$root\pg\bin", '-root', "$root\out\Тест\CanonKeeper", '-out', "$root\out\pg-cyrillic-user.json") },
-            # The product default: the known folder LocalAppData of that account.
-            @{ label = 'pg-cyrillic-user-default'; args = @('pg', '-bin', "$root\pg\bin", '-out', "$root\out\pg-cyrillic-user-default.json") }
-          )
-          foreach ($run in $runs) {
+          # Start-Process -Credential hands the child the caller's environment: give it the profile
+          # folders of its own account (the profile exists after the first logon with -LoadUserProfile).
+          function Start-AsUser($label, $arguments, $environment) {
             try {
-              $p = Start-Process -FilePath "$root\probe.exe" -ArgumentList $run.args -Credential $cred -LoadUserProfile -WorkingDirectory "$root\out" `
-                -Wait -PassThru -RedirectStandardError "$root\out\$($run.label)-stderr.txt" -RedirectStandardOutput "$root\out\$($run.label)-stdout.txt"
-              "$($run.label): exit code $($p.ExitCode)"
+              $p = Start-Process -FilePath "$root\probe.exe" -ArgumentList $arguments -Credential $cred -LoadUserProfile `
+                -WorkingDirectory "$root\out" -Environment $environment -Wait -PassThru `
+                -RedirectStandardError "$root\out\$label-stderr.txt" -RedirectStandardOutput "$root\out\$label-stdout.txt"
+              "${label}: exit code $($p.ExitCode)"
             } catch {
-              "$($run.label): Start-Process -Credential failed: $_" | Tee-Object -Append -FilePath results\pg-cyrillic-user-error.txt
+              "${label}: Start-Process -Credential failed: $_" | Tee-Object -Append -FilePath results\pg-cyrillic-user-error.txt
             }
+          }
+          $tmp = "$root\out\tmp"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          # 1. Data under a Cyrillic folder the account owns.
+          Start-AsUser 'pg-cyrillic-user' @('pg', '-bin', "$root\pg\bin", '-root', "$root\out\Тест\CanonKeeper", '-out', "$root\out\pg-cyrillic-user.json") @{ TEMP = $tmp; TMP = $tmp }
+          # 2. The product default in the account's own profile: C:\Users\<Cyrillic name>\AppData\Local\Тест\CanonKeeper.
+          $sid = (Get-LocalUser -Name $name).SID.Value
+          $profile = (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }).LocalPath
+          "profile of ${name}: $profile" | Tee-Object -FilePath results\pg-cyrillic-user-profile.txt
+          if ($profile) {
+            $local = Join-Path $profile 'AppData\Local'
+            $userTemp = Join-Path $local 'Temp'
+            Start-AsUser 'pg-cyrillic-user-default' @('pg', '-bin', "$root\pg\bin", '-out', "$root\out\pg-cyrillic-user-default.json") `
+              @{ USERPROFILE = $profile; LOCALAPPDATA = $local; APPDATA = (Join-Path $profile 'AppData\Roaming'); TEMP = $userTemp; TMP = $userTemp }
           }
           Get-ChildItem "$root\out" | ForEach-Object { Copy-Item $_.FullName results\ }
           Get-ChildItem "$root\out\*-stderr.txt" | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName }

@@ -152,9 +152,11 @@ func freePort() (int, error) {
 // runTool runs a PostgreSQL program with its output in a file, not a pipe: on Windows the server
 // that `pg_ctl start` launches inherits the handles of pg_ctl, and a pipe would stay open for as
 // long as the server runs, so waiting for pg_ctl would never end.
-func runTool(path string, args ...string) (string, time.Duration, error) {
+func runTool(logDir, path string, args ...string) (string, time.Duration, error) {
 	command := exec.Command(path, args...)
-	log, err := os.CreateTemp("", "pg-tool-*.log")
+	// The log lives next to the cluster: a process started for another account may inherit a
+	// TEMP it cannot write.
+	log, err := os.CreateTemp(logDir, "pg-tool-*.log")
 	if err != nil {
 		return "", 0, err
 	}
@@ -208,7 +210,7 @@ func pgVariant(binDir, dir string, localeArgs []string, full bool, report map[st
 		"--encoding=UTF8", "--locale-provider=builtin", "--builtin-locale=C.UTF-8", "--no-instructions"}
 	initArgs = append(initArgs, localeArgs...)
 	report["initdb_args"] = strings.Join(initArgs[5:], " ")
-	output, elapsed, err := runTool(exe(binDir, "initdb"), initArgs...)
+	output, elapsed, err := runTool(dir, exe(binDir, "initdb"), initArgs...)
 	report["initdb_seconds"] = seconds(elapsed)
 	if err != nil {
 		return err
@@ -224,14 +226,14 @@ func pgVariant(binDir, dir string, localeArgs []string, full bool, report map[st
 		return err
 	}
 	logFile := filepath.Join(dir, "postgres.log")
-	_, elapsed, err = runTool(exe(binDir, "pg_ctl"), "start", "-w", "-t", "60", "-D", data, "-l", logFile)
+	_, elapsed, err = runTool(dir, exe(binDir, "pg_ctl"), "start", "-w", "-t", "60", "-D", data, "-l", logFile)
 	report["first_start_seconds"] = seconds(elapsed)
 	if err != nil {
 		report["postgres_log"] = readTail(logFile)
 		return err
 	}
 	stop := func() (time.Duration, error) {
-		_, elapsed, err := runTool(exe(binDir, "pg_ctl"), "stop", "-w", "-m", "fast", "-D", data)
+		_, elapsed, err := runTool(dir, exe(binDir, "pg_ctl"), "stop", "-w", "-m", "fast", "-D", data)
 		return elapsed, err
 	}
 	defer func() {
@@ -275,7 +277,7 @@ func pgVariant(binDir, dir string, localeArgs []string, full bool, report map[st
 	}
 	size, _ = dirSize(data)
 	report["cluster_bytes_after_probe"] = size
-	_, elapsed, err = runTool(exe(binDir, "pg_ctl"), "start", "-w", "-t", "60", "-D", data, "-l", logFile)
+	_, elapsed, err = runTool(dir, exe(binDir, "pg_ctl"), "start", "-w", "-t", "60", "-D", data, "-l", logFile)
 	report["second_start_seconds"] = seconds(elapsed)
 	if err != nil {
 		return err
