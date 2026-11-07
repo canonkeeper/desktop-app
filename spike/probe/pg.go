@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	_ "embed"
@@ -150,18 +149,38 @@ func freePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
+// runTool runs a PostgreSQL program with its output in a file, not a pipe: on Windows the server
+// that `pg_ctl start` launches inherits the handles of pg_ctl, and a pipe would stay open for as
+// long as the server runs, so waiting for pg_ctl would never end.
 func runTool(path string, args ...string) (string, time.Duration, error) {
 	command := exec.Command(path, args...)
-	var output bytes.Buffer
-	command.Stdout = &output
-	command.Stderr = &output
-	started := time.Now()
-	err := command.Run()
-	elapsed := time.Since(started)
+	log, err := os.CreateTemp("", "pg-tool-*.log")
 	if err != nil {
-		return output.String(), elapsed, fmt.Errorf("%s: %w: %s", filepath.Base(path), err, lastLines(output.String(), 12))
+		return "", 0, err
 	}
-	return output.String(), elapsed, nil
+	defer os.Remove(log.Name())
+	defer log.Close()
+	command.Stdout = log
+	command.Stderr = log
+	started := time.Now()
+	err = command.Start()
+	if err == nil {
+		done := make(chan error, 1)
+		go func() { done <- command.Wait() }()
+		select {
+		case err = <-done:
+		case <-time.After(3 * time.Minute):
+			_ = command.Process.Kill()
+			err = fmt.Errorf("no exit in 3 minutes")
+		}
+	}
+	elapsed := time.Since(started)
+	raw, _ := os.ReadFile(log.Name())
+	output := string(raw)
+	if err != nil {
+		return output, elapsed, fmt.Errorf("%s: %w: %s", filepath.Base(path), err, lastLines(output, 12))
+	}
+	return output, elapsed, nil
 }
 
 func lastLines(text string, n int) string {

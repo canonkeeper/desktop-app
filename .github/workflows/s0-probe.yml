@@ -248,9 +248,9 @@ jobs:
           npm run build
           python -I ../tools/make_icon.py "$RUNNER_TEMP/icon.png"
           npx tauri icon "$RUNNER_TEMP/icon.png" > /dev/null
+          # A throwaway key of this run: it signs only the probe update and is never exported to the
+          # job environment (the runner prints that environment in the log).
           npx tauri signer generate --ci -w "$RUNNER_TEMP/updater.key" > /dev/null
-          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat "$RUNNER_TEMP/updater.key")" >> "$GITHUB_ENV"
-          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
           python - "$RUNNER_TEMP/updater.key.pub" <<'EOF'
           import json, sys
           pubkey = open(sys.argv[1]).read().strip()
@@ -263,7 +263,8 @@ jobs:
         working-directory: spike/shell
         run: |
           start=$(date +%s)
-          npx tauri build --config conf-full.json --bundles ${{ matrix.bundles }}
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/updater.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+            npx tauri build --config conf-full.json --bundles ${{ matrix.bundles }}
           echo "{\"tauri_build_seconds\": $(( $(date +%s) - start ))}" > "$GITHUB_WORKSPACE/results/build-time.json"
           cp -R src-tauri/target/release/bundle "$RUNNER_TEMP/bundle-0.1.0"
           ls -la src-tauri/target/release
@@ -328,7 +329,9 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
-            xvfb-run -a -s "-screen 0 1280x800x24" python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --out results/shell.json --screenshot results/shell.png
+            # A desktop session has a session bus; without one GTK waits for D-Bus timeouts.
+            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- \
+              python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --out results/shell.json --screenshot results/shell.png
           else
             python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --out results/shell.json --screenshot results/shell.png
           fi
@@ -342,7 +345,8 @@ jobs:
         if: runner.os != 'Linux'
         working-directory: spike/shell
         run: |
-          npx tauri build --config conf-light.json --bundles ${{ runner.os == 'macOS' && 'app' || 'nsis' }}
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/updater.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+            npx tauri build --config conf-light.json --bundles ${{ runner.os == 'macOS' && 'app' || 'nsis' }}
           mkdir -p "$RUNNER_TEMP/serve"
           python - "$RUNNER_TEMP/serve" ${{ matrix.target }} <<'EOF'
           import glob, json, os, shutil, sys
@@ -366,9 +370,12 @@ jobs:
         continue-on-error: true
         if: runner.os != 'Linux'
         run: |
-          python -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/serve" > "$RUNNER_TEMP/serve.log" 2>&1 &
-          sleep 2
-          python -I spike/tools/shell_probe.py update --exe "$APP_EXE" --url http://127.0.0.1:8765/latest.json --out results/update.json
+          python -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/serve" > results/update-server.log 2>&1 &
+          sleep 3
+          curl -sS -o /dev/null -w 'latest.json from curl: HTTP %{http_code}\n' http://127.0.0.1:8765/latest.json > results/update-curl.txt 2>&1 || true
+          cat results/update-curl.txt
+          NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+            python -I spike/tools/shell_probe.py update --exe "$APP_EXE" --url http://127.0.0.1:8765/latest.json --out results/update.json
       - name: macOS · after the update — quarantine, signature, version, keychain
         continue-on-error: true
         if: runner.os == 'macOS'
