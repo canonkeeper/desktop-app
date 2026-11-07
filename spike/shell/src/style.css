@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; background: #faf8f3; color: #222; }
+body { display: flex; flex-direction: column; }
+header { padding: 10px 16px; border-bottom: 1px solid #ddd; }
+h1 { margin: 0; font-size: 18px; }
+#status { margin: 4px 0 0; color: #555; }
+#map { flex: 1; min-height: 0; }

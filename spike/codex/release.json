@@ -1,0 +1,26 @@
+{
+  "comment": "codex-app-server of the Codex fork (Apache-2.0). Release 0.165.4 is published for x86_64 Linux only; 0.165.1 has every target and the same Rust code (0.165.2-0.165.4 changed only the Go SDK and version stamps).",
+  "repository": "https://github.com/Dirard/codex",
+  "targets": {
+    "x86_64-unknown-linux-gnu": {
+      "tag": "rust-v0.165.4",
+      "asset": "codex-package-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "1afcb1e925dcb27ed17931dbd9b402a46e39cc8aebc9853bfca75cd1c3a47dd6"
+    },
+    "aarch64-apple-darwin": {
+      "tag": "rust-v0.165.1",
+      "asset": "codex-package-aarch64-apple-darwin.tar.gz",
+      "sha256": "9ebf84399142d6cdd4c09a4f878d74c29447e98b1b5b0ef28f8581c958fa279f"
+    },
+    "x86_64-apple-darwin": {
+      "tag": "rust-v0.165.1",
+      "asset": "codex-package-x86_64-apple-darwin.tar.gz",
+      "sha256": "08698ce074f96ad19832efe1ec1c84fe4bfa8ee2d8ebceea83a70403db724d22"
+    },
+    "x86_64-pc-windows-msvc": {
+      "tag": "rust-v0.165.1",
+      "asset": "codex-package-x86_64-pc-windows-msvc.zip",
+      "sha256": "980b6c46ed23868dfa021cfbd50f1f7e2dc403a8e18ba16c610f19349f89cc34"
+    }
+  }
+}

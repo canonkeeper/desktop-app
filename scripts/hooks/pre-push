@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Refuses a push unless the forbidden-content check passes with the closed inputs.
+# Install once per clone: git config core.hooksPath scripts/hooks
+# Set CANONKEEPER_FORBIDDEN_LIST (the closed deny list) and CANONKEEPER_MONOREPO (the closed
+# repository checkout); without them the push is refused.
+set -eu
+: "${CANONKEEPER_FORBIDDEN_LIST:?set CANONKEEPER_FORBIDDEN_LIST to the closed deny list}"
+: "${CANONKEEPER_MONOREPO:?set CANONKEEPER_MONOREPO to the closed repository checkout}"
+exec python3 -I "$(git rev-parse --show-toplevel)/scripts/check-forbidden.py" --strict \
+  --deny-list "$CANONKEEPER_FORBIDDEN_LIST" --monorepo "$CANONKEEPER_MONOREPO"

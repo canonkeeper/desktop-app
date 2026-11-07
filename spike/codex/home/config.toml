@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Profile of the S0 probe: the agent loop of Codex with the app's dynamic tools only. The provider
+# (the local gateway), the model alias and the context window come from -c overrides at launch.
+
+# A catalog without the alias keeps the chat model on Codex fallback metadata: tools called
+# directly, no built-in model presets.
+model_catalog_json = "model-catalog.json"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+project_root_markers = []
+
+# No traffic of Codex itself: update check, analytics, feedback uploads, OpenTelemetry export.
+check_for_update_on_startup = false
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+exporter = "none"
+trace_exporter = "none"
+metrics_exporter = "none"
+
+[features]
+# No login shell snapshot: the chat runs no commands, and the snapshot would run the system
+# profile scripts of the author's computer on every thread.
+shell_snapshot = false
+shell_tool = false
+view_image = false
+image_generation = false
+apps = false
+enable_mcp_apps = false
+plugins = false
+tool_suggest = false
+sleep_tool = false
+
+[features.multi_agent_v2]
+enabled = false
+
+[agents]
+enabled = false
+
+[skills.bundled]
+enabled = false
+
+[tools.experimental_request_user_input]
+enabled = false

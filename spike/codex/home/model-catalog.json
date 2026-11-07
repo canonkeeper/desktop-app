@@ -1,0 +1,25 @@
+{
+  "models": [
+    {
+      "slug": "desktop-probe-placeholder",
+      "display_name": "Placeholder that no thread uses",
+      "description": null,
+      "base_instructions": "Placeholder entry: no thread of the app uses this model.",
+      "supported_reasoning_levels": [],
+      "shell_type": "disabled",
+      "visibility": "none",
+      "supported_in_api": true,
+      "priority": 0,
+      "availability_nux": null,
+      "upgrade": null,
+      "support_verbosity": false,
+      "default_verbosity": null,
+      "apply_patch_tool_type": null,
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "experimental_supported_tools": []
+    }
+  ]
+}

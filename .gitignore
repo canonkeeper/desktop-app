@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+spike/shell/src-tauri/gen/
+spike/shell/src-tauri/icons/
+spike/shell/resources/
+results/
+*.log
+__pycache__/

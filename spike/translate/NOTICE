@@ -1,0 +1,18 @@
+This directory is a verbatim copy of the Responses <-> Chat Completions translation of codex-lb,
+made for the S0 probe of the CanonKeeper desktop app:
+
+  source:  https://github.com/Dirard/codex-lb (fork of https://github.com/Soju06/codex-lb)
+  commit:  656687fb2924a896a3ce4ed89dd4178c0df4c3da
+  files:   internal/adapters/upstream -> upstream/
+           internal/adapters/wirejson -> wirejson/
+           internal/domain/image_limits.go -> domain/image_limits.go
+  changes: import paths only.
+
+It is licensed under the MIT License, not under the AGPL of the rest of this repository:
+
+  - LICENSE             MIT, Copyright (c) 2025 Soju06 (codex-lb)
+  - LICENSE.codex-relay MIT, Copyright (c) 2025 Sapient Inc. (codex-relay; parts of the
+                        translation are derived from it)
+
+Known defects of this copy (F1-F10 of the desktop app spec) are fixed in a separate module
+before the desktop app uses the translation; the probe uses the copy as is.
