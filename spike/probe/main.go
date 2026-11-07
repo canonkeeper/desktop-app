@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -48,9 +49,9 @@ func main() {
 func productDataRoot() (string, error) {
 	switch runtime.GOOS {
 	case "windows":
-		base := os.Getenv("LOCALAPPDATA")
-		if base == "" {
-			return "", fmt.Errorf("LOCALAPPDATA is not set")
+		base, err := localAppData()
+		if err != nil {
+			return "", err
 		}
 		return filepath.Join(base, "Тест", "CanonKeeper"), nil
 	case "darwin":
@@ -90,10 +91,12 @@ func seconds(d time.Duration) float64 {
 
 func systemInfo() map[string]any {
 	info := map[string]any{"os": runtime.GOOS, "arch": runtime.GOARCH, "cpus": runtime.NumCPU()}
-	if user := os.Getenv("USERNAME"); user != "" {
-		info["user"] = user
-	} else if user := os.Getenv("USER"); user != "" {
-		info["user"] = user
+	if acp := activeCodePage(); acp != 0 {
+		info["ansi_code_page"] = acp
+	}
+	// The account of the process, not an inherited variable.
+	if account, err := user.Current(); err == nil {
+		info["user"] = account.Username
 	}
 	return info
 }

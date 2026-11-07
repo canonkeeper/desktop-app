@@ -104,6 +104,24 @@ func runPG(args []string) error {
 		}
 		variants = append(variants, report)
 	}
+	if runtime.GOOS == "windows" {
+		// The fallback of the spec for a non-ASCII profile path: its 8.3 alias.
+		report := map[string]any{"variant": "short_path"}
+		dir := filepath.Join(*root, "pg-short")
+		err := os.MkdirAll(dir, 0o700)
+		if err == nil {
+			var short string
+			short, err = shortPath(dir)
+			report["short_path"] = short
+			if err == nil {
+				err = pgVariant(binDir, short, pgVariants[0].args(), false, report)
+			}
+		}
+		if err != nil {
+			report["error"] = err.Error()
+		}
+		variants = append(variants, report)
+	}
 	result["variants"] = variants
 	return writeJSON(*out, result)
 }

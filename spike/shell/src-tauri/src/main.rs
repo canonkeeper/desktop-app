@@ -49,7 +49,7 @@ fn report(app: tauri::AppHandle, started: tauri::State<'_, Started>, payload: Va
 
 async fn update(app: tauri::AppHandle, url: String) -> Value {
     use tauri_plugin_updater::UpdaterExt;
-    let endpoint = match url.parse() {
+    let endpoint = match tauri::Url::parse(&url) {
         Ok(endpoint) => endpoint,
         Err(error) => return json!({"stage": "url", "error": error.to_string()}),
     };
@@ -67,21 +67,22 @@ async fn update(app: tauri::AppHandle, url: String) -> Value {
         Err(error) => return json!({"stage": "check", "error": error.to_string()}),
     };
     let version = app.package_info().version.to_string();
+    let found = update.version.clone();
     let bytes = match update.download(|_, _| {}, || {}).await {
         Ok(bytes) => bytes,
         Err(error) => {
-            return json!({"stage": "download", "found": update.version, "error": error.to_string()})
+            return json!({"stage": "download", "found": found, "error": error.to_string()})
         }
     };
     append(
         "update",
         &version,
-        json!({"stage": "downloaded", "found": update.version, "bytes": bytes.len()}),
+        json!({"stage": "downloaded", "found": found, "bytes": bytes.len()}),
     );
     // On Windows install() starts the installer and exits this process.
     match update.install(bytes) {
-        Ok(()) => json!({"stage": "installed", "found": update.version}),
-        Err(error) => json!({"stage": "install", "found": update.version, "error": error.to_string()}),
+        Ok(()) => json!({"stage": "installed", "found": found}),
+        Err(error) => json!({"stage": "install", "found": found, "error": error.to_string()}),
     }
 }
 

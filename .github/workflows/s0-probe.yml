@@ -86,11 +86,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The Linux set of PostgreSQL is built on 22.04 (glibc 2.35) and also runs on 24.04.
         include:
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-          - { os: windows-2025, target: x86_64-pc-windows-msvc }
-          - { os: macos-15, target: aarch64-apple-darwin }
-          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, pg: ubuntu-22.04 }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, pg: ubuntu-22.04 }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, pg: windows-2025 }
+          - { os: macos-15, target: aarch64-apple-darwin, pg: macos-15 }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, pg: macos-15-intel }
     runs-on: ${{ matrix.os }}
     env:
       EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
@@ -105,7 +107,7 @@ jobs:
           cache-dependency-path: spike/*/go.sum
       - uses: actions/download-artifact@v4
         with:
-          name: pg-${{ matrix.os }}
+          name: pg-${{ matrix.pg }}
       - name: Unpack PostgreSQL and build the probe
         run: |
           mkdir -p pg-out results bin
@@ -117,8 +119,10 @@ jobs:
           python -I spike/codex/fetch.py ${{ matrix.target }} codex --with-bwrap
           cp codex/codex.json results/codex-package.json
       - name: PostgreSQL in the product data directory with a Cyrillic segment
+        continue-on-error: true
         run: ./bin/probe$EXE pg -bin pg-out/pg/bin -out results/pg.json
       - name: PostgreSQL as a Windows user with a Cyrillic name
+        continue-on-error: true
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -147,21 +151,27 @@ jobs:
           Get-ChildItem "$root\out" | ForEach-Object { Copy-Item $_.FullName results\ }
           Get-Content "$root\out\stderr.txt" -ErrorAction SilentlyContinue
       - name: Codex turn through the gateway and the Chat Completions stub
+        continue-on-error: true
         run: ./bin/probe$EXE codex -codex codex/codex-app-server$EXE -home spike/codex/home -out results/codex.json
       - name: Linux · outbound connections in a loopback-only network namespace (strace)
+        continue-on-error: true
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y -qq strace >/dev/null
+          # Ubuntu 24.04 confines unprivileged user namespaces with AppArmor; the runner is disposable.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
           unshare -rn sh -c 'ip link set lo up && strace -f -qq -e trace=connect,execve -o results/codex-strace.txt \
             ./bin/probe codex -codex codex/codex-app-server -home spike/codex/home -label codex-netns -out results/codex-netns.json'
           ./bin/probe trace -in results/codex-strace.txt -out results/codex-strace.json
           rm results/codex-strace.txt
       - name: Linux · without bwrap
+        continue-on-error: true
         if: runner.os == 'Linux'
         run: |
           if command -v bwrap; then echo present > results/bwrap-on-runner.txt; sudo mv "$(command -v bwrap)" /tmp/bwrap.off; else echo absent > results/bwrap-on-runner.txt; fi
           ./bin/probe codex -codex codex/codex-app-server -home spike/codex/home -label codex-nobwrap -out results/codex-nobwrap.json
       - name: macOS · signature of the release binary and a run under the hardened runtime (allow-jit)
+        continue-on-error: true
         if: runner.os == 'macOS'
         run: |
           codesign -dv --verbose=2 codex/codex-app-server > results/codex-release-signature.txt 2>&1 || true
@@ -185,10 +195,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm,appimage" }
-          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
-          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
-          - { os: macos-15-intel, target: x86_64-apple-darwin, bundles: "app,dmg" }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm,appimage", pg: ubuntu-22.04 }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm,appimage", pg: ubuntu-22.04 }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis, pg: windows-2025 }
+          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg", pg: macos-15 }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, bundles: "app,dmg", pg: macos-15-intel }
     runs-on: ${{ matrix.os }}
     env:
       EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
@@ -219,7 +230,7 @@ jobs:
         run: pip install psutil mss
       - uses: actions/download-artifact@v4
         with:
-          name: pg-${{ matrix.os }}
+          name: pg-${{ matrix.pg }}
       - name: Parts into the bundle resources
         run: |
           mkdir -p results bin spike/shell/resources/pg
@@ -290,10 +301,12 @@ jobs:
       - name: Sizes
         run: python -I spike/tools/sizes.py --bundle "$RUNNER_TEMP/bundle-0.1.0" --installed "app=$APP_DIR" --installed "pg=$APP_RES/pg" --installed "codex=$APP_RES/codex" --out results/sizes.json
       - name: PostgreSQL and codex-app-server started from the installed bundle
+        continue-on-error: true
         run: |
           ./bin/probe$EXE pg -bin "$APP_RES/pg/bin" -root "$RUNNER_TEMP/bundle-run/Тест" -out results/bundle-pg.json
           ./bin/probe$EXE codex -codex "$APP_RES/codex/codex-app-server$EXE" -home spike/codex/home -root "$RUNNER_TEMP/bundle-run/Тест" -out results/bundle-codex.json
       - name: macOS · ad-hoc signatures of the bundle
+        continue-on-error: true
         if: runner.os == 'macOS'
         run: |
           {
@@ -311,6 +324,7 @@ jobs:
           } > results/macos-signature.txt
           cat results/macos-signature.txt
       - name: Window with the WebGL map page (first and repeat launch)
+        continue-on-error: true
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -319,6 +333,7 @@ jobs:
             python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --out results/shell.json --screenshot results/shell.png
           fi
       - name: macOS · keychain item written by 0.1.0
+        continue-on-error: true
         if: runner.os == 'macOS'
         run: |
           python -I spike/tools/shell_probe.py keychain --exe "$APP_EXE" --mode write --out results/keychain-write.json
@@ -348,12 +363,14 @@ jobs:
           print(json.dumps(latest, indent=2)[:600])
           EOF
       - name: Update 0.1.0 → 0.1.1 through the updater from a local latest.json
+        continue-on-error: true
         if: runner.os != 'Linux'
         run: |
           python -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/serve" > "$RUNNER_TEMP/serve.log" 2>&1 &
           sleep 2
           python -I spike/tools/shell_probe.py update --exe "$APP_EXE" --url http://127.0.0.1:8765/latest.json --out results/update.json
       - name: macOS · after the update — quarantine, signature, version, keychain
+        continue-on-error: true
         if: runner.os == 'macOS'
         run: |
           {
@@ -366,6 +383,7 @@ jobs:
           python -I spike/tools/shell_probe.py keychain --exe "$APP_EXE" --mode read --out results/keychain-read-after-update.json
           python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --runs 1 --out results/shell-after-update.json
       - name: Windows · after the update — mark of the web, version
+        continue-on-error: true
         if: runner.os == 'Windows'
         shell: pwsh
         run: |

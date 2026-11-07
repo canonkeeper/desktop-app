@@ -181,7 +181,53 @@ def relocate(out, prefix, libdir):
             run(["codesign", "--force", "--sign", "-", path])
         leftovers = [os.path.relpath(path, out) for path in machos if prefix in run(["otool", "-L", path])]
         return {"method": "install_name_tool + codesign -s -", "files": sorted(set(changed)), "signed": len(machos), "absolute_left": leftovers}
-    return {"method": "none (DLLs next to executables)"}
+    if is_windows():
+        return {"method": "DLLs next to executables", "utf8_manifest": embed_utf8_manifest(os.path.join(out, "bin"))}
+    return {"method": "none"}
+
+
+UTF8_MANIFEST = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>
+"""
+
+
+def embed_utf8_manifest(bin_dir):
+    """PostgreSQL programs take arguments and open files through the ANSI code page, which on an
+    English Windows cannot hold Cyrillic: a data directory in a profile with a Cyrillic user name fails. An
+    application manifest with activeCodePage UTF-8 (Windows 10 1903+) makes the ANSI code page of
+    the process UTF-8. Existing manifests are merged, not replaced."""
+    mt = shutil.which("mt") or shutil.which("mt.exe")
+    if not mt:
+        return {"error": "mt.exe not found"}
+    manifest = os.path.join(bin_dir, "..", "utf8.manifest.tmp")
+    with open(manifest, "w", encoding="utf-8") as stream:
+        stream.write(UTF8_MANIFEST)
+    embedded = {}
+    for name in sorted(os.listdir(bin_dir)):
+        if not name.lower().endswith(".exe"):
+            continue
+        exe = os.path.join(bin_dir, name)
+        existing = exe + ".existing.manifest"
+        merged = exe + ".merged.manifest"
+        has_existing = subprocess.run([mt, "-nologo", f"-inputresource:{exe};#1", f"-out:{existing}"], capture_output=True).returncode == 0
+        if has_existing:
+            run([mt, "-nologo", "-manifest", existing, manifest, f"-out:{merged}"])
+            source = merged
+        else:
+            source = manifest
+        run([mt, "-nologo", "-manifest", source, f"-outputresource:{exe};#1"])
+        embedded[name] = "merged" if has_existing else "added"
+        for path in (existing, merged):
+            if os.path.exists(path):
+                os.remove(path)
+    os.remove(manifest)
+    return embedded
 
 
 def main():
