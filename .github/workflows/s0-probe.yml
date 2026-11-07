@@ -140,16 +140,23 @@ jobs:
           icacls $root /grant '*S-1-5-32-545:(OI)(CI)RX' /T /Q | Out-Null
           icacls "$root\out" /grant "${name}:(OI)(CI)M" /Q | Out-Null
           $cred = New-Object System.Management.Automation.PSCredential(".\$name", $secure)
-          $arguments = @('pg', '-bin', "$root\pg\bin", '-out', "$root\out\pg-cyrillic-user.json")
-          try {
-            $p = Start-Process -FilePath "$root\probe.exe" -ArgumentList $arguments -Credential $cred -LoadUserProfile `
-              -WorkingDirectory "$root\out" -Wait -PassThru -RedirectStandardError "$root\out\stderr.txt" -RedirectStandardOutput "$root\out\stdout.txt"
-            "exit code: $($p.ExitCode)"
-          } catch {
-            "Start-Process -Credential failed: $_" | Tee-Object -FilePath results\pg-cyrillic-user-error.txt
+          $runs = @(
+            # Data under a Cyrillic folder the user owns: the process, its account and the path are non-ASCII.
+            @{ label = 'pg-cyrillic-user'; args = @('pg', '-bin', "$root\pg\bin", '-root', "$root\out\Тест\CanonKeeper", '-out', "$root\out\pg-cyrillic-user.json") },
+            # The product default: the known folder LocalAppData of that account.
+            @{ label = 'pg-cyrillic-user-default'; args = @('pg', '-bin', "$root\pg\bin", '-out', "$root\out\pg-cyrillic-user-default.json") }
+          )
+          foreach ($run in $runs) {
+            try {
+              $p = Start-Process -FilePath "$root\probe.exe" -ArgumentList $run.args -Credential $cred -LoadUserProfile -WorkingDirectory "$root\out" `
+                -Wait -PassThru -RedirectStandardError "$root\out\$($run.label)-stderr.txt" -RedirectStandardOutput "$root\out\$($run.label)-stdout.txt"
+              "$($run.label): exit code $($p.ExitCode)"
+            } catch {
+              "$($run.label): Start-Process -Credential failed: $_" | Tee-Object -Append -FilePath results\pg-cyrillic-user-error.txt
+            }
           }
           Get-ChildItem "$root\out" | ForEach-Object { Copy-Item $_.FullName results\ }
-          Get-Content "$root\out\stderr.txt" -ErrorAction SilentlyContinue
+          Get-ChildItem "$root\out\*-stderr.txt" | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName }
       - name: Codex turn through the gateway and the Chat Completions stub
         continue-on-error: true
         run: ./bin/probe$EXE codex -codex codex/codex-app-server$EXE -home spike/codex/home -out results/codex.json
@@ -254,7 +261,7 @@ jobs:
           python - "$RUNNER_TEMP/updater.key.pub" <<'EOF'
           import json, sys
           pubkey = open(sys.argv[1]).read().strip()
-          updater = {"pubkey": pubkey, "endpoints": ["http://127.0.0.1:8765/latest.json"]}
+          updater = {"pubkey": pubkey, "endpoints": ["http://127.0.0.1:9/latest.json"]}
           json.dump({"version": "0.1.0", "bundle": {"resources": {"../resources/pg": "pg", "../resources/codex": "codex"}},
                      "plugins": {"updater": updater}}, open("conf-full.json", "w"))
           json.dump({"version": "0.1.1", "plugins": {"updater": updater}}, open("conf-light.json", "w"))
@@ -335,6 +342,13 @@ jobs:
           else
             python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --out results/shell.json --screenshot results/shell.png
           fi
+      - name: Linux · window without accelerated compositing (is the WebGL layer shown on Xvfb?)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+          xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- \
+            python -I spike/tools/shell_probe.py launch --exe "$APP_EXE" --runs 1 --out results/shell-nocompositing.json --screenshot results/shell-nocompositing.png
       - name: macOS · keychain item written by 0.1.0
         continue-on-error: true
         if: runner.os == 'macOS'
@@ -360,22 +374,29 @@ jobs:
               name, keys = "update-setup.exe", ["windows-x86_64", "windows-x86_64-nsis"]
           shutil.copy(artifact, os.path.join(serve, name))
           signature = open(artifact + ".sig").read()
-          entry = {"signature": signature, "url": f"http://127.0.0.1:8765/{name}"}
-          latest = {"version": "0.1.1", "notes": "S0 probe update", "pub_date": "2026-11-08T00:00:00Z",
-                    "platforms": {key: entry for key in keys}}
-          json.dump(latest, open(os.path.join(serve, "latest.json"), "w"), indent=2)
-          print(json.dumps(latest, indent=2)[:600])
+          # The address of the server is known only when it starts: latest.json is written then.
+          json.dump({"signature": signature, "name": name, "keys": keys}, open(os.path.join(serve, "..", "update-entry.json"), "w"))
           EOF
       - name: Update 0.1.0 → 0.1.1 through the updater from a local latest.json
         continue-on-error: true
         if: runner.os != 'Linux'
         run: |
-          python -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/serve" > results/update-server.log 2>&1 &
+          ./bin/probe$EXE serve -dir "$RUNNER_TEMP/serve" -addr-file "$RUNNER_TEMP/serve.addr" > results/update-server.log 2>&1 &
           sleep 3
-          curl -sS -o /dev/null -w 'latest.json from curl: HTTP %{http_code}\n' http://127.0.0.1:8765/latest.json > results/update-curl.txt 2>&1 || true
+          addr=$(cat "$RUNNER_TEMP/serve.addr")
+          python - "$RUNNER_TEMP" "$addr" <<'EOF'
+          import json, os, sys
+          temp, addr = sys.argv[1], sys.argv[2]
+          entry = json.load(open(os.path.join(temp, "update-entry.json")))
+          platform = {"signature": entry["signature"], "url": f"http://{addr}/{entry['name']}"}
+          latest = {"version": "0.1.1", "notes": "S0 probe update", "pub_date": "2026-11-08T00:00:00Z",
+                    "platforms": {key: platform for key in entry["keys"]}}
+          json.dump(latest, open(os.path.join(temp, "serve", "latest.json"), "w"), indent=2)
+          EOF
+          curl -sS -o /dev/null -w 'latest.json from curl: HTTP %{http_code}\n' "http://$addr/latest.json" > results/update-curl.txt 2>&1 || true
           cat results/update-curl.txt
           NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
-            python -I spike/tools/shell_probe.py update --exe "$APP_EXE" --url http://127.0.0.1:8765/latest.json --out results/update.json
+            python -I spike/tools/shell_probe.py update --exe "$APP_EXE" --url "http://$addr/latest.json" --out results/update.json
       - name: macOS · after the update — quarantine, signature, version, keychain
         continue-on-error: true
         if: runner.os == 'macOS'

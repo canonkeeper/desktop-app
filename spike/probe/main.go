@@ -8,6 +8,7 @@
 //	probe codex  -codex <codex-app-server> -home <profile dir> -out codex.json [-root <dir>]
 //	probe stub   -addr 127.0.0.1:0 -out stub.json   (a Chat Completions stub on its own)
 //	probe trace  -in strace.txt -out net.json        (outbound connections in an strace log)
+//	probe serve  -dir <dir> -addr-file <file>         (static files for the updater test)
 package main
 
 import (
@@ -35,6 +36,8 @@ func main() {
 		err = runStubAlone(os.Args[2:])
 	case "trace":
 		err = runTrace(os.Args[2:])
+	case "serve":
+		err = runServe(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}

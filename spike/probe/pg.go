@@ -85,7 +85,7 @@ func runPG(args []string) error {
 	if *root == "" {
 		value, err := productDataRoot()
 		if err != nil {
-			return err
+			return fmt.Errorf("data root: %w", err)
 		}
 		*root = value
 	}
