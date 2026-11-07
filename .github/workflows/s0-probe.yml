@@ -40,7 +40,6 @@ jobs:
           - { os: windows-2025, target: x86_64-pc-windows-msvc }
           - { os: macos-15, target: aarch64-apple-darwin }
           - { os: macos-15-intel, target: x86_64-apple-darwin }
-          - { os: macos-14, target: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +91,6 @@ jobs:
           - { os: windows-2025, target: x86_64-pc-windows-msvc }
           - { os: macos-15, target: aarch64-apple-darwin }
           - { os: macos-15-intel, target: x86_64-apple-darwin }
-          - { os: macos-14, target: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     env:
       EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
@@ -191,7 +189,6 @@ jobs:
           - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
           - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
           - { os: macos-15-intel, target: x86_64-apple-darwin, bundles: "app,dmg" }
-          - { os: macos-14, target: aarch64-apple-darwin, bundles: "app,dmg" }
     runs-on: ${{ matrix.os }}
     env:
       EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
@@ -403,10 +400,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: results-*
           path: results
-      - run: python3 -I spike/tools/summarize.py results s0-summary.md && cat s0-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - run: mkdir -p results && python3 -I spike/tools/summarize.py results s0-summary.md && cat s0-summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: s0-results

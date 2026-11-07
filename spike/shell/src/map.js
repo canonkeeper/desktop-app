@@ -75,17 +75,18 @@ async function main() {
   });
   report.layout_ms = Math.round(laidOut.ms);
   const container = document.getElementById("map");
+  // Sigma renders synchronously in its constructor and in refresh(): no event to wait for.
   const renderer = new Sigma(Graph.from(laidOut.graph), container, { renderLabels: true });
-  await new Promise((resolve) => renderer.once("afterRender", resolve));
   report.render_ms = Math.round(performance.now());
   const canvases = [...container.querySelectorAll("canvas")];
   report.canvases = canvases.length;
-  // Pixels of the WebGL layers right after a render: proof that the map drew something.
+  // Pixels of the WebGL layers right after a render, in the same task (the drawing buffer is
+  // not preserved): proof that the map drew something.
   let drawn = 0;
+  renderer.refresh();
   for (const canvas of canvases) {
     const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
     if (!gl) continue;
-    renderer.refresh();
     const width = gl.drawingBufferWidth;
     const height = gl.drawingBufferHeight;
     const pixels = new Uint8Array(width * height * 4);
