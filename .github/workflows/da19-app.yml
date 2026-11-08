@@ -230,6 +230,8 @@ jobs:
             # Optional: without it linuxdeploy uses its built-in AppImage plugin.
             fetch linuxdeploy/linuxdeploy-plugin-appimage continuous linuxdeploy-plugin-appimage-x86_64.AppImage \
               "$tools/linuxdeploy-plugin-appimage.AppImage" || rm -f "$tools/linuxdeploy-plugin-appimage.AppImage"
+            # appimagetool downloads the AppImage runtime too; the plugin takes it from LDAI_RUNTIME_FILE.
+            fetch AppImage/type2-runtime continuous runtime-x86_64 "$tools/runtime-x86_64"
             chmod +x "$tools"/*
           else
             tools="$(cygpath -u "$LOCALAPPDATA")/tauri"; mkdir -p "$tools"
@@ -254,6 +256,7 @@ jobs:
         working-directory: spike/shell
         run: |
           set -o pipefail
+          export LDAI_RUNTIME_FILE="$HOME/.cache/tauri/runtime-x86_64"
           npx tauri build --config conf-app.json --bundles appimage --verbose 2>&1 | tail -200 | tee "$GITHUB_WORKSPACE/results/appimage-build.log"
           cp -R src-tauri/target/release/bundle/appimage "$RUNNER_TEMP/bundle/"
       - name: Install (Linux · apt from the deb)
