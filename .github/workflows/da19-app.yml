@@ -163,12 +163,24 @@ jobs:
           name: backend
           path: backend-out
       - name: Resources of the bundle (DA1.3, DA1.4) and the backend sidecar
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           res=spike/shell/resources
-          mkdir -p results "$res/postgres" "$res/bin"
+          mkdir -p results "$res/postgres" "$res/bin" "$res/codex"
           tar -xf pg-set.tar -C "$res/postgres"
           mv "$res/postgres/build.json" results/pg-build.json
           mv "$res/postgres/pg/"* "$res/postgres/" && rmdir "$res/postgres/pg"
+          # The archive of the pinned release comes through the API of the release assets (the download address of
+          # the release page answered 504 on 08.11); fetch.py checks its sha256 and extracts it.
+          read -r repo tag asset < <(python -I -c 'import json, sys
+          release = json.load(open("spike/codex/release.json"))
+          pin = release["targets"][sys.argv[1]]
+          print(release["repository"].split("github.com/")[1], pin["tag"], pin["asset"])' ${{ matrix.target }})
+          for attempt in 1 2 3 4 5; do
+            gh release download "$tag" -R "$repo" -p "$asset" -D "$res/codex" --clobber && break
+            echo "attempt $attempt failed"; sleep 20
+          done
           python -I spike/codex/fetch.py ${{ matrix.target }} "$res/codex"
           mv "$res/codex/codex.json" results/codex-package.json
           if [ "$RUNNER_OS" = macOS ]; then codesign --force --sign - "$res/codex/codex-app-server"; fi
