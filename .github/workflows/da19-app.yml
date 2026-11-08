@@ -8,7 +8,7 @@ name: DA1.9 app measure
 
 on:
   push:
-    branches: [main, measure/da19]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
