@@ -127,7 +127,7 @@ jobs:
       matrix:
         # The Linux set of PostgreSQL is built on 22.04 (glibc 2.35); codex-app-server needs 24.04 (DA2.1).
         include:
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm,appimage", pg: ubuntu-22.04 }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm", pg: ubuntu-22.04 }
           - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis, pg: windows-2025 }
           - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg", pg: macos-15 }
           - { os: macos-15-intel, target: x86_64-apple-darwin, bundles: "app,dmg", pg: macos-15-intel }
@@ -248,6 +248,14 @@ jobs:
           npx tauri build --config conf-app.json --bundles ${{ matrix.bundles }}
           echo "{\"tauri_build_seconds\": $(( $(date +%s) - start ))}" > "$GITHUB_WORKSPACE/results/build-time.json"
           cp -R src-tauri/target/release/bundle "$RUNNER_TEMP/bundle"
+      - name: AppImage (Linux · its own step, verbose, the measurement goes on through the deb)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        working-directory: spike/shell
+        run: |
+          set -o pipefail
+          npx tauri build --config conf-app.json --bundles appimage --verbose 2>&1 | tail -200 | tee "$GITHUB_WORKSPACE/results/appimage-build.log"
+          cp -R src-tauri/target/release/bundle/appimage "$RUNNER_TEMP/bundle/"
       - name: Install (Linux · apt from the deb)
         if: runner.os == 'Linux'
         run: |

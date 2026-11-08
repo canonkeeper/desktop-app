@@ -32,6 +32,15 @@ fn sidecar() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+/// On Windows the resource directory comes as a verbatim path (`\\?\C:\…`); initdb cannot find postgres.exe through it
+/// (DA1.9 run on windows-2025), so the backend gets the plain `C:\…`.
+fn plain(path: PathBuf) -> PathBuf {
+    match path.to_str().and_then(|text| text.strip_prefix(r"\\?\")) {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// Starts the backend when the bundle has one.
 pub fn start(app: &tauri::App) {
     let Some(path) = sidecar() else {
@@ -40,7 +49,7 @@ pub fn start(app: &tauri::App) {
     let version = app.package_info().version.to_string();
     let report = |body: Value| crate::append("backend", &version, body);
     let resources = match app.path().resource_dir() {
-        Ok(resources) => resources,
+        Ok(resources) => plain(resources),
         Err(error) => return report(json!({"stage": "resources", "error": error.to_string()})),
     };
     let mut command = Command::new(path);

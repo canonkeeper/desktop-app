@@ -189,7 +189,9 @@ def launch(args, index, resources):
     if process.poll() is None:
         time.sleep(args.idle)
         parts = family(process.pid, resources, spawned_at)
-        run["idle_memory"] = memory(parts)
+        # Memory counts only for an app that reached its window; a failed start shows the window alone.
+        if window:
+            run["idle_memory"] = memory(parts)
         if args.screenshot:
             run["screenshot"] = screenshot(f"{args.screenshot}-{run['kind']}.png")
         watched = pids(parts)
