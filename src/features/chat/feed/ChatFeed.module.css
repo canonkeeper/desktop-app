@@ -1,0 +1,506 @@
+.feed {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewport {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.column {
+  display: flex;
+  width: min(100%, 760px);
+  flex-direction: column;
+  gap: var(--ck-space-6);
+  margin-inline: auto;
+  padding: var(--ck-space-5) var(--ck-space-5) var(--ck-space-6);
+}
+
+.turn {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+}
+
+.question {
+  max-width: min(88%, 560px);
+  align-self: flex-end;
+  border-radius: var(--ck-radius-lg);
+  padding: 10px 14px;
+  background: var(--ck-chat-user-message);
+  color: var(--ck-primary-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.question p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* A long question shows its first lines until the author opens it. */
+.question .folded {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
+.questionToggle {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A correction of the author (specs/2026-10-30-chat-steering.md R3.3): his words among the steps. */
+.steer {
+  display: flex;
+  min-width: 0;
+  max-width: min(100%, 560px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ck-space-1);
+  align-self: flex-start;
+  border: 1px solid var(--ck-border-strong);
+  border-radius: var(--ck-radius-md);
+  padding: 8px 12px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.steer p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.steerNote {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+}
+
+/* The work of a turn: a fold once it is finished, an open list while it runs. */
+.work {
+  min-width: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  line-height: 1.45;
+}
+
+.work > summary {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--ck-radius-xs);
+  padding: 4px 6px 4px 2px;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.work > summary::-webkit-details-marker {
+  display: none;
+}
+
+.work > summary:hover {
+  background: var(--ck-secondary);
+  color: var(--ck-foreground);
+}
+
+.work > summary:focus-visible {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.workTitle {
+  color: var(--ck-foreground);
+  font-weight: 600;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.work[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+
+.work[open] > .steps {
+  margin-top: var(--ck-space-2);
+}
+
+/* The status of a live turn stays at the top of the chat while its steps grow below. */
+.status {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 var(--ck-space-1);
+  padding-block: var(--ck-space-2);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+}
+
+.status strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusMeta {
+  color: var(--ck-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Steps hang on a thin rail; each step is a remark of the agent and the actions after it. */
+.steps {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+  margin: 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.steps::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 4px;
+  width: 1px;
+  background: var(--ck-border);
+  content: '';
+}
+
+.step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.step::before {
+  position: absolute;
+  top: 6px;
+  left: -20px;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2px solid var(--ck-border-strong);
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-card);
+  content: '';
+}
+
+.step[data-current]::before {
+  border-color: var(--ck-primary);
+  background: var(--ck-primary);
+}
+
+/* The remark a live turn is on sits under the steps and continues their rail. */
+.currentRemark {
+  position: relative;
+  padding-left: 20px;
+}
+
+.currentRemark::before {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-primary);
+  content: '';
+}
+
+.remark {
+  min-width: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  line-height: 1.5;
+}
+
+.remark:focus {
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.action {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-size: var(--ck-font-size-label);
+  line-height: 1.45;
+}
+
+.actionIcon {
+  margin-top: 2px;
+  color: var(--ck-subtle-foreground);
+}
+
+.action[data-status='running'] .actionIcon {
+  color: var(--ck-primary);
+  animation: spin 1s linear infinite;
+}
+
+.action[data-status='error'] .actionIcon,
+.action[data-status='error'] .actionDetail {
+  color: var(--ck-color-error-foreground);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.actionText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The drawing of a drawing action: the card while the turn runs, a thumbnail after (R1.6, R8.1). */
+.actionDrawing {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.actionLabel {
+  color: var(--ck-foreground);
+}
+
+.actionSource {
+  border: 0;
+  border-radius: 3px;
+  padding: 0;
+  background: transparent;
+  color: var(--ck-link);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.actionSource:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.actionSource:focus-visible {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.actionDetail {
+  color: var(--ck-muted-foreground);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.answer {
+  min-width: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.6;
+}
+
+.answer:focus {
+  outline: none;
+}
+
+.outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ck-color-error-foreground);
+  font-size: var(--ck-font-size-label);
+}
+
+.notice,
+.empty {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+}
+
+.empty {
+  margin-block: auto;
+  text-align: center;
+}
+
+.error {
+  border: 1px solid var(--ck-color-error);
+  border-radius: var(--ck-radius-md);
+  padding: var(--ck-space-3) var(--ck-space-4);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  line-height: 1.5;
+}
+
+.errorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ck-space-2);
+  margin-top: var(--ck-space-3);
+}
+
+.markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.markdown :where(p, ul, ol, blockquote, pre) {
+  margin: 0 0 0.75em;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.1em 0 0.4em;
+  color: var(--ck-foreground-strong);
+  font-size: 1em;
+  line-height: 1.35;
+}
+
+.markdown > :first-child:where(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0;
+}
+
+.markdown :where(h1, h2) {
+  font-size: 1.15em;
+}
+
+.markdown :where(ul, ol) {
+  padding-left: 22px;
+}
+
+.markdown li + li {
+  margin-top: 4px;
+}
+
+.markdown strong {
+  font-weight: 700;
+}
+
+.markdown em {
+  font-style: italic;
+}
+
+.markdown code {
+  border-radius: 3px;
+  padding: 1px 3px;
+  background: var(--ck-muted);
+  font-family: var(--ck-font-mono);
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px;
+  background: var(--ck-muted);
+  white-space: pre-wrap;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown blockquote {
+  border-left: 2px solid var(--ck-border);
+  padding-left: 10px;
+  color: var(--ck-muted-foreground);
+}
+
+@media (max-width: 760px) {
+  .column {
+    gap: var(--ck-space-5);
+    padding: var(--ck-space-4) var(--ck-space-4) var(--ck-space-5);
+  }
+
+  .question {
+    max-width: 92%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse,
+  .action[data-status='running'] .actionIcon {
+    animation: none;
+  }
+}

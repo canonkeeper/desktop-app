@@ -1,0 +1,225 @@
+.scrim {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--ck-scrim);
+}
+
+.overlay {
+  max-width: 100%;
+  max-height: 100%;
+  outline: 0;
+}
+
+/* The panel of a dialog: the kit draws it, so no dialog floats over the page without one
+   (specs/2026-11-03-narrow-windows-navigation.md N7.1). Zero specificity: a dialog sizes it with `width` or shapes it
+   with `panelClassName`; its own content draws no second panel. */
+:where(.dialogPanel) {
+  width: min(var(--dialog-width, 480px), 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: 20px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+/* The content is the whole surface: the kit's card steps aside, the content paints its own opaque panel. */
+.contentSurface {
+  width: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.drawerScrim {
+  place-items: stretch start;
+  padding: 0;
+}
+
+.drawer {
+  width: min(460px, 100vw);
+  height: 100%;
+  overflow: auto;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.drawerScrim[data-side='right'] { place-items: stretch end; }
+.drawer[data-size='reading'] { width: min(440px, 100vw); overflow: hidden; }
+@media (width < 768px) {
+  .drawer[data-size='reading'] { width: 100vw; }
+}
+
+.sheetScrim {
+  place-items: end center;
+  padding: 0;
+}
+
+.sheet {
+  width: min(390px, 100vw);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  border-radius: var(--ck-radius-dialog) var(--ck-radius-dialog) 0 0;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.actionSheet {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.actionSheet > button,
+.actionSheet > a {
+  min-height: 44px;
+}
+
+.popover {
+  position: absolute;
+  z-index: 40;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 14%);
+}
+
+@media (width <= 760px) {
+  .scrim {
+    padding: 0;
+  }
+
+  /* On a phone the panel of a dialog is the whole screen, as the forms of the product were. */
+  :where(.dialogPanel) {
+    width: 100%;
+    min-height: 100%;
+    align-content: start;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@keyframes ck-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ck-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes ck-scale-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes ck-scale-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+@keyframes ck-pop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes ck-pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-6px) scale(0.97); }
+}
+
+@keyframes ck-slide-left-in {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+
+@keyframes ck-slide-left-out {
+  from { transform: none; }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes ck-slide-up-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@keyframes ck-slide-up-out {
+  from { transform: none; }
+  to { transform: translateY(100%); }
+}
+
+@keyframes ck-pop-center-in {
+  from { opacity: 0; transform: translate(-50%, -6px) scale(0.97); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
+@keyframes ck-pop-center-out {
+  from { opacity: 1; transform: translateX(-50%); }
+  to { opacity: 0; transform: translate(-50%, -6px) scale(0.97); }
+}
+
+[data-overlay-scrim] {
+  animation: ck-fade-in var(--ck-duration-base) var(--ck-ease-out);
+}
+
+[data-overlay-scrim][data-state='closing'] {
+  animation: ck-fade-out var(--ck-duration-fast) var(--ck-ease-in) forwards;
+}
+
+[data-kind='dialog'][data-state='open'] {
+  animation: ck-scale-in var(--ck-duration-base) var(--ck-ease-out);
+}
+
+[data-kind='dialog'][data-state='closing'] {
+  animation: ck-scale-out var(--ck-duration-fast) var(--ck-ease-in) forwards;
+}
+
+[data-kind='drawer'][data-state='open'] {
+  animation: ck-slide-left-in var(--ck-duration-base) var(--ck-ease-standard);
+}
+
+[data-kind='drawer'][data-state='closing'] {
+  animation: ck-slide-left-out var(--ck-duration-base) var(--ck-ease-standard) forwards;
+}
+
+[data-kind='sheet'][data-state='open'] {
+  animation: ck-slide-up-in var(--ck-duration-slow) var(--ck-ease-standard);
+}
+
+[data-kind='sheet'][data-state='closing'] {
+  animation: ck-slide-up-out var(--ck-duration-base) var(--ck-ease-standard) forwards;
+}
+
+[data-pop] {
+  transform-origin: top;
+}
+
+[data-pop][data-state='open'] {
+  animation: ck-pop-in var(--ck-duration-fast) var(--ck-ease-out);
+}
+
+[data-pop][data-state='closing'] {
+  animation: ck-pop-out var(--ck-duration-fast) var(--ck-ease-in) forwards;
+}
+
+[data-pop='center'][data-state='open'] {
+  animation: ck-pop-center-in var(--ck-duration-fast) var(--ck-ease-out);
+}
+
+[data-pop='center'][data-state='closing'] {
+  animation: ck-pop-center-out var(--ck-duration-fast) var(--ck-ease-in) forwards;
+}

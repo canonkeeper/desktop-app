@@ -1,0 +1,15 @@
+.marks {
+  display: grid;
+  gap: 10px;
+}
+
+.marks a {
+  color: var(--ck-link);
+}
+
+.policy {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}

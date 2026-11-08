@@ -1,0 +1,271 @@
+.layer {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.layer[data-variant='shelf'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ck-scrim);
+}
+
+.panel {
+  position: absolute;
+  top: 44px;
+  left: 304px;
+  display: flex;
+  width: 620px;
+  max-width: calc(100vw - 340px);
+  max-height: calc(100dvh - 56px);
+  flex-direction: column;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 14px;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.layer[data-variant='shelf'] .panel {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: min(720px, 100%);
+  height: min(680px, 100%);
+  max-width: none;
+  max-height: none;
+}
+
+.titleRow {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: start;
+  justify-content: flex-end;
+}
+
+.titleRow > div {
+  display: none;
+}
+
+.titleRow h2,
+.titleRow p {
+  margin: 0;
+}
+
+.titleRow p {
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+}
+
+.layer[data-variant='shelf'] .titleRow {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  padding-bottom: 12px;
+}
+
+.layer[data-variant='shelf'] .titleRow > div {
+  display: grid;
+  gap: 3px;
+}
+
+.layer[data-variant='shelf'] .titleRow h2 {
+  font-family: var(--ck-font-serif);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding-right: 40px;
+}
+
+.layer[data-variant='shelf'] .form {
+  padding-right: 0;
+}
+
+.form > :first-child,
+.form input {
+  min-width: 0;
+}
+
+.form > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.submit {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.scopeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.results {
+  display: grid;
+  align-content: start;
+  min-height: 0;
+  flex: 1;
+  gap: 8px;
+  overflow: auto;
+  padding-top: 12px;
+}
+
+.coverageWarning {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.result {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 10px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  text-align: left;
+}
+
+.result span,
+.result p {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.resultActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.state {
+  display: grid;
+  gap: 8px;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.state strong,
+.muted {
+  color: var(--ck-foreground);
+}
+
+.muted {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--ck-border);
+  margin-top: 12px;
+  padding-top: 10px;
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+}
+
+.footer span {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .layer,
+  .layer[data-variant='shelf'] {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+  }
+
+  .panel,
+  .layer[data-variant='shelf'] .panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border-width: 0;
+    border-radius: 0;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .titleRow {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-bottom: 10px;
+  }
+
+  .titleRow > div {
+    display: grid;
+  }
+
+  .titleRow h2 {
+    font-size: 18px;
+  }
+
+  .form {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: 0;
+  }
+
+  .form > :first-child,
+  .submit {
+    grid-column: 1;
+  }
+
+  .form > :first-child {
+    grid-row: auto;
+  }
+
+  .submit {
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .scopeRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scopeRow > * {
+    width: 100%;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+  }
+}

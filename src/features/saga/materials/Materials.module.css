@@ -1,0 +1,314 @@
+/* The author's materials (specs/2026-11-04-saga-map.md, UC9): the panel beside the map, the import and the dialogs. */
+
+.panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+  padding: var(--ck-space-5);
+}
+
+.panel h2,
+.form h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.heading:focus {
+  outline: none;
+}
+
+.step,
+.form {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+}
+
+.step p,
+.form p {
+  margin: 0;
+}
+
+.note,
+.meta {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.running {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ck-space-2);
+}
+
+.records,
+.candidates {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.records li {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--ck-space-1);
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.recordOpen {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ck-space-2) 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recordOpen:hover strong {
+  text-decoration: underline;
+}
+
+.recordActions {
+  display: flex;
+  flex: none;
+  padding-top: var(--ck-space-1);
+}
+
+.excerpt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.summaryTitle {
+  display: block;
+  font-weight: 600;
+}
+
+.summaryDetail {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.groups {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-2);
+}
+
+.group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-1);
+  padding-bottom: var(--ck-space-2);
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.groupHead {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--ck-space-2);
+}
+
+.groupToggle {
+  display: grid;
+  min-width: 0;
+  min-height: 28px;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--ck-space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupToggle:focus-visible {
+  border-radius: var(--ck-radius-xs);
+  outline: 1.5px solid var(--ck-ring);
+}
+
+.groupTitle {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.groupCount {
+  margin-left: 6px;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+/* The one filter in force stands out: the others are ways to it. */
+.filterChoice[aria-pressed='true'] {
+  border-color: var(--ck-primary);
+  color: var(--ck-primary);
+}
+
+.groupPreview {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The buttons stay in sight while a long list scrolls behind them. */
+.reviewActions {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ck-space-2);
+  margin: 0 calc(-1 * var(--ck-space-5)) calc(-1 * var(--ck-space-5));
+  padding: var(--ck-space-3) var(--ck-space-5);
+  border-top: 1px solid var(--ck-border);
+  background: var(--ck-card);
+}
+
+.candidate {
+  min-width: 0;
+  padding: var(--ck-space-2) 0;
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.candidate:last-child {
+  border-bottom: 0;
+}
+
+.candidate:not([data-kept]) .candidateName {
+  color: var(--ck-muted-foreground);
+  text-decoration: line-through;
+}
+
+.candidateRow {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--ck-space-2);
+}
+
+.candidateText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--ck-space-2);
+}
+
+.candidateText .excerpt {
+  flex-basis: 100%;
+}
+
+.candidateName {
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.consequence {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.candidateDetails {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-2);
+  margin-top: var(--ck-space-2);
+}
+
+/* The block of a record in the card of a node (R9.5). */
+.block {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-2);
+  padding: var(--ck-space-3);
+  border: 1px dashed var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+}
+
+.block h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.block p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 2px var(--ck-space-3);
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.properties dt {
+  color: var(--ck-muted-foreground);
+}
+
+.properties dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.named {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ck-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

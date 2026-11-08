@@ -1,0 +1,12 @@
+.hints {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.hints p {
+  margin: 0;
+}

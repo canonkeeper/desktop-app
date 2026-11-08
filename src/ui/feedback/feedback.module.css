@@ -1,0 +1,318 @@
+.skeleton {
+  width: 240px;
+  height: 16px;
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-secondary);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  border-radius: var(--ck-radius-pill);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badgeDot,
+.toastMark {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.neutral {
+  background: var(--ck-muted);
+  color: var(--ck-muted-foreground);
+}
+
+.success {
+  background: var(--ck-color-success);
+  color: var(--ck-color-success-foreground);
+}
+
+.warning {
+  background: var(--ck-color-warning);
+  color: var(--ck-color-warning-foreground);
+}
+
+.indexing {
+  background: var(--ck-indexing);
+  color: var(--ck-indexing-foreground);
+}
+
+.info,
+.citation {
+  background: var(--ck-color-info);
+  color: var(--ck-color-info-foreground);
+}
+
+.error {
+  background: var(--ck-color-error);
+  color: var(--ck-color-error-foreground);
+}
+
+.alert {
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.alert.neutral {
+  background: var(--ck-muted);
+}
+
+.alert.error {
+  border-color: var(--ck-destructive);
+}
+
+.card {
+  overflow: hidden;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+}
+
+.cardHeader {
+  display: grid;
+  gap: 4px;
+  padding: 18px 20px;
+}
+
+.cardHeader strong {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cardHeader span {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cardContent {
+  padding: 4px 20px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cardActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+}
+
+.chip {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 20px;
+  align-items: center;
+  border-radius: var(--ck-radius-xs);
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.chip.indexing {
+  border-radius: var(--ck-radius-pill);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+}
+
+.tag {
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-pill);
+  padding: 4px 10px;
+  background: var(--ck-secondary);
+  color: var(--ck-foreground);
+}
+
+.progress {
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-accent);
+  color: var(--ck-link);
+  appearance: none;
+}
+
+.progress::-webkit-progress-bar {
+  border-radius: inherit;
+  background: var(--ck-accent);
+}
+
+.progress::-webkit-progress-value {
+  border-radius: inherit;
+  background: var(--ck-primary);
+}
+
+.progress::-moz-progress-bar {
+  border-radius: inherit;
+  background: var(--ck-primary);
+}
+
+.progress:not([value]) {
+  accent-color: var(--ck-primary);
+  appearance: auto;
+}
+
+.emptyState {
+  display: grid;
+  max-width: 340px;
+  place-items: center;
+  gap: 12px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: 32px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  text-align: center;
+}
+
+.emptyState strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.emptyState p {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.emptyIcon {
+  color: var(--ck-subtle-foreground);
+}
+
+/* The toasts stand at the top: in the place of notices above the page, in its flow, so they cover nothing (the owner
+   04.11: «Ответ готов» covered the field and «Отправить» at the bottom); a page without that place keeps them fixed
+   at its top. */
+.toastRegion {
+  position: fixed;
+  z-index: 120;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: min(380px, calc(100vw - 32px));
+  gap: 8px;
+  outline: 0;
+}
+
+.toastRegionInFlow {
+  position: static;
+  width: auto;
+  margin: 8px 8px 0;
+}
+
+/* An empty region keeps its place among the live regions, with no height. */
+.toastRegionInFlow:empty {
+  margin: 0;
+}
+
+.toastRegionInFlow .toast {
+  box-shadow: none;
+}
+
+.toastRegion:focus-visible {
+  border-radius: var(--ck-radius-md);
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
+}
+
+.toast {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 8px 10px 8px 14px;
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.toast[data-tone='success'] {
+  color: var(--ck-color-success-foreground);
+}
+
+.toast[data-tone='warning'] {
+  color: var(--ck-color-warning-foreground);
+}
+
+.toast[data-tone='error'] {
+  color: var(--ck-color-error-foreground);
+}
+
+.toastMessage {
+  flex: 1;
+  color: var(--ck-foreground);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* «Подтвердите адрес»: the warning alert with an icon, text and the resend action. */
+.emailNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 12px;
+}
+
+.emailNoticeIcon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.emailNoticeBody {
+  display: grid;
+  flex: 1 1 240px;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.emailNoticeStatus {
+  font-weight: 500;
+}
+
+.emailNoticeAction {
+  flex: none;
+  align-self: center;
+}
+
+.supportReference {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.supportCode code {
+  font-family: var(--ck-font-mono);
+  user-select: all;
+}
+
+.supportLink {
+  color: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.supportLink:hover {
+  color: var(--ck-foreground);
+}

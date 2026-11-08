@@ -1,0 +1,19 @@
+.layout { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.body { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: 232px minmax(0, 1fr); overflow: hidden; }
+.layout[data-toolbar] .body { border: 1px solid var(--ck-border); border-radius: var(--ck-radius-md); background: var(--ck-card); }
+.sessions { display: flex; min-width: 0; min-height: 0; }
+.sessions > * { flex: 1; }
+.conversation { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.conversation > :last-child { flex: 1; }
+.toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding-bottom: 8px; }
+.toolbar > button { flex-shrink: 0; }
+.layout[data-collapsed] .body { grid-template-columns: minmax(0, 1fr); }
+.layout[data-collapsed] .sessions { display: none; }
+.drawerHeader { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; }
+/* Some chat works while the list is hidden: the pulse of the live status on «Чаты» (R2.4). */
+.working { width: 8px; height: 8px; border-radius: var(--ck-radius-pill); background: var(--ck-primary); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .working { animation: none; } }
+@media (width <= 760px) {
+  .body { grid-template-columns: minmax(0, 1fr); }
+}

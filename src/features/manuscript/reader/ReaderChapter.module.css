@@ -1,0 +1,253 @@
+.header {
+  display: grid;
+  min-height: 128px;
+  flex-shrink: 0;
+  grid-template-rows: 44px minmax(84px, auto);
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.compactChapters, .compactAppearance { display: none; }
+
+.breadcrumbs {
+  padding: 0 30px;
+  color: #78716c;
+  font-size: 13px;
+}
+
+.breadcrumbs ol {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: inherit;
+  font-size: inherit;
+}
+
+.breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.breadcrumbs button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.breadcrumbs button:hover {
+  color: #1c1917;
+}
+
+.breadcrumbs li[aria-current='page'] {
+  color: #1c1917;
+}
+
+.titleAndControls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+  padding: 0 30px;
+}
+
+.titleBlock {
+  min-width: 0;
+}
+
+.titleBlock h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  color: #1c1917;
+  font-family: var(--ck-font-serif);
+  font-size: 31px;
+  font-weight: 600;
+  line-height: 1.12;
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  text-overflow: ellipsis;
+}
+
+.titleBlock p {
+  margin: 0;
+  color: #78716c;
+  font-size: 13px;
+}
+
+.headerActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.chapterNavigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  gap: 14px;
+  border-top: 1px solid var(--ck-border);
+  padding: 0 40px;
+  color: #78716c;
+  font-size: 13px;
+}
+
+.chapterNavigation button {
+  min-height: 44px;
+  gap: 8px;
+  padding-inline: 12px;
+  color: #292524;
+  font-size: 13px;
+}
+
+.chapterNavigation button:first-child {
+  color: #57534e;
+}
+
+@media (min-width: 761px) and (pointer: fine) {
+  .chapterNavigation button {
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .header {
+    height: 170px;
+    grid-template-rows: 44px 126px;
+  }
+
+  .breadcrumbs,
+  .titleAndControls {
+    padding-inline: 20px;
+  }
+
+  .titleAndControls {
+    align-items: stretch;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .titleBlock h1 {
+    font-size: 24px;
+  }
+
+  .headerActions {
+    display: none;
+  }
+
+  .chapterNavigation {
+    padding-inline: 16px;
+  }
+
+  .chapterNavigation button {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 760px) {
+  .header {
+    display: flex;
+    min-height: 70px;
+    height: auto;
+    flex-direction: column;
+    justify-content: center;
+    border-bottom: 0;
+    padding: 8px 12px;
+  }
+
+  .breadcrumbs {
+    display: none;
+  }
+
+  .titleAndControls {
+    align-items: stretch;
+    justify-content: start;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .titleBlock h1 {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 3px;
+    clip: auto;
+    font-size: 22px;
+  }
+
+  .titleBlock p {
+    font-size: 11px;
+  }
+
+    .controls > button,
+      .chapterNavigation {
+    display: grid;
+    min-height: 90px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 7px 8px;
+    border-top: 0;
+    padding: 10px;
+    box-shadow: inset 0 1px var(--ck-border);
+    font-size: 12px;
+  }
+
+  .chapterNavigation > span {
+    grid-column: 1 / -1;
+    order: -1;
+    text-align: center;
+  }
+
+  .chapterNavigation button {
+    min-width: 0;
+    min-height: 48px;
+    gap: 6px;
+    padding-inline: 8px;
+  }
+}
+
+@media (pointer: coarse) {
+  .breadcrumbs button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 1439px), (max-height: 760px) {
+  .header { display: block; height: 48px; min-height: 48px; padding: 0 12px; }
+  .breadcrumbs, .titleBlock p { display: none; }
+  .titleAndControls { padding: 0; height: 100%; justify-content: center; gap: 0; }
+  .headerActions { display: flex; justify-content: space-between; }
+  .compactChapters { display: inline-flex; }
+  .chapterNavigation { min-height: 48px; flex-shrink: 0; padding: 0 12px; }
+}
+
+@media (min-width: 761px) and (max-width: 1000px) {
+  .appearanceInline { display: none; }
+  .compactAppearance { display: inline-flex; }
+}
+
+@media (max-width: 760px) {
+  .header { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); padding: 0; }
+  .headerActions { display: none; }
+  .chapterNavigation { display: flex; gap: 8px; }
+  .chapterNavigation > span { order: 0; }
+  .chapterNavigation button { min-width: 44px; min-height: 44px; }
+  .navigationLabel { display: none; }
+  .editWord { display: none; }
+}

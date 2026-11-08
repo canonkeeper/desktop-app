@@ -15,12 +15,19 @@ every commit message and identity, and reports:
   - with --deny-list: every term of the private list (names and quotes of a private saga,
     internal hosts) as a case-insensitive substring, "ё" read as "е"; the list itself lives only
     in the closed repository and is never printed, only the line number of the matching term;
-  - with --monorepo: blobs whose git object id equals a file of the closed repository (HEAD and
-    its main branches), larger than 64 bytes;
+  - with --monorepo: blobs whose git object id equals a closed file of the closed repository (HEAD
+    and its main branches), larger than 64 bytes; a file the closed repository exports — its
+    scripts/open-source/export.mjs --list at HEAD — is open, and its blob is allowed;
   - binary blobs larger than 1 MiB.
 
 --ci runs the generic rules only (the public CI has neither private input). --strict requires
 both private inputs and is what the pre-push hook runs.
+
+With --strict, what is reachable from refs/remotes/origin/* is already published: a blob, a commit
+and its identities and message there cannot be unpublished by not pushing. Their findings are
+printed in a separate block "already published (notice)", with the same line number of the deny
+list term, and do not fail the check; everything new is checked as before and fails it. Without
+remote refs (the first push) everything is new.
 """
 import argparse
 import ipaddress
@@ -49,6 +56,10 @@ SECRET_PATTERNS = [
                                              + "dW50cnVzdGVkIGNvbW1lbnQ6IH" + "JzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5)")),
     ("assigned secret", re.compile(r"(?i)\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|password)\s*[:=]\s*[\"'][A-Za-z0-9+/_=-]{24,}[\"']")),
 ]
+# Synthetic canaries the redaction harness of the backend keeps out of every operational output: it needs them
+# literally, so they are allowed in their one file and for their kinds only.
+CANARIES = "backend/internal/governance/testdata/redaction_forbidden_strings.json"
+ALLOWED_FINDINGS = {(CANARIES, "private key"), (CANARIES, "openai-style key"), (CANARIES, "home directory")}
 IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.])")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 HOME = re.compile(r"(?:/home/|/Users/|[Cc]:\\\\?Users\\\\?)([\w.-]+)")
@@ -90,6 +101,30 @@ def monorepo_blobs(path):
     return blobs
 
 
+def open_blobs(path):
+    """Blob ids of the files the closed repository exports at HEAD (scripts/open-source/export.mjs --list)."""
+    script = os.path.join(path, "scripts", "open-source", "export.mjs")
+    listed = subprocess.run(["node", script, "--list"], cwd=path, check=True, capture_output=True).stdout
+    wanted = set(listed.decode("utf-8").splitlines())
+    blobs = set()
+    for entry in git(path, "ls-tree", "-r", "-z", "HEAD", binary=True).split(b"\0"):
+        if not entry:
+            continue
+        meta, name = entry.split(b"\t", 1)
+        if name.decode("utf-8") in wanted:
+            blobs.add(meta.split()[2].decode("ascii"))
+    return blobs
+
+
+def published_objects(repo):
+    """Objects and commits reachable from refs/remotes/origin/*: what a push cannot unpublish."""
+    if not git(repo, "for-each-ref", "refs/remotes/origin/").strip():
+        return set(), set()
+    objects = {line.split(" ", 1)[0] for line in git(repo, "rev-list", "--objects", "--remotes=origin").splitlines()}
+    commits = set(git(repo, "rev-list", "--remotes=origin").split())
+    return objects, commits
+
+
 def public_ip(octets):
     if any(int(octet) > 255 for octet in octets):
         return False
@@ -110,6 +145,8 @@ def email_allowed(address):
 
 def scan_text(where, text, deny, findings):
     for label, pattern in SECRET_PATTERNS:
+        if (where, label) in ALLOWED_FINDINGS:
+            continue
         for match in pattern.finditer(text):
             findings.append(f"{where}: {label}: {match.group(0)[:12]}…")
     for match in IPV4.finditer(text):
@@ -122,6 +159,8 @@ def scan_text(where, text, deny, findings):
             findings.append(f"{where}: e-mail {match.group(0)}")
     for match in HOME.finditer(text):
         name = match.group(1)
+        if (where, "home directory") in ALLOWED_FINDINGS:
+            continue
         if name not in ALLOWED_HOME_NAMES and not name.startswith(("$", "%", "<", "{")):
             findings.append(f"{where}: home directory {match.group(0)}")
     if deny:
@@ -146,7 +185,12 @@ def main():
     repo = os.path.abspath(args.repo)
     deny = load_deny_list(args.deny_list) if args.deny_list else []
     closed = monorepo_blobs(args.monorepo) if args.monorepo else {}
+    if closed:
+        exported = open_blobs(args.monorepo)
+        closed = {object_id: where for object_id, where in closed.items() if object_id not in exported}
     findings = []
+    notices = []
+    published, published_commits = published_objects(repo) if args.strict else (set(), set())
 
     objects = git(repo, "rev-list", "--objects", "--all").splitlines() if git(repo, "for-each-ref").strip() else []
     paths = {}
@@ -165,14 +209,15 @@ def main():
     blob_ids = [object_id for object_id in paths if git(repo, "cat-file", "-t", object_id).strip() == "blob"]
     for object_id in blob_ids:
         where = paths[object_id]
+        target = notices if object_id in published else findings
         if object_id in closed:
-            findings.append(f"{where}: same content as the closed repository file {closed[object_id]}")
+            target.append(f"{where}: same content as the closed repository file {closed[object_id]}")
         data = git(repo, "cat-file", "-p", object_id, binary=True)
         if b"\0" in data[:8192]:
             if len(data) > 1 << 20:
-                findings.append(f"{where}: binary blob of {len(data)} bytes")
+                target.append(f"{where}: binary blob of {len(data)} bytes")
             continue
-        scan_text(where, data.decode("utf-8", "replace"), deny, findings)
+        scan_text(where, data.decode("utf-8", "replace"), deny, target)
 
     history = git(repo, "log", "--all", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e") if objects else ""
     for record in history.split("\x1e"):
@@ -180,19 +225,25 @@ def main():
         if not record:
             continue
         commit, author, committer, message = (record.split("\x1f") + ["", "", ""])[:4]
+        target = notices if commit in published_commits else findings
         for identity in (author, committer):
             address = identity[identity.rfind("<") + 1:-1]
             if not email_allowed(address):
-                findings.append(f"commit {commit[:10]}: identity {identity}")
-        scan_text(f"commit {commit[:10]} message", message, deny, findings)
+                target.append(f"commit {commit[:10]}: identity {identity}")
+        scan_text(f"commit {commit[:10]} message", message, deny, target)
 
     scope = "strict (deny list and closed repository)" if args.strict else "ci (generic rules)"
+    if notices:
+        print(f"check-forbidden: {len(set(notices))} finding(s) already published (notice), not failing:")
+        for notice in sorted(set(notices)):
+            print("  " + notice)
     if findings:
         print(f"check-forbidden: {len(findings)} finding(s), {scope}:")
         for finding in sorted(set(findings)):
             print("  " + finding)
         sys.exit(1)
-    print(f"check-forbidden: clean, {len(blob_ids)} blobs and every commit checked, {scope}")
+    published_note = f", {len(set(notices))} already published (notice)" if notices else ""
+    print(f"check-forbidden: clean, {len(blob_ids)} blobs and every commit checked, {scope}{published_note}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+.panel { position: fixed; top: 80px; right: 24px; bottom: 24px; width: 440px; height: auto; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-lg); color: var(--ck-foreground); overflow: hidden; }
+.layout { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.header { display: flex; align-items: center; gap: 8px; padding: 8px 16px; flex-shrink: 0; }
+.header h2 { font-size: 18px; font-weight: 600; line-height: 28px; margin: 0; flex: 1; }
+.body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 0 16px 12px; }
+.body > * { flex-shrink: 0; }
+.muted { color: var(--ck-muted-foreground); font-size: 12px; line-height: 18px; margin: 0; }
+.list { display: grid; gap: 12px; }
+.empty { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.empty h3 { margin: 0; font-size: 16px; font-weight: 500; }
+.footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 16px; }
+.newButton { flex: 1; }
+.delete { margin-right: auto; color: var(--ck-destructive); }
+.field { display: flex; flex: 1 0 auto; flex-direction: column; }
+.field > div { display: flex; flex: 1; flex-direction: column; gap: 12px; }
+.textarea { flex: 1; min-height: 180px; resize: none; }
+.source { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.source button { text-align: left; }
+/* .confirm: the panel is the kit dialog's (narrow-windows N7.1). */
+.confirm h3 { margin: 0 0 12px; font-size: 18px; }
+.confirm p { color: var(--ck-muted-foreground); font-size: 14px; line-height: 22px; }
+.confirmActions { display: flex; justify-content: flex-end; gap: 12px; }
+.landing { position: fixed; z-index: 60; top: 68px; right: 24px; max-width: min(440px, calc(100vw - 32px)); }
+:global([data-note-target]) { outline: 2px solid var(--ck-primary); outline-offset: 6px; border-radius: var(--ck-radius-sm); }
+:global(::highlight(note-source)) { background: var(--ck-accent); color: var(--ck-foreground); }
+@media (width < 768px) { .panel { inset: 0; width: 100vw; height: 100dvh; border-radius: 0; } }
+@media (max-height: 760px) { .panel { top: 0; right: 0; bottom: 0; width: min(720px, 100vw); height: 100dvh; border-radius: 0; } }

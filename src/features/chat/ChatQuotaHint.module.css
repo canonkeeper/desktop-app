@@ -1,0 +1,14 @@
+.hint {
+  margin: 0;
+  padding: 6px 26px 0;
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+@media (max-width: 1100px) {
+  .hint {
+    padding-inline: 16px;
+  }
+}

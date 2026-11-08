@@ -1,0 +1,120 @@
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% - 60px);
+  margin: 14px 30px 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 12px 14px;
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+}
+
+.errorState {
+  display: grid;
+  width: calc(100% - 60px);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin: 14px 30px 0;
+}
+
+.errorState > span {
+  display: grid;
+  gap: 3px;
+}
+
+.loadingState {
+  display: grid;
+  width: min(720px, calc(100% - 48px));
+  align-content: start;
+  gap: 16px;
+  margin: 28px auto;
+  padding: 24px;
+}
+
+.loadingTitle { width: 48%; height: 28px; }
+.loadingLine { width: 100%; }
+.loadingLineShort { width: 68%; }
+
+.locatorAlert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 30px 0;
+}
+
+.locatorAlert strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.workspaceState {
+  display: grid;
+  width: 100%;
+  min-height: 100%;
+  place-items: center;
+  padding: 30px;
+}
+
+.card {
+  display: grid;
+  width: min(420px, 100%);
+  place-items: center;
+  gap: 12px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 32px;
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+  text-align: center;
+}
+
+.card h1,
+.card p {
+  margin: 0;
+}
+
+.card h1 {
+  color: var(--ck-foreground);
+  font-size: 18px;
+}
+
+.card p {
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .banner {
+    width: calc(100% - 20px);
+    margin: 10px;
+  }
+
+  .errorState {
+    width: calc(100% - 20px);
+    grid-template-columns: auto minmax(0, 1fr);
+    margin: 10px;
+  }
+
+  .errorState button { grid-column: 1 / -1; width: 100%; }
+
+  .loadingState {
+    width: calc(100% - 24px);
+    margin: 12px;
+    padding: 18px 8px;
+  }
+
+  .workspaceState {
+    padding: 10px;
+  }
+
+  .locatorAlert {
+    margin: 8px 12px 0;
+  }
+
+  .card {
+    padding: 28px 20px;
+  }
+}

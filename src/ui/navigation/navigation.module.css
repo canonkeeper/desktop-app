@@ -1,0 +1,109 @@
+/* Tabs that do not fit in one row wrap onto the next one: none of them hides past the edge. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tab {
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--ck-primary);
+  color: var(--ck-foreground);
+  font-weight: 500;
+}
+
+.tab:focus-visible,
+.segment:focus-visible {
+  border-radius: var(--ck-radius-sm);
+  outline: 1.5px solid var(--ck-ring);
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
+}
+
+.breadcrumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.breadcrumbs [aria-current='page'] {
+  color: var(--ck-foreground);
+  font-weight: 500;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  border-radius: var(--ck-radius-md);
+  padding: 3px;
+  background: var(--ck-secondary);
+}
+
+.segment {
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.segment[aria-checked='true'] {
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-sm);
+  font-weight: 500;
+}
+
+.segment:disabled {
+  color: var(--ck-disabled-foreground);
+  cursor: not-allowed;
+}
+
+.segmented[data-full-width] { display: flex; }
+.segmented[data-full-width] .segment { flex: 1; min-width: 0; }
+.segmented[data-size='touch'] .segment { min-height: 44px; }
+
+/* «Наверх»: no room of its own, it keeps to the bottom right of the visible part of its column. */
+.scrollTop {
+  position: sticky;
+  bottom: var(--ck-space-4);
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  height: 0;
+  pointer-events: none;
+}
+
+.scrollTopButton {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-md);
+  pointer-events: auto;
+  transform: translateY(-100%);
+}

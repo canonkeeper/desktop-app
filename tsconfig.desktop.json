@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": { "@edition": ["./src/editions/desktop"] }
+  },
+  "include": ["src/main.tsx", "src/editions/desktop", "src/types"]
+}

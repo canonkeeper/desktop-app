@@ -1,0 +1,23 @@
+.menu {
+  position: fixed;
+  z-index: 110;
+  display: grid;
+  width: min(240px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  gap: 2px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 6px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-sm);
+}
+
+.menu button {
+  justify-content: flex-start;
+  gap: 8px;
+  padding-inline: 10px;
+  font-size: 13px;
+  font-weight: 400;
+}

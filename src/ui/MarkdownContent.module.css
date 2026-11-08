@@ -1,0 +1,50 @@
+.tableScroll {
+  max-width: 100%;
+  margin: 0 0 8px;
+  overflow-x: auto;
+  scrollbar-color: #c5c5c2 transparent;
+  scrollbar-width: thin;
+}
+
+.tableScroll table {
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+/* A column narrows down to the width of the answer, a long word breaks with a hyphen; only a
+   table of many columns is wider than the answer and scrolls in its box. */
+.tableScroll :where(th, td) {
+  min-width: 5em;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--ck-border);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tableScroll th {
+  background: var(--ck-muted);
+  color: var(--ck-foreground-strong);
+  font-weight: 600;
+}
+
+/* A source citation with the punctuation that touches it: the line does not break inside the
+   group, while a long label still wraps inside its own button and leaves room for the
+   punctuation after it. */
+.citation {
+  white-space: nowrap;
+}
+
+.citation > * {
+  white-space: normal;
+}
+
+.citation > button {
+  max-width: calc(100% - 1em);
+}
+
+/* A paragraph that holds a drawing of the saga: the drawing is a block of its own. */
+.imageParagraph {
+  margin: 0 0 0.75em;
+}

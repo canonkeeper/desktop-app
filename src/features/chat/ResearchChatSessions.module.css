@@ -1,0 +1,266 @@
+.sessions {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 10px;
+  border-right: 1px solid var(--ck-border);
+  background: var(--ck-sidebar);
+}
+
+.sessions button {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.loading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.newChatButton,
+.sessionSelect {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  gap: 8px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px;
+  text-align: left;
+  color: var(--ck-sidebar-foreground);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.newChatButton {
+  color: var(--ck-foreground);
+  font-weight: 600;
+}
+
+.newChatButton svg {
+  color: var(--ck-link);
+}
+
+.sessionRow[data-selected] .sessionSelect {
+  color: var(--ck-citation-foreground);
+  font-weight: 600;
+}
+
+.sessionRow {
+  position: relative;
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 9px;
+}
+
+.sessionSelect {
+  min-width: 0;
+}
+
+.newChatButton:hover:not(:disabled),
+.sessionRow:hover {
+  background: var(--ck-sidebar-accent);
+  color: var(--ck-foreground);
+}
+
+.newChatButton[aria-current='page'],
+.sessionRow[data-selected] {
+  color: var(--ck-citation-foreground);
+  background: var(--ck-citation);
+}
+
+.newChatButton span,
+.sessionSelect span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A chat whose turn works carries the pulse of the live status after its title (R2.2). */
+.sessionSelect[data-working] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.sessionSelect .working {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sessionSelect .working {
+    animation: none;
+  }
+}
+
+.sessionActions {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin-right: 4px;
+  opacity: 0;
+}
+
+.sessionRow:hover .sessionActions,
+.sessionRow:focus-within .sessionActions {
+  opacity: 1;
+}
+
+.renameRow {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 4px;
+  border-radius: 9px;
+  padding: 4px;
+  background: var(--ck-muted);
+}
+
+.renameRow > div {
+  min-width: 0;
+  gap: 0;
+}
+
+.renameInput {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.renameAction {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin-top: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.sessionMenu {
+  display: grid;
+  width: 212px;
+  gap: 2px;
+  padding: 8px;
+}
+
+.sessionMenu button {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ck-foreground);
+  text-align: left;
+}
+
+.sessionMenu button:hover,
+.sessionMenu button:focus-visible {
+  background: var(--ck-muted);
+}
+
+.sessionMenu .dangerAction {
+  color: var(--ck-destructive-text);
+}
+
+.sessionSheet header {
+  padding: 14px 12px 10px;
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.sessionSheet button {
+  justify-content: flex-start;
+}
+
+.sessionsError {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.sessionsError p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .sessions {
+    padding: 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ck-border);
+    scrollbar-color: #c5c5c2 transparent;
+    scrollbar-width: thin;
+  }
+
+  .newChatButton,
+  .sessionSelect {
+    min-height: 32px;
+    padding: 8px;
+  }
+
+  .renameRow {
+    min-height: 56px;
+    align-items: center;
+  }
+
+  .renameInput {
+    min-width: 160px;
+  }
+}
+
+@media (pointer: coarse), (max-width: 760px) {
+  .sessionActions,
+  .renameAction {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    opacity: 1;
+  }
+
+  .newChatButton,
+  .sessionSelect,
+  .renameInput {
+    min-height: 44px;
+  }
+}
+
+@container chat-viewport (max-width: 360px) {
+  .sessionIcon {
+    display: none;
+  }
+
+  .sessionSelect {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

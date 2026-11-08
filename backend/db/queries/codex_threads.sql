@@ -1,0 +1,169 @@
+-- name: BindChatRootThread :one
+WITH target AS (
+  SELECT chat.id, chat.project_id
+  FROM chat_sessions AS chat
+  JOIN projects AS project
+    ON project.id = chat.project_id
+   AND project.deleted_at IS NULL
+  JOIN project_memberships AS membership
+    ON membership.project_id = chat.project_id
+   AND membership.user_id = sqlc.arg(actor_user_id)
+   AND membership.removed_at IS NULL
+   AND membership.role IN ('owner', 'admin', 'editor')
+  JOIN project_source_views AS source_view
+    ON source_view.project_id = chat.project_id
+   AND source_view.source_view = chat.source_view
+   AND source_view.project_lifecycle_generation = project.lifecycle_generation
+  WHERE chat.id = sqlc.arg(chat_id)
+    AND chat.project_id = sqlc.arg(project_id)
+    AND chat.deleted_at IS NULL
+    AND (
+      chat.scope = 'project'
+      OR EXISTS (
+        SELECT 1
+        FROM book_source_members AS member
+        JOIN books AS book
+          ON book.id = member.book_id
+         AND book.project_id = member.project_id
+         AND book.lifecycle_generation = member.book_lifecycle_generation
+         AND book.deleted_at IS NULL
+        WHERE member.project_id = chat.project_id
+          AND member.source_view = chat.source_view
+          AND member.project_lifecycle_generation = source_view.project_lifecycle_generation
+          AND member.book_id = chat.book_id
+      )
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM chat_turns AS turn_row
+      JOIN jobs AS job
+        ON job.id = turn_row.job_id
+       AND job.project_id = turn_row.project_id
+       AND job.kind = turn_row.job_kind
+      JOIN job_model_bindings AS binding
+        ON binding.job_id = job.id
+       AND binding.project_id = job.project_id
+       AND binding.artifact_source_owner_id = job.artifact_source_owner_id
+       AND binding.job_kind = job.kind
+      WHERE turn_row.chat_id = chat.id
+        AND turn_row.project_id = chat.project_id
+        AND turn_row.source_view = chat.source_view
+        AND turn_row.id = sqlc.arg(turn_id)
+        AND turn_row.job_kind = 'research_chat_turn'
+        AND binding.origin = 'user'
+        AND binding.actor_user_id = membership.user_id
+        AND job.status = 'running'
+        AND job.cancel_requested_at IS NULL
+        AND job.governance_payload_state = 'active'
+        AND ck_artifact_source_owner_is_readable(
+          job.artifact_source_owner_id, job.project_id, 'job', job.id
+        )
+        AND ck_artifact_source_owner_is_lifecycle_readable(
+          turn_row.artifact_source_owner_id,
+          turn_row.project_id,
+          'chat_turn',
+          turn_row.id
+        )
+    )
+  FOR UPDATE OF chat
+)
+UPDATE chat_sessions AS chat
+SET thread_id = sqlc.arg(thread_id)
+FROM target
+WHERE chat.id = target.id
+  AND chat.project_id = target.project_id
+  AND (chat.thread_id IS NULL OR chat.thread_id = sqlc.arg(thread_id))
+RETURNING chat.thread_id;
+
+-- name: GetNativeJobBinding :one
+-- The native thread of a chat turn Job: its chat root thread, provider turn and the kind of the session, whose
+-- flow keeps the thread.
+SELECT chat.thread_id AS root_thread_id, turn.provider_turn_id AS turn_id, chat.kind
+FROM chat_turns AS turn
+JOIN chat_sessions AS chat
+  ON chat.id = turn.chat_id
+ AND chat.project_id = turn.project_id
+ AND chat.source_view = turn.source_view
+JOIN projects AS project
+  ON project.id = chat.project_id
+ AND project.deleted_at IS NULL
+JOIN project_source_views AS source_view
+  ON source_view.project_id = chat.project_id
+ AND source_view.source_view = chat.source_view
+ AND source_view.project_lifecycle_generation = project.lifecycle_generation
+JOIN jobs AS job
+  ON job.id = turn.job_id
+ AND job.project_id = turn.project_id
+WHERE job.id = sqlc.arg(job_id)
+  AND job.project_id = sqlc.arg(project_id)
+  AND job.kind = 'research_chat_turn'
+  AND job.governance_payload_state = 'active'
+  AND chat.deleted_at IS NULL
+  AND ck_artifact_source_owner_is_readable(
+    job.artifact_source_owner_id, job.project_id, 'job', job.id
+  )
+  AND ck_artifact_source_owner_is_lifecycle_readable(
+    turn.artifact_source_owner_id,
+    turn.project_id,
+    'chat_turn',
+    turn.id
+  );
+
+-- name: ResolveNativeRootAuthority :many
+WITH candidates AS (
+  SELECT
+    job.project_id,
+    job.id AS job_id,
+    chat.id AS chat_session_id,
+    job.kind,
+    chat.thread_id AS root_thread_id,
+    turn.provider_turn_id AS turn_id,
+    binding.origin,
+    binding.actor_user_id,
+    binding.initiating_auth_session_id,
+    job.subject_json
+  FROM chat_sessions AS chat
+  JOIN projects AS project
+    ON project.id = chat.project_id
+   AND project.deleted_at IS NULL
+  JOIN project_source_views AS source_view
+    ON source_view.project_id = chat.project_id
+   AND source_view.source_view = chat.source_view
+   AND source_view.project_lifecycle_generation = project.lifecycle_generation
+  JOIN chat_turns AS turn
+    ON turn.chat_id = chat.id
+   AND turn.project_id = chat.project_id
+   AND turn.source_view = chat.source_view
+  JOIN jobs AS job
+    ON job.id = turn.job_id
+   AND job.project_id = turn.project_id
+  JOIN job_model_bindings AS binding
+    ON binding.job_id = job.id
+   AND binding.project_id = job.project_id
+   AND binding.artifact_source_owner_id = job.artifact_source_owner_id
+   AND binding.job_kind = job.kind
+  JOIN project_memberships AS membership
+    ON membership.project_id = chat.project_id
+   AND membership.user_id = binding.actor_user_id
+   AND membership.removed_at IS NULL
+   AND membership.role IN ('owner', 'admin', 'editor')
+  WHERE chat.thread_id = sqlc.arg(root_thread_id)::text
+    AND turn.provider_turn_id = sqlc.arg(turn_id)::text
+    AND chat.deleted_at IS NULL
+    AND job.kind = 'research_chat_turn'
+    AND job.status = 'running'
+    AND job.cancel_requested_at IS NULL
+    AND job.governance_payload_state = 'active'
+    AND ck_artifact_source_owner_is_readable(
+      job.artifact_source_owner_id, job.project_id, 'job', job.id
+    )
+    AND ck_artifact_source_owner_is_lifecycle_readable(
+      turn.artifact_source_owner_id,
+      turn.project_id,
+      'chat_turn',
+      turn.id
+    )
+)
+SELECT *
+FROM candidates
+ORDER BY project_id, job_id, chat_session_id NULLS FIRST;

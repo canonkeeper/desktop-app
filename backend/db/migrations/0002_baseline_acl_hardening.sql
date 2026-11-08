@@ -1,0 +1,40 @@
+-- Preserve the immutable legacy baseline while removing PostgreSQL's default
+-- PUBLIC EXECUTE grant from every function it already created.
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA canonkeeper_worker FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.ck_artifact_source_owner_is_readable(wanted_owner_id uuid, wanted_project_id uuid, wanted_artifact_kind text, wanted_artifact_id uuid) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_source_generation_digest(project_id uuid, project_generation bigint, book_id uuid, book_generation bigint, chapter_id uuid, chapter_generation bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_source_hard_purge_contains_derived(hard_tombstone public.deletion_tombstones, derived_tombstone public.deletion_tombstones) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_deletion_target_receipt_set_digest(purge_mode text, tombstone_digest bytea, selected_vector_digest bytea, receipt_digests bytea[]) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_source_ref_projection(ref_kind text, scope_kind text, project_id uuid, project_generation bigint, book_id uuid, book_generation bigint, chapter_id uuid, chapter_generation bigint, source_view text, source_independent boolean, chat_session_id uuid, chat_lifecycle_epoch bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_source_owner_is_current(wanted_owner_id uuid, wanted_project_id uuid, wanted_artifact_kind text, wanted_artifact_id uuid) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_source_owner_is_lifecycle_readable(wanted_owner_id uuid, wanted_project_id uuid, wanted_artifact_kind text, wanted_artifact_id uuid) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_claim_artifact_source_ref_validation(wanted_kind text, wanted_owner uuid, wanted_project uuid) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_expire_governance_writer_lease(wanted_instance_id_digest bytea, wanted_capability_version text, wanted_build_digest bytea) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_heartbeat_governance_writer_lease(wanted_instance_id_digest bytea, wanted_capability_version text, wanted_build_digest bytea) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_jsonb_object_length(candidate jsonb) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_purge_expired_governance_writer_leases() TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_register_governance_writer_lease(wanted_instance_id_digest bytea, wanted_capability_version text, wanted_build_digest bytea) TO canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_tag_byte(value integer) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_kind_tag(kind text) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_manifest_digest(artifact_kind text, project_id uuid, artifact_id uuid, owner_source_view text, ref_projections bytea[]) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_manifest_projection(artifact_kind text, project_id uuid, artifact_id uuid, owner_source_view text, ref_projections bytea[]) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_manifest_digest_v2(artifact_kind text, project_id uuid, artifact_id uuid, owner_source_view text, ref_projections bytea[]) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_manifest_projection_v2(artifact_kind text, project_id uuid, artifact_id uuid, owner_source_view text, ref_projections bytea[]) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_artifact_source_ref_projection_v2(ref_kind text, scope_kind text, project_id uuid, project_generation bigint, book_id uuid, book_generation bigint, chapter_id uuid, chapter_generation bigint, source_revision bigint, source_view text, locator_source_generation bytea, content_hash bytea, text_identity_state text, source_independent boolean, chat_session_id uuid, chat_lifecycle_epoch bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_raw_source_vector(scope_kind text, project_id uuid, project_generation bigint, book_id uuid, book_generation bigint, chapter_id uuid, chapter_generation bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_source_view_arm(source_view text) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_chat_arm(chat_session_id uuid, chat_lifecycle_epoch bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_source_generation_projection(project_id uuid, project_generation bigint, book_id uuid, book_generation bigint, chapter_id uuid, chapter_generation bigint) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_deletion_target_receipt_digest(target text, tombstone_digest bytea, selected_vector_digest bytea, handler_version text, disposition text, completed_at timestamp with time zone) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_deletion_target_receipt_projection(target text, tombstone_digest bytea, selected_vector_digest bytea, handler_version text, disposition text, completed_at timestamp with time zone) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_is_nonzero_digest(value bytea) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION public.ck_unix_seconds(value timestamp with time zone) TO canonkeeper_product_runtime, canonkeeper_governance_owner, CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_deletion_audit_gc_for_worker() TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_deletion_target_task_for_worker(worker_digest bytea, lease_seconds integer, runtime_target_enabled boolean) TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_export_intent_for_worker() TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_import_expiry_for_worker() TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_queued_job_for_worker(wanted_kinds text[]) TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_source_hard_purge_for_worker() TO CURRENT_USER;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_tenant_retention_for_worker() TO CURRENT_USER;

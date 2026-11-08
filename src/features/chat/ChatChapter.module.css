@@ -1,0 +1,119 @@
+/* The chapter of the author at the question field and at the question of the feed
+   (specs/2026-11-07-chat-attach-chapter.md CA4.2, CA7). */
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.attachRow {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.strip {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  min-width: 0;
+}
+
+.chip,
+.offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 4px 4px 4px 10px;
+  background: var(--ck-muted);
+  color: var(--ck-foreground);
+  font-size: 13px;
+}
+
+.chipLabel {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.offer {
+  padding: 8px 10px;
+}
+
+.offer > span:first-child {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.offerActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.problem {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: 13px;
+}
+
+/* The card of the chapter under the question of the feed. */
+.card {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 10px 12px;
+  background: var(--ck-card);
+  /* The card stands inside the question bubble, whose text is light: its own text is the page's. */
+  color: var(--ck-foreground);
+  text-align: start;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardHead svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ck-muted-foreground);
+}
+
+.cardTitle {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cardTitle strong {
+  overflow-wrap: anywhere;
+}
+
+.cardTitle small {
+  color: var(--ck-muted-foreground);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cardProblem {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: 13px;
+}

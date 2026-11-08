@@ -1,0 +1,99 @@
+.section {
+  display: grid;
+  gap: 4px;
+}
+
+/* Who the admin works as: the same amber the warning tone uses elsewhere. */
+.identity {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 2px;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px 10px;
+  background: var(--ck-color-warning);
+  color: var(--ck-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.identity strong {
+  color: var(--ck-color-warning-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.inlineIcon {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.warning {
+  color: var(--ck-destructive-text);
+  font-weight: 500;
+}
+
+/* A menu row: the UI kit ghost button across the menu, like «Выйти» next to it. */
+.item {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+/* Sits on the lower right of the avatar; the account button is its positioned parent. */
+.mark {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  place-items: center;
+  border: 2px solid var(--ck-card);
+  border-radius: 50%;
+  background: var(--ck-color-warning-foreground);
+  color: var(--ck-card);
+  pointer-events: none;
+}
+
+.mark[data-expiring] {
+  background: var(--ck-color-error-foreground);
+}
+
+/* A reply of support waits (specs/2026-11-07-contacts.md F3.2): a dot on the upper right of the avatar. */
+.unread {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 2px solid var(--ck-card);
+  border-radius: 50%;
+  background: var(--ck-primary);
+  pointer-events: none;
+}
+
+.count {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 10px;
+  padding: 0 6px;
+  background: var(--ck-primary);
+  color: var(--ck-primary-foreground, #fff);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

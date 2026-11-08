@@ -1,0 +1,232 @@
+.appShell {
+  min-height: 100vh;
+  padding: 32px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+}
+
+/* Фон совпадает с приложением, чтобы ленивые чанки маршрутов не давали белую вспышку при загрузке. */
+.routeFallback {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--ck-background);
+}
+
+.productSurface {
+  display: contents;
+}
+
+/* With the notice of a promotion request or a toast the page stands under them and takes the rest of the window
+   (specs/2026-11-03-narrow-windows-navigation.md N4.1, the owner 04.11); a page longer than that scrolls here. */
+.productSurface:has(> [data-promo-notice]),
+.productSurface:has(> [data-page-notices] [aria-atomic]) {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.productSurface:has(> [data-promo-notice]) > :not([data-promo-notice]):not([data-page-notices]),
+.productSurface:has(> [data-page-notices] [aria-atomic]) > :not([data-promo-notice]):not([data-page-notices]) {
+  min-height: 0;
+  flex-shrink: 1;
+}
+
+/* The place of notices: the toasts of every page (ui/feedback/notice-slot.ts), first above the page. */
+.pageNotices {
+  display: grid;
+  flex: none;
+  order: -1;
+}
+
+.identityTransition {
+  display: grid;
+  min-height: calc(100dvh - 36px);
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+  text-align: center;
+}
+
+.identityTransition h1,
+.identityTransition p {
+  margin: 0;
+}
+
+.identityTransition h1 {
+  font-size: 18px;
+}
+
+.identityTransition p {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.outagePage {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+}
+
+.outageCard {
+  display: grid;
+  gap: 16px;
+  width: min(480px, 100%);
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-dialog);
+  padding: 24px;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.outageScrim {
+  padding: 24px;
+}
+
+.outageScrim .outageCard {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.outageCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.outageTitle,
+.outageMessage {
+  margin: 0;
+}
+
+.outageTitle {
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-sans);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.outageMessage {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.outageMeta {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+}
+
+.outageCard > button {
+  justify-self: center;
+}
+
+.sessionError {
+  position: fixed;
+  z-index: 100;
+  top: 16px;
+  left: 50%;
+  max-width: min(560px, calc(100vw - 32px));
+  margin: 0;
+  border: 1px solid var(--ck-destructive);
+  border-radius: var(--ck-radius-sm);
+  padding: 10px 14px;
+  background: var(--ck-color-error);
+  color: var(--ck-color-error-foreground);
+  transform: translateX(-50%);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.header h1,
+.panel h2 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.navButton,
+.activeNav {
+  min-height: 36px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 12px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.activeNav {
+  background: var(--ck-ink);
+  color: var(--ck-ink-foreground);
+}
+
+.panel {
+  max-width: 760px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 24px;
+  background: var(--ck-card);
+}
+
+.copy {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .outageScrim {
+    align-items: end;
+    padding: 20px;
+  }
+
+  .outageScrim .outageCard {
+    width: 100%;
+  }
+
+  .appShell {
+    padding: 18px;
+  }
+
+  .header {
+    display: block;
+  }
+
+  .nav {
+    justify-content: flex-start;
+    margin-top: 18px;
+  }
+
+}

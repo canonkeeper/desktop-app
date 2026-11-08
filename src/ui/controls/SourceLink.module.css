@@ -1,0 +1,38 @@
+/* An inline citation inside running text: it keeps the line height of the text around it. A
+   button lays out as one inline block, so a short label never breaks and a long one wraps
+   inside the column. No side padding: punctuation follows the label as it follows a word,
+   and the hover background of this positioned box never paints over it. */
+.link {
+  position: relative;
+  display: inline;
+  max-width: 100%;
+  border: 0;
+  border-radius: 3px;
+  padding: 0;
+  background: transparent;
+  color: var(--ck-link);
+  font: inherit;
+  font-size: 0.875em;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* A finger-sized target around the label without touching the layout. */
+.link::after {
+  position: absolute;
+  inset: -12px -4px;
+  content: '';
+}
+
+.link > svg {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 3px;
+  vertical-align: -0.125em;
+}
+
+.link:hover, .link[aria-expanded='true'] { background: var(--ck-secondary); }
+.link:focus-visible { outline: 2px solid var(--ck-primary); outline-offset: 2px; }
+.link:disabled { color: var(--ck-muted-foreground); cursor: default; }

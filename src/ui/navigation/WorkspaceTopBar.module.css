@@ -1,0 +1,175 @@
+.bar {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 64px;
+  gap: 8px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 0 28px;
+  background: var(--ck-background);
+}
+
+.bar[data-search='false'] {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+.bar[data-compact] {
+  min-height: 56px;
+  flex-shrink: 0;
+  grid-template-columns: 44px minmax(0, 1fr) max-content;
+  padding-inline: 12px;
+}
+.bar[data-compact] .menuButton[data-size] { display: inline-grid; }
+.bar[data-compact] .desktopBrand { display: none; }
+.bar[data-compact] .mobileTitle { display: inline; }
+
+.menuButton[data-size] {
+  display: none;
+}
+
+.brand {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileTitle {
+  display: none;
+}
+
+.searchButton[data-variant] {
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 40px;
+  gap: 10px;
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+  font-weight: 400;
+}
+
+.searchLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountButton {
+  position: relative;
+  justify-self: end;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ck-ink);
+  color: var(--ck-ink-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.accountMenu {
+  top: 72px;
+  right: 28px;
+  width: min(288px, calc(100vw - 28px));
+  padding: 10px;
+}
+
+.accountName {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.logoutButton {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (max-width: 1100px) {
+  .bar[data-search='false'] {
+    grid-template-columns: 44px minmax(0, 1fr) max-content;
+  }
+  .bar {
+    min-height: 56px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px max-content;
+    padding: 0 16px;
+  }
+
+  .menuButton[data-size] {
+    display: inline-grid;
+  }
+
+  .searchButton[data-variant] {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    justify-content: center;
+    gap: 0;
+    border-color: transparent;
+    padding: 0;
+    background: transparent;
+  }
+
+  .searchLabel {
+    display: none;
+  }
+
+  .searchButton svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .accountMenu {
+    top: 64px;
+    right: 16px;
+  }
+}
+
+/* Without the section menu the brand keeps the first column at every width. */
+.bar[data-menu='false'][data-search='false'] {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+
+@media (max-width: 760px) {
+  .bar {
+    min-height: 52px;
+    padding: 0 14px;
+  }
+
+  .brand {
+    font-size: 16px;
+  }
+
+  .desktopBrand {
+    display: none;
+  }
+
+  .mobileTitle {
+    display: inline;
+  }
+
+  .accountMenu {
+    top: 60px;
+    right: 14px;
+  }
+}

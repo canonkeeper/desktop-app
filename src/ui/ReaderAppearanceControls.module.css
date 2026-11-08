@@ -1,0 +1,38 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.controls > button[data-variant] {
+  min-height: 38px;
+  padding-block: 0;
+  font-size: 13px;
+}
+
+.theme {
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 3px;
+  background: var(--ck-card);
+}
+
+.theme [role='radio'] {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--ck-radius-xs);
+  font-size: 13px;
+}
+
+.theme [aria-checked='true'] {
+  background: var(--ck-ink);
+  color: var(--ck-ink-foreground);
+  box-shadow: none;
+}
+
+@media (pointer: coarse) {
+  .controls > button[data-variant] { min-height: 44px; }
+}

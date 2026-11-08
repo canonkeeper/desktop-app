@@ -1,0 +1,41 @@
+{
+  "schema": "CKSourceGenerationV1",
+  "vectors": [
+    {
+      "name": "project",
+      "vector": {
+        "ProjectID": "00112233-4455-6677-8899-aabbccddeeff",
+        "ProjectGeneration": 1,
+        "BookID": "",
+        "BookGeneration": 0,
+        "ChapterID": "",
+        "ChapterGeneration": 0
+      },
+      "expectedSha256": "62b825be0e8a536c8c449719854ee43c77be41f855636460d5b610e0e381ea40"
+    },
+    {
+      "name": "book",
+      "vector": {
+        "ProjectID": "00112233-4455-6677-8899-aabbccddeeff",
+        "ProjectGeneration": 1,
+        "BookID": "11111111-2222-3333-4444-555555555555",
+        "BookGeneration": 2,
+        "ChapterID": "",
+        "ChapterGeneration": 0
+      },
+      "expectedSha256": "3fd98b9225500ac65ee049c47619907f0d0b7d143a8a76cc59ebae865fd114f4"
+    },
+    {
+      "name": "chapter",
+      "vector": {
+        "ProjectID": "00112233-4455-6677-8899-aabbccddeeff",
+        "ProjectGeneration": 1,
+        "BookID": "11111111-2222-3333-4444-555555555555",
+        "BookGeneration": 2,
+        "ChapterID": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "ChapterGeneration": 3
+      },
+      "expectedSha256": "2e00d3b3b4b5a26863c23e71163ed38217f2090b8c96149bd81dee84289a2b18"
+    }
+  ]
+}

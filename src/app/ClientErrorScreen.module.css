@@ -1,0 +1,43 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+}
+
+.card {
+  display: grid;
+  gap: 16px;
+  width: min(480px, 100%);
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-dialog);
+  padding: 24px;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.title,
+.message {
+  margin: 0;
+}
+
+.title {
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-sans);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.message {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.card > button {
+  justify-self: center;
+}

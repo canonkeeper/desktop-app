@@ -1,0 +1,54 @@
+.workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; gap: 16px; padding: 32px; }
+.background { display: flex; flex-direction: column; gap: 16px; }
+.searchRow { display: flex; align-items: flex-start; gap: 8px; }
+.search { flex: 1; min-width: 0; }
+.heading { display: flex; align-items: center; gap: 16px; }
+.heading > div { flex: 1; min-width: 0; }
+.heading h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.heading p { margin: 2px 0 0; font-size: 12px; line-height: 18px; color: var(--ck-muted-foreground); }
+.search > div > label, .typeFilter > div > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.search > div, .typeFilter > div { gap: 0; }
+.search input { height: 42px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.typeFilter { width: 184px; }
+.typeFilter button { min-height: 44px; }
+.sourceTrigger { width: 280px; justify-content: space-between; }
+.sourceTrigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sourceTrigger > svg { flex-shrink: 0; }
+.columns { display: flex; flex: 1; min-width: 0; min-height: 0; gap: 20px; }
+.list { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.detailLayer { display: contents; }
+.detail { position: relative; display: flex; flex-direction: column; flex: 0 0 440px; width: 440px; min-width: 0; min-height: 0; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-lg); background: var(--ck-card); overflow: hidden; }
+.empty, .loading { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 12px; border: 1px solid var(--ck-border); border-radius: var(--ck-radius-md); background: var(--ck-card); padding: 24px; }
+.empty { justify-content: center; align-items: center; text-align: center; }
+.empty h2 { font-size: 18px; line-height: 26px; margin: 0; }
+.empty p { color: var(--ck-muted-foreground); line-height: 22px; margin: 0; }
+.sourceDialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sourceFields { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+.sourceDialog header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; }
+.sourceDialog h2 { font-size: 16px; line-height: 24px; margin: 0; }
+.sourceDialog p { color: var(--ck-muted-foreground); font-size: 12px; line-height: 18px; margin: 0; }
+.sourceDialog footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: 12px; padding-top: 8px; }
+@media (width < 1200px), (max-height: 760px) {
+  .workspace { padding: 24px; }
+  .detailLayer { display: block; position: fixed; inset: 0; z-index: 49; background: var(--ck-scrim); }
+  .detail { position: fixed; top: 80px; right: 24px; bottom: 24px; height: auto; z-index: 50; }
+}
+@media (max-width: 760px), (max-height: 760px) {
+  .workspace { padding: 12px; gap: 8px; }
+  .background { gap: 8px; flex-shrink: 0; }
+  .heading { gap: 8px; }
+  .heading h1 { font-size: 18px; line-height: 24px; }
+  .filters { display: none; }
+  .detail { top: 0; right: 0; bottom: 0; width: min(720px, 100vw); height: 100dvh; border-radius: 0; }
+}
+@media (width < 768px) {
+  .workspace { padding: 12px; }
+  .filters { flex-direction: column; align-items: stretch; gap: 8px; }
+  .typeFilter, .sourceTrigger { width: 100%; }
+  .detail { inset: 0; width: 100vw; height: 100dvh; border-radius: 0; }
+}

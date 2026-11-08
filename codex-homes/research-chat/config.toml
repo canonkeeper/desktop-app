@@ -1,0 +1,48 @@
+# Codex 0.165 would run the chat model from its built-in catalog: Responses Lite with one tool call
+# per answer, code mode and terse answers. This catalog names no model in use, so the chat model runs
+# on Codex fallback metadata as it did on 0.153.4: saga tools called directly and in parallel, the
+# 1M window of the environment config (specs/2026-10-28-codex-0165.md).
+model_catalog_json = "model-catalog.json"
+model_reasoning_summary = "auto"
+approval_policy = "never"
+default_permissions = "canonkeeper-runtime"
+web_search = "disabled"
+project_root_markers = []
+
+[output_truncation]
+max_bytes = 3000000
+max_lines = 5000
+mcp_max_lines = 5000
+
+[features]
+goals = true
+shell_tool = false
+view_image = false
+# The chat draws nothing: drawings are made in the drawing workshop, never by Codex itself.
+image_generation = false
+apps = false
+enable_mcp_apps = false
+plugins = false
+tool_suggest = false
+sleep_tool = false
+
+[features.multi_agent_v2]
+enabled = false
+
+[agents]
+enabled = false
+
+[skills.bundled]
+enabled = false
+
+[tools.experimental_request_user_input]
+enabled = false
+
+[permissions.canonkeeper-runtime]
+description = "Read only the runtime workspace root; network is disabled."
+
+[permissions.canonkeeper-runtime.filesystem]
+":workspace_roots" = "read"
+
+[permissions.canonkeeper-runtime.network]
+enabled = false

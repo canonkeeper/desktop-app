@@ -1,0 +1,153 @@
+.references {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 8px 12px;
+}
+
+.references .sourceChip,
+.references .evidence {
+  max-width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0;
+  background: transparent;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sourceSurface {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 5px 7px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.sourceChip .sourceSurface {
+  padding: 6px 8px;
+  background: var(--ck-card);
+  color: var(--ck-link);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.sourceHeader {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sourceHeader svg {
+  flex: 0 0 auto;
+}
+
+.sourceHeader small {
+  flex: 0 0 auto;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+.canonCard {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.canonContents {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.canonCard > div {
+  padding: 0;
+  font-size: inherit;
+  line-height: 1.2;
+}
+
+.origin,
+.canonStatus {
+  color: var(--ck-muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.origin {
+  color: var(--ck-foreground);
+}
+
+.canonCard[data-origin='manual'] .origin {
+  color: var(--ck-link);
+}
+
+.canonCard[data-status='current'] .canonStatus {
+  color: var(--ck-color-success-foreground);
+}
+
+.canonCard[data-status='changed'] .canonStatus {
+  color: var(--ck-color-warning-foreground);
+}
+
+.rowValue {
+  margin: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 5px 7px;
+  background: var(--ck-secondary);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.evidence {
+  width: 100%;
+  justify-content: stretch;
+}
+
+.evidence[data-status='changed'] .sourceSurface {
+  background: var(--ck-secondary);
+}
+
+.evidence .sourceHeader > span {
+  flex: 1;
+  font-weight: 600;
+}
+
+.evidence .sourceHeader svg {
+  color: var(--ck-link);
+}
+
+.evidence[data-status='changed'] .sourceHeader svg,
+.evidence .sourceHeader small,
+.evidence q {
+  color: var(--ck-muted-foreground);
+}
+
+.evidence q {
+  white-space: pre-wrap;
+}
+
+.references button.sourceChip,
+.references button.evidence {
+  min-width: 44px;
+  min-height: 44px;
+}

@@ -1,0 +1,68 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+  color: var(--ck-foreground);
+  background: var(--ck-background);
+  font-family: var(--ck-font-sans);
+  font-optical-sizing: none;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--ck-background);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+/* The part of the page the voice is talking of (specs/2026-11-05-voice-full-access.md A5a.4). */
+[data-voice-here] {
+  outline: 3px solid var(--ck-primary);
+  outline-offset: 3px;
+}
+
+@keyframes ck-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Анимируем только цвет, тень и transform, чтобы интерактивные состояния не меняли layout. */
+button,
+a,
+input,
+textarea,
+select,
+summary,
+[role='button'] {
+  transition:
+    background-color var(--ck-duration-fast) var(--ck-ease-out),
+    border-color var(--ck-duration-fast) var(--ck-ease-out),
+    color var(--ck-duration-fast) var(--ck-ease-out),
+    box-shadow var(--ck-duration-fast) var(--ck-ease-out),
+    transform var(--ck-duration-fast) var(--ck-ease-out),
+    opacity var(--ck-duration-fast) var(--ck-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

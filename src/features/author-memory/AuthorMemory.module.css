@@ -1,0 +1,137 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-4);
+  max-width: 860px;
+  margin-inline: auto;
+  padding: var(--ck-space-5) var(--ck-space-5) var(--ck-space-7);
+  width: 100%;
+}
+
+.header {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.title {
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  margin: 0 0 var(--ck-space-1);
+}
+
+.lead,
+.hint,
+.count,
+.meta {
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  margin: 0;
+}
+
+.lead {
+  max-width: 60ch;
+}
+
+.filters {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.kindFilter {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+.search {
+  flex: 1 1 240px;
+}
+
+.skeleton {
+  height: 160px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.record {
+  background: var(--ck-card);
+  border: 1px solid var(--ck-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.recordHead {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.link {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.text,
+.deleted {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.deleted {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.meta {
+  font-size: 13px;
+}
+
+/* The dialogs of the page: the panel itself — the dialog of the kit draws only the scrim. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formTitle {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.formRow {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

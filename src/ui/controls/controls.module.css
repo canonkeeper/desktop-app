@@ -1,0 +1,514 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 37px;
+  gap: 8px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 0 14px;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  /* ButtonLink: a link drawn as a button. */
+  text-decoration: none;
+}
+
+.primary {
+  border-color: var(--ck-primary);
+  background: var(--ck-primary);
+  color: var(--ck-primary-foreground);
+}
+
+.buttonLabel {
+  /* Pencil rounds text advance up; keep that space in the label, not the icon gap. */
+  inline-size: calc-size(auto, round(up, size, 1px));
+  text-align: start;
+}
+
+.secondary {
+  background: var(--ck-secondary);
+}
+
+.outline,
+.ghost {
+  background: transparent;
+}
+
+.ghost {
+  border-color: transparent;
+}
+
+.danger {
+  border-color: var(--ck-destructive);
+  background: var(--ck-destructive);
+  color: var(--ck-destructive-foreground);
+}
+
+.ink {
+  border-color: var(--ck-ink);
+  background: var(--ck-ink);
+  color: var(--ck-ink-foreground);
+}
+
+.button[data-size='sm'] {
+  min-height: 32px;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.button[data-size='touch'] {
+  min-height: 44px;
+}
+
+.button:hover:not(:disabled) {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ck-foreground) 12%, transparent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--ck-primary-hover);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--ck-border);
+}
+
+.outline:hover:not(:disabled),
+.ghost:hover:not(:disabled) {
+  background: var(--ck-secondary);
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ck-destructive) 90%, black);
+}
+
+.button:active:not(:disabled),
+.iconButton:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled,
+.iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button:focus-visible,
+.iconButton:focus-visible,
+.input:focus-visible,
+.select:focus-visible,
+.checkbox input:focus-visible {
+  outline: 1.5px solid var(--ck-ring);
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.spinnerIcon {
+  animation: spin 700ms linear infinite;
+}
+
+.iconButton {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0;
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+}
+
+.iconButton[data-size='sm'] {
+  width: 32px;
+  height: 32px;
+}
+
+.iconButton[data-variant='primary'] {
+  border-color: var(--ck-primary);
+  background: var(--ck-primary);
+  color: var(--ck-primary-foreground);
+}
+.iconButton[data-variant='primary']:hover:not(:disabled) {
+  background: var(--ck-primary);
+  color: var(--ck-primary-foreground);
+  filter: brightness(0.96);
+}
+
+.iconButton[data-size='touch'] {
+  width: 44px;
+  height: 44px;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--ck-muted);
+  color: var(--ck-foreground);
+}
+
+.control {
+  display: grid;
+  gap: 6px;
+  color: var(--ck-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.labelHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.label {
+  line-height: normal;
+}
+
+.input,
+.select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 14px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font: inherit;
+}
+
+/* Field with an action at the right edge of the input (PasswordField). */
+.inputShell {
+  position: relative;
+}
+
+.inputShell .input {
+  padding-right: 44px;
+}
+
+.inputAction {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 100%;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0;
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+}
+
+.inputAction:hover:not(:disabled) {
+  color: var(--ck-foreground);
+}
+
+.inputAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.textarea {
+  min-height: 96px;
+  resize: vertical;
+  padding-block: 12px;
+}
+
+.searchShell {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 4px 0 12px;
+  background: var(--ck-input);
+  color: var(--ck-muted-foreground);
+}
+
+.searchShell:hover {
+  border-color: var(--ck-control-hover-border);
+}
+
+.searchShell:focus-within {
+  border-color: var(--ck-ring);
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
+}
+
+.searchShell:has(.searchInput[aria-invalid='true']) {
+  border-color: var(--ck-destructive);
+}
+
+.searchInput {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ck-foreground);
+}
+
+.searchInput::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.selectRoot {
+  position: relative;
+}
+
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 13px;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (pointer: coarse) {
+  .button,
+  .button[data-size],
+  .select {
+    min-height: 44px;
+  }
+
+  .iconButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.selectMenu {
+  position: fixed;
+  z-index: 110;
+  display: grid;
+  overflow: auto;
+  width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-popover);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.selectOption {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  outline: 0;
+}
+
+.selectOption[aria-selected='true'] {
+  background: var(--ck-source-active);
+}
+
+.selectOption[data-active='true'] {
+  box-shadow: inset 0 0 0 1.5px var(--ck-ring);
+}
+
+.selectOption[aria-disabled='true'] {
+  color: var(--ck-disabled-foreground);
+  cursor: not-allowed;
+}
+
+.selectOption > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selectOption > svg {
+  flex-shrink: 0;
+}
+
+.input:hover:not(:disabled),
+.select:hover:not(:disabled) {
+  border-color: var(--ck-control-hover-border);
+}
+
+.input:disabled,
+.select:disabled,
+.checkbox[data-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.checkbox input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: inherit;
+  opacity: 0;
+}
+
+.checkbox input:focus-visible + .checkboxBox {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.checkboxBox {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border: 1px solid var(--ck-border-strong);
+  border-radius: 6px;
+  background: var(--ck-background);
+}
+
+.checkboxBox > svg {
+  visibility: hidden;
+}
+
+.checkbox input:checked + .checkboxBox {
+  border: 0;
+  background: var(--ck-primary);
+}
+
+.checkbox input:checked + .checkboxBox > svg {
+  visibility: visible;
+}
+
+.checkbox input:indeterminate + .checkboxBox {
+  border: 0;
+  background: var(--ck-primary);
+}
+
+.checkbox input:indeterminate + .checkboxBox > svg {
+  visibility: hidden;
+}
+
+.checkbox input:indeterminate + .checkboxBox::after {
+  grid-area: 1 / 1;
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ck-primary-foreground);
+  content: '';
+}
+
+.checkboxBox > svg {
+  grid-area: 1 / 1;
+}
+
+.hint,
+.error {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.hint {
+  color: var(--ck-muted-foreground);
+}
+
+.error {
+  color: var(--ck-destructive-text);
+}
+
+.dropzone {
+  display: grid;
+  min-height: 149px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1.5px dashed var(--ck-border-strong);
+  border-radius: var(--ck-radius-lg);
+  padding: 28px;
+  background: var(--ck-card);
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  text-align: center;
+}
+
+.dropzone strong {
+  color: var(--ck-foreground);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dropzone span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.dropzone:hover:not([data-disabled='true']) {
+  border-color: var(--ck-control-hover-border);
+  background: var(--ck-reader-pane);
+}
+
+.dropzone[data-dragging='true'] {
+  border-color: var(--ck-primary);
+  background: var(--ck-color-info);
+}
+
+.dropzone[data-disabled='true'] {
+  border-color: var(--ck-border);
+  background: var(--ck-disabled);
+  color: var(--ck-disabled-foreground);
+  cursor: not-allowed;
+}
+
+.dropzone[data-disabled='true'] strong {
+  color: var(--ck-disabled-foreground);
+}
+
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

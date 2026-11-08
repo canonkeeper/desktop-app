@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook>
+  <description><title-info><book-title>Fixture Book</book-title></title-info></description>
+  <body>
+    <section><title><p>Chapter One</p></title><p>First paragraph.</p><p>Second paragraph.</p></section>
+  </body>
+</FictionBook>

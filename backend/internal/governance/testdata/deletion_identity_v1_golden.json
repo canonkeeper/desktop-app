@@ -1,0 +1,205 @@
+{
+  "schema": "CKDeletionIdentityFixtureV1",
+  "selectedVectors": [
+    {
+      "name": "project",
+      "input": {
+        "arm": "project",
+        "source": {
+          "projectId": "00112233-4455-6677-8899-aabbccddeeff",
+          "projectGeneration": 1
+        }
+      },
+      "projectionHex": "0162b825be0e8a536c8c449719854ee43c77be41f855636460d5b610e0e381ea40",
+      "expectedSha256": "d54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615"
+    },
+    {
+      "name": "book",
+      "input": {
+        "arm": "book",
+        "source": {
+          "projectId": "00112233-4455-6677-8899-aabbccddeeff",
+          "projectGeneration": 1,
+          "bookId": "11111111-2222-3333-4444-555555555555",
+          "bookGeneration": 2
+        }
+      },
+      "projectionHex": "023fd98b9225500ac65ee049c47619907f0d0b7d143a8a76cc59ebae865fd114f4",
+      "expectedSha256": "d42d564abd25750c7766ca668d79adf9bf85cb0c54c37a366a942627b45f8e9d"
+    },
+    {
+      "name": "chapter",
+      "input": {
+        "arm": "chapter",
+        "source": {
+          "projectId": "00112233-4455-6677-8899-aabbccddeeff",
+          "projectGeneration": 1,
+          "bookId": "11111111-2222-3333-4444-555555555555",
+          "bookGeneration": 2,
+          "chapterId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          "chapterGeneration": 3
+        }
+      },
+      "projectionHex": "032e00d3b3b4b5a26863c23e71163ed38217f2090b8c96149bd81dee84289a2b18",
+      "expectedSha256": "87dc99897df8727579d8b1ae16663281a0a6157df47800cd603a6309ae34ca23"
+    },
+    {
+      "name": "chat",
+      "input": {
+        "arm": "chat",
+        "projectId": "00112233-4455-6677-8899-aabbccddeeff",
+        "chatId": "22222222-3333-4444-5555-666666666666",
+        "chatEpoch": 9
+      },
+      "projectionHex": "0400112233445566778899aabbccddeeff222222223333444455556666666666660000000000000009",
+      "expectedSha256": "236f7e8bb8642218e8cb18ea0720cf8137d9e0aa4120469d5e7b223536751024"
+    }
+  ],
+  "tombstones": [
+    {
+      "name": "governed-derived",
+      "input": {
+        "tombstoneId": "33333333-4444-5555-6666-777777777771",
+        "origin": "governed_online",
+        "mode": "derived_generation",
+        "selectedVector": "project",
+        "fencedAt": "2026-07-12T02:03:04.567000Z",
+        "deadline": "2026-08-11T02:03:04.567000Z"
+      },
+      "projectionHex": "333333334444555566667777777777710101d54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615000656605fcfccd801000658bbdf0d0cd8",
+      "expectedSha256": "da0241523512903d171ba0b6a2f32f3e6b343b1f2eb1a4f8c3bd7772c8895bfe"
+    },
+    {
+      "name": "governed-hard",
+      "input": {
+        "tombstoneId": "33333333-4444-5555-6666-777777777772",
+        "origin": "governed_online",
+        "mode": "source_hard_purge",
+        "selectedVector": "chapter",
+        "fencedAt": "2026-07-12T02:03:04.567000Z",
+        "deadline": "2026-08-11T02:03:04.567000Z"
+      },
+      "projectionHex": "33333333444455556666777777777772010287dc99897df8727579d8b1ae16663281a0a6157df47800cd603a6309ae34ca23000656605fcfccd801000658bbdf0d0cd8",
+      "expectedSha256": "f40f6d78ba7a687b03d01de7cb69ac0e47994f76c24a76f1af30cdc478f99679"
+    },
+    {
+      "name": "governed-chat",
+      "input": {
+        "tombstoneId": "33333333-4444-5555-6666-777777777773",
+        "origin": "governed_online",
+        "mode": "chat_epoch",
+        "selectedVector": "chat",
+        "fencedAt": "2026-07-12T02:03:04.567000Z",
+        "deadline": "2026-08-11T02:03:04.567000Z"
+      },
+      "projectionHex": "333333334444555566667777777777730103236f7e8bb8642218e8cb18ea0720cf8137d9e0aa4120469d5e7b223536751024000656605fcfccd801000658bbdf0d0cd8",
+      "expectedSha256": "712b5b986d927d3ec42cc803128337e4e43172ffc7e13b0ea284fe0fbe069d64"
+    }
+  ],
+  "receipts": [
+    {
+      "name": "runtime",
+      "input": {
+        "target": "runtime",
+        "tombstone": "governed-derived",
+        "selectedVector": "project",
+        "handlerVersion": "runtime_direct_sdk_v1",
+        "disposition": "purged",
+        "completedAt": "2026-07-12T03:04:05Z"
+      },
+      "projectionHex": "01da0241523512903d171ba0b6a2f32f3e6b343b1f2eb1a4f8c3bd7772c8895bfed54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615000000000000001572756e74696d655f6469726563745f73646b5f763101000000006a530425",
+      "expectedSha256": "e798a1a97c57d4ce96a661f7f2820654bb8233eeb5746d0a3f9f4477606077f0"
+    },
+    {
+      "name": "filesystem",
+      "input": {
+        "target": "filesystem",
+        "tombstone": "governed-derived",
+        "selectedVector": "project",
+        "handlerVersion": "filesystem_os_root_v1",
+        "disposition": "purged",
+        "completedAt": "2026-07-12T03:04:05Z"
+      },
+      "projectionHex": "02da0241523512903d171ba0b6a2f32f3e6b343b1f2eb1a4f8c3bd7772c8895bfed54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615000000000000001566696c6573797374656d5f6f735f726f6f745f763101000000006a530425",
+      "expectedSha256": "d7c29d49f229ac2c94a00c55e9dab3faa98dc19cd1ef35dac45542bc3b3565bd"
+    },
+    {
+      "name": "postgresql",
+      "input": {
+        "target": "postgresql",
+        "tombstone": "governed-derived",
+        "selectedVector": "project",
+        "handlerVersion": "postgres_exact_inventory_v1",
+        "disposition": "purged",
+        "completedAt": "2026-07-12T03:04:05Z"
+      },
+      "projectionHex": "04da0241523512903d171ba0b6a2f32f3e6b343b1f2eb1a4f8c3bd7772c8895bfed54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615000000000000001b706f7374677265735f65786163745f696e76656e746f72795f763101000000006a530425",
+      "expectedSha256": "d8cb4477c8c58112bccdfe0a163de683546a3abb875ed4b891435bec449ebc46"
+    }
+  ],
+  "receiptSets": [
+    {
+      "name": "derived-project",
+      "input": {
+        "mode": "derived_generation",
+        "tombstone": "governed-derived",
+        "selectedVector": "project",
+        "receipts": [
+          "runtime",
+          "filesystem",
+          "postgresql"
+        ]
+      },
+      "projectionHex": "da0241523512903d171ba0b6a2f32f3e6b343b1f2eb1a4f8c3bd7772c8895bfed54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd6150000000301e798a1a97c57d4ce96a661f7f2820654bb8233eeb5746d0a3f9f4477606077f002d7c29d49f229ac2c94a00c55e9dab3faa98dc19cd1ef35dac45542bc3b3565bd04d8cb4477c8c58112bccdfe0a163de683546a3abb875ed4b891435bec449ebc46",
+      "expectedSha256": "1c6915ca884af09659d2b1d213f92397f82e145d3fcdc067827a06897c97d3a1"
+    }
+  ],
+  "predecessorSets": [
+    {
+      "name": "multi-predecessor",
+      "input": {
+        "hardPurgeSelectedVector": "project",
+        "rows": [
+          {
+            "tombstoneId": "10000000-0000-0000-0000-000000000001",
+            "origin": "governed_online",
+            "mode": "derived_generation",
+            "selectedVector": "book",
+            "fencedAt": "2026-07-12T02:03:04.567000Z",
+            "deadline": "2026-08-11T02:03:04.567000Z",
+            "status": "purged",
+            "receiptVectorDigest": "d42d564abd25750c7766ca668d79adf9bf85cb0c54c37a366a942627b45f8e9d",
+            "targetReceiptsDigest": "4343434343434343434343434343434343434343434343434343434343434343"
+          },
+          {
+            "tombstoneId": "20000000-0000-0000-0000-000000000002",
+            "origin": "governed_online",
+            "mode": "derived_generation",
+            "selectedVector": "chapter",
+            "fencedAt": "2026-07-12T02:03:04.567000Z",
+            "deadline": "2026-08-11T02:03:04.567000Z",
+            "status": "purged",
+            "receiptVectorDigest": "87dc99897df8727579d8b1ae16663281a0a6157df47800cd603a6309ae34ca23",
+            "targetReceiptsDigest": "4646464646464646464646464646464646464646464646464646464646464646"
+          }
+        ]
+      },
+      "projectionHex": "d54f3aea9b1593021e8444bc73c0d97fb2b30954c7c39aaa71531aa6f14bd615000000021000000000000000000000000000000199ccb23d553c06f93908f63747d09786f4932b221eea85b6e9034e24ca44369b434343434343434343434343434343434343434343434343434343434343434320000000000000000000000000000002aa95336c296a16565bbf21d9727f14147e21be93967c8737604889e6043a80834646464646464646464646464646464646464646464646464646464646464646",
+      "expectedSha256": "71d20c333f5ebd02682bd162173dc4def5048b2c41937bfc617e3477212b2f62"
+    }
+  ],
+  "negativeCases": [
+    {
+      "rule": "governed_without_deadline"
+    },
+    {
+      "rule": "origin_tag_substitution"
+    },
+    {
+      "rule": "receipt_set_reordered"
+    },
+    {
+      "rule": "predecessor_receipt_vector_mismatch"
+    }
+  ]
+}

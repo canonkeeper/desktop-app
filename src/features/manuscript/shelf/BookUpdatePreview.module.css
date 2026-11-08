@@ -1,0 +1,113 @@
+.previewModal {
+  width: min(600px, calc(100vw - 32px));
+}
+
+.summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--ck-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.chapters {
+  display: grid;
+  gap: 8px;
+}
+
+.label {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.chapterList {
+  display: grid;
+  gap: 2px;
+  max-height: min(40vh, 320px);
+  margin: 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--ck-border);
+  border-bottom: 1px solid var(--ck-border);
+  list-style: none;
+}
+
+.chapter {
+  padding: 6px 0;
+  color: var(--ck-foreground);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.toggle {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--ck-ring, var(--ck-primary));
+  outline-offset: 2px;
+}
+
+.places {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 0 22px;
+  padding-left: 10px;
+  border-left: 2px solid var(--ck-border);
+}
+
+.place {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.place dt {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.place dd {
+  margin: 0;
+  font-size: 13px;
+}
+
+.more,
+.estimate {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .previewModal {
+    width: 100%;
+  }
+
+  .chapterList {
+    max-height: 34vh;
+  }
+}

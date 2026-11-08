@@ -1,0 +1,314 @@
+-- Chapter cards are the saga memory that replaces the canon graph (UC2). One card is built by
+-- a direct model call from the text of one chapter revision and is keyed by its content hash:
+-- the draft and published versions of the same text share it, and changed text gets a new
+-- card. Cards are derived data and disappear with their chapter or project.
+CREATE TABLE public.chapter_cards (
+    project_id uuid NOT NULL,
+    chapter_id uuid NOT NULL,
+    content_hash bytea NOT NULL,
+    card_json jsonb NOT NULL,
+    model text NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT chapter_cards_pkey PRIMARY KEY (project_id, chapter_id, content_hash),
+    CONSTRAINT chapter_cards_content_hash_check CHECK (octet_length(content_hash) = 32),
+    CONSTRAINT chapter_cards_card_json_check CHECK (jsonb_typeof(card_json) = 'object'),
+    CONSTRAINT chapter_cards_model_check CHECK (model = btrim(model) AND char_length(model) BETWEEN 1 AND 200),
+    CONSTRAINT chapter_cards_chapter_id_project_id_fkey FOREIGN KEY (chapter_id, project_id)
+        REFERENCES public.chapters(id, project_id) ON DELETE CASCADE
+);
+
+REVOKE ALL ON TABLE public.chapter_cards FROM PUBLIC;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.chapter_cards TO canonkeeper_product_runtime;
+GRANT SELECT ON TABLE public.chapter_cards TO canonkeeper_governance_owner;
+
+-- The cards Job of one project text version is queued by a successful text index, runs
+-- without a creator in the automatic queue class, and at most one fresh Job waits per version;
+-- a Job requeued for another attempt does not block the next fresh one.
+ALTER TABLE public.jobs
+    DROP CONSTRAINT jobs_kind_check,
+    ADD CONSTRAINT jobs_kind_check CHECK (kind = ANY (ARRAY[
+      'import'::text, 'export'::text, 'canon_text_index'::text, 'canon_book_enrichment'::text,
+      'research_chat_turn'::text, 'chapter_cards'::text
+    ])),
+    DROP CONSTRAINT jobs_queue_kind_check,
+    ADD CONSTRAINT jobs_queue_kind_check CHECK (
+      (queue_class = 'interactive'::text AND kind = 'research_chat_turn'::text)
+      OR (queue_class = 'automatic'::text AND kind = ANY (ARRAY[
+        'canon_book_enrichment'::text, 'chapter_cards'::text
+      ]))
+      OR (queue_class = 'user_demanded'::text AND kind = ANY (ARRAY[
+        'import'::text, 'export'::text, 'canon_text_index'::text, 'canon_book_enrichment'::text
+      ]))
+    ),
+    DROP CONSTRAINT jobs_governance_payload_state_check,
+    ADD CONSTRAINT jobs_governance_payload_state_check CHECK ((
+      (
+        governance_payload_state = 'active'::text
+        AND artifact_source_owner_id IS NOT NULL
+        AND jsonb_typeof(subject_json) = 'object'::text
+        AND (subject_json ->> 'type'::text) = kind
+        AND (subject_json ->> 'projectId'::text) = (project_id)::text
+        AND (creator_user_id IS NOT NULL OR kind = ANY (ARRAY[
+          'canon_text_index'::text, 'canon_book_enrichment'::text, 'chapter_cards'::text
+        ]))
+      )
+      OR (
+        governance_payload_state = 'source_deleted'::text
+        AND artifact_source_owner_id IS NULL
+        AND status = 'expired'::text
+        AND subject_json IS NULL
+        AND creator_user_id IS NULL
+        AND can_cancel = false
+        AND progress_json = '{}'::jsonb
+        AND result_json IS NULL
+        AND error_json IS NULL
+      )
+    ) IS TRUE);
+
+CREATE UNIQUE INDEX jobs_one_queued_chapter_cards_idx ON public.jobs USING btree (
+    project_id, ((subject_json ->> 'sourceView'::text))
+) WHERE kind = 'chapter_cards'::text AND status = 'queued'::text
+    AND claim_incarnation = 0 AND cancel_requested_at IS NULL;
+
+REVOKE ALL ON TABLE public.jobs FROM PUBLIC;
+
+-- The dispatcher accepts the cards Job; Writer and Canon Correction kinds are gone.
+CREATE OR REPLACE FUNCTION canonkeeper_worker.claim_next_queued_job_for_worker(wanted_kinds text[])
+RETURNS TABLE(project_id uuid, work_id uuid, kind text, state text, claim_incarnation bigint, exhausted_status text)
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'pg_catalog'
+AS $$
+DECLARE
+  selected_kind text;
+  selected_project_id uuid;
+  selected_source_view text;
+  locked_enrichment_project_id uuid;
+  locked_enrichment_source_view text;
+  claim_time timestamp with time zone;
+  claimed_project_id uuid;
+  claimed_work_id uuid;
+  claimed_kind text;
+  claimed_state text;
+  claimed_incarnation bigint;
+  claimed_exhausted_status text;
+BEGIN
+  IF wanted_kinds IS NULL
+     OR pg_catalog.cardinality(wanted_kinds) = 0
+     OR pg_catalog.cardinality(wanted_kinds) <> (
+       SELECT pg_catalog.count(DISTINCT wanted.value)
+       FROM pg_catalog.unnest(wanted_kinds) AS wanted(value)
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_catalog.unnest(wanted_kinds) AS wanted(value)
+       WHERE wanted.value NOT IN ('import', 'export', 'canon_text_index',
+         'canon_book_enrichment', 'research_chat_turn', 'chapter_cards')
+     ) THEN
+    RETURN;
+  END IF;
+
+  WITH context_candidates AS MATERIALIZED (
+    SELECT * FROM public.ck_import_job_claim_candidate(wanted_kinds)
+    UNION ALL
+    SELECT * FROM public.ck_canon_book_enrichment_job_claim_candidate(wanted_kinds)
+    UNION ALL
+    SELECT * FROM public.ck_simple_job_claim_candidate(wanted_kinds)
+  )
+  SELECT job.kind, job.project_id, job.subject_json->>'sourceView'
+  INTO selected_kind, selected_project_id, selected_source_view
+  FROM public.jobs AS job
+  JOIN context_candidates AS candidate
+    ON candidate.project_id = job.project_id
+   AND candidate.id = job.id
+   AND candidate.kind = job.kind
+  ORDER BY
+    CASE job.queue_class WHEN 'interactive' THEN 0 WHEN 'user_demanded' THEN 1 ELSE 2 END,
+    job.next_attempt_at, job.created_at, job.id
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF selected_kind = 'canon_book_enrichment' THEN
+    SELECT source.project_id, source.source_view
+    INTO locked_enrichment_project_id, locked_enrichment_source_view
+    FROM public.project_source_views AS source
+    WHERE source.project_id = selected_project_id
+      AND source.source_view = selected_source_view
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RETURN;
+    END IF;
+  END IF;
+
+  claim_time := pg_catalog.date_trunc('microseconds', pg_catalog.clock_timestamp());
+  WITH context_candidates AS MATERIALIZED (
+    SELECT * FROM public.ck_import_job_claim_candidate(wanted_kinds)
+    UNION ALL
+    SELECT * FROM public.ck_canon_book_enrichment_job_claim_candidate(wanted_kinds)
+    UNION ALL
+    SELECT * FROM public.ck_simple_job_claim_candidate(wanted_kinds)
+  ), candidate AS (
+    SELECT job.id, job.project_id, context_candidate.exhausted_status
+    FROM public.jobs AS job
+    JOIN context_candidates AS context_candidate
+      ON context_candidate.project_id = job.project_id
+     AND context_candidate.id = job.id
+     AND context_candidate.kind = job.kind
+    WHERE job.kind = ANY(wanted_kinds)
+      AND job.governance_payload_state = 'active'
+      AND public.ck_artifact_source_owner_is_readable(
+        job.artifact_source_owner_id, job.project_id, 'job', job.id
+      )
+      AND (
+        selected_kind <> 'canon_book_enrichment'
+        OR (
+          job.project_id = locked_enrichment_project_id
+          AND job.subject_json->>'sourceView' = locked_enrichment_source_view
+        )
+      )
+    ORDER BY
+      CASE job.queue_class WHEN 'interactive' THEN 0 WHEN 'user_demanded' THEN 1 ELSE 2 END,
+      job.next_attempt_at, job.created_at, job.id
+    LIMIT 1
+    FOR UPDATE OF job SKIP LOCKED
+  )
+  UPDATE public.jobs AS job
+  SET status = CASE WHEN job.status = 'queued' THEN 'running' ELSE job.status END,
+      progress_json = CASE
+        WHEN job.kind = 'research_chat_turn' AND job.status IN ('queued', 'running')
+          THEN pg_catalog.jsonb_build_object('phase', 'preparing_context')
+        ELSE job.progress_json
+      END,
+      claimed_at = claim_time,
+      started_at = COALESCE(job.started_at, claim_time),
+      claim_incarnation = job.claim_incarnation + 1,
+      retry_count = CASE
+        WHEN job.status IN ('running', 'canceling') AND job.retry_count < 2 THEN job.retry_count + 1
+        ELSE job.retry_count
+      END,
+      updated_at = claim_time
+  FROM candidate
+  WHERE job.id = candidate.id AND job.project_id = candidate.project_id
+  RETURNING job.project_id, job.id, job.kind, job.status, job.claim_incarnation,
+    candidate.exhausted_status
+  INTO claimed_project_id, claimed_work_id, claimed_kind, claimed_state,
+    claimed_incarnation, claimed_exhausted_status;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT claimed_project_id, claimed_work_id, claimed_kind,
+    claimed_state, claimed_incarnation, claimed_exhausted_status;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION canonkeeper_worker.claim_next_queued_job_for_worker(text[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION canonkeeper_worker.claim_next_queued_job_for_worker(text[]) TO canonkeeper_worker_discovery;
+
+-- A cards Job left running or canceling by a stopped backend is reclaimed once its heartbeat
+-- lapses, like export, text index and chat turn Jobs; the reclaimed run builds only the
+-- chapters that still have no card.
+CREATE OR REPLACE FUNCTION public.ck_simple_job_claim_candidate(wanted_kinds text[])
+RETURNS TABLE(project_id uuid, id uuid, kind text, source_view text, exhausted_status text)
+LANGUAGE sql SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public'
+AS $$
+  SELECT job.project_id, job.id, job.kind, job.subject_json->>'sourceView',
+    CASE
+      WHEN job.status = 'canceling' AND job.retry_count >= 2 THEN 'canceled'
+      WHEN job.status = 'running' AND job.retry_count >= 2 THEN 'failed'
+      ELSE NULL
+    END AS exhausted_status
+  FROM public.jobs AS job
+  WHERE job.kind = ANY(wanted_kinds)
+    AND job.kind NOT IN ('import', 'canon_book_enrichment')
+    AND job.governance_payload_state = 'active'
+    AND public.ck_artifact_source_owner_is_readable(
+      job.artifact_source_owner_id, job.project_id, 'job', job.id
+    )
+    AND (
+      (job.status = 'queued' AND job.next_attempt_at <= pg_catalog.clock_timestamp())
+      OR (
+        job.kind IN ('export', 'canon_text_index', 'research_chat_turn', 'chapter_cards')
+        AND job.status IN ('running', 'canceling')
+        AND job.updated_at < pg_catalog.clock_timestamp() - interval '15 minutes'
+      )
+    )
+$$;
+
+REVOKE ALL ON FUNCTION public.ck_simple_job_claim_candidate(text[]) FROM PUBLIC;
+
+-- An Import Queue moves to the next volume once the previous import succeeded and its book is
+-- ready after the text index, without waiting for cards. A volume the author deleted while the
+-- queue ran no longer holds the queue back.
+CREATE OR REPLACE FUNCTION public.ck_import_job_claim_candidate(wanted_kinds text[])
+RETURNS TABLE(project_id uuid, id uuid, kind text, source_view text, exhausted_status text)
+LANGUAGE sql SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public'
+AS $$
+  SELECT job.project_id, job.id, job.kind, job.subject_json->>'sourceView',
+    CASE
+      WHEN job.status = 'canceling' AND job.retry_count >= 2 THEN 'canceled'
+      WHEN job.status = 'running' AND job.retry_count >= 2 THEN 'failed'
+      ELSE NULL
+    END AS exhausted_status
+  FROM public.jobs AS job
+  WHERE 'import' = ANY(wanted_kinds)
+    AND job.kind = 'import'
+    AND job.governance_payload_state = 'active'
+    AND public.ck_artifact_source_owner_is_readable(
+      job.artifact_source_owner_id, job.project_id, 'job', job.id
+    )
+    AND (
+      (job.status = 'queued' AND job.next_attempt_at <= pg_catalog.clock_timestamp())
+      OR (
+        job.status IN ('running', 'canceling')
+        AND job.updated_at < pg_catalog.clock_timestamp() - interval '15 minutes'
+      )
+    )
+    AND (
+      NOT EXISTS (
+        SELECT 1
+        FROM public.import_queue_items AS current_queue_item
+        WHERE current_queue_item.project_id = job.project_id
+          AND current_queue_item.import_job_id = job.id
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.import_queue_items AS current_queue_item
+        JOIN public.import_queues AS current_queue
+          ON current_queue.id = current_queue_item.queue_id
+         AND current_queue.project_id = current_queue_item.project_id
+        WHERE current_queue_item.project_id = job.project_id
+          AND current_queue_item.import_job_id = job.id
+          AND current_queue.status = 'running'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.import_queue_items AS predecessor_queue_item
+            LEFT JOIN public.jobs AS predecessor_job
+              ON predecessor_job.id = predecessor_queue_item.import_job_id
+             AND predecessor_job.project_id = predecessor_queue_item.project_id
+            LEFT JOIN public.books AS predecessor_book
+              ON predecessor_book.id = predecessor_queue_item.book_id
+             AND predecessor_book.project_id = predecessor_queue_item.project_id
+             AND predecessor_book.deleted_at IS NULL
+            WHERE predecessor_queue_item.queue_id = current_queue_item.queue_id
+              AND predecessor_queue_item.project_id = current_queue_item.project_id
+              AND predecessor_queue_item.position < current_queue_item.position
+              AND (
+                CASE WHEN current_queue.progression_mode = 'audited' THEN
+                  predecessor_queue_item.audit_state IS DISTINCT FROM 'approved'
+                ELSE
+                  predecessor_job.status IS DISTINCT FROM 'succeeded'
+                  OR (predecessor_book.id IS NOT NULL AND predecessor_book.status <> 'ready')
+                END
+              )
+          )
+      )
+    )
+$$;
+
+REVOKE ALL ON FUNCTION public.ck_import_job_claim_candidate(text[]) FROM PUBLIC;

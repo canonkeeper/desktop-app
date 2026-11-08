@@ -1,0 +1,595 @@
+.stepSpinner {
+  animation: indexing-spin 1.2s linear infinite;
+}
+
+.mobileStatusCopy,
+.stepTabletDetail,
+.tabletCompletedMarker,
+.tabletPendingMarker {
+  display: none;
+}
+
+.sectionLabel {
+  margin: 0 0 4px;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.stepList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 4px 0;
+}
+
+.checklist[data-outcome='true'] .step {
+  box-sizing: border-box;
+  min-height: 40px;
+  gap: 4px 8px;
+  padding: 0;
+}
+
+.checklist[data-outcome='true'] .step[data-kind='text_index'] {
+  min-height: 54px;
+}
+
+.checklist[data-outcome='true'] .step[data-review='1'] {
+  min-height: 52px;
+}
+
+.reviewGroupLabel {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.reviewMobilePrefix {
+  display: none;
+}
+
+.reviewTabletDetail {
+  display: none;
+}
+
+.checklist[data-outcome='true'] .reviewParallelSuffix {
+  display: none;
+}
+
+.step:last-child {
+  border-bottom: 0;
+}
+
+.stepMarker {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--ck-border);
+  border-radius: 50%;
+}
+
+.checklist[data-outcome='true'] .stepMarker {
+  box-sizing: border-box;
+}
+
+.step[data-status='running'] .stepMarker,
+.step[data-status='retrying'] .stepMarker {
+  border-color: var(--ck-primary);
+  background: var(--ck-primary);
+  animation: indexing-marker-pulse 1.5s ease-out infinite;
+}
+
+.step[data-status='queued'] .stepMarker {
+  border-color: var(--ck-primary);
+}
+
+.step[data-status='succeeded'] .stepMarker {
+  border-color: var(--ck-color-success-foreground);
+  background: var(--ck-color-success-foreground);
+}
+
+.step[data-status='failed'] .stepMarker {
+  border-color: var(--ck-color-error-foreground);
+  background: var(--ck-color-error-foreground);
+}
+
+.step[data-status='partial'] .stepMarker,
+.step[data-status='canceled'] .stepMarker {
+  border-color: var(--ck-color-warning-foreground);
+  background: var(--ck-color-warning-foreground);
+}
+
+.stepName {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.stepStatus {
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.checklist[data-outcome='true'] .stepName {
+  font-size: 11px;
+}
+
+.checklist[data-outcome='true'] .stepStatus {
+  font-size: 10px;
+}
+
+.stepMobileMeta {
+  display: none;
+}
+
+@keyframes indexing-marker-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ck-primary) 45%, transparent);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@keyframes indexing-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepSpinner {
+    animation: none;
+  }
+
+  .step[data-status='running'] .stepMarker,
+  .step[data-status='retrying'] .stepMarker {
+    animation: none;
+  }
+}
+
+.stepDetail,
+.stepProgress,
+.stepError,
+.retryButton {
+  grid-column: 2 / -1;
+}
+
+.stepDetail {
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.checklist[data-outcome='true'] .stepDetail {
+  font-size: 10px;
+  line-height: 11px;
+}
+
+.stepProgress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.stepError {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: 13px;
+}
+
+.retryButton {
+  justify-self: start;
+}
+
+.checklist[data-outcome='false'] .sectionLabel {
+  margin: 0 0 10px;
+  font-family: var(--ck-font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+  letter-spacing: 0;
+}
+
+.checklist[data-outcome='false'] .step {
+  grid-template-columns: 9px minmax(0, 1fr) 169px;
+  align-content: start;
+  align-items: start;
+  min-height: 40px;
+  gap: 5px 7px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 0;
+}
+
+.checklist[data-outcome='false'] .step:has(.stepProgress) {
+  min-height: 54px;
+  row-gap: 6px;
+}
+
+.checklist[data-outcome='false'] .step[data-review='1'] {
+  min-height: 51px;
+  row-gap: 0;
+}
+
+.checklist[data-outcome='false'] .step[data-review='1'] .stepDetail {
+  margin-top: 5px;
+}
+
+.checklist[data-outcome='false'] .reviewGroupLabel {
+  margin: 0;
+  font-size: 8px;
+  line-height: 11px;
+  letter-spacing: 0;
+}
+
+.checklist[data-outcome='false'] .reviewParallelSuffix {
+  display: none;
+}
+
+.checklist[data-outcome='false'] .stepName {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 13px;
+}
+
+.checklist[data-outcome='false'] .stepStatus,
+.checklist[data-outcome='false'] .stepProgress {
+  color: #4b5563;
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+  text-align: right;
+}
+
+.checklist[data-outcome='false'] .stepDetail {
+  font-size: 10px;
+  line-height: 11px;
+}
+
+.checklist[data-outcome='false'] .stepMarker {
+  margin-top: 5px;
+  border: 0;
+  background: var(--ck-muted-foreground);
+}
+
+.checklist[data-outcome='false'] .step[data-status='succeeded'] .stepMarker {
+  background: var(--ck-color-success-foreground);
+}
+
+.checklist[data-outcome='false'] .step[data-status='failed'] .stepMarker {
+  background: var(--ck-color-error-foreground);
+}
+
+.checklist[data-outcome='false'] .step[data-status='partial'] .stepMarker,
+.checklist[data-outcome='false'] .step[data-status='canceled'] .stepMarker {
+  background: var(--ck-color-warning-foreground);
+}
+
+.checklist[data-outcome='false'] .stepMarker:has(.stepSpinner) {
+  width: 12px;
+  height: 12px;
+  margin-top: 0;
+  background: transparent;
+  animation: none;
+}
+
+.stepSpinner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--ck-link);
+}
+
+.checklist[data-outcome='false'] .step[data-status='running'] .stepStatus {
+  color: var(--ck-link);
+}
+
+.checklist[data-outcome='false'] .stepProgress {
+  grid-template-columns: minmax(0, 1fr) 81px;
+  align-items: center;
+  gap: 16px;
+  padding-right: 16px;
+}
+
+.checklist[data-outcome='false'] .stepProgress progress {
+  height: 4px;
+}
+
+@media (min-width: 1101px) {
+  .checklist[data-outcome='false'] .step:has(.stepProgress) {
+    row-gap: 0;
+  }
+
+  .checklist[data-outcome='false'] .step:has(.stepProgress) .stepDetail {
+    margin-top: 6px;
+  }
+
+  .checklist[data-outcome='false'] .stepProgress {
+    margin-top: 4px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .tabletPendingMarker {
+    display: block;
+    color: var(--ck-muted-foreground);
+  }
+
+  .checklist[data-outcome='false'] .stepMarker:has(.tabletPendingMarker) {
+    border: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .checklist[data-outcome='true'] .reviewGroupLabel {
+    display: none;
+  }
+
+  .checklist[data-outcome='true'] .stepList {
+    gap: 4px;
+  }
+
+  .checklist[data-outcome='true'] .step,
+  .checklist[data-outcome='true'] .step[data-kind='text_index'],
+  .checklist[data-outcome='true'] .step[data-review='1'] {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    min-height: 34px;
+    gap: 1px 10px;
+    border-bottom: 0;
+    padding: 3px 0;
+  }
+
+  .checklist[data-outcome='true'] .stepName {
+    font-size: 12px;
+  }
+
+  .checklist[data-outcome='true'] .stepStatus {
+    font-size: 10px;
+  }
+
+  .checklist[data-outcome='true'] .stepDetail {
+    font-size: 10px;
+    line-height: normal;
+  }
+
+  .checklist[data-outcome='true'] .step[data-review] .reviewDefaultDetail {
+    display: none;
+  }
+
+  .checklist[data-outcome='true'] .reviewTabletDetail {
+    display: inline;
+  }
+
+  .checklist[data-outcome='true'] .stepProgress {
+    display: none;
+  }
+
+  .checklist[data-outcome='false'] .stepList {
+    gap: 4px;
+  }
+
+  .checklist[data-outcome='false'] .reviewGroupLabel,
+  .stepDesktopDetail {
+    display: none;
+  }
+
+  .stepTabletDetail,
+  .tabletCompletedMarker {
+    display: inline;
+  }
+
+  .checklist[data-outcome='false'] .step,
+  .checklist[data-outcome='false'] .step[data-review='1'] {
+    grid-template-columns: 18px minmax(0, 1fr) 76px;
+    min-height: 34px;
+    gap: 1px 10px;
+    border-bottom: 0;
+    padding: 3px 0;
+  }
+
+  .checklist[data-outcome='false'] .stepMarker,
+  .checklist[data-outcome='false'] .stepMarker:has(.stepSpinner) {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    align-self: center;
+    width: 18px;
+    height: 18px;
+    margin-top: 0;
+    border: 1.5px solid var(--ck-muted-foreground);
+    background: transparent;
+  }
+
+  .checklist[data-outcome='false'] .step[data-status='succeeded'] .stepMarker,
+  .checklist[data-outcome='false'] .stepMarker:has(.stepSpinner) {
+    border: 0;
+    background: transparent;
+  }
+
+  .tabletCompletedMarker {
+    width: 18px;
+    height: 18px;
+    color: var(--ck-color-success-foreground);
+  }
+
+  .checklist[data-outcome='false'] .stepName {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 12px;
+    line-height: 15px;
+  }
+
+  .checklist[data-outcome='false'] .stepStatus {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+
+  .checklist[data-outcome='false'] .stepDetail,
+  .checklist[data-outcome='false'] .step[data-review='1'] .stepDetail {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
+    font-size: 10px;
+    line-height: 12px;
+  }
+
+  .checklist[data-outcome='false'] .step:has(.stepProgress) {
+    min-height: 50px;
+    row-gap: 1px;
+    padding-bottom: 0;
+  }
+
+  .checklist[data-outcome='false'] .stepProgress {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .step {
+    padding: 2px 0;
+  }
+
+  .reviewGroupLabel {
+    display: none;
+  }
+
+  .reviewMobilePrefix {
+    display: inline;
+  }
+
+  .checklist[data-outcome] .stepList {
+    gap: 0;
+  }
+
+  .checklist[data-outcome] .step,
+  .checklist[data-outcome] .step[data-kind='text_index'],
+  .checklist[data-outcome] .step[data-review='1'] {
+    grid-template-columns: 9px minmax(0, 1fr);
+    min-height: 27px;
+    gap: 1px 7px;
+    padding: 1px 0;
+  }
+
+  .checklist[data-outcome] .stepName {
+    overflow: hidden;
+    font-size: 10px;
+    line-height: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .checklist[data-outcome] .reviewParallelSuffix {
+    display: inline;
+  }
+
+  .checklist[data-outcome] .stepStatus,
+  .checklist[data-outcome] .stepDetail,
+  .checklist[data-outcome] .stepProgress {
+    display: none;
+  }
+
+  .checklist[data-outcome] .stepMobileMeta {
+    grid-column: 2;
+    display: block;
+    color: var(--ck-muted-foreground);
+    overflow: hidden;
+    font-family: var(--ck-font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .desktopStatusCopy,
+  .tabletCompletedMarker {
+    display: none;
+  }
+
+  .mobileStatusCopy {
+    display: inline;
+  }
+
+  .checklist[data-outcome='false'] .sectionLabel {
+    margin-bottom: 6px;
+    color: #4b5563;
+  }
+
+  .checklist[data-outcome='false'] .step,
+  .checklist[data-outcome='false'] .step:has(.stepProgress),
+  .checklist[data-outcome='false'] .step[data-review='1'] {
+    grid-template-columns: 9px minmax(0, 1fr);
+    min-height: 27px;
+    gap: 1px 7px;
+    padding: 1px 0;
+  }
+
+  .checklist[data-outcome='false'] .stepMarker {
+    width: 9px;
+    height: 9px;
+    border: 0;
+    background: var(--ck-muted-foreground);
+  }
+
+  .checklist[data-outcome='false'] .step[data-status='succeeded'] .stepMarker {
+    background: var(--ck-color-success-foreground);
+  }
+
+  .checklist[data-outcome='false'] .stepMarker:has(.stepSpinner) {
+    width: 11px;
+    height: 11px;
+    background: transparent;
+  }
+
+  .checklist[data-outcome='false'] .step:has(.stepSpinner) {
+    grid-template-columns: 11px minmax(0, 1fr);
+  }
+
+  .checklist[data-outcome='false'] .stepName {
+    font-size: 10px;
+    line-height: 12px;
+  }
+
+  .checklist[data-outcome='false'] .step[data-status='running'] .stepName {
+    font-weight: 600;
+  }
+
+  .checklist[data-outcome='false'] .stepMobileMeta {
+    grid-row: 2;
+    color: #4b5563;
+    line-height: 12px;
+  }
+
+  .checklist[data-outcome='false'] .step[data-status='succeeded'] .stepMobileMeta {
+    color: var(--ck-color-success-foreground);
+  }
+
+  .checklist[data-outcome='false'] .step[data-status='running'] .stepMobileMeta {
+    color: #6b5107;
+  }
+}

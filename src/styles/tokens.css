@@ -1,0 +1,134 @@
+:root {
+  --ck-background: #fbfbfa;
+  --ck-card: #ffffff;
+  --ck-card-foreground: #18181b;
+  --ck-popover: #ffffff;
+  --ck-popover-foreground: #18181b;
+  --ck-input: #ffffff;
+  --ck-sidebar: #f5f5f4;
+  --ck-sidebar-accent: #eaeae8;
+  --ck-sidebar-accent-foreground: #18181b;
+  --ck-sidebar-border: #e7e7e4;
+  --ck-sidebar-primary: #18181b;
+  --ck-sidebar-primary-foreground: #fafafa;
+  --ck-sidebar-ring: #71717a;
+  --ck-reader: #ffffff;
+  --ck-reader-pane: #f7f7f6;
+  --ck-user-bubble: #f3f3f1;
+  --ck-chat-user-message: #5442c5;
+  /* The saga map: the categories of its nodes, its links and what a hovered node leaves aside. */
+  --ck-map-character: #6d4fc4;
+  --ck-map-place: #009e73;
+  --ck-map-faction: #d55e00;
+  --ck-map-item: #3a9fd9;
+  --ck-map-link: #a1a1aa;
+  --ck-map-link-weak: #d4d4d8;
+  --ck-map-dim: #e4e4e7;
+  --ck-agent-focus: #f7f7f8;
+  --ck-agent-focus-foreground: #4b5563;
+  --ck-auth-brand: #1e1b4b;
+  --ck-auth-brand-muted: #a5a3cf;
+
+  --ck-foreground: #18181b;
+  --ck-foreground-strong: #111114;
+  --ck-muted-foreground: #5F6673;
+  --ck-subtle-foreground: #636b77;
+  --ck-disabled-foreground: #9ca3af;
+  --ck-sidebar-foreground: #5F6673;
+  --ck-reader-foreground: #1f2933;
+
+  --ck-accent: #ededeb;
+  --ck-accent-foreground: #18181b;
+  --ck-secondary: #f1f1ef;
+  --ck-secondary-foreground: #18181b;
+  --ck-muted: #f2f3f0;
+
+  --ck-border: #e7e7e4;
+  --ck-border-strong: #dadad6;
+
+  --ck-primary: #4f46e5;
+  --ck-link: #4f46e5;
+  --ck-primary-hover: #4338ca;
+  --ck-primary-foreground: #ffffff;
+  --ck-ring: #4f46e5;
+  --ck-focus-shadow: #4f46e566;
+  --ck-ink: #18181b;
+  --ck-ink-foreground: #ffffff;
+
+  --ck-citation: #eef2ff;
+  --ck-citation-foreground: #4f46e5;
+  --ck-source-active: #eef0fb;
+  --ck-highlight: #fef3c7;
+  --ck-highlight-foreground: #1f2933;
+  --ck-indexing: #fdf1d6;
+  --ck-indexing-foreground: #8a6a0a;
+  --ck-destructive: #dc2626;
+  --ck-destructive-text: #dc2626;
+  --ck-destructive-foreground: #ffffff;
+  --ck-color-success: #dcfce7;
+  --ck-color-success-foreground: #15803d;
+  --ck-color-warning: #fef3c7;
+  --ck-color-warning-foreground: #8a6a0a;
+  --ck-color-error: #fee2e2;
+  --ck-color-error-foreground: #b91c1c;
+  --ck-color-info: #eef2ff;
+  --ck-color-info-foreground: #4f46e5;
+
+  --ck-reader-sepia: #faf3e2;
+  --ck-reader-dark: #232326;
+
+  --ck-radius-none: 0;
+  --ck-radius-xs: 6px;
+  --ck-radius-sm: 8px;
+  --ck-radius-md: 10px;
+  --ck-radius-lg: 14px;
+  --ck-radius-xl: 16px;
+  --ck-radius-control: 9px;
+  --ck-radius-dialog: 18px;
+  --ck-radius-pill: 999px;
+
+  --ck-font-sans: Inter, system-ui, sans-serif;
+  --ck-font-serif: "Source Serif 4", Georgia, serif;
+  --ck-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  --ck-font-size-display: 44px;
+  --ck-font-size-reader-title: 22px;
+  --ck-font-size-ui-h1: 18px;
+  --ck-font-size-ui-h2: 16px;
+  --ck-font-size-body: 15px;
+  --ck-font-size-body-sm: 14px;
+  --ck-font-size-label: 13px;
+  --ck-font-size-meta: 12px;
+  --ck-font-size-kicker: 10px;
+  --ck-font-size-reader-prose: 16px;
+  --ck-line-height-display: 1.05;
+  --ck-line-height-reader-title: 1.12;
+  --ck-line-height-ui: 1.2;
+  --ck-line-height-body: 1.4;
+  --ck-line-height-meta: 1.24;
+  --ck-line-height-reader-prose: 1.34;
+
+  --ck-space-1: 4px;
+  --ck-space-2: 8px;
+  --ck-space-3: 12px;
+  --ck-space-4: 16px;
+  --ck-space-5: 24px;
+  --ck-space-6: 32px;
+  --ck-space-7: 48px;
+  --ck-space-8: 64px;
+
+  --ck-shadow-sm: 0 1px 2px rgb(23 24 40 / 10%);
+  --ck-shadow-md: 0 8px 20px -6px rgb(23 17 10 / 14%);
+  --ck-shadow-lg: 0 10px 28px -8px rgb(23 17 10 / 18%);
+  --ck-scrim: #17182859;
+
+  --ck-ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ck-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ck-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ck-duration-fast: 130ms;
+  --ck-duration-base: 200ms;
+  --ck-duration-slow: 280ms;
+
+  --ck-disabled: #ececef;
+  --ck-control-hover-border: #c9c9c4;
+}

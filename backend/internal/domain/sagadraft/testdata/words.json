@@ -1,0 +1,13 @@
+[
+  {"text": "", "valid": true, "author": 0},
+  {"text": "Он пришёл.", "valid": true, "author": 2},
+  {"text": "Кира, 17 лет — «ну и ну»!", "valid": true, "author": 6},
+  {"text": "― Пойдём, ― сказал он.\n\n― Нет.", "valid": true, "author": 4},
+  {"text": "по-русски, ё-моё", "valid": true, "author": 4},
+  {"text": "мо́локо и мёд", "valid": true, "author": 3},
+  {"text": "Сначала ⟦придуманное помощником место⟧ потом своё", "valid": true, "author": 3},
+  {"text": "⟦а⟧⟦б⟧ в\n⟦строка\nвторая⟧ г", "valid": true, "author": 2},
+  {"text": "открыта ⟦ без конца", "valid": false},
+  {"text": "⟦вложенная ⟦метка⟧⟧", "valid": false},
+  {"text": "закрыта ⟧ без начала", "valid": false}
+]

@@ -1,0 +1,39 @@
+/* .picker: the panel is the kit dialog's (narrow-windows N7.1). */
+
+.picker header,
+.picker footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.picker h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.picker p {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.picker footer {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.books {
+  display: grid;
+  gap: 8px;
+}
+
+.books button {
+  min-height: 44px;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.books span {
+  overflow-wrap: anywhere;
+}

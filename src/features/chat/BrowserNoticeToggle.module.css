@@ -1,0 +1,7 @@
+.toggle {
+  color: var(--ck-muted-foreground);
+}
+
+.toggle[data-on] {
+  color: var(--ck-primary);
+}

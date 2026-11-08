@@ -1,0 +1,162 @@
+.deleteDialogScrim {
+  background: rgb(23 24 40 / 45%);
+}
+
+.modal,
+.mobileDrawer {
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 16%);
+}
+
+.sheetHandle,
+.mobileOnly {
+  display: none;
+}
+
+.modal {
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--ck-border);
+  border-radius: 14px;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 8px;
+}
+
+.modalHeader h2,
+.drawerHeader h2 {
+  margin: 0;
+}
+
+.modalHeader h2 {
+  font-size: 16px;
+}
+
+.modalBody {
+  display: grid;
+  gap: 18px;
+  padding: 8px 20px 0;
+}
+
+.modalCopy {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 20px 20px;
+}
+
+.desktopClose {
+  position: absolute;
+  top: 13px;
+  right: 14px;
+}
+
+.drawerLayer {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  background: rgb(23 24 40 / 36%);
+}
+
+.mobileDrawer {
+  display: flex;
+  width: min(320px, 86vw);
+  height: 100%;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drawerHeader h2 {
+  font-family: var(--ck-font-serif);
+  font-size: 17px;
+}
+
+@media (max-width: 700px) {
+  .deleteDialogScrim {
+    align-items: end;
+    padding: 0;
+  }
+
+  .deleteDialogScrim > [role='dialog'] {
+    width: 100%;
+  }
+
+  .sheetHandle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    margin: 9px auto 0;
+    background: var(--ck-border-strong);
+  }
+
+  .modal {
+    width: 100%;
+    min-height: 340px;
+    border-width: 0;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .modalHeader {
+    padding: 24px 20px 8px;
+  }
+
+  .desktopClose {
+    display: none;
+  }
+
+  .modalBody {
+    gap: 18px;
+    padding: 8px 20px 0;
+  }
+
+  .modalActions {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 20px 20px;
+  }
+
+  .modalActions button {
+    width: 100%;
+  }
+
+  .deleteAction {
+    order: 1;
+  }
+
+  .cancelAction {
+    order: 2;
+  }
+
+  .mobileOnly {
+    display: block;
+  }
+
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "CanonKeeper Research Chat"
+  short_description: "Answer and write from the saga text with cited paragraphs"
+  default_prompt: "Use $canonkeeper-research-chat for the assigned research turn."

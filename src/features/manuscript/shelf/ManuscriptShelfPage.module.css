@@ -1,0 +1,467 @@
+.workspace {
+  display: grid;
+  height: 100vh;
+  grid-template-rows: 64px minmax(0, 1fr);
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+}
+
+/* The strip of a call has its row under the top bar (specs/2026-11-03-voice-assistant.md V6.5). */
+.workspace:has(> [data-voice-call]) {
+  grid-template-rows: 64px auto minmax(0, 1fr);
+}
+
+.uploadButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 37px;
+  gap: 8px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 9px 15px;
+  background: transparent;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.newBookButton {
+  min-height: 37px;
+  padding: 9px 15px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.uploadFileButton svg,
+.newBookButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+}
+
+.projectMeta,
+.muted {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.projectMeta {
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.sectionLabel {
+  margin: 0 0 8px;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.shelfSectionHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shelfSectionHeader .sectionLabel {
+  margin: 0;
+  line-height: 13px;
+}
+
+.activeNavButton {
+  background: var(--ck-sidebar-accent);
+  color: var(--ck-foreground);
+}
+
+.tabletRail {
+  display: none;
+  width: 88px;
+  min-width: 88px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  overflow-y: auto;
+  box-shadow: inset -1px 0 0 var(--ck-border);
+  padding: 12px 0;
+  background: var(--ck-sidebar);
+}
+
+@media (pointer: coarse) {
+  .tabletRail button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 24px;
+  overflow: auto;
+  padding: 32px;
+  scrollbar-color: #c5c5c2 transparent;
+  scrollbar-width: thin;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.titleBlock h1 {
+  margin: 0 0 4px;
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 36px;
+}
+
+.topActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.dropZone {
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  border: 1.5px solid var(--ck-border-strong);
+  border-radius: var(--ck-radius-lg);
+  padding: 28px;
+  background: var(--ck-card);
+  text-align: center;
+}
+
+.dropZone strong {
+  display: block;
+  margin: 8px 0 6px;
+}
+
+.dropZone .mobileDropLabel {
+  display: none;
+}
+
+.dropZone .muted {
+  display: block;
+}
+
+.dropZone:hover {
+  border-color: var(--ck-primary);
+}
+
+.dropZoneActive {
+  border-color: var(--ck-primary);
+  border-style: dashed;
+  background: var(--ck-source-active, var(--ck-card));
+}
+
+.fileInput {
+  display: none;
+}
+
+.notice {
+  margin: 18px 0 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 12px 14px;
+  background: var(--ck-muted);
+  color: var(--ck-muted-foreground);
+}
+
+.shelfSkeleton {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 12px;
+}
+
+.shelfSkeletonLine {
+  width: 100%;
+  height: 58px;
+}
+
+.loadError,
+.projectMissing {
+  display: grid;
+  gap: 10px;
+}
+
+.loadError strong,
+.projectMissing h2,
+.projectMissing p {
+  margin: 0;
+}
+
+.projectMissing {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.projectMissingActions {
+  display: flex;
+  gap: 10px;
+}
+
+.firstProjectPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px) auto;
+  align-items: end;
+  gap: 16px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 16px;
+  background: var(--ck-card);
+}
+
+.firstProjectPanel h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: var(--ck-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field input {
+  min-height: 38px;
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 12px;
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+  font: inherit;
+}
+
+.field input:focus {
+  border-color: var(--ck-primary);
+  outline: 2px solid color-mix(in srgb, var(--ck-primary) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.sagaForm {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: 12px;
+}
+
+.noticeTitle {
+  display: block;
+  color: var(--ck-foreground);
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.menuItem,
+.dangerMenuItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 38px;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  text-align: left;
+}
+
+.menuItem:hover,
+.dangerMenuItem:hover {
+  background: var(--ck-muted);
+}
+
+.menuItem:disabled,
+.dangerMenuItem:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dangerMenuItem {
+  color: var(--ck-destructive-text);
+}
+
+.projectMenu {
+  top: 114px;
+  left: 18px;
+  width: 260px;
+  padding: 8px;
+}
+
+.projectMenuHeader {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--ck-border);
+  margin-bottom: 4px;
+  padding: 8px 10px 10px;
+}
+
+.projectMenuHeader span {
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.projectRename {
+  display: grid;
+  gap: 4px;
+}
+
+.projectRename input {
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.projectMenuDivider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--ck-border);
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-rows: 56px minmax(0, 1fr);
+  }
+
+  .workspace:has(> [data-voice-call]) {
+    grid-template-rows: 56px auto minmax(0, 1fr);
+  }
+
+  .content {
+    gap: 20px;
+    padding: 24px;
+  }
+}
+
+/* From 960 px the sections are named in a narrow column; below it they are in the menu (narrow-windows N2). */
+@media (min-width: 960px) and (max-width: 1100px) {
+  .tabletRail {
+    display: flex;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
+  .workspace:has(> [data-voice-call]) {
+    grid-template-rows: 52px auto minmax(0, 1fr);
+  }
+
+  .content {
+    gap: 16px;
+    padding: 16px 16px 36px;
+  }
+
+  .headerRow {
+    display: block;
+  }
+
+  .titleBlock h1 {
+    margin-bottom: 0;
+    font-size: 22px;
+    line-height: 30px;
+  }
+
+  .projectMeta {
+    display: none;
+  }
+
+  .dropZone .desktopDropLabel {
+    display: none;
+  }
+
+  .dropZone .mobileDropLabel {
+    display: block;
+  }
+
+  .topActions {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .restoreButton,
+  .shelfSectionHeader {
+    display: none;
+  }
+
+  .newBookButton {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .uploadFileButton {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 130px;
+    min-height: 36px;
+    font-size: 11px;
+    line-height: 13px;
+  }
+
+  .projectMissing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .projectMissingActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .firstProjectPanel,
+  .sagaForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .formActions {
+    justify-content: flex-start;
+  }
+
+  .projectMenu {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: min(390px, 100dvw);
+    border-radius: var(--ck-radius-lg) var(--ck-radius-lg) 0 0;
+    padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
+  }
+
+}
