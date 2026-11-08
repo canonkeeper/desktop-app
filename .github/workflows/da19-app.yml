@@ -176,7 +176,7 @@ jobs:
           read -r repo tag asset < <(python -I -c 'import json, sys
           release = json.load(open("spike/codex/release.json"))
           pin = release["targets"][sys.argv[1]]
-          print(release["repository"].split("github.com/")[1], pin["tag"], pin["asset"])' ${{ matrix.target }})
+          print(release["repository"].split("github.com/")[1], pin["tag"], pin["asset"])' ${{ matrix.target }} | tr -d '\r')
           for attempt in 1 2 3 4 5; do
             gh release download "$tag" -R "$repo" -p "$asset" -D "$res/codex" --clobber && break
             echo "attempt $attempt failed"; sleep 20
@@ -209,6 +209,38 @@ jobs:
             }
           }
           EOF
+      - name: Tools of the Tauri bundler through the API of the release assets
+        # The bundler downloads them from the release pages, which answered 504 on 08.11; it takes cached ones as they
+        # are (the names and the cache directory of tauri-bundler 2.12.4, which checks the NSIS hashes itself).
+        if: runner.os != 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fetch() {
+            for attempt in 1 2 3 4 5; do
+              gh release download "$2" -R "$1" -p "$3" -O "$4" --clobber && return 0
+              echo "attempt $attempt failed"; sleep 20
+            done
+            return 1
+          }
+          if [ "$RUNNER_OS" = Linux ]; then
+            tools="$HOME/.cache/tauri"; mkdir -p "$tools"
+            fetch tauri-apps/binary-releases apprun-old AppRun-x86_64 "$tools/AppRun-x86_64"
+            fetch tauri-apps/binary-releases linuxdeploy-07333c6 linuxdeploy-x86_64.AppImage "$tools/linuxdeploy-07333c6-x86_64.AppImage"
+            # Optional: without it linuxdeploy uses its built-in AppImage plugin.
+            fetch linuxdeploy/linuxdeploy-plugin-appimage continuous linuxdeploy-plugin-appimage-x86_64.AppImage \
+              "$tools/linuxdeploy-plugin-appimage.AppImage" || rm -f "$tools/linuxdeploy-plugin-appimage.AppImage"
+            chmod +x "$tools"/*
+          else
+            tools="$(cygpath -u "$LOCALAPPDATA")/tauri"; mkdir -p "$tools"
+            fetch tauri-apps/binary-releases nsis-3.13 nsis-3.13.zip "$RUNNER_TEMP/nsis.zip"
+            python -I -m zipfile -e "$RUNNER_TEMP/nsis.zip" "$tools"
+            mv "$tools/nsis-3.13" "$tools/NSIS"
+            mkdir -p "$tools/NSIS/Plugins/x86-unicode/additional"
+            fetch tauri-apps/nsis-tauri-utils nsis_tauri_utils-v0.5.3 nsis_tauri_utils.dll \
+              "$tools/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
+          fi
+          ls -la "$tools"
       - name: Build the app
         working-directory: spike/shell
         run: |
