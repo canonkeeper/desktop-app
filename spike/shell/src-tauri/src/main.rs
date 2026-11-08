@@ -3,8 +3,11 @@
 //! Shell of the S0 probe. It opens one window with the map probe page and appends what happens
 //! to the JSON-lines file named by SPIKE_REPORT: the page's own report, the result of an update
 //! from SPIKE_UPDATE_URL (DA14.7) and of a keychain write or read (SPIKE_KEYCHAIN, DA14.8).
+//! The DA1.9 measurement build also carries the backend as a sidecar (`backend.rs`).
 //! It holds no business logic.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod backend;
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -118,9 +121,11 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Started(started))
         .invoke_handler(tauri::generate_handler![report])
+        .on_page_load(backend::page_load)
         .setup(move |app| {
             let version = app.package_info().version.to_string();
             append("start", &version, json!({"process_started_ms": started}));
+            backend::start(app);
             if let Ok(mode) = std::env::var("SPIKE_KEYCHAIN") {
                 let version = version.clone();
                 std::thread::spawn(move || append("keychain", &version, keychain(&mode)));

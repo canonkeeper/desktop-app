@@ -1,0 +1,290 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# DA1.9 measurement of the whole desktop app on free GitHub-hosted runners (specs: DA1.9, slice S2): the probe shell
+# with the backend cmd/desktop as its sidecar, PostgreSQL 18, codex-app-server and the research-chat profile in the
+# installer. Measured: the installers, the installed app on disk, the idle memory of the window, the backend,
+# PostgreSQL and Codex, and the time to the window on the first launch (the backend creates the cluster) and on a
+# repeat one. Results: the `da19-results` artifact (da19.json) and the run summary.
+name: DA1.9 app measure
+
+on:
+  push:
+    branches: [main, measure/da19]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: da19-app-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  forbidden:
+    name: Forbidden content (generic rules)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 -I scripts/check-forbidden.py --ci
+
+  # The same build and cache key as the S0 probe: a run reuses the set S0 built.
+  postgres:
+    name: PostgreSQL 18 · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04 }
+          - { os: windows-2025 }
+          - { os: macos-15 }
+          - { os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: pg-out
+          key: pg-18.6-${{ matrix.os }}-${{ hashFiles('spike/postgres/**') }}
+      - name: Build tools (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison flex
+          pip install meson ninja patchelf
+      - name: Build tools (macOS)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        run: pip install meson ninja
+      - name: Build tools (Windows)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install winflexbison3 -y --no-progress
+          pip install meson ninja
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      - name: Build and package
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: python -I spike/postgres/build.py pg-work pg-out
+      - name: Pack (artifacts lose file modes, a tar keeps them)
+        run: tar -cf pg-set.tar -C pg-out .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pg-${{ matrix.os }}
+          path: pg-set.tar
+          retention-days: 7
+
+  # cmd/desktop builds with CGO_ENABLED=0 (DA1.2): one Linux job builds the desktop web once and the backend for the
+  # four targets.
+  backend:
+    name: Backend with the desktop web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: npm ci --no-audit --no-fund
+      - name: Web inside the backend, four targets
+        run: |
+          npm run build:desktop:backend
+          mkdir -p out
+          for target in linux/amd64/x86_64-unknown-linux-gnu windows/amd64/x86_64-pc-windows-msvc \
+                        darwin/arm64/aarch64-apple-darwin darwin/amd64/x86_64-apple-darwin; do
+            IFS=/ read -r goos goarch triple <<< "$target"
+            ext=""; [ "$goos" = windows ] && ext=.exe
+            (cd backend && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags="-s -w" \
+              -o "../out/canonkeeper-backend-$triple$ext" ./cmd/desktop)
+          done
+          ls -la out
+          echo "{\"web_bytes\": $(du -sb dist-desktop | cut -f1)}" > out/web.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend
+          path: out
+          retention-days: 7
+
+  app:
+    name: App · ${{ matrix.os }}
+    needs: [postgres, backend]
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Linux set of PostgreSQL is built on 22.04 (glibc 2.35); codex-app-server needs 24.04 (DA2.1).
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm,appimage", pg: ubuntu-22.04 }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis, pg: windows-2025 }
+          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg", pg: macos-15 }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, bundles: "app,dmg", pg: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    env:
+      EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: spike/shell/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spike/shell/src-tauri
+      - name: Linux packages for WebKitGTK 4.1
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm >/dev/null
+      - name: Tools
+        run: pip install psutil mss
+      - uses: actions/download-artifact@v4
+        with:
+          name: pg-${{ matrix.pg }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend
+          path: backend-out
+      - name: Resources of the bundle (DA1.3, DA1.4) and the backend sidecar
+        run: |
+          res=spike/shell/resources
+          mkdir -p results "$res/postgres" "$res/bin"
+          tar -xf pg-set.tar -C "$res/postgres"
+          mv "$res/postgres/build.json" results/pg-build.json
+          mv "$res/postgres/pg/"* "$res/postgres/" && rmdir "$res/postgres/pg"
+          python -I spike/codex/fetch.py ${{ matrix.target }} "$res/codex"
+          mv "$res/codex/codex.json" results/codex-package.json
+          if [ "$RUNNER_OS" = macOS ]; then codesign --force --sign - "$res/codex/codex-app-server"; fi
+          cp -R codex-homes "$res/codex-homes"
+          cp "backend-out/canonkeeper-backend-${{ matrix.target }}$EXE" "$res/bin/"
+          chmod +x "$res/bin/canonkeeper-backend-${{ matrix.target }}$EXE"
+          cp backend-out/web.json results/web.json
+          du -sh "$res"/*
+      - name: Icons and the configuration of the measurement build
+        working-directory: spike/shell
+        run: |
+          npm ci --no-audit --no-fund
+          python -I ../tools/make_icon.py "$RUNNER_TEMP/icon.png"
+          npx tauri icon "$RUNNER_TEMP/icon.png" > /dev/null
+          cat > conf-app.json <<'EOF'
+          {
+            "build": { "frontendDist": "../app" },
+            "bundle": {
+              "createUpdaterArtifacts": false,
+              "externalBin": ["../resources/bin/canonkeeper-backend"],
+              "resources": {
+                "../resources/postgres": "postgres",
+                "../resources/codex": "codex",
+                "../resources/codex-homes": "codex-homes"
+              }
+            }
+          }
+          EOF
+      - name: Build the app
+        working-directory: spike/shell
+        run: |
+          start=$(date +%s)
+          npx tauri build --config conf-app.json --bundles ${{ matrix.bundles }}
+          echo "{\"tauri_build_seconds\": $(( $(date +%s) - start ))}" > "$GITHUB_WORKSPACE/results/build-time.json"
+          cp -R src-tauri/target/release/bundle "$RUNNER_TEMP/bundle"
+      - name: Install (Linux · apt from the deb)
+        if: runner.os == 'Linux'
+        run: |
+          deb=$(ls "$RUNNER_TEMP"/bundle/deb/*.deb)
+          dpkg-deb -f "$deb" Package Installed-Size Depends | tee results/deb-fields.txt
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb-tree"
+          sudo apt-get install -y -qq "$deb" >/dev/null
+          echo "APP_EXE=/usr/bin/canonkeeper-probe" >> "$GITHUB_ENV"
+          echo "APP_RES=/usr/lib/CanonKeeper Probe" >> "$GITHUB_ENV"
+          echo "APP_BACKEND=/usr/bin/canonkeeper-backend" >> "$GITHUB_ENV"
+          echo "APP_DIR=$RUNNER_TEMP/deb-tree" >> "$GITHUB_ENV"
+      - name: Install (macOS · from the dmg into ~/Applications)
+        if: runner.os == 'macOS'
+        run: |
+          dmg=$(ls "$RUNNER_TEMP"/bundle/dmg/*.dmg)
+          mount=$(hdiutil attach -nobrowse -readonly "$dmg" | tail -1 | cut -f3-)
+          mkdir -p ~/Applications
+          cp -R "$mount/CanonKeeper Probe.app" ~/Applications/
+          hdiutil detach "$mount"
+          app="$HOME/Applications/CanonKeeper Probe.app"
+          { codesign --verify --deep --strict --verbose=2 "$app" 2>&1 && echo "verify: ok" || echo "verify: FAILED"; } | tee results/macos-codesign.txt
+          echo "APP_EXE=$app/Contents/MacOS/canonkeeper-probe" >> "$GITHUB_ENV"
+          echo "APP_RES=$app/Contents/Resources" >> "$GITHUB_ENV"
+          echo "APP_BACKEND=$app/Contents/MacOS/canonkeeper-backend" >> "$GITHUB_ENV"
+          echo "APP_DIR=$app" >> "$GITHUB_ENV"
+      - name: Install (Windows · NSIS for the current user)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "$env:RUNNER_TEMP\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'CanonKeeper Probe'
+          Get-ChildItem $dir | Format-Table Name, Length
+          "APP_EXE=$dir\canonkeeper-probe.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_RES=$dir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_BACKEND=$dir\canonkeeper-backend.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_DIR=$dir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Sizes
+        run: |
+          python -I spike/tools/sizes.py --bundle "$RUNNER_TEMP/bundle" --installed "app=$APP_DIR" \
+            --installed "backend=$APP_BACKEND" --installed "postgres=$APP_RES/postgres" \
+            --installed "codex=$APP_RES/codex" --installed "codex-homes=$APP_RES/codex-homes" --out results/sizes.json
+      - name: First and repeat launch, idle memory, stop
+        continue-on-error: true
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            # A desktop session has a session bus; without one GTK waits for D-Bus timeouts.
+            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- \
+              python -I spike/tools/app_probe.py --exe "$APP_EXE" --resources "$APP_RES" --out results/app.json --screenshot results/app
+          else
+            python -I spike/tools/app_probe.py --exe "$APP_EXE" --resources "$APP_RES" --out results/app.json --screenshot results/app
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-app-${{ matrix.os }}
+          path: results
+          retention-days: 90
+
+  summary:
+    name: Summary
+    needs: [app]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: results-app-*
+          path: results
+      - run: |
+          mkdir -p results
+          python3 -I spike/tools/app_summary.py results da19-summary.md da19.json
+          cat da19-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: da19-results
+          path: |
+            results
+            da19-summary.md
+            da19.json
+          retention-days: 90
