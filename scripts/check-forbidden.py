@@ -42,7 +42,12 @@ ALLOWED_EMAILS = {
     "noreply@github.com",
 }
 ALLOWED_EMAIL_DOMAINS = ("users.noreply.github.com", "example.com", "example.org", "example.test", "desktop.invalid")
-ALLOWED_HOME_NAMES = {"runner", "runneradmin", "name", "user", "you", "username", "<name>", "<user>"}
+# Names of home directories that are plainly made up: the placeholders of the docs and the fixtures of the tests of the
+# app (a Latin and a Cyrillic author, one-letter names). A real name of a person or a machine is never added here.
+ALLOWED_HOME_NAMES = {
+    "runner", "runneradmin", "name", "user", "you", "username", "<name>", "<user>",
+    "author", "a", "x", "тест", "Тест",
+}
 SECRET_PATTERNS = [
     ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     ("openai-style key", re.compile(r"\bsk-(?:proj-|live-|ant-)?[A-Za-z0-9_-]{24,}")),
