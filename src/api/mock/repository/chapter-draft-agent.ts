@@ -33,6 +33,15 @@ const prose: Record<string, string> = {
 };
 const proseOf = (scene: Scene) => prose[scene.title] ?? `${scene.goal || scene.title}: Кира идёт дальше, не оглядываясь.`;
 
+/**
+ * The scene a run writes now, as the server keeps it while its answer comes (specs/2026-11-12-ux10-scene-stream.md ST1.2):
+ * the first half of its prose, a draft — the next read puts the scene into the text in its place.
+ */
+function inWriting(run: AgentRun, index: number): NonNullable<Draft['job']>['writing'] {
+  const words = proseOf(run.todo[index]!).split(' ');
+  return { scene: run.todo[index]!.number, attempt: 1, step: 'writing', text: words.slice(0, Math.ceil(words.length / 2)).join(' ') };
+}
+
 function card(number: number, title: string, goal: string, resistance: string, what: string, extra: Partial<Scene> = {}): Scene {
   return {
     number, title, state: 'planned', pov: 'Кира', whereWhen: 'северные ворота; ночь', participants: ['Кира'], goal, question: `${goal}?`,
@@ -69,7 +78,11 @@ export function helperPlan(draft: Draft, words: string, place: string | undefine
         card(3, 'Обрывок письма', 'найти след', 'темнота и грязь', 'он просит не искать')];
     return addPlanVersion(draft, {
       origin: 'helper', reason: latest ? 'answers' : 'first', case: chapterCase,
-      understanding: { ...understanding(draft.idea), ...(beginning ? { coverage: [{ item: 1, covered: true, paragraphs: '¶1', stoppedAt: 'Кира у ворот' }] } : {}) },
+      // A chapter without a title is named with the plan (specs/2026-11-11-ux9-writing-a.md WA3.5).
+      understanding: {
+        ...understanding(draft.idea), ...(draft.title.trim() ? {} : { title: 'У северных ворот' }),
+        ...(beginning ? { coverage: [{ item: 1, covered: true, paragraphs: '¶1', stoppedAt: 'Кира у ворот' }] } : {}),
+      },
       scenes, marks: [],
     });
   }
@@ -80,7 +93,8 @@ export function helperPlan(draft: Draft, words: string, place: string | undefine
     const flush = () => {
       if (!group.length) return;
       const number = scenes.length + 1;
-      scenes.push(card(number, `Сцена ${number}`, 'дойти до конца сцены', 'то, что мешает в вашем тексте', 'так, как у вас', {
+      // A scene of the author's text is named by what happens in it (the skill: not «Сцена 1»; WA3.2).
+      scenes.push(card(number, group[0]!.split(/\s+/u).slice(0, 3).join(' ').replace(/[.,;:!?…—-]+$/u, ''), 'дойти до конца сцены', 'то, что мешает в вашем тексте', 'так, как у вас', {
         state: 'author', span: { from: phrase(group[0]!, 'start'), to: phrase(group.at(-1)!, 'end') }, beats: [],
       }));
       group = [];
@@ -234,7 +248,7 @@ function findings(text: string): NewNote[] {
     const book = '…шрам наискось через щёку';
     found.push({ kind: 'canon', target: 'draft', origin: 'job', level: 'blocking', quote: scar, body: 'В гл. 3 у Ольма шрам на щеке.', bookQuote: book, replacement: 'шрамом на щеке', refs: ['b1c1/8'] });
   }
-  found.push({ kind: 'new', target: 'draft', origin: 'job', level: 'info', body: 'Седая щетина у Ольма в саге не описана: это придумано. Станет каноном только с главой.', refs: [] });
+  found.push({ kind: 'new', target: 'draft', origin: 'job', level: 'info', body: 'Седая щетина у Ольма в книге не описана: это придумано. Если так и задумано — оставьте.', refs: [] });
   // What changes inside the chapter without a cause (c83fb142): the later mention, the earlier named, the fix.
   const torch = 'освещая камни факелом';
   if (text.includes(torch) && text.includes('подняла фонарь')) {
@@ -243,7 +257,7 @@ function findings(text: string): NewNote[] {
   }
   const repeated = /восточн\S* выход\S*/u.exec(text);
   // Layer A: a mark without a model and without a replacement (WA6.2).
-  if (repeated) found.push({ kind: 'style', target: 'draft', origin: 'job', level: 'info', category: 'повтор', quote: repeated[0], body: '«Восточный» дважды в соседних абзацах.', refs: [] });
+  if (repeated) found.push({ kind: 'style', target: 'draft', origin: 'job', level: 'info', category: 'повтор', label: 'Повтор слова', quote: repeated[0], body: '«Восточный» дважды в соседних абзацах.', refs: [] });
   return found;
 }
 
@@ -257,6 +271,7 @@ export function advanceAgentRun(draft: Draft): NewNote[] {
   if (!job || !run || !['queued', 'running', 'canceling'].includes(job.status)) return [];
   if (job.status === 'canceling') {
     job.status = 'canceled';
+    delete job.writing;
     return [];
   }
   if (job.status === 'queued') {
@@ -266,6 +281,7 @@ export function advanceAgentRun(draft: Draft): NewNote[] {
   if (run.mode === 'scenes') {
     if (job.phase === 'pack') {
       job.phase = 'scenes';
+      job.writing = inWriting(run, 0);
       return [];
     }
     if (job.phase === 'scenes' && run.written.length < run.todo.length) {
@@ -273,7 +289,12 @@ export function advanceAgentRun(draft: Draft): NewNote[] {
       draft.text = `${run.prefix}${run.written.join('\n\n')}${run.suffix ? `\n\n${run.suffix.replace(/^\s+/u, '')}` : ''}`;
       job.done = run.written.length;
       draft.revision += 1;
-      if (run.written.length === run.todo.length) job.phase = 'check';
+      // The scene written takes the place of the scene in writing; the next one begins (ST1.3).
+      if (run.written.length < run.todo.length) job.writing = inWriting(run, run.written.length);
+      else {
+        delete job.writing;
+        job.phase = 'check';
+      }
       return [];
     }
     keepVersion(draft, 'written', draft.text, {

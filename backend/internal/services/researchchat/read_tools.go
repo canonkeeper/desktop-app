@@ -138,6 +138,8 @@ type ReadTools struct {
 	materials  MaterialsReader
 	// attachments reads the chapters attached to the questions of the chat (specs/2026-11-07-chat-attach-chapter.md CA3).
 	attachments AttachmentReader
+	// memory reads the author's words an answer brings about what it is asked about (specs/2026-11-11-chat-corrections.md).
+	memory AuthorMemoryReader
 }
 
 // NewReadTools builds the chat tools; usage may be nil where nothing records spend.
@@ -188,6 +190,7 @@ func (tools *ReadTools) Search(ctx context.Context, call ToolContext, input Sear
 		limit = defaultSearchLimit
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		saga.about(sagamemory.NamedWords(input.Queries...), nil)
 		from, to, err := saga.chapterRange(input.From, input.To)
 		if err != nil {
 			return "", err
@@ -344,6 +347,9 @@ func (tools *ReadTools) run(ctx context.Context, call ToolContext, render func(*
 	if err != nil {
 		return "", err
 	}
+	if output, err = tools.withAuthorWords(ctx, call, saga, output); err != nil {
+		return "", err
+	}
 	if err := tools.repository.RetainChapters(ctx, call, authority, saga.retained()); err != nil {
 		return "", err
 	}
@@ -361,6 +367,10 @@ type sagaScope struct {
 	used      map[int]bool
 	loadCards func(from, to int, parts sagamemory.CardParts) (*sagamemory.CardSet, error)
 	loadFacts func(to int, names []string) ([]sagamemory.ChapterFact, error)
+	// named is what the answer is asked about and glossary the one its tool resolved names by, for the author's words about
+	// it (specs/2026-11-11-chat-corrections.md CR1.2).
+	named    sagamemory.Named
+	glossary *sagamemory.Glossary
 }
 
 func (saga *sagaScope) version() *sagamemory.Version { return saga.outline.Version }

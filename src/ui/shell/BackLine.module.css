@@ -1,0 +1,23 @@
+/* «← К <откуда>» over the content (specs/2026-11-10-ux2-patterns-states.md PS4.1; Pattern/Common/Back Line: padding 12 16 0). */
+.line {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-width: 0;
+  padding: var(--ck-space-3) var(--ck-space-4) 0;
+}
+
+.back {
+  max-width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A low window keeps its height for the text: the line sits close under the top bar. */
+@media (max-height: 760px) {
+  .line {
+    padding-top: var(--ck-space-1);
+  }
+}

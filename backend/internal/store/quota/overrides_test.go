@@ -18,7 +18,7 @@ func TestStoreSetOverridesChangesOnlyALiveWriter(t *testing.T) {
 	seed.user(quotaWriterA, "writer-a@example.test")
 	seed.user(quotaWriterB, "writer-b@example.test")
 	seed.exec(`UPDATE users SET disabled_at = $2, deleted_at = $2 WHERE id = $1`, quotaWriterB, seed.now)
-	store := New(db)
+	store := New(db, Fence{})
 	ctx := context.Background()
 	sixty := int64(60)
 	changes := []quota.OverrideChange{{Key: quota.KeyChatTurnsPerDay, Value: &sixty}}
@@ -27,9 +27,9 @@ func TestStoreSetOverridesChangesOnlyALiveWriter(t *testing.T) {
 	if err != nil || len(changed) != 1 || changed[0].Before != nil || *changed[0].After != 60 {
 		t.Fatalf("changed = %+v, %v", changed, err)
 	}
-	overrides, err := store.Overrides(ctx, quotaWriterA)
-	if err != nil || overrides[quota.KeyChatTurnsPerDay] == nil || *overrides[quota.KeyChatTurnsPerDay] != 60 {
-		t.Fatalf("overrides = %v, %v", overrides, err)
+	sources, err := store.LimitSources(ctx, quotaWriterA)
+	if err != nil || sources[quota.KeyChatTurnsPerDay] != quota.SourceOwn || sources[quota.KeyProjects] != quota.SourceDefault {
+		t.Fatalf("sources = %v, %v", sources, err)
 	}
 	for _, id := range []string{quotaWriterB, "93000000-0000-4000-8000-0000000000ff", "not-an-id"} {
 		if _, err := store.SetOverrides(ctx, id, changes, seed.now); !errors.Is(err, quota.ErrNotFound) {

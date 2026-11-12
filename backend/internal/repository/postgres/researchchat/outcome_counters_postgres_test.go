@@ -57,7 +57,8 @@ func TestTurnOutcomesCountInWritersDay(t *testing.T) {
 	}); err != nil || updated.Status != jobs.StatusCanceled {
 		t.Fatalf("cancel queued turn = %+v, %v", updated, err)
 	}
-	if questions, answeredCount, failedCount, interrupted := chats.outcomes("2026-10-28"); questions != 3 ||
+	// The failed question was given back (specs/2026-11-09-quota-accounting.md Q2.4): the day spent two of three.
+	if questions, answeredCount, failedCount, interrupted := chats.outcomes("2026-10-28"); questions != 2 ||
 		answeredCount != 1 || failedCount != 1 || interrupted != 1 {
 		t.Fatalf("day row = %d questions, %d answered, %d failed, %d interrupted", questions, answeredCount, failedCount, interrupted)
 	}
@@ -90,7 +91,7 @@ func chatsBefore0059(t *testing.T, name string) *quotaChats {
 		  singleton boolean PRIMARY KEY DEFAULT true, chat_turns_per_day integer, active_turns integer,
 		  imports_per_day integer, projects integer, project_books integer, project_chapters integer,
 		  project_characters bigint, account_books integer, account_chapters integer, account_characters bigint,
-		  images_per_day integer, image_uploads_per_day integer, chapter_drafts_per_day integer, drawing_turns_per_day integer, draft_turns_per_day integer, draft_rewrites_per_day integer, trial_drawings integer,
+		  images_per_day integer, image_uploads_per_day integer, chapter_drafts_per_day integer, drawing_turns_per_day integer, draft_turns_per_day integer, draft_rewrites_per_day integer,
 		  updated_at timestamptz, updated_by uuid
 		)`); err != nil {
 		t.Fatal(err)

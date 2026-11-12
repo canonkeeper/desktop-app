@@ -98,6 +98,63 @@ func (q *Queries) AuthorMaterialKeys(ctx context.Context, projectID pgtype.UUID)
 	return items, nil
 }
 
+const authorMaterialOfKey = `-- name: AuthorMaterialOfKey :one
+SELECT id FROM author_materials WHERE project_id = $1 AND name_key = $2
+`
+
+type AuthorMaterialOfKeyParams struct {
+	ProjectID pgtype.UUID `json:"project_id"`
+	NameKey   string      `json:"name_key"`
+}
+
+func (q *Queries) AuthorMaterialOfKey(ctx context.Context, arg AuthorMaterialOfKeyParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, authorMaterialOfKey, arg.ProjectID, arg.NameKey)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createAuthorMaterial = `-- name: CreateAuthorMaterial :one
+INSERT INTO author_materials (
+  project_id, name, name_key, kind, description, properties, section, source_name, source_kind, created_by, updated_by
+)
+VALUES (
+  $1, $2, $3, $4, $5, $6::jsonb,
+  $7, '', 'manual', $8, $8
+)
+ON CONFLICT (project_id, name_key) DO NOTHING
+RETURNING id
+`
+
+type CreateAuthorMaterialParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	Name        string      `json:"name"`
+	NameKey     string      `json:"name_key"`
+	Kind        string      `json:"kind"`
+	Description string      `json:"description"`
+	Properties  []byte      `json:"properties"`
+	Section     string      `json:"section"`
+	Actor       pgtype.UUID `json:"actor"`
+}
+
+// A record the author writes on the page (specs/2026-11-10-ux8-memory-records.md MR2.1): one name is one record, so a taken
+// name writes nothing and returns no row.
+func (q *Queries) CreateAuthorMaterial(ctx context.Context, arg CreateAuthorMaterialParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createAuthorMaterial,
+		arg.ProjectID,
+		arg.Name,
+		arg.NameKey,
+		arg.Kind,
+		arg.Description,
+		arg.Properties,
+		arg.Section,
+		arg.Actor,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createAuthorMaterialImport = `-- name: CreateAuthorMaterialImport :exec
 INSERT INTO author_material_imports (id, project_id, job_id, source_name, source_kind, parsed, created_by)
 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)

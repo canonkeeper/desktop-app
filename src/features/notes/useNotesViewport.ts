@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 const readViewport = () => ({
   compact: window.innerWidth <= 760 || window.innerHeight <= 760,
   overlay: window.innerWidth < 1200 || window.innerHeight <= 760,
-  short: window.innerHeight <= 760,
 });
 
 /** Choose Notes composition by usable viewport, including height (compact Notes UC2). */

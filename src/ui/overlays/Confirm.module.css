@@ -1,0 +1,72 @@
+/* The one confirmation (board 15·01, `Pattern/Common/Confirm` and `Confirm/Mobile`). */
+.confirm {
+  display: grid;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.line {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.error {
+  margin: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px 10px;
+  background: var(--ck-color-error);
+  color: var(--ck-color-error-foreground);
+  font-size: 14px;
+}
+
+.line > p {
+  margin: 0 0 6px;
+}
+
+/* «Отмена» on the left, the action on the right. */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* On a phone: a sheet across the window from below, the two buttons halves of its width. */
+.sheet {
+  width: 100vw;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+/* An action too long for half of the sheet goes on its own line over «Отмена» (board 32·29). */
+.sheet .actions {
+  flex-wrap: wrap-reverse;
+}
+
+.sheet .actions > * {
+  flex: 1 1 0;
+}
+
+.handle {
+  justify-self: center;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ck-border-strong);
+}

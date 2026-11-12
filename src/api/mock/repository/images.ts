@@ -1,4 +1,5 @@
 import type {
+  DownloadedFile,
   ListProjectImagesOptions,
   OperationRequest,
   OperationResponse,
@@ -7,8 +8,9 @@ import type {
 } from '../../../shared/api';
 import { MockApiError } from '../scenarios';
 import type { MockRepositoryContext } from './context';
-import { mockImagePNG, type MockSagaImage } from './gallery-state';
+import { carryBookPlace, mockImagePNG, type MockSagaImage } from './gallery-state';
 import { createGalleryView, editorRoles } from './gallery-view';
+import { chapterKey, shelfOf } from './places';
 
 export type ProjectImageFileQuery = {
   size?: 'thumb' | 'screen' | 'full' | 'base' | 'before' | 'partial';
@@ -105,6 +107,12 @@ export function createImageOperations(context: MockRepositoryContext) {
     return { content: mockImagePNG, mimeType: 'image/png', cacheControl: current ? 'private, max-age=31536000, immutable' : 'private, no-cache' };
   }
 
+  /** The main picture of drawing K as a file for the archive of «Скачать (N)» (ux10-drawing-ops DO3.1): a ready one only. */
+  async function downloadProjectImage(projectId: string, number: number): Promise<DownloadedFile> {
+    const file = await getProjectImageFile(projectId, number, { size: 'full' });
+    return { blob: new Blob([file.content], { type: file.mimeType }), fileName: `${number}.png` };
+  }
+
   async function updateProjectImageDetails(
     projectId: string, number: number, body: OperationRequest<'updateProjectImageDetails'>,
   ): Promise<OperationResponse<'updateProjectImageDetails', '200'>> {
@@ -116,6 +124,15 @@ export function createImageOperations(context: MockRepositoryContext) {
     if (description.length > 200 || body.subjects.length > 5) {
       throw new MockApiError(400, 'The details are too long.', 'updateProjectImageDetails', 'validation_failed');
     }
+    // The place in the book (specs/2026-11-11-ux6-drawing-flow.md DF4.2): a paragraph of a chapter, 0 out of the book.
+    const after = body.bookAfter;
+    if (after !== undefined && after !== null && (after < 0 || !Number.isInteger(after) || (after > 0 && !chapter))) {
+      throw new MockApiError(400, 'A paragraph stands in a chapter.', 'updateProjectImageDetails', 'validation_failed');
+    }
+    if (after !== undefined) {
+      if (after === null) delete image.bookAfter;
+      else image.bookAfter = after;
+    } else if ((chapter || null) !== image.chapter) delete image.bookAfter;
     image.title = description || null;
     image.chapter = chapter || null;
     image.subjects = body.subjects.map(({ key, name }) => ({ key: key ?? name.toLowerCase(), name }));
@@ -185,12 +202,17 @@ export function createImageOperations(context: MockRepositoryContext) {
       if (image.status !== 'ready') throw new MockApiError(409, 'The variant is not ready.', 'chooseProjectImageVariant', 'conflict');
       // Nothing goes (specs/2026-11-05-drawing-one-screen.md D4.3): the others stay as versions, the spend with the one chosen.
       const group = gallery().images.filter((item) => item.projectId === projectId && item.variantGroup === image.variantGroup);
+      // The group costs one drawing whatever happens to it (R21.4): the one chosen answers for it, the others were paid by it.
       for (const other of group) {
         delete other.variantGroup;
-        delete other.variantPaid;
+        if (other.number === number) delete other.variantPaid;
+        else other.variantPaid = true;
       }
       const chosen = imageFor('chooseProjectImageVariant', projectId, number);
-      if (owner) owner.current = chosen.number;
+      if (owner) {
+        carryBookPlace(gallery().images.find((item) => item.projectId === projectId && item.number === owner.current), chosen);
+        owner.current = chosen.number;
+      }
       return view(chosen);
     });
   }
@@ -299,10 +321,37 @@ export function createImageOperations(context: MockRepositoryContext) {
     return styleOf(projectId);
   }
 
+  /**
+   * getBookDrawingCounts (specs/2026-11-12-ux10-book-pictures.md BP3.1, BP3.2): the drawings that stand in the chapters of
+   * each book, as its file takes them — the main version of a drawing and the author's own pictures, ready, in the book.
+   */
+  async function getBookDrawingCounts(projectId: string): Promise<OperationResponse<'getBookDrawingCounts', '200'>> {
+    context.applyOperation('getBookDrawingCounts');
+    context.projectFor(projectId, 'getBookDrawingCounts', [...editorRoles]);
+    const indexed = new Set(context.state.indexedChapterIds.published);
+    const books = new Map<string, string>();
+    for (const book of shelfOf(context, projectId)) {
+      for (const chapter of context.state.chapters.filter((item) => item.bookId === book.id && indexed.has(item.id))) {
+        books.set(chapterKey(book.order, chapter.order), book.id);
+      }
+    }
+    const state = gallery();
+    const covers = state.images.filter((image) => image.projectId === projectId && (image.kind === 'upload'
+      || state.drawings.some((drawing) => drawing.projectId === projectId && drawing.branch === image.branch && drawing.current === image.number)));
+    const counts = new Map<string, number>();
+    for (const cover of covers) {
+      const book = cover.chapter ? books.get(cover.chapter) : undefined;
+      if (book && cover.status === 'ready' && cover.bookAfter !== 0) counts.set(book, (counts.get(book) ?? 0) + 1);
+    }
+    return { data: shelfOf(context, projectId).flatMap((book) => counts.has(book.id) ? [{ bookId: book.id, drawings: counts.get(book.id)! }] : []) };
+  }
+
   return {
+    getBookDrawingCounts,
     listProjectImages,
     getProjectImage,
     getProjectImageFile,
+    downloadProjectImage,
     setProjectImageReference,
     updateProjectImageDetails,
     removeProjectImageReference,

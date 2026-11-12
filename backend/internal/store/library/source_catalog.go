@@ -113,6 +113,15 @@ func createOrBumpPublishedSourceView(
 	return sourceCatalogRevision(row.ProjectID, row.ProjectLifecycleGeneration, row.SourceView, row.CatalogRevision)
 }
 
+// revisionViews are the text versions of the revisions a deletion raised.
+func revisionViews(revisions []library.SourceCatalogRevision) []governance.SourceView {
+	views := make([]governance.SourceView, len(revisions))
+	for index, revision := range revisions {
+		views[index] = revision.SourceView
+	}
+	return views
+}
+
 func bumpSourceViewsForBook(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, projectGeneration int64, bookID pgtype.UUID, bookGeneration int64) ([]library.SourceCatalogRevision, error) {
 	return bumpSourceViewsForMember(ctx, tx, projectID, projectGeneration, bookID, bookGeneration, pgtype.UUID{})
 }
@@ -197,51 +206,137 @@ func upsertBookSourceMember(ctx context.Context, tx pgx.Tx, member library.BookS
 }
 
 func upsertChapterSourceMember(ctx context.Context, tx pgx.Tx, member library.ChapterSourceMember) error {
-	if tx == nil || member.Validate() != nil || member.SourceRevision > math.MaxInt64 || member.Order > math.MaxInt32 {
+	return upsertChapterSourceMembers(ctx, tx, []library.ChapterSourceMember{member})
+}
+
+// upsertChapterSourceMembers puts chapters of one live book into one text version of the catalog: the project, the
+// book, every chapter of its generation and the member of the book locked, then the members in one statement
+// (specs/2026-11-11-import-speed.md IS1), not five statements a chapter.
+func upsertChapterSourceMembers(ctx context.Context, tx pgx.Tx, members []library.ChapterSourceMember) error {
+	if tx == nil {
 		return library.ErrValidation
 	}
-	projectID, err := storedb.ParseUUID(member.ProjectID)
+	if len(members) == 0 {
+		return nil
+	}
+	first := members[0]
+	chapterIDs := make([]pgtype.UUID, len(members))
+	generations := make(map[pgtype.UUID]int64, len(members))
+	for index, member := range members {
+		if member.Validate() != nil || member.SourceRevision > math.MaxInt64 || member.Order > math.MaxInt32 ||
+			member.ProjectID != first.ProjectID || member.ProjectLifecycleGeneration != first.ProjectLifecycleGeneration ||
+			member.SourceView != first.SourceView || member.BookID != first.BookID ||
+			member.BookLifecycleGeneration != first.BookLifecycleGeneration {
+			return library.ErrValidation
+		}
+		chapterID, err := storedb.ParseUUID(member.ChapterID)
+		if err != nil {
+			return library.ErrValidation
+		}
+		if _, twice := generations[chapterID]; twice {
+			return library.ErrValidation
+		}
+		chapterIDs[index], generations[chapterID] = chapterID, member.ChapterLifecycleGeneration
+	}
+	projectID, err := storedb.ParseUUID(first.ProjectID)
 	if err != nil {
 		return library.ErrValidation
 	}
-	bookID, err := storedb.ParseUUID(member.BookID)
-	if err != nil {
-		return library.ErrValidation
-	}
-	chapterID, err := storedb.ParseUUID(member.ChapterID)
+	bookID, err := storedb.ParseUUID(first.BookID)
 	if err != nil {
 		return library.ErrValidation
 	}
 	queries := sqlc.New(tx)
-	if err := lockCurrentCatalogProject(ctx, tx, projectID, member.ProjectLifecycleGeneration); err != nil {
+	if err := lockCurrentCatalogProject(ctx, tx, projectID, first.ProjectLifecycleGeneration); err != nil {
 		return err
 	}
 	if _, err := queries.LockCurrentSourceBook(ctx, sqlc.LockCurrentSourceBookParams{
 		ProjectID: projectID, BookID: bookID,
-		BookLifecycleGeneration: member.BookLifecycleGeneration,
+		BookLifecycleGeneration: first.BookLifecycleGeneration,
 	}); err != nil {
 		return mapSourceCatalogNotFound(err)
 	}
-	if _, err := queries.LockCurrentSourceChapter(ctx, sqlc.LockCurrentSourceChapterParams{
-		ProjectID: projectID, BookID: bookID, ChapterID: chapterID,
-		ChapterLifecycleGeneration: member.ChapterLifecycleGeneration,
-	}); err != nil {
-		return mapSourceCatalogNotFound(err)
+	locked, err := queries.LockCurrentSourceChapters(ctx, sqlc.LockCurrentSourceChaptersParams{
+		ProjectID: projectID, BookID: bookID, ChapterIds: chapterIDs,
+	})
+	if err != nil {
+		return err
+	}
+	current := 0
+	for _, chapter := range locked {
+		if generation, ok := generations[chapter.ID]; ok && generation == chapter.LifecycleGeneration {
+			current++
+		}
+	}
+	if current != len(members) {
+		return library.ErrNotFound
 	}
 	if _, err := queries.LockBookSourceMember(ctx, sqlc.LockBookSourceMemberParams{
-		ProjectID: projectID, SourceView: string(member.SourceView),
-		ProjectLifecycleGeneration: member.ProjectLifecycleGeneration,
-		BookID:                     bookID, BookLifecycleGeneration: member.BookLifecycleGeneration,
+		ProjectID: projectID, SourceView: string(first.SourceView),
+		ProjectLifecycleGeneration: first.ProjectLifecycleGeneration,
+		BookID:                     bookID, BookLifecycleGeneration: first.BookLifecycleGeneration,
 	}); err != nil {
 		return mapSourceCatalogNotFound(err)
 	}
-	return queries.UpsertChapterSourceMember(ctx, sqlc.UpsertChapterSourceMemberParams{
-		ProjectID: projectID, SourceView: string(member.SourceView),
-		ProjectLifecycleGeneration: member.ProjectLifecycleGeneration,
-		BookID:                     bookID, BookLifecycleGeneration: member.BookLifecycleGeneration,
-		ChapterID: chapterID, ChapterLifecycleGeneration: member.ChapterLifecycleGeneration,
-		SourceRevision: int64(member.SourceRevision), Title: member.Title, ChapterOrder: int32(member.Order),
-	})
+	return writeChapterSourceMembers(ctx, tx, projectID, first.SourceView, first.ProjectLifecycleGeneration, members)
+}
+
+// writeChapterSourceMembers is the statement of members of chapters of one text version, a chapter at most once; the
+// caller locks what it holds.
+func writeChapterSourceMembers(
+	ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, view governance.SourceView, projectGeneration int64,
+	members []library.ChapterSourceMember,
+) error {
+	if len(members) == 0 {
+		return nil
+	}
+	bookIDs := make([]pgtype.UUID, len(members))
+	bookGenerations := make([]int64, len(members))
+	chapterIDs := make([]pgtype.UUID, len(members))
+	chapterGenerations := make([]int64, len(members))
+	revisions := make([]int64, len(members))
+	titles := make([]string, len(members))
+	orders := make([]int32, len(members))
+	for index, member := range members {
+		if member.SourceRevision > math.MaxInt64 || member.Order > math.MaxInt32 {
+			return library.ErrValidation
+		}
+		bookID, err := storedb.ParseUUID(member.BookID)
+		if err != nil {
+			return library.ErrValidation
+		}
+		chapterID, err := storedb.ParseUUID(member.ChapterID)
+		if err != nil {
+			return library.ErrValidation
+		}
+		bookIDs[index], bookGenerations[index] = bookID, member.BookLifecycleGeneration
+		chapterIDs[index], chapterGenerations[index] = chapterID, member.ChapterLifecycleGeneration
+		revisions[index], titles[index], orders[index] = int64(member.SourceRevision), member.Title, int32(member.Order)
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO chapter_source_members (
+		  project_id, source_view, project_lifecycle_generation,
+		  book_id, book_lifecycle_generation,
+		  chapter_id, chapter_lifecycle_generation, source_revision,
+		  title, chapter_order
+		)
+		SELECT $1, $2, $3,
+		       given.book_id, given.book_lifecycle_generation,
+		       given.chapter_id, given.chapter_lifecycle_generation, given.source_revision,
+		       given.title, given.chapter_order
+		FROM unnest($4::uuid[], $5::bigint[], $6::uuid[], $7::bigint[], $8::bigint[], $9::text[], $10::integer[])
+		  AS given(book_id, book_lifecycle_generation, chapter_id, chapter_lifecycle_generation, source_revision, title, chapter_order)
+		ON CONFLICT (project_id, source_view, chapter_id) DO UPDATE
+		SET project_lifecycle_generation = EXCLUDED.project_lifecycle_generation,
+		    book_id = EXCLUDED.book_id,
+		    book_lifecycle_generation = EXCLUDED.book_lifecycle_generation,
+		    chapter_lifecycle_generation = EXCLUDED.chapter_lifecycle_generation,
+		    source_revision = EXCLUDED.source_revision,
+		    title = EXCLUDED.title,
+		    chapter_order = EXCLUDED.chapter_order
+	`, projectID, string(view), projectGeneration,
+		bookIDs, bookGenerations, chapterIDs, chapterGenerations, revisions, titles, orders)
+	return err
 }
 
 func normalizePublishedChapterOrder(
@@ -425,7 +520,7 @@ func replaceRestoredSourceProjection(
 			return nil, err
 		}
 		revisions = append(revisions, revision)
-		if err := restoreSourceProjectionMembers(ctx, queries, revision, previousSnapshot, books, chapters); err != nil {
+		if err := restoreSourceProjectionMembers(ctx, tx, revision, previousSnapshot, books, chapters); err != nil {
 			return nil, err
 		}
 	}
@@ -434,12 +529,13 @@ func replaceRestoredSourceProjection(
 
 func restoreSourceProjectionMembers(
 	ctx context.Context,
-	queries *sqlc.Queries,
+	tx pgx.Tx,
 	revision library.SourceCatalogRevision,
 	retained retainedSourceProjection,
 	books []sqlc.LockLiveSourceBooksForProjectRow,
 	chapters []sqlc.LockLiveSourceChaptersForProjectRow,
 ) error {
+	queries := sqlc.New(tx)
 	projectID, err := storedb.ParseUUID(revision.ProjectID)
 	if err != nil {
 		return library.ErrValidation
@@ -558,25 +654,8 @@ func restoreSourceProjectionMembers(
 		if member.Validate() != nil || member.SourceRevision > math.MaxInt64 {
 			return library.ErrValidation
 		}
-		bookID, err := storedb.ParseUUID(member.BookID)
-		if err != nil {
-			return library.ErrValidation
-		}
-		chapterID, err := storedb.ParseUUID(member.ChapterID)
-		if err != nil {
-			return library.ErrValidation
-		}
-		if err := queries.UpsertChapterSourceMember(ctx, sqlc.UpsertChapterSourceMemberParams{
-			ProjectID: projectID, SourceView: string(member.SourceView),
-			ProjectLifecycleGeneration: member.ProjectLifecycleGeneration,
-			BookID:                     bookID, BookLifecycleGeneration: member.BookLifecycleGeneration,
-			ChapterID: chapterID, ChapterLifecycleGeneration: member.ChapterLifecycleGeneration,
-			SourceRevision: int64(member.SourceRevision), Title: member.Title, ChapterOrder: int32(member.Order),
-		}); err != nil {
-			return err
-		}
 	}
-	return nil
+	return writeChapterSourceMembers(ctx, tx, projectID, revision.SourceView, revision.ProjectLifecycleGeneration, selectedChapters)
 }
 
 func lockCurrentCatalogProject(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, projectGeneration int64) error {

@@ -107,7 +107,7 @@ func TestParseImportBookSupportsDOCX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseImportBook(.DOCX) error = %v", err)
 	}
-	if len(parsed.Chapters) != 1 || len(parsed.Chapters[0].Paragraphs) != 1 || parsed.Chapters[0].Paragraphs[0] != "Word paragraph" {
+	if len(parsed.Chapters) != 1 || len(parsed.Chapters[0].Paragraphs) != 1 || parsed.Chapters[0].Paragraphs[0].Text() != "Word paragraph" {
 		t.Fatalf("parseImportBook(.DOCX) = %#v", parsed)
 	}
 }

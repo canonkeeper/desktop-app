@@ -12,10 +12,10 @@ import (
 )
 
 const createChatTurnAttachment = `-- name: CreateChatTurnAttachment :exec
-INSERT INTO chat_turn_attachments (turn_id, chat_id, project_id, number, title, file_name, format, paragraphs, words, created_at)
+INSERT INTO chat_turn_attachments (turn_id, chat_id, project_id, number, title, file_name, format, paragraphs, words, document, created_at)
 VALUES (
     $1, $2, $3, $4, $5, $6,
-    $7, $8::text[], $9, $10
+    $7, $8::text[], $9, $10::jsonb, $11
 )
 `
 
@@ -29,6 +29,7 @@ type CreateChatTurnAttachmentParams struct {
 	Format     string             `json:"format"`
 	Paragraphs []string           `json:"paragraphs"`
 	Words      int32              `json:"words"`
+	Document   []byte             `json:"document"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -43,6 +44,7 @@ func (q *Queries) CreateChatTurnAttachment(ctx context.Context, arg CreateChatTu
 		arg.Format,
 		arg.Paragraphs,
 		arg.Words,
+		arg.Document,
 		arg.CreatedAt,
 	)
 	return err
@@ -90,6 +92,29 @@ func (q *Queries) GetChatAttachment(ctx context.Context, arg GetChatAttachmentPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getChatAttachmentDocument = `-- name: GetChatAttachmentDocument :one
+SELECT attachment.document
+FROM chat_turn_attachments AS attachment
+JOIN chat_sessions AS chat ON chat.id = attachment.chat_id AND chat.project_id = attachment.project_id
+WHERE attachment.project_id = $1 AND attachment.chat_id = $2
+  AND chat.deleted_at IS NULL AND attachment.number = $3
+`
+
+type GetChatAttachmentDocumentParams struct {
+	ProjectID pgtype.UUID `json:"project_id"`
+	ChatID    pgtype.UUID `json:"chat_id"`
+	Number    int32       `json:"number"`
+}
+
+// The parse of an attachment of a live chat for the proofreading started from it (CA5.5): NULL for the attachments
+// before it was kept.
+func (q *Queries) GetChatAttachmentDocument(ctx context.Context, arg GetChatAttachmentDocumentParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getChatAttachmentDocument, arg.ProjectID, arg.ChatID, arg.Number)
+	var document []byte
+	err := row.Scan(&document)
+	return document, err
 }
 
 const getChatTurnAttachmentHeader = `-- name: GetChatTurnAttachmentHeader :one

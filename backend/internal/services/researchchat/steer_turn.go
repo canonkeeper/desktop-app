@@ -9,6 +9,7 @@ import (
 
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 )
 
@@ -61,6 +62,16 @@ type SteerTarget struct {
 	ProviderTurnID string
 	ImageTitles    map[int]string
 	Replayed       bool
+	// Charge is the unit of the author's daily limit the correction took (specs/2026-11-09-quota-accounting.md Q2.2):
+	// FinishSteer gives it back when the turn did not take the correction. A replay took none.
+	Charge SteerCharge
+}
+
+// SteerCharge is who paid for a correction, from which limit and on which Moscow day.
+type SteerCharge struct {
+	UserID string
+	Key    quota.Key
+	At     time.Time
 }
 
 type SteerRepository interface {
@@ -69,7 +80,7 @@ type SteerRepository interface {
 	BeginSteer(context.Context, BeginSteerCommand) (SteerTarget, error)
 	// ReloadSteerTarget reads the turn again; ErrTurnEnded once it stopped working.
 	ReloadSteerTarget(context.Context, SteerTarget) (SteerTarget, error)
-	// FinishSteer keeps the key of an accepted correction and lets go of any other.
+	// FinishSteer keeps the key of an accepted correction and lets go of any other with its charge.
 	FinishSteer(context.Context, SteerTarget, bool) error
 }
 

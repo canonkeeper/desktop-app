@@ -285,3 +285,31 @@ func TestProjectShowsTheChapterAttachedToAQuestion(t *testing.T) {
 		t.Fatalf("question = %+v", snapshot.Events)
 	}
 }
+
+// specs/2026-11-11-ux9-writing-b.md WB3.3: a question a button of the page sent is marked so in the timeline, from the
+// native question itself; the author's own words are not.
+func TestProjectMarksAQuestionAButtonSent(t *testing.T) {
+	item := func(id, question string) string {
+		encoded, err := json.Marshal(question)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return `{"type":"userMessage","id":"` + id + `","content":[{"type":"text","text":` + string(encoded) + `}]}`
+	}
+	snapshot, err := Project("job-1", []RawItem{
+		rawItem("turn-1", TurnStatusCompleted, item("pressed", `{"question":"Написать главу","projectRef":"project","sourceView":"draft","scope":"project","button":true}`)),
+		rawItem("turn-2", TurnStatusCompleted, item("typed", `{"question":"Написать главу","projectRef":"project","sourceView":"draft","scope":"project"}`)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var questions []Event
+	for _, event := range snapshot.Events {
+		if event.Kind == EventUser {
+			questions = append(questions, event)
+		}
+	}
+	if len(questions) != 2 || !questions[0].Button || questions[1].Button {
+		t.Fatalf("questions = %+v", questions)
+	}
+}

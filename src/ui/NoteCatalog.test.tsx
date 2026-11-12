@@ -4,8 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NoteCatalog, type NoteCatalogHandle, type NoteCatalogItem } from './NoteCatalog';
 
 const items: NoteCatalogItem[] = Array.from({ length: 527 }, (_, index) => ({
-  key: `personal:${index}`, title: `Заметка ${index + 1}`, preview: `Текст ${index + 1}`,
-  type: 'Запись', source: 'Без источника', updatedAt: '2026-09-19T18:40:00Z',
+  key: `personal:${index}`, line: `Заметка ${index + 1}`, place: 'Своя мысль', updatedAt: '2026-09-19T18:40:00Z',
 }));
 let resize: (width: number, height: number) => void;
 beforeEach(() => {

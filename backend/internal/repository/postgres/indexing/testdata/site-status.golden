@@ -1,0 +1,199 @@
+{
+ "importing": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "processing",
+    "currentBook": {
+     "bookId": "book-2",
+     "position": 2,
+     "total": 2
+    },
+    "retryableFailedBook": null
+   }
+  },
+  "draft": {
+   "exists": false,
+   "context": null
+  },
+  "steps": [],
+  "preparation": {
+   "remainingSeconds": null,
+   "letterPromised": false,
+   "chaptersRead": 15,
+   "chaptersTotal": 20,
+   "booksRead": 1,
+   "booksTotal": 2,
+   "currentBookId": "book-2",
+   "askable": true,
+   "books": [
+    {
+     "bookId": "book-1",
+     "chaptersRead": 12,
+     "chaptersTotal": 12
+    },
+    {
+     "bookId": "book-2",
+     "chaptersRead": 3,
+     "chaptersTotal": 8
+    }
+   ]
+  }
+ },
+ "reading": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "processing",
+    "currentBook": {
+     "bookId": "book-2",
+     "position": 2,
+     "total": 2
+    },
+    "retryableFailedBook": null
+   }
+  },
+  "draft": {
+   "exists": false,
+   "context": null
+  },
+  "steps": [],
+  "preparation": {
+   "remainingSeconds": 150,
+   "letterPromised": true,
+   "chaptersRead": 15,
+   "chaptersTotal": 20,
+   "booksRead": 1,
+   "booksTotal": 2,
+   "currentBookId": "book-2",
+   "askable": true,
+   "books": [
+    {
+     "bookId": "book-1",
+     "chaptersRead": 12,
+     "chaptersTotal": 12
+    },
+    {
+     "bookId": "book-2",
+     "chaptersRead": 3,
+     "chaptersTotal": 8
+    }
+   ]
+  }
+ },
+ "ready": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "ready",
+    "currentBook": null,
+    "retryableFailedBook": null
+   }
+  },
+  "draft": {
+   "exists": false,
+   "context": null
+  },
+  "steps": [],
+  "sagaReady": {
+   "at": "2026-10-09T10:01:00Z",
+   "books": 2,
+   "chapters": 20
+  }
+ },
+ "stopped": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "partial",
+    "currentBook": null,
+    "retryableFailedBook": {
+     "bookId": "book-2"
+    }
+   }
+  },
+  "draft": {
+   "exists": false,
+   "context": null
+  },
+  "steps": []
+ },
+ "viewer": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "processing",
+    "currentBook": {
+     "bookId": "book-2",
+     "position": 2,
+     "total": 2
+    },
+    "retryableFailedBook": null
+   }
+  },
+  "steps": [],
+  "preparation": {
+   "remainingSeconds": 240,
+   "letterPromised": false,
+   "chaptersRead": 15,
+   "chaptersTotal": 20,
+   "booksRead": 1,
+   "booksTotal": 2,
+   "currentBookId": "book-2",
+   "askable": true,
+   "books": [
+    {
+     "bookId": "book-1",
+     "chaptersRead": 12,
+     "chaptersTotal": 12
+    },
+    {
+     "bookId": "book-2",
+     "chaptersRead": 3,
+     "chaptersTotal": 8
+    }
+   ]
+  }
+ },
+ "without job": {
+  "published": {
+   "exists": true,
+   "context": {
+    "state": "processing",
+    "currentBook": {
+     "bookId": "book-2",
+     "position": 2,
+     "total": 2
+    },
+    "retryableFailedBook": null
+   }
+  },
+  "draft": {
+   "exists": false,
+   "context": null
+  },
+  "steps": [],
+  "preparation": {
+   "remainingSeconds": null,
+   "letterPromised": false,
+   "chaptersRead": 15,
+   "chaptersTotal": 20,
+   "booksRead": 1,
+   "booksTotal": 2,
+   "currentBookId": "book-2",
+   "askable": true,
+   "books": [
+    {
+     "bookId": "book-1",
+     "chaptersRead": 12,
+     "chaptersTotal": 12
+    },
+    {
+     "bookId": "book-2",
+     "chaptersRead": 3,
+     "chaptersTotal": 8
+    }
+   ]
+  }
+ }
+}

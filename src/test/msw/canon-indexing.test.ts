@@ -34,7 +34,8 @@ describe('MSW canonical indexing handlers', () => {
 
     const viewerStatus = await fetch(`${mswApiBaseUrl}/projects/project-white-port/indexing-status`, { headers: viewerHeaders });
     const viewerStatusBody = (await viewerStatus.json()) as Record<string, unknown>;
-    expect(Object.keys(viewerStatusBody).sort()).toEqual(['published', 'steps']);
+    // The published text of the mock saga is read: a reader sees the reading too (specs/2026-11-10-ux3-saga-state.md SS1.1).
+    expect(Object.keys(viewerStatusBody).sort()).toEqual(['preparation', 'published', 'steps']);
 
     const editorHeaders = { ...viewerHeaders, mock_actor_role: 'editor' };
     const editorStatus = await fetch(`${mswApiBaseUrl}/projects/project-white-port/indexing-status`, { headers: editorHeaders });

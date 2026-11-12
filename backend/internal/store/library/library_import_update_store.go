@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	domainlibrary "canonkeeper/backend/internal/domain/library"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
-	"canonkeeper/backend/internal/store/sqlc"
+	"canonkeeper/backend/internal/store/db"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -91,7 +92,8 @@ func plainTexts(contents []importedParagraphContent) []string {
 
 // updateImportedBookInTx rewrites a live book from the chapters of a new file of the same volume
 // (specs/2026-10-27-update-book-from-file.md, UC1, UC3, UC4). A chapter whose text differs only in spaces keeps
-// its revision and its card; one with other signs gets the next revision and keeps its card; one with other
+// its revision and its card and takes the italic and bold of the file in its rows (specs/2026-11-08-italic-bold-in-text.md
+// TF3.3); one with other signs gets the next revision and keeps its card; one with other
 // words gets the next revision and a new card later; a new one is created, and a chapter the file no longer
 // has is deleted as by hand. The book keeps its id, place and title.
 func (s *Store) updateImportedBookInTx(
@@ -108,6 +110,16 @@ func (s *Store) updateImportedBookInTx(
 	}
 	bookGeneration, chapters, plan := update.bookGeneration, update.chapters, update.plan
 	write := importedBookWrite{bookID: bookID, counts: importedUpdateCounts(plan)}
+	jobID, err := storedb.ParseUUID(input.JobID)
+	if err != nil {
+		return importedBookWrite{}, library.ErrConflict
+	}
+	// What each chapter was before the update and what the update left (specs/2026-11-12-ux10-book-revert.md BR1.1).
+	snapshot := make([]snapshotChapterRow, 0, len(chapters)+len(input.Chapters))
+	// What the update does, read before it writes, for «Что изменилось» (specs/2026-11-11-ux7-trash.md TB4.1).
+	if write.counts.Preview, err = updatePreviewInTx(ctx, tx, update, input.Chapters, projectID, write.counts); err != nil {
+		return importedBookWrite{}, err
+	}
 	for _, removed := range plan.Removed {
 		chapter := chapters[removed]
 		var tombstoneID pgtype.UUID
@@ -115,12 +127,16 @@ func (s *Store) updateImportedBookInTx(
 			return importedBookWrite{}, err
 		}
 		request := governedChapterDeleteRequest(tombstoneID.String(), input.ActorUserID, input.ProjectID, chapter.id.String(), finalizedAt.Time)
-		if _, err := s.fenceLockedChapterInTx(
+		fenced, err := s.fenceLockedChapterInTx(
 			ctx, tx, request, projectID, bookID, chapter.id, tombstoneID,
 			projectGeneration, bookGeneration, chapter.generation,
-		); err != nil {
+		)
+		if err != nil {
 			return importedBookWrite{}, err
 		}
+		row := snapshotOfKept(chapter, domainlibrary.UpdateRemoved, chapter.revision)
+		row.chapter.Generation = int64(fenced.Current.ChapterGeneration)
+		snapshot = append(snapshot, row)
 	}
 
 	bookVector := governance.SourceGenerationVector{
@@ -132,7 +148,6 @@ func (s *Store) updateImportedBookInTx(
 		return importedBookWrite{}, library.ErrValidation
 	}
 	write.refs = []governance.ArtifactSourceRef{bookRef}
-	queries := sqlc.New(tx)
 	for index, fileChapter := range input.Chapters {
 		order := index + 1
 		pairing := plan.Chapters[index]
@@ -145,18 +160,18 @@ func (s *Store) updateImportedBookInTx(
 			if err := tx.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&chapterID); err != nil {
 				return importedBookWrite{}, err
 			}
-			created, err := queries.CreateChapter(ctx, sqlc.CreateChapterParams{
-				ID: chapterID, Title: fileChapter.Title, SortOrder: int32(order),
-				CreatedAt: finalizedAt, ProjectID: projectID, BookID: bookID,
-			})
+			created, err := createLibraryChapters(ctx, tx, projectID, bookID, []newChapterRow{{id: chapterID, title: fileChapter.Title, order: order}}, finalizedAt)
 			if err != nil {
 				return importedBookWrite{}, err
 			}
-			generation, revision = created.LifecycleGeneration, created.Revision
-			if _, err := writeImportedChapterText(ctx, tx, queries, projectID, bookID, chapterID, projectGeneration, bookGeneration,
+			generation, revision = created[0].LifecycleGeneration, created[0].Revision
+			if _, err := writeImportedChapterText(ctx, tx, projectID, bookID, chapterID, projectGeneration, bookGeneration,
 				generation, revision, revision, fileChapter.Title, order, contents, finalizedAt); err != nil {
 				return importedBookWrite{}, err
 			}
+			snapshot = append(snapshot, snapshotChapterRow{chapter: domainlibrary.SnapshotChapter{
+				ID: chapterID.String(), Change: domainlibrary.UpdateAdded, Revision: revision, Generation: generation,
+			}})
 		case pairing.Change == domainlibrary.TextSame:
 			chapter := chapters[pairing.Book]
 			chapterID, generation, revision = chapter.id, chapter.generation, chapter.revision
@@ -166,10 +181,22 @@ func (s *Store) updateImportedBookInTx(
 					return importedBookWrite{}, err
 				}
 			}
+			restyled, err := restyleImportedChapter(ctx, tx, chapter, contents, finalizedAt)
+			if err != nil {
+				return importedBookWrite{}, err
+			}
+			row := snapshotOfKept(chapter, domainlibrary.UpdateChangeOf(pairing, chapter.order != order, restyled), revision)
+			if restyled {
+				row.previousMarkdown = make([]string, len(chapter.contents))
+				for index, content := range chapter.contents {
+					row.previousMarkdown[index] = content.markdown
+				}
+			}
+			snapshot = append(snapshot, row)
 		default:
 			chapter := chapters[pairing.Book]
 			chapterID, generation, revision = chapter.id, chapter.generation, chapter.revision+1
-			written, err := writeImportedChapterText(ctx, tx, queries, projectID, bookID, chapterID, projectGeneration, bookGeneration,
+			written, err := writeImportedChapterText(ctx, tx, projectID, bookID, chapterID, projectGeneration, bookGeneration,
 				generation, chapter.revision, revision, fileChapter.Title, order, contents, finalizedAt)
 			if err != nil {
 				return importedBookWrite{}, err
@@ -179,6 +206,7 @@ func (s *Store) updateImportedBookInTx(
 					return importedBookWrite{}, err
 				}
 			}
+			snapshot = append(snapshot, snapshotOfKept(chapter, domainlibrary.UpdateChangeOf(pairing, false, false), revision))
 		}
 		chapterVector := bookVector
 		chapterVector.ChapterID, chapterVector.ChapterGeneration = chapterID.String(), governance.LifecycleGeneration(generation)
@@ -191,7 +219,50 @@ func (s *Store) updateImportedBookInTx(
 	if err := s.publishBookTextInTx(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, update.bookTitle); err != nil {
 		return importedBookWrite{}, err
 	}
+	if err := writeBookUpdateSnapshotInTx(ctx, tx, projectID, bookID, jobID, finalizedAt, snapshot); err != nil {
+		return importedBookWrite{}, err
+	}
 	return write, s.hitImportFinalize("after_import_update_catalog_mutation")
+}
+
+// restyleImportedChapter gives a chapter whose text did not change the italic and bold of the file
+// (specs/2026-11-08-italic-bold-in-text.md TF3.3): markdown of the same rows in both text versions, on the spaces the book
+// holds. Its plain text, its revision and so the fingerprint, the index and the card stay as they are. It says whether a
+// row took other italic or bold.
+func restyleImportedChapter(ctx context.Context, tx pgx.Tx, chapter importedBookChapter, contents []importedParagraphContent, at pgtype.Timestamptz) (bool, error) {
+	if len(contents) != len(chapter.contents) {
+		return false, library.ErrConflict
+	}
+	restyled := false
+	for index, content := range contents {
+		stored := chapter.contents[index]
+		markdown := content.markdown
+		if content.plainText != stored.plainText {
+			runs, ok := textface.Onto(textface.FromMarkdown(content.markdown), stored.plainText)
+			if !ok {
+				return false, library.ErrConflict
+			}
+			markdown = textface.Markdown(runs)
+		}
+		if markdown == stored.markdown {
+			continue
+		}
+		if err := setParagraphMarkdown(ctx, tx, chapter.id, chapter.revision, stored.order, markdown, at); err != nil {
+			return false, err
+		}
+		restyled = true
+	}
+	return restyled, nil
+}
+
+// setParagraphMarkdown gives a row of a revision of a chapter, in both text versions, other italic and bold over the same
+// plain text.
+func setParagraphMarkdown(ctx context.Context, tx pgx.Tx, chapterID pgtype.UUID, revision int64, order int, markdown string, at pgtype.Timestamptz) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE chapter_paragraphs SET markdown = $1, updated_at = $2
+		WHERE chapter_id = $3 AND revision = $4 AND "order" = $5
+	`, markdown, at, chapterID, revision, order)
+	return err
 }
 
 // importedUpdateCounts are the counters of the result of an update or its preview.
@@ -299,7 +370,6 @@ func lockImportedBookChapters(ctx context.Context, tx pgx.Tx, projectID, bookID 
 func writeImportedChapterText(
 	ctx context.Context,
 	tx pgx.Tx,
-	queries *sqlc.Queries,
 	projectID, bookID, chapterID pgtype.UUID,
 	projectGeneration, bookGeneration, chapterGeneration, expectedRevision, revision int64,
 	title string,
@@ -311,10 +381,11 @@ func writeImportedChapterText(
 	if err != nil {
 		return nil, err
 	}
-	for _, variant := range [][]library.Paragraph{paragraphs, publishedImportParagraphs(paragraphs)} {
-		if err := createLibraryParagraphs(ctx, queries, projectID, bookID, projectGeneration, bookGeneration, chapterGeneration, variant); err != nil {
-			return nil, err
-		}
+	if err := createLibraryParagraphs(ctx, tx, projectID, bookID, projectGeneration, bookGeneration,
+		chapterParagraphs{generation: chapterGeneration, paragraphs: paragraphs},
+		chapterParagraphs{generation: chapterGeneration, paragraphs: publishedImportParagraphs(paragraphs)},
+	); err != nil {
+		return nil, err
 	}
 	command, err := tx.Exec(ctx, `
 		UPDATE chapters

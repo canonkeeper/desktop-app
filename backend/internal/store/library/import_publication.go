@@ -6,7 +6,6 @@ import (
 
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
-	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,10 +28,11 @@ func publishedImportParagraphs(draft []library.Paragraph) []library.Paragraph {
 	return published
 }
 
+// publishImportedBookInTx publishes the chapters an import wrote by batches: their published paragraphs, their rows and
+// their members of the published catalog, a few statements for the whole book (specs/2026-11-11-import-speed.md IS1).
 func (s *Store) publishImportedBookInTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	queries *sqlc.Queries,
 	projectID, bookID pgtype.UUID,
 	projectGeneration, bookGeneration int64,
 	bookTitle string,
@@ -46,45 +46,14 @@ func (s *Store) publishImportedBookInTx(
 	}); err != nil {
 		return err
 	}
-	for _, chapter := range chapters {
-		if err := createLibraryParagraphs(
-			ctx, queries, projectID, bookID,
-			projectGeneration, bookGeneration, chapter.lifecycleGeneration,
-			publishedImportParagraphs(chapter.paragraphs),
-		); err != nil {
-			return err
-		}
-		command, err := tx.Exec(ctx, `
-			UPDATE chapters AS chapter
-			SET status = 'published',
-			    published_revision = $1,
-			    published_at = $2,
-			    publish_error = NULL,
-			    updated_at = $2
-			FROM books AS book
-			JOIN projects AS project ON project.id = book.project_id
-			WHERE chapter.project_id = $3
-			  AND chapter.book_id = $4
-			  AND chapter.id = $5
-			  AND chapter.lifecycle_generation = $6
-			  AND book.project_id = $3
-			  AND book.id = $4
-			  AND book.lifecycle_generation = $7
-			  AND project.id = $3
-			  AND project.lifecycle_generation = $8
-			  AND chapter.revision = $1
-			  AND chapter.deleted_at IS NULL
-			  AND book.deleted_at IS NULL
-			  AND project.deleted_at IS NULL
-		`, chapter.revision, publishedAt, projectID, bookID, chapter.id,
-			chapter.lifecycleGeneration, bookGeneration, projectGeneration)
-		if err != nil {
-			return err
-		}
-		if command.RowsAffected() != 1 {
-			return library.ErrConflict
-		}
-		if err := upsertChapterSourceMember(ctx, tx, library.ChapterSourceMember{
+	published := make([]chapterParagraphs, len(chapters))
+	members := make([]library.ChapterSourceMember, len(chapters))
+	ids := make([]pgtype.UUID, len(chapters))
+	generations := make([]int64, len(chapters))
+	revisions := make([]int64, len(chapters))
+	for index, chapter := range chapters {
+		published[index] = chapterParagraphs{generation: chapter.lifecycleGeneration, paragraphs: publishedImportParagraphs(chapter.paragraphs)}
+		members[index] = library.ChapterSourceMember{
 			BookSourceMember: library.BookSourceMember{
 				ProjectID: projectID.String(), ProjectLifecycleGeneration: projectGeneration,
 				SourceView: governance.SourceViewPublished, BookID: bookID.String(),
@@ -92,9 +61,44 @@ func (s *Store) publishImportedBookInTx(
 			},
 			ChapterID: chapter.id.String(), ChapterLifecycleGeneration: chapter.lifecycleGeneration,
 			SourceRevision: uint64(chapter.revision), Title: chapter.title, Order: int(chapter.order),
-		}); err != nil {
-			return err
 		}
+		ids[index], generations[index], revisions[index] = chapter.id, chapter.lifecycleGeneration, chapter.revision
+	}
+	if err := createLibraryParagraphs(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, published...); err != nil {
+		return err
+	}
+	command, err := tx.Exec(ctx, `
+		UPDATE chapters AS chapter
+		SET status = 'published',
+		    published_revision = given.revision,
+		    published_at = $1,
+		    publish_error = NULL,
+		    updated_at = $1
+		FROM unnest($2::uuid[], $3::bigint[], $4::bigint[]) AS given(id, lifecycle_generation, revision),
+		     books AS book
+		JOIN projects AS project ON project.id = book.project_id
+		WHERE chapter.project_id = $5
+		  AND chapter.book_id = $6
+		  AND chapter.id = given.id
+		  AND chapter.lifecycle_generation = given.lifecycle_generation
+		  AND book.project_id = $5
+		  AND book.id = $6
+		  AND book.lifecycle_generation = $7
+		  AND project.id = $5
+		  AND project.lifecycle_generation = $8
+		  AND chapter.revision = given.revision
+		  AND chapter.deleted_at IS NULL
+		  AND book.deleted_at IS NULL
+		  AND project.deleted_at IS NULL
+	`, publishedAt, ids, generations, revisions, projectID, bookID, bookGeneration, projectGeneration)
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() != int64(len(chapters)) {
+		return library.ErrConflict
+	}
+	if err := upsertChapterSourceMembers(ctx, tx, members); err != nil {
+		return err
 	}
 	if err := normalizePublishedChapterOrder(ctx, tx, projectID, projectGeneration, bookID, bookGeneration); err != nil {
 		return err

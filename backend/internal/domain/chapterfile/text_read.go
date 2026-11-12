@@ -2,6 +2,7 @@ package chapterfile
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -10,9 +11,10 @@ import (
 	"golang.org/x/text/transform"
 )
 
-// decodeText reads the bytes of a text file (PR1.3): UTF-8 with or without its mark, UTF-16 with its mark, otherwise
-// Windows-1251 — what a Russian text saved by an old editor is.
-func decodeText(data []byte) (string, error) {
+// DecodeText reads the bytes of a text file (PR1.3): UTF-8 with or without its mark, UTF-16 with its mark, otherwise
+// Windows-1251 — what a Russian text saved by an old editor is. The import of a book in a text reads it so too
+// (specs/2026-11-10-book-file-kinds.md K2.1).
+func DecodeText(data []byte) (string, error) {
 	switch {
 	case bytes.HasPrefix(data, []byte{0xEF, 0xBB, 0xBF}):
 		data = data[3:]
@@ -35,7 +37,7 @@ func decodeText(data []byte) (string, error) {
 
 // parsePlain reads a text file: every line with words is a paragraph.
 func parsePlain(data []byte, format Format) (Document, error) {
-	text, err := decodeText(data)
+	text, err := DecodeText(data)
 	if err != nil {
 		return Document{}, err
 	}
@@ -44,19 +46,53 @@ func parsePlain(data []byte, format Format) (Document, error) {
 
 func plainDocument(text string, format Format) Document {
 	document := Document{Format: format}
-	for _, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n") {
-		if strings.TrimSpace(line) != "" {
+	lines := textLines(text)
+	title := firstLineTitle(lines)
+	for i, line := range lines {
+		switch {
+		case i == title:
+			document.Title = &Paragraph{Runs: []Run{{Text: line}}}
+		case strings.TrimSpace(line) != "":
 			document.Paragraphs = append(document.Paragraphs, Paragraph{Runs: []Run{{Text: line}}})
 		}
 	}
 	return document
 }
 
+// textLines are the lines of a text, whatever its line ends.
+func textLines(text string) []string {
+	return strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
+}
+
+// titleLineRunes: a first line shorter than this may name the chapter.
+const titleLineRunes = 80
+
+// firstLineTitle is the index of the first line of a text that names its chapter, or -1 (specs/2026-11-11-ux9-writing-a.md
+// WA1.1): shorter than 80 signs, an empty line after it and text after that, and it does not read as the text itself — it
+// does not end a sentence with a stop, a comma or a colon, and it is no reply or quote. A line that names a chapter by its
+// number («Глава 3. Ночь») is a title anyway (finish). The one rule of the text, the Markdown and the pasted chapter.
+func firstLineTitle(lines []string) int {
+	first := slices.IndexFunc(lines, func(line string) bool { return strings.TrimSpace(line) != "" })
+	if first < 0 || first+1 >= len(lines) || strings.TrimSpace(lines[first+1]) != "" {
+		return -1
+	}
+	if !slices.ContainsFunc(lines[first+2:], func(line string) bool { return strings.TrimSpace(line) != "" }) {
+		return -1
+	}
+	line := strings.TrimSpace(lines[first])
+	opening, _ := utf8.DecodeRuneInString(line)
+	closing, _ := utf8.DecodeLastRuneInString(line)
+	if utf8.RuneCountInString(line) >= titleLineRunes || strings.ContainsRune(".,;:…", closing) || strings.ContainsRune("—–-«\"'(", opening) {
+		return -1
+	}
+	return first
+}
+
 // parseMarkdown reads a Markdown file (PR1.3): a block between blank lines is a paragraph and its lines are joined by a
 // space; a heading line «#» is a block of its own, and the first one, before any text, is the title; *…* and _…_ are
 // italic, **…** and __…__ bold, a backslash keeps the sign after it. A line of stars or dashes alone («* * *») is text.
 func parseMarkdown(data []byte) (Document, error) {
-	text, err := decodeText(data)
+	text, err := DecodeText(data)
 	if err != nil {
 		return Document{}, err
 	}
@@ -64,13 +100,22 @@ func parseMarkdown(data []byte) (Document, error) {
 	var block []string
 	flush := func() {
 		if len(block) > 0 {
-			document.Paragraphs = append(document.Paragraphs, Paragraph{Runs: inline(strings.Join(block, " "))})
+			document.Paragraphs = append(document.Paragraphs, Paragraph{Runs: MarkdownRuns(strings.Join(block, " "))})
 			block = nil
 		}
 	}
-	for _, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n") {
+	lines := textLines(text)
+	// Without a heading the first line names the chapter by the rule of a text (WA1.1).
+	title := firstLineTitle(lines)
+	if title >= 0 && (strings.HasPrefix(strings.TrimSpace(lines[title]), "#") || strings.Trim(lines[title], "*-_ ") == "") {
+		title = -1
+	}
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		switch {
+		case i == title:
+			heading := Paragraph{Runs: MarkdownRuns(trimmed)}
+			document.Title = &heading
 		case trimmed == "":
 			flush()
 		case strings.Trim(trimmed, "*-_ ") == "":
@@ -78,7 +123,7 @@ func parseMarkdown(data []byte) (Document, error) {
 			document.Paragraphs = append(document.Paragraphs, Paragraph{Runs: []Run{{Text: trimmed}}})
 		case strings.HasPrefix(trimmed, "#"):
 			flush()
-			heading := Paragraph{Runs: inline(strings.TrimSpace(strings.Trim(strings.TrimLeft(trimmed, "#"), "# ")))}
+			heading := Paragraph{Runs: MarkdownRuns(strings.TrimSpace(strings.Trim(strings.TrimLeft(trimmed, "#"), "# ")))}
 			if document.Title == nil && len(document.Lines()) == 0 {
 				document.Title = &heading
 				continue
@@ -92,8 +137,9 @@ func parseMarkdown(data []byte) (Document, error) {
 	return document, nil
 }
 
-// inline reads the faces of a line of Markdown. A sign without its pair stays text.
-func inline(line string) []Run {
+// MarkdownRuns reads the faces of a line of Markdown. A sign without its pair stays text. The import of a book in
+// Markdown reads its faces so too (specs/2026-11-10-book-file-kinds.md K2.5).
+func MarkdownRuns(line string) []Run {
 	type piece struct {
 		text string
 		sign string // "**", "__", "*", "_" or ""

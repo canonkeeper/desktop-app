@@ -1,0 +1,40 @@
+.under {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.continuations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.continuations li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A question of the author is read whole: it wraps instead of being cut. */
+.continuation {
+  max-width: 100%;
+  height: auto;
+  min-height: 36px;
+  padding-block: 6px;
+  white-space: normal;
+  text-align: left;
+}
+
+.continuation span {
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}

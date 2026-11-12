@@ -9,13 +9,15 @@ import { mockDefault } from './quota';
 const acceptedTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const maxUploadBytes = 20 * 1024 * 1024;
 
-/** The caption of an upload: the author's, else the file name without its extension (R15.1). */
-export function mockUploadTitle(title: string | undefined, fileName: string) {
-  const clean = (value: string) => value.replace(/\s+/gu, ' ').trim();
-  const own = clean(title ?? '');
-  if (own && [...own].length <= 80) return own;
-  const name = clean(fileName.replace(/^.*[\\/]/u, '').replace(/\.[^.]*$/u, ''));
-  return name ? [...name].slice(0, 80).join('') : 'Изображение автора';
+const moscowDay = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
+
+/**
+ * The caption of an upload (R15.1; specs/2026-11-12-ux12-drawings.md DW4.1): the author's, else «Моя картинка от 10 ноября» by the
+ * Moscow day of the upload — the name of the file is not read.
+ */
+export function mockUploadTitle(title: string | undefined, at: Date) {
+  const own = (title ?? '').replace(/\s+/gu, ' ').trim();
+  return own && [...own].length <= 80 ? own : `Моя картинка от ${moscowDay.format(at)}`;
 }
 
 /**
@@ -43,9 +45,9 @@ export function createImageUploadOperations(context: MockRepositoryContext) {
     }
     if (input.file.size > maxUploadBytes) throw new MockApiError(413, 'the image is larger than 20 MiB', operationId, 'illustrations.upload_too_large');
     if (!acceptedTypes.has(input.file.type)) throw new MockApiError(415, 'the file is not a PNG, JPEG or WebP image', operationId, 'illustrations.upload_unsupported');
-    const title = mockUploadTitle(input.title, input.file.name);
+    const title = mockUploadTitle(input.title, new Date());
     return context.idempotentCommand(operationId, projectId, options, {
-      name: input.file.name, size: input.file.size, title, consent: confirm ?? null,
+      name: input.file.name, size: input.file.size, title: input.title?.trim() ?? '', consent: confirm ?? null,
     }, () => {
       if (access.uploadsToday(userId) >= mockDefault(context.state.quotaDefaults, 'image_uploads_per_day')) {
         throw new MockApiError(429, 'Daily upload limit is used up.', operationId, 'quota.image_uploads_daily');

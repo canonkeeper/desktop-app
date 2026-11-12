@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/bookexport"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/library"
 )
 
@@ -39,12 +40,12 @@ func testBook(cover bool, chapters ...chapter) bookexport.Book {
 	return book
 }
 
-func testCover() *bookexport.Cover {
+func testCover() *bookexport.Image {
 	var content bytes.Buffer
 	if err := png.Encode(&content, image.NewRGBA(image.Rect(0, 0, 60, 90))); err != nil {
 		panic(err)
 	}
-	return &bookexport.Cover{MediaType: "image/png", Content: content.Bytes(), Width: 600, Height: 900}
+	return &bookexport.Image{MediaType: "image/png", Content: content.Bytes(), Width: 600, Height: 900}
 }
 
 var smallBook = []chapter{
@@ -82,6 +83,34 @@ func readBack(t *testing.T, format bookexport.Format, file []byte) library.BookI
 
 var allFormats = []bookexport.Format{bookexport.FormatDOCX, bookexport.FormatEPUB, bookexport.FormatFB2}
 
+// chaptersOf is what the book keeps of the chapters read back: the title and the markdown of each paragraph.
+func chaptersOf(book library.BookImport) []chapter {
+	chapters := make([]chapter, len(book.Chapters))
+	for i, read := range book.Chapters {
+		chapters[i].title = read.Title
+		for _, paragraph := range read.Paragraphs {
+			chapters[i].paragraphs = append(chapters[i].paragraphs, textface.Markdown(paragraph.Runs))
+		}
+	}
+	return chapters
+}
+
+// specs/2026-11-08-italic-bold-in-text.md TF7.1: the italic and bold of the book are written in every format and come
+// back through the import of the product as the same markdown, a star and a backslash of the text with them.
+func TestTheFacesOfABookComeBackWordForWord(t *testing.T) {
+	faced := []chapter{
+		{"Глава 1", []string{"Он *пришёл* и **сел**, ***оба*** и *курсив **с жирным***.", `Звезда \* и обратная \\ черта, *5\*3*.`, "Без начертания."}},
+		{"Глава 2", []string{"**Жирный абзац целиком.**", "*― Тише,* ― сказал он."}},
+	}
+	for _, format := range allFormats {
+		t.Run(string(format), func(t *testing.T) {
+			if got := chaptersOf(readBack(t, format, written(t, format, testBook(false, faced...)))); !reflect.DeepEqual(got, faced) {
+				t.Fatalf("chapters = %#v\nwant %#v", got, faced)
+			}
+		})
+	}
+}
+
 // E1.1, E1.4: what is written comes back through the import of the product: the title, the chapters in their order,
 // the paragraphs word for word; a paragraph without text is not written, and the title page is not a chapter.
 func TestAWrittenBookComesBackWordForWord(t *testing.T) {
@@ -92,13 +121,13 @@ func TestAWrittenBookComesBackWordForWord(t *testing.T) {
 				if book.Title != `Том «Белый порт» & другие` {
 					t.Fatalf("title = %q", book.Title)
 				}
-				want := []library.ChapterImport{
-					{Title: `Глава 1. «Кир» & компания`, Paragraphs: []string{`"Стой!" — крикнул он: «Кир & Мила <вместе>».`, `Второй абзац с 'апострофом' и a<b>c.`}},
-					{Title: "Пролог", Paragraphs: []string{"Первый.", "Второй, последний."}},
-					{Title: "Эпилог", Paragraphs: []string{"Одна строка."}},
+				want := []chapter{
+					{`Глава 1. «Кир» & компания`, []string{`"Стой!" — крикнул он: «Кир & Мила <вместе>».`, `Второй абзац с 'апострофом' и a<b>c.`}},
+					{"Пролог", []string{"Первый.", "Второй, последний."}},
+					{"Эпилог", []string{"Одна строка."}},
 				}
-				if !reflect.DeepEqual(book.Chapters, want) {
-					t.Fatalf("chapters = %#v", book.Chapters)
+				if got := chaptersOf(book); !reflect.DeepEqual(got, want) {
+					t.Fatalf("chapters = %#v", got)
 				}
 			})
 		}
@@ -112,9 +141,9 @@ func TestABookOfOneChapterWithALongTitleComesBack(t *testing.T) {
 			source := testBook(false, chapter{"Начало", []string{"Единственный абзац."}})
 			source.Title = strings.Repeat("Очень длинное название ", 7) + "конец"
 			book := readBack(t, format, written(t, format, source))
-			want := []library.ChapterImport{{Title: "Начало", Paragraphs: []string{"Единственный абзац."}}}
-			if !reflect.DeepEqual(book.Chapters, want) || book.Title != source.Title {
-				t.Fatalf("title = %q, chapters = %#v", book.Title, book.Chapters)
+			want := []chapter{{"Начало", []string{"Единственный абзац."}}}
+			if got := chaptersOf(book); !reflect.DeepEqual(got, want) || book.Title != source.Title {
+				t.Fatalf("title = %q, chapters = %#v", book.Title, got)
 			}
 		})
 	}
@@ -126,7 +155,7 @@ func TestAStraySignDoesNotBreakAFile(t *testing.T) {
 		t.Run(string(format), func(t *testing.T) {
 			book := readBack(t, format, written(t, format, testBook(false,
 				chapter{"Глава\x01 1", []string{"Текст\x0bс\x00знаками."}}, chapter{"Глава 2", []string{"Дальше."}})))
-			if len(book.Chapters) != 2 || book.Chapters[1].Paragraphs[0] != "Дальше." {
+			if len(book.Chapters) != 2 || book.Chapters[1].Paragraphs[0].Text() != "Дальше." {
 				t.Fatalf("chapters = %#v", book.Chapters)
 			}
 		})

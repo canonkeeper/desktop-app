@@ -6,6 +6,7 @@ import (
 	"time"
 
 	domain "canonkeeper/backend/internal/domain/sagadraft"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/library"
 	service "canonkeeper/backend/internal/services/sagadraft"
 	"canonkeeper/backend/internal/store/sqlc"
@@ -63,8 +64,8 @@ func (repository *Repository) AddChapterDraftToBook(ctx context.Context, write s
 			}
 		}
 		// The book takes the working text, written or not (specs/2026-11-04-writing-plain-path.md P2.3), without the marks
-		// of what the model wrote.
-		paragraphs := domain.Paragraphs(domain.WithoutMarks(draft.Text))
+		// of what the model wrote, its italic and bold in the Markdown subset (specs/2026-11-08-italic-bold-in-text.md TF3.2).
+		paragraphs := textface.Book(draft.Text)
 		if draft.Title == "" || len(paragraphs) == 0 {
 			return domain.ErrNoText
 		}

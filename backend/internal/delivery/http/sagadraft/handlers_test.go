@@ -50,6 +50,8 @@ type storeStub struct {
 	// idle is a draft no Job works on, with the session of its helper.
 	idle     bool
 	sessions []string
+	// chat is the chat the list was read for (specs/2026-11-11-ux5-proofread-mode.md PM3.3).
+	chat string
 }
 
 var typicalWords = 2800
@@ -66,9 +68,16 @@ func testDraftValue() domain.Draft {
 	}
 }
 
-func (stub *storeStub) ListChapterDrafts(context.Context, service.Actor, *domain.Cursor, int) (domain.Page, error) {
+func (stub *storeStub) ListChapterDrafts(_ context.Context, _ service.Actor, _ *domain.Cursor, _ int, chat string) (domain.Page, error) {
 	at := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	return domain.Page{Drafts: []domain.Summary{{ID: testDraft, Title: "Глава", Kind: domain.KindSketch, Stage: domain.StageText, JobStatus: "running", Revision: 2, CreatedAt: at, UpdatedAt: at}}, Total: 1}, stub.err
+	stub.chat = chat
+	summary := domain.Summary{ID: testDraft, Title: "Глава", Kind: domain.KindSketch, Stage: domain.StageText, Revision: 2, CreatedAt: at, UpdatedAt: at,
+		Idea: true, Job: &domain.Job{ID: "job", Mode: jobs.ChapterDraftScenes, Status: "running", Phase: "scenes", Done: 1, Total: 3},
+		Plan: &domain.PlanState{Number: 2, Approved: true, Reason: "first"}, Findings: 4, Corrections: 1}
+	if chat != "" {
+		summary.Attachment = &domain.Attachment{ChatID: chat, Number: 2}
+	}
+	return domain.Page{Drafts: []domain.Summary{summary}, Total: 1}, stub.err
 }
 
 func (stub *storeStub) GetChapterDraft(context.Context, service.Actor, string) (domain.Draft, error) {
@@ -159,8 +168,20 @@ func TestReadsAnswerTheContractShape(t *testing.T) {
 	if err := json.Unmarshal(list.Body.Bytes(), &page); err != nil || len(page.Data) != 1 || page.Meta.TotalCount != 1 {
 		t.Fatalf("page = %s, %v", list.Body, err)
 	}
-	if _, holdsText := page.Data[0]["text"]; holdsText || page.Data[0]["stage"] != "text" || page.Data[0]["jobStatus"] != "running" {
+	if _, holdsText := page.Data[0]["text"]; holdsText || page.Data[0]["stage"] != "text" {
 		t.Fatalf("a list row = %v", page.Data[0])
+	}
+	// specs/2026-11-11-ux5-writing-path.md WP1.2: a row names its step by what the server knows of it — the idea, the plan,
+	// the Job and its course, the open findings and corrections — in the fields the draft has too.
+	row, _ := json.Marshal(page.Data[0])
+	for _, want := range []string{`"idea":true`, `"job":{"done":1,"id":"job","mode":"scenes","phase":"scenes","status":"running","total":3}`,
+		`"plan":{"approved":true,"number":2,"reason":"first","stale":false}`, `"findings":4`, `"corrections":1`} {
+		if !strings.Contains(string(row), want) {
+			t.Fatalf("a list row = %s, want %s", row, want)
+		}
+	}
+	if _, old := page.Data[0]["jobStatus"]; old {
+		t.Fatalf("a list row keeps the status apart from its Job: %s", row)
 	}
 	got := call(t, handler, http.MethodGet, base+"/"+testDraft, "", nil)
 	if got.Code != http.StatusOK {
@@ -263,5 +284,125 @@ func TestPatchChangesWhatItNames(t *testing.T) {
 	}
 	if empty := call(t, handler, http.MethodPatch, base+"/"+testDraft, `{"expectedRevision":3}`, nil); empty.Code != http.StatusBadRequest {
 		t.Fatalf("an empty edit = %d", empty.Code)
+	}
+}
+
+// newChaptersStub answers what the tiers say of a draft, and counts the drafts it was asked of.
+type newChaptersStub struct {
+	answer bool
+	err    error
+	asked  []string
+}
+
+func (stub *newChaptersStub) NewChapter(_ context.Context, draft domain.Draft) (bool, error) {
+	stub.asked = append(stub.asked, draft.ID)
+	return stub.answer, stub.err
+}
+
+// newChapterOf is the newChapter of an answered draft: nil when the answer carries none.
+func newChapterOf(t *testing.T, recorder *httptest.ResponseRecorder) *bool {
+	t.Helper()
+	var draft struct {
+		NewChapter *bool `json:"newChapter"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &draft); err != nil {
+		t.Fatalf("%s: %v", recorder.Body.String(), err)
+	}
+	return draft.NewChapter
+}
+
+// specs/2026-11-10-ux1-writing.md UW1.1, UW1.2: every answer with a draft says whether its first scenes would count as a
+// new chapter of the writer's tier, by the port of the build; a build without tiers and a chapter in the book say
+// nothing, and a read that failed leaves the sign out without failing the answer.
+func TestADraftSaysWhetherItsScenesCountAsANewChapter(t *testing.T) {
+	draft := testDraftValue()
+	for _, answer := range []bool{true, false} {
+		chapters := &newChaptersStub{answer: answer}
+		view := DraftAnswer(context.Background(), chapters, draft)
+		if view.NewChapter == nil || *view.NewChapter != answer || len(chapters.asked) != 1 || chapters.asked[0] != testDraft {
+			t.Fatalf("a draft of a build with tiers = %v, asked %v; want %t", view.NewChapter, chapters.asked, answer)
+		}
+	}
+	if view := DraftAnswer(context.Background(), nil, draft); view.NewChapter != nil {
+		t.Fatalf("a build without tiers says %v", *view.NewChapter)
+	}
+	added := draft
+	added.AddedChapterID = "chapter-in-book"
+	chapters := &newChaptersStub{answer: true}
+	if view := DraftAnswer(context.Background(), chapters, added); view.NewChapter != nil || len(chapters.asked) != 0 {
+		t.Fatalf("a chapter in the book says %v, asked %v", view.NewChapter, chapters.asked)
+	}
+	if view := DraftAnswer(context.Background(), &newChaptersStub{answer: true, err: context.DeadlineExceeded}, draft); view.NewChapter != nil || view.ID != testDraft {
+		t.Fatalf("a failed read = %+v", view)
+	}
+
+	// The handlers answer through it: a read and a mutation alike.
+	stub := &storeStub{}
+	mux := chi.NewRouter()
+	NewHandlers(UseCases{Get: service.Get{Store: stub}, Update: service.Update{Store: stub}}, userStub{}, []string{"http://app.test"}).
+		WithNewChapters(&newChaptersStub{answer: true}).Mount(mux)
+	if got := newChapterOf(t, call(t, mux, http.MethodGet, base+"/"+testDraft, "", nil)); got == nil || !*got {
+		t.Fatalf("a read with tiers = %v", got)
+	}
+	if got := newChapterOf(t, call(t, mux, http.MethodPatch, base+"/"+testDraft, `{"expectedRevision":3,"title":"Глава"}`, nil)); got == nil || !*got {
+		t.Fatalf("an edit with tiers = %v", got)
+	}
+	if got := newChapterOf(t, call(t, router(stub), http.MethodGet, base+"/"+testDraft, "", nil)); got != nil {
+		t.Fatalf("a read without tiers = %v", *got)
+	}
+}
+
+// specs/2026-11-11-ux5-proofread-mode.md PM1.4, PM3.3: the list of a chat reads its drafts by the chat and names the
+// attachment each began from; the original of a draft names the revisions of its file.
+func TestTheDraftsOfAChatAndTheRevisionsOfTheFileAnswerTheContract(t *testing.T) {
+	stub := &storeStub{}
+	handler := router(stub)
+	chat := "90000000-0000-4000-8000-0000000000c1"
+	list := call(t, handler, http.MethodGet, base+"?chat="+chat, "", nil)
+	if list.Code != http.StatusOK || stub.chat != chat || !strings.Contains(list.Body.String(), `"attachment":{"chatId":"`+chat+`","number":2}`) {
+		t.Fatalf("the drafts of a chat = %d %s (chat %q)", list.Code, list.Body, stub.chat)
+	}
+	if plain := call(t, handler, http.MethodGet, base, "", nil); stub.chat != "" || strings.Contains(plain.Body.String(), `"attachment"`) {
+		t.Fatalf("the list of the saga = %s (chat %q)", plain.Body, stub.chat)
+	}
+	view := draftDTO(domain.Draft{ID: testDraft, Original: &domain.Original{FileName: "7.docx", Format: "docx", Words: 9, Revisions: 3}})
+	body, err := json.Marshal(view)
+	if err != nil || !strings.Contains(string(body), `"revisions":3`) {
+		t.Fatalf("the original of a draft = %s, %v", body, err)
+	}
+	none, err := json.Marshal(draftDTO(domain.Draft{ID: testDraft, Original: &domain.Original{FileName: "7.docx", Format: "docx"}}))
+	if err != nil || !strings.Contains(string(none), `"revisions":0`) {
+		t.Fatalf("a file without revisions = %s, %v", none, err)
+	}
+}
+
+// specs/2026-11-11-ux9-writing-b.md WB2.1: a finding of style answers its category in the author's words, by the one
+// table of the check; another note has no label.
+func TestAFindingOfStyleIsNamedInTheAuthorsWords(t *testing.T) {
+	style := NoteDTO(domain.Note{Kind: domain.NoteStyle, Category: "стоп-лист", Body: "«являться» — заезженное слово: скажите проще"})
+	if style.Label != "Штамп" || style.Category != "стоп-лист" {
+		t.Fatalf("style note = %+v", style)
+	}
+	if canon := NoteDTO(domain.Note{Kind: domain.NoteCanon, Category: "стоп-лист"}); canon.Label != "" {
+		t.Fatalf("a note of the canon has no style label: %+v", canon)
+	}
+}
+
+// specs/2026-11-12-ux10-scene-stream.md ST1.4: the draft answers the scene in writing with its Job — its number, call, step,
+// why it is written again and its text so far; without one the Job says nothing of it.
+func TestTheSceneInWritingAnswersWithItsJob(t *testing.T) {
+	job := &domain.Job{ID: "job", Mode: "scenes", Status: "running", Phase: "scenes", Done: 1, Total: 3,
+		Writing: &domain.Writing{Scene: 2, Attempt: 2, Step: "again", Reason: "lost"}}
+	body, err := json.Marshal(draftDTO(domain.Draft{ID: testDraft, Job: job}))
+	if err != nil || !strings.Contains(string(body), `"writing":{"scene":2,"attempt":2,"step":"again","reason":"lost","text":""}`) {
+		t.Fatalf("a scene written again = %s, %v", body, err)
+	}
+	job.Writing = &domain.Writing{Scene: 2, Attempt: 1, Step: "writing", Text: "Кира шла"}
+	if body, _ = json.Marshal(draftDTO(domain.Draft{ID: testDraft, Job: job})); !strings.Contains(string(body), `"writing":{"scene":2,"attempt":1,"step":"writing","text":"Кира шла"}`) {
+		t.Fatalf("a scene in writing = %s", body)
+	}
+	job.Writing = nil
+	if body, _ = json.Marshal(draftDTO(domain.Draft{ID: testDraft, Job: job})); strings.Contains(string(body), `"writing"`) {
+		t.Fatalf("a Job without a scene in writing = %s", body)
 	}
 }

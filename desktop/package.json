@@ -1,0 +1,13 @@
+{
+  "name": "canonkeeper-desktop-shell",
+  "private": true,
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "description": "The Tauri CLI that builds the installers of the CanonKeeper desktop app (desktop/README.md).",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

@@ -29,6 +29,7 @@ import (
 	httpresearch "canonkeeper/backend/internal/delivery/http/researchchat"
 	httpsagadraft "canonkeeper/backend/internal/delivery/http/sagadraft"
 	httpsaga "canonkeeper/backend/internal/delivery/http/sagareference"
+	httptrash "canonkeeper/backend/internal/delivery/http/trash"
 	workerauthormaterials "canonkeeper/backend/internal/delivery/worker/authormaterials"
 	workerresearch "canonkeeper/backend/internal/delivery/worker/researchchat"
 	workersagalayer "canonkeeper/backend/internal/delivery/worker/sagalayer"
@@ -37,6 +38,7 @@ import (
 	timelinedomain "canonkeeper/backend/internal/domain/agenttimeline"
 	deletiondomain "canonkeeper/backend/internal/domain/deletion"
 	domainlibrary "canonkeeper/backend/internal/domain/library"
+	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/httpapi"
 	"canonkeeper/backend/internal/indexing"
@@ -54,6 +56,7 @@ import (
 	researchrepo "canonkeeper/backend/internal/repository/postgres/researchchat"
 	sagadraftrepo "canonkeeper/backend/internal/repository/postgres/sagadraft"
 	sagamemoryrepo "canonkeeper/backend/internal/repository/postgres/sagamemory"
+	trashrepo "canonkeeper/backend/internal/repository/postgres/trash"
 	"canonkeeper/backend/internal/retention"
 	timelineservice "canonkeeper/backend/internal/services/agenttimeline"
 	authormaterialsservice "canonkeeper/backend/internal/services/authormaterials"
@@ -68,6 +71,7 @@ import (
 	sagalayerservice "canonkeeper/backend/internal/services/sagalayer"
 	sagamemoryservice "canonkeeper/backend/internal/services/sagamemory"
 	sagareferenceservice "canonkeeper/backend/internal/services/sagareference"
+	trashservice "canonkeeper/backend/internal/services/trash"
 	canonstore "canonkeeper/backend/internal/store/canon"
 	storedb "canonkeeper/backend/internal/store/db"
 	indexingstore "canonkeeper/backend/internal/store/indexing"
@@ -97,19 +101,31 @@ func (researchIDGenerator) NewID() string {
 // Extension is what a build adds to the open core (specs/2026-11-07-desktop-app.md DA16.4): cmd/api passes the site's,
 // cmd/desktop the desktop's. It names the Codex flows of the build's helpers besides the chat (one app-server each),
 // the check of the seams of a piece taken from a version of a draft, the sizes of the open Job pools, whether the cards
-// Job asks the author's consent before it calls the model, the listener the build opened itself, and how the build
-// composes its modules over the open core.
+// Job asks the author's consent before it calls the model, the writer's plan of the quota fence, the listener the build
+// opened itself, and how the build composes its modules over the open core.
 type Extension struct {
 	Flows      []agentdomain.Flow
-	DraftSeams func(*jobstore.Store) sagadraftrepo.SeamCheck
+	DraftSeams func(*jobstore.Store, quotastore.Fence) sagadraftrepo.SeamCheck
 	Workers    Workers
 	// CardConsent makes the cards Job call the model only for a saga whose author allowed it (DA8.1); the site builds
 	// cards without asking.
 	CardConsent bool
+	// Plans is the writer's plan the quota fence puts between his own limits and the platform's
+	// (specs/2026-11-08-subscription-tiers.md TR2.3); without it — the desktop — the fence has no plan.
+	Plans quotastore.Plans
 	// Listener is the build's own listener (the desktop's 127.0.0.1:0, DA3.1); without one the core listens on
 	// cfg.HTTPAddr.
 	Listener net.Listener
-	Compose  func(Core) (Modules, error)
+	// BuildModel stands before the model of the background builds of a saga — chapter cards with the register of
+	// names, and the thread layer (specs/2026-11-09-demo-saga.md DS2.3): the site answers the calls of its demo saga
+	// from the answers built into it. Without it — the desktop — every call goes to the model.
+	BuildModel func(BuildModel) (BuildModel, error)
+	Compose    func(Core) (Modules, error)
+}
+
+// BuildModel is the model of the background builds of a saga: one call with its instructions and its input.
+type BuildModel interface {
+	Complete(ctx context.Context, instructions, input string) (string, quota.ModelUsage, error)
 }
 
 // Core is what the open composition hands the modules of a build, built once: the configuration and the stores of the
@@ -134,6 +150,9 @@ type Core struct {
 	AuthorMaterials *authormaterialsrepo.Repository
 	Drafts          *sagadraftrepo.Repository
 	Covers          Covers
+	// Quota is the quota fence of the build (specs/2026-11-08-subscription-tiers.md TR2.4): every store that checks a
+	// limit is built with it.
+	Quota quotastore.Fence
 	// JobService is the shared Job lifecycle with the chat's cancel: the desktop cancels the turns of its author with it
 	// when it stops (specs/2026-11-07-desktop-app.md DA1.6).
 	JobService *jobs.Service
@@ -175,6 +194,23 @@ type Modules struct {
 	// Start runs the build's background work once the HTTP server is built: what it waits for at shutdown and how it
 	// stops what it serves.
 	Start func(context.Context) ([]<-chan struct{}, func(context.Context) error)
+	// ReadyLetters writes the letter «Сага готова» (specs/2026-11-09-first-session.md, FS2); a build that writes to
+	// nobody — the desktop — leaves it nil.
+	ReadyLetters indexingservice.ReadyLetters
+	// Helper says whether the helper of the build is connected (specs/2026-11-12-desk-window.md WN3.1, WN3.4): without it
+	// the status says the reading waits for the helper and no cards Job is queued. The site always has its helper and
+	// leaves it nil; the desktop has none until the author connects one.
+	Helper indexingservice.Helper
+	// DraftNewChapters says whether the first scenes of a draft would count as a new chapter of the writer's tier
+	// (specs/2026-11-10-ux1-writing.md UW1.2); a build without tiers — the desktop — leaves it nil, and its drafts say
+	// nothing of it.
+	DraftNewChapters httpsagadraft.NewChapters
+	// DeletedDrawings are the drawings of «Недавно удалённые» (specs/2026-11-11-ux7-trash.md TB3.1); a build without
+	// drawings — the desktop — leaves it nil, and its list has no drawings.
+	DeletedDrawings trashservice.Drawings
+	// BookPictures are the drawings the author put in his books (specs/2026-11-12-ux10-book-pictures.md BP2.2); a build
+	// without drawings — the desktop — leaves it nil, and the file of a book asked with drawings has none.
+	BookPictures coverservice.BookPictures
 	// Serve is the root handler of the build around the API and the readiness checks; without it the process serves
 	// them alone (the site: nginx serves the page). The desktop checks Host and serves the embedded page (DA3.4, DA3.6).
 	Serve func(api http.Handler) http.Handler
@@ -204,6 +240,8 @@ type productApplication struct {
 	libraryService  *library.Service
 	indexingService *indexing.Service
 	chatHandler     jobworker.Handler
+	// chatTools is the set the chat's turns offer their model (specs/2026-11-12-desk-window.md WN2.1).
+	chatTools       []agentdomain.ToolSpec
 	cardsHandler    jobworker.Handler
 	layerHandler    jobworker.Handler
 	materialHandler jobworker.Handler
@@ -246,6 +284,30 @@ func coverBookResponse(reader coverBookReader) httplibrary.BookResponseFunc {
 		book.CoverURL = coverURL
 		return library.BookResponseFromBook(book), nil
 	}
+}
+
+// libraryBookRead is a book as listBooks gives it, its cover and its last update included.
+func libraryBookRead(reader coverBookReader) httplibrary.BookReadFunc {
+	return func(ctx context.Context, actor domainlibrary.Actor, bookID string) (any, error) {
+		book, err := reader.GetBook(ctx, library.Actor{UserID: actor.UserID}, bookID)
+		switch {
+		case errors.Is(err, library.ErrNotFound):
+			return nil, domainlibrary.ErrNotFound
+		case errors.Is(err, library.ErrForbidden):
+			return nil, domainlibrary.ErrForbidden
+		case err != nil:
+			return nil, err
+		}
+		return library.BookResponseFromBook(book), nil
+	}
+}
+
+// lateHelper answers whether the helper of the build is connected once the modules of the build are composed; a build
+// without the port — the site — always has it.
+type lateHelper struct{ port indexingservice.Helper }
+
+func (late *lateHelper) Connected(ctx context.Context) bool {
+	return late.port == nil || late.port.Connected(ctx)
 }
 
 // lateHandler serves the root API handler once it is built.
@@ -319,9 +381,11 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 
 	canonStore := canonstore.New(db)
 	jobsStore := jobstore.New(db)
-	libraryStore := librarystore.New(db)
+	fence := quotastore.Fence{Plans: extension.Plans}
+	libraryStore := librarystore.New(db, librarystore.WithQuota(fence))
 	product, err := composeProduct(Core{
-		Config: cfg, Logger: logger, DB: db, Files: fileRoot, Codex: clients, Model: model, Jobs: jobsStore, Library: libraryStore,
+		Config: cfg, Logger: logger, DB: db, Files: fileRoot, Codex: clients, Model: model, Quota: fence, Jobs: jobsStore,
+		Library: libraryStore,
 	}, canonStore, coverFiles, extension)
 	if err != nil {
 		return err
@@ -453,15 +517,34 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 // Routes is the router of a build over its core — the open operations and the build's — without starting anything: the
 // contract of the desktop is what the desktop's mounts (specs/2026-11-07-desktop-app.md DA16.4).
 func Routes(core Core, extension Extension) (chi.Router, error) {
-	covers, err := coverfiles.NewBookCoverFiles(core.Files)
-	if err != nil {
-		return nil, err
-	}
-	product, err := composeProduct(core, canonstore.New(core.DB), covers, extension)
+	product, err := composed(core, extension)
 	if err != nil {
 		return nil, err
 	}
 	return product.routes, nil
+}
+
+// ChatTools names the tools the chat of a build offers its model (namespace.name), composed without starting anything:
+// saga.threads stands among them only in a build with the thread layer (specs/2026-11-12-desk-window.md WN2.1).
+func ChatTools(core Core, extension Extension) ([]string, error) {
+	product, err := composed(core, extension)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(product.chatTools))
+	for _, tool := range product.chatTools {
+		names = append(names, tool.Namespace+"."+tool.Name)
+	}
+	return names, nil
+}
+
+// composed is the product of a build over its core, composed without starting anything.
+func composed(core Core, extension Extension) (productApplication, error) {
+	covers, err := coverfiles.NewBookCoverFiles(core.Files)
+	if err != nil {
+		return productApplication{}, err
+	}
+	return composeProduct(core, canonstore.New(core.DB), covers, extension)
 }
 
 // composeProduct builds the open domains over the core and composes the modules of the build with them.
@@ -474,9 +557,13 @@ func composeProduct(
 	agentJobs := agentjobsrepo.New(db)
 
 	indexingService := indexingservice.NewService(indexingrepo.New(db))
+	// The one text index store of the process queues the cards Job after an index and on catch-up, and only while the
+	// helper of the build is connected (specs/2026-11-12-desk-window.md WN3.4); the helper is known once the modules are.
+	helper := &lateHelper{}
+	textIndex := indexingstore.New(db, indexingstore.WithHelper(helper))
 
-	researchRepository := researchrepo.New(db)
-	sagaRepository := sagamemoryrepo.New(db)
+	researchRepository := researchrepo.New(db).WithQuota(core.Quota)
+	sagaRepository := sagamemoryrepo.New(db).WithTextIndex(textIndex)
 	// The saga memory is read per call from PostgreSQL; nothing of a saga stays in the process
 	// (specs/2026-10-28-saga-search-in-postgres.md).
 	saga := sagamemoryservice.NewSaga(sagaRepository, sagaRepository)
@@ -485,7 +572,7 @@ func composeProduct(
 	usage := quotastore.NewUsageRecorder(db, logger)
 	layerQueue := sagalayerservice.NewQueueDue(sagaRepository)
 	// The author's materials (specs/2026-11-04-saga-map.md, UC9) are read by the tools and the map.
-	authorMaterials := authormaterialsrepo.New(db, jobsStore)
+	authorMaterials := authormaterialsrepo.New(db, jobsStore).WithQuota(core.Quota)
 	// Successful cards count for the thread layer of a build that has one (specs/2026-11-07-desktop-app.md DA8.8).
 	var cardsDone sagamemoryservice.CardsDone
 	if extension.Workers.Layer > 0 {
@@ -495,8 +582,15 @@ func composeProduct(
 			}
 		}
 	}
+	var buildModel BuildModel = model.Background()
+	if extension.BuildModel != nil {
+		var err error
+		if buildModel, err = extension.BuildModel(buildModel); err != nil {
+			return productApplication{}, err
+		}
+	}
 	cardsBuilder := sagamemoryservice.NewBuildCards(
-		sagaRepository, sagaRepository, model.Background(), usage, model.CardsModel(), cfg.ModelAPI.Parallel,
+		sagaRepository, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,
 		func(projectID, stage string, err error) { logNamesFailure(logger, projectID, stage, err) }, cardsDone,
 	).WithMap(sagamemoryservice.NewMapBuilder(saga, sagaRepository, authorMaterials), func(projectID, stage string, err error) { logMapFailure(logger, projectID, stage, err) })
 	if extension.CardConsent {
@@ -506,12 +600,12 @@ func composeProduct(
 	cardsHandler := workersagamemory.NewHandler(cardsBuilder)
 	// The same gate and cards model: a chat call waiting for a place goes first (R2.1).
 	layerHandler := workersagalayer.NewHandler(sagalayerservice.NewBuildLayer(
-		saga, sagaRepository, model.Background(), usage, model.CardsModel(), cfg.ModelAPI.Parallel,
+		saga, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,
 		func(projectID, stage string, err error) { logLayerFailure(logger, projectID, stage, err) },
 	))
 	researchReads := researchservice.NewReadTools(researchRepository, saga, model.Interactive(), usage, researchservice.ScanSettings{
 		Parallel: cfg.ModelAPI.Parallel, Model: cfg.ModelAPI.Model,
-	}, sagaRepository).WithMaterials(authorMaterials).WithAttachments(researchRepository)
+	}, sagaRepository).WithMaterials(authorMaterials).WithAttachments(researchRepository).WithAuthorMemory(researchRepository)
 	researchMemory := researchservice.NewAuthorMemoryTools(researchRepository, saga)
 	authorMemory := authormemoryrepo.New(db)
 	// Nobody stands by the Job of an import, so it runs below the chat.
@@ -562,10 +656,26 @@ func composeProduct(
 	}, clock)
 	var draftSeams sagadraftrepo.SeamCheck
 	if extension.DraftSeams != nil {
-		draftSeams = extension.DraftSeams(jobsStore)
+		draftSeams = extension.DraftSeams(jobsStore, core.Quota)
 	}
 	chapterDrafts := sagadraftrepo.New(db, libraryStore, draftSeams)
 	libraryService := library.NewService(libraryStore, library.NewSecureIDGenerator(), clock)
+	if extension.Workers.Layer > 0 {
+		// A move of the volumes makes the threads due: they are gathered volume after volume in the order of reading
+		// (specs/2026-11-11-ux7-reorder.md RK2.3). One text version queues the build; the map follows its cards by itself.
+		libraryService = libraryService.WithReordered(func(ctx context.Context, projectID string) {
+			for _, view := range []string{"published", "draft"} {
+				queued, err := layerQueue.Execute(ctx, projectID, view)
+				if err != nil {
+					logLayerFailure(logger, projectID, "queue", err)
+					continue
+				}
+				if queued {
+					return
+				}
+			}
+		})
+	}
 	coverRepository := coverrepo.New(db)
 	coverUpload := coverservice.NewUploadCover(coverRepository, coverFiles, coverservice.NewSecureCoverIdentity)
 	coverGet := coverservice.NewGetCover(coverRepository, coverFiles)
@@ -588,7 +698,17 @@ func composeProduct(
 	if modules.Accounts.Session == nil || modules.Accounts.CSRF == nil {
 		return productApplication{}, errors.New("api: the build has no sessions")
 	}
-	researchBundle := codexresearch.Bundle(researchReads, researchMemory, modules.ChatTools...)
+	// The cards Job that leaves the saga ready closes its wave and, in a build that writes letters, tells the author
+	// (specs/2026-11-09-first-session.md, FS1.3, FS2).
+	cardsBuilder.WithReady(indexingservice.NewAnnounceReady(indexingrepo.New(db), modules.ReadyLetters,
+		func(projectID, stage string, err error) { logReadyFailure(logger, projectID, stage, err) }).Execute)
+	indexingService.WithLetters(modules.ReadyLetters)
+	if modules.Helper != nil {
+		helper.port = modules.Helper
+		indexingService.WithHelper(modules.Helper)
+	}
+	// The chat offers saga.threads only in a build with the thread layer (specs/2026-11-12-desk-window.md WN2.1).
+	researchBundle := codexresearch.Bundle(researchReads, researchMemory, extension.Workers.Layer > 0, modules.ChatTools...)
 	bundles := map[string]researchservice.Bundle{agentdomain.SessionResearch: researchBundle}
 	if modules.Helpers != nil {
 		for kind, bundle := range modules.Helpers(researchBundle.Handler) {
@@ -618,9 +738,8 @@ func composeProduct(
 		return timelineservice.ThreadBinding{Flow: binding.Flow, RootThreadID: binding.RootThreadID, TurnID: binding.TurnID}, err
 	}, clients)
 
-	legacyIndexingStore := indexingstore.New(db)
-	legacyIndexingService := indexing.NewService(legacyIndexingStore, indexing.NewSecureIDGenerator(), clock)
-	projectsStore := projectstore.New(db)
+	legacyIndexingService := indexing.NewService(textIndex, indexing.NewSecureIDGenerator(), clock)
+	projectsStore := projectstore.New(db, projectstore.WithQuota(core.Quota))
 	router := newRouter(HTTPDependencies{
 		ProjectsStore: projectsStore, LibraryStore: libraryStore,
 		JobsStore: jobsStore, LibraryService: libraryService,
@@ -640,15 +759,21 @@ func composeProduct(
 		},
 		AccountQuotaRoutes: func(router chi.Router, currentUser *auth.Service) {
 			httpquota.Handlers{
-				AccountQuota: quotaservice.GetAccountQuota{Reader: quotastore.New(db), Now: time.Now},
+				AccountQuota: quotaservice.GetAccountQuota{Reader: quotastore.New(db, core.Quota), Now: time.Now},
 				Auth:         currentUser,
 			}.Mount(router)
+		},
+		TrashRoutes: func(router chi.Router, currentUser *auth.Service) {
+			httptrash.Handlers{List: trashservice.List{Sources: trashrepo.New(db), Drawings: modules.DeletedDrawings}, Auth: currentUser}.Mount(router)
 		},
 		BookCoverRoutes: func(router chi.Router, currentUser *auth.Service) {
 			httplibrary.NewHandlers(
 				coverUpload, coverGet, coverDelete, coverBookResponse(libraryService), currentUser, cfg.AllowedOrigins,
 			).Mount(router)
-			httplibrary.MountBookExport(router, coverservice.NewExportBook(coverRepository, coverGet, time.Now), currentUser)
+			httplibrary.MountBookExport(router, coverservice.NewExportBook(coverRepository, coverGet, time.Now).WithPictures(modules.BookPictures), currentUser)
+			// «Вернуть прежнюю версию» of a book after its update from a file (specs/2026-11-12-ux10-book-revert.md BR2).
+			httplibrary.MountBookRevert(router, coverservice.NewPreviewBookUpdateRevert(libraryStore),
+				coverservice.NewRevertBookUpdate(libraryStore), libraryBookRead(libraryService), currentUser, cfg.AllowedOrigins)
 		},
 		ClientErrorRoutes: func(router chi.Router, csrf func(http.Handler) http.Handler, currentUserID func(*http.Request) string) {
 			clienterrors.NewHandler(log.New(os.Stdout, "", 0), currentUserID).Mount(router, csrf, cfg.AllowedOrigins...)
@@ -664,6 +789,7 @@ func composeProduct(
 				sagareferenceservice.NewGetMap(sagaRepository, saga, sagaRepository, sagaRepository),
 				sagareferenceservice.NewGetMapNode(sagaRepository, sagaRepository),
 				sagareferenceservice.NewSearchMap(sagaRepository, sagaRepository),
+				sagareferenceservice.NewGetFirstQuestions(sagaRepository, saga, sagaRepository),
 				sagareferenceservice.NewGetContents(sagaRepository, saga),
 				httpsaga.MapHiddenUseCases{
 					List:    sagareferenceservice.NewListMapHidden(sagaRepository, sagaRepository),
@@ -687,9 +813,10 @@ func composeProduct(
 				ListVersions: sagadraftservice.ListVersions{Store: chapterDrafts},
 				GetVersion:   sagadraftservice.GetVersion{Store: chapterDrafts},
 				TakeVersion:  sagadraftservice.TakeVersion{Store: chapterDrafts},
-			}, currentUser, cfg.AllowedOrigins).Mount(router)
+			}, currentUser, cfg.AllowedOrigins).WithNewChapters(modules.DraftNewChapters).Mount(router)
 			httpauthormaterials.NewHandlers(httpauthormaterials.UseCases{
 				List:      authormaterialsservice.List{Store: authorMaterials},
+				Create:    authormaterialsservice.Create{Store: authorMaterials, Now: time.Now},
 				Update:    authormaterialsservice.Update{Store: authorMaterials},
 				Delete:    authormaterialsservice.Delete{Store: authorMaterials},
 				Start:     authormaterialsservice.Start{Store: authorMaterials, Now: time.Now},
@@ -703,7 +830,7 @@ func composeProduct(
 				Update: authormemoryservice.Update{Access: authorMemory, Store: authorMemory, Chapters: saga},
 				Delete: authormemoryservice.Delete{Access: authorMemory, Store: authorMemory},
 			}, currentUser, cfg.AllowedOrigins).Mount(router)
-			httptimeline.NewHandlers(timeline, currentUser, jobService, cfg.AllowedOrigins).Mount(router)
+			httptimeline.NewHandlers(timeline, saga, currentUser, jobService, cfg.AllowedOrigins).Mount(router)
 		},
 		SiteRoutes: modules.Routes,
 	})
@@ -716,6 +843,7 @@ func composeProduct(
 		missingCards:  sagamemoryservice.NewQueueMissingCards(sagaRepository, sagaRepository, sagaRepository, sagaRepository),
 		missingLayers: sagalayerservice.NewQueueMissingLayers(sagaRepository, layerQueue),
 		chatHandler:   workerresearch.NewHandler(researchRun, researchCancel, researchFail),
+		chatTools:     researchBundle.Tools,
 		modules:       modules,
 	}, nil
 }

@@ -179,10 +179,16 @@ func TestJobResponseShowsPreviewPlacesToItsCreatorOnly(t *testing.T) {
 	if anonymous, err := jobResponseFromJob(job, ""); err != nil || anonymous.Result.(ImportJobResult).Preview.Chapters[0].Places != nil {
 		t.Fatalf("a projection without a viewer = %#v, %v; want no places", anonymous.Result, err)
 	}
+	// specs/2026-11-11-ux7-trash.md TB4.1: an update keeps what it did; a new book has nothing of the kind.
+	updated := preview
+	updated.ImportMode = "update_book"
+	if validateResult(KindImport, updated) != nil {
+		t.Fatal("an update_book result with what it changed is refused")
+	}
 	misplaced := preview
-	misplaced.ImportMode = "update_book"
+	misplaced.ImportMode = "new_book"
 	if validateResult(KindImport, misplaced) == nil {
-		t.Fatal("an update_book result with a preview is valid")
+		t.Fatal("a new_book result with a preview is valid")
 	}
 	missing := preview
 	missing.Preview = nil

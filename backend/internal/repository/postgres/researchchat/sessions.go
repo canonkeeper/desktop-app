@@ -37,6 +37,8 @@ type sessionRecord struct {
 	LatestTurnJobID string
 	// LatestTurnStatus is the Job status of the latest turn, read with the chat.
 	LatestTurnStatus string
+	// LatestTurnAt is when the latest turn was asked; zero for a chat without one.
+	LatestTurnAt time.Time
 	// Kind is research for a chat, drawing for the session of a helper of the drawing workshop.
 	Kind string
 }
@@ -279,7 +281,7 @@ func sessionFromReadableSQL(row sqlc.GetReadableChatSessionRow) sessionRecord {
 		AgentGeneration: int(row.AgentGeneration), CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
 		Kind:         row.Kind,
 		LatestTurnID: storedb.UUIDString(row.LatestTurnID), LatestTurnJobID: storedb.UUIDString(row.LatestTurnJobID),
-		LatestTurnStatus: row.LatestTurnStatus.String,
+		LatestTurnStatus: row.LatestTurnStatus.String, LatestTurnAt: row.LatestTurnAt.Time,
 	}
 }
 
@@ -301,7 +303,7 @@ func sessionFromListSQL(row sqlc.ListReadableChatSessionsRow) sessionRecord {
 		AgentGeneration: int(row.AgentGeneration), CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
 		Kind:         row.Kind,
 		LatestTurnID: storedb.UUIDString(row.LatestTurnID), LatestTurnJobID: storedb.UUIDString(row.LatestTurnJobID),
-		LatestTurnStatus: row.LatestTurnStatus.String,
+		LatestTurnStatus: row.LatestTurnStatus.String, LatestTurnAt: row.LatestTurnAt.Time,
 	}
 }
 
@@ -317,8 +319,18 @@ func sessionValue(value sessionRecord) researchdomain.Session {
 		SourceView: string(value.SourceView), Scope: value.Scope, Title: value.Title,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		LatestTurnID: value.LatestTurnID, LatestTurnJobID: value.LatestTurnJobID, LatestTurnStatus: value.LatestTurnStatus,
+		LatestTurnAt:    latestTurnAt(value.LatestTurnAt),
 		SavedAssignment: savedAssignment, LifecycleEpoch: int64(value.LifecycleEpoch),
 		AgentGeneration: value.AgentGeneration, Outdated: value.AgentGeneration < researchdomain.CurrentAgentGeneration,
 		Kind: value.Kind,
 	}
+}
+
+// latestTurnAt is the time of the latest turn of a chat, none for a chat without a turn.
+func latestTurnAt(at time.Time) *time.Time {
+	if at.IsZero() {
+		return nil
+	}
+	at = at.UTC()
+	return &at
 }

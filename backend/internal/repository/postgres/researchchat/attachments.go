@@ -2,12 +2,14 @@ package researchchat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/chapterfile"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	storedb "canonkeeper/backend/internal/store/db"
 	"canonkeeper/backend/internal/store/sqlc"
@@ -41,10 +43,16 @@ func createTurnAttachmentInTx(
 	if number > researchdomain.MaxAttachmentNumber {
 		return researchdomain.ErrConflict
 	}
+	var document []byte
+	if attachment.Document != nil {
+		if document, err = json.Marshal(attachment.Document); err != nil {
+			return err
+		}
+	}
 	err = queries.CreateChatTurnAttachment(ctx, sqlc.CreateChatTurnAttachmentParams{
 		TurnID: turn, ChatID: chatID, ProjectID: projectID, Number: number, Title: attachment.Title,
 		FileName: attachment.FileName, Format: attachment.Format, Paragraphs: attachment.Paragraphs,
-		Words: int32(attachment.Words), CreatedAt: storedb.Timestamptz(createdAt),
+		Words: int32(attachment.Words), Document: document, CreatedAt: storedb.Timestamptz(createdAt),
 	})
 	return mapWriteError(err)
 }
@@ -107,6 +115,30 @@ func (repository *Repository) ChatAttachment(ctx context.Context, projectID, cha
 		Number: int(row.Number), Title: row.Title, FileName: row.FileName, Format: row.Format,
 		Paragraphs: row.Paragraphs, Words: int(row.Words), CreatedAt: timestamp(row.CreatedAt),
 	}, nil
+}
+
+// ChatAttachmentDocument reads the parse of an attachment of a live chat (CA5.5), nil for one before it was kept. The
+// caller has checked the authority over the chat.
+func (repository *Repository) ChatAttachmentDocument(ctx context.Context, projectID, chatID string, number int) (*chapterfile.Document, error) {
+	project, projectErr := storedb.ParseUUID(projectID)
+	chat, chatErr := storedb.ParseUUID(chatID)
+	if projectErr != nil || chatErr != nil || number < 1 || number > researchdomain.MaxAttachmentNumber {
+		return nil, researchdomain.ErrNotFound
+	}
+	raw, err := sqlc.New(repository.db.Pool).GetChatAttachmentDocument(ctx, sqlc.GetChatAttachmentDocumentParams{
+		ProjectID: project, ChatID: chat, Number: int32(number),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, researchdomain.ErrNotFound
+	}
+	if err != nil || raw == nil {
+		return nil, err
+	}
+	var document chapterfile.Document
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	return &document, nil
 }
 
 // ChatAttachmentNumbers lists the numbers of the attachments of a chat, for the model that named another one.

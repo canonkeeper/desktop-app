@@ -18,9 +18,9 @@ func (access fakeAccess) ReadableView(context.Context, string, string, string) e
 
 func saga() Memory {
 	version := sagamemory.NewVersion("project", "draft", "fp", []sagamemory.Chapter{
-		{ID: "c1", BookID: "b1", BookOrder: 1, BookTitle: "Том 1", Order: 1, Title: "Глава 1. Порт", Paragraphs: []sagamemory.Paragraph{{Text: "Мила."}}},
-		{ID: "c2", BookID: "b1", BookOrder: 1, BookTitle: "Том 1", Order: 2, Title: "Глава 2. Дым", Paragraphs: []sagamemory.Paragraph{{Text: "Сава."}}},
-		{ID: "c3", BookID: "b2", BookOrder: 2, BookTitle: "Том 2", Order: 1, Title: "Глава 3. Суд", Paragraphs: []sagamemory.Paragraph{{Text: "Мила."}}},
+		{ID: "c1", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Том 1", Order: 1, Title: "Глава 1. Порт", Paragraphs: []sagamemory.Paragraph{{Text: "Мила."}}},
+		{ID: "c2", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Том 1", Order: 2, Title: "Глава 2. Дым", Paragraphs: []sagamemory.Paragraph{{Text: "Сава."}}},
+		{ID: "c3", BookID: "b2", BookOrder: 2, BookKeyNumber: 2, BookTitle: "Том 2", Order: 1, Title: "Глава 3. Суд", Paragraphs: []sagamemory.Paragraph{{Text: "Мила."}}},
 	})
 	stems := map[string]string{"мила": "мил", "милы": "мил", "кинжал": "кинжал", "кинжалом": "кинжал"}
 	return sagamemorytest.NewSaga(version, stems, map[int]*sagamemory.Card{
@@ -85,10 +85,10 @@ func TestContentsScopes(t *testing.T) {
 // it (prod 06.11: the last chapter of 10 books of 13 has no number, and a range of the first and last keys lost them).
 func TestContentsBooksListTheKeysOfTheirChapters(t *testing.T) {
 	version := sagamemory.NewVersion("project", "draft", "fp", []sagamemory.Chapter{
-		{ID: "c1", BookID: "b1", BookOrder: 1, Order: 1, Title: "Глава 1. Порт"},
-		{ID: "c2", BookID: "b1", BookOrder: 1, Order: 2, Title: "Послесловие"},
-		{ID: "c3", BookID: "b2", BookOrder: 2, Order: 1, Title: "Пролог"},
-		{ID: "c4", BookID: "b2", BookOrder: 2, Order: 2, Title: "Глава 2. Суд"},
+		{ID: "c1", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 1, Title: "Глава 1. Порт"},
+		{ID: "c2", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 2, Title: "Послесловие"},
+		{ID: "c3", BookID: "b2", BookOrder: 2, BookKeyNumber: 2, Order: 1, Title: "Пролог"},
+		{ID: "c4", BookID: "b2", BookOrder: 2, BookKeyNumber: 2, Order: 2, Title: "Глава 2. Суд"},
 	})
 	contents := NewGetContents(fakeAccess{}, sagamemorytest.NewSaga(version, nil, nil))
 	result, err := contents.Execute(context.Background(), ContentsInput{Scope: scope})

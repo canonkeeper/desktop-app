@@ -222,7 +222,7 @@ INSERT INTO jobs (
 SELECT
   sqlc.arg(id), project.id, 'illustration', 'queued', '{}'::jsonb,
   sqlc.arg(subject_json)::jsonb, NULL, NULL, sqlc.arg(creator_user_id), false,
-  'interactive', 0, 3, sqlc.arg(created_at), sqlc.arg(artifact_source_owner_id),
+  'interactive', 0, 3, sqlc.arg(next_attempt_at), sqlc.arg(artifact_source_owner_id),
   'active', sqlc.arg(created_at), sqlc.arg(created_at)
 FROM projects AS project
 WHERE project.id = sqlc.arg(project_id) AND project.deleted_at IS NULL

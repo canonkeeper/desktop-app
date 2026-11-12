@@ -1,10 +1,38 @@
 .marks {
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 
-.marks a {
+/* A row of 44 px (AU3.2): the mark with its first word is one target, the link of the document another, apart. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 44px;
+}
+
+.row > label {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.link {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
   color: var(--ck-link);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.reason {
+  margin: 4px 0 0;
+  color: var(--ck-destructive-text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .policy {
@@ -12,4 +40,8 @@
   color: var(--ck-muted-foreground);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.policy a {
+  color: var(--ck-link);
 }

@@ -97,3 +97,19 @@ WHERE project_id = sqlc.arg(project_id) AND job_id = sqlc.arg(job_id);
 -- name: DeleteSagaMapNodesOfProject :exec
 -- A deleted record leaves no text of it in the prepared cards; the graph stays until the next build (specs/2026-11-04-saga-map.md, R9.6).
 DELETE FROM saga_map_nodes WHERE project_id = sqlc.arg(project_id);
+
+-- name: CreateAuthorMaterial :one
+-- A record the author writes on the page (specs/2026-11-10-ux8-memory-records.md MR2.1): one name is one record, so a taken
+-- name writes nothing and returns no row.
+INSERT INTO author_materials (
+  project_id, name, name_key, kind, description, properties, section, source_name, source_kind, created_by, updated_by
+)
+VALUES (
+  sqlc.arg(project_id), sqlc.arg(name), sqlc.arg(name_key), sqlc.arg(kind), sqlc.arg(description), sqlc.arg(properties)::jsonb,
+  sqlc.arg(section), '', 'manual', sqlc.arg(actor), sqlc.arg(actor)
+)
+ON CONFLICT (project_id, name_key) DO NOTHING
+RETURNING id;
+
+-- name: AuthorMaterialOfKey :one
+SELECT id FROM author_materials WHERE project_id = sqlc.arg(project_id) AND name_key = sqlc.arg(name_key);

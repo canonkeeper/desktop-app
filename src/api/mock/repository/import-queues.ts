@@ -16,7 +16,7 @@ import {
 } from './common';
 import type { MockRepositoryContext } from './context';
 import type { MockState } from './state';
-import { firstMissingBookOrder, importFileDetails, importQueuePreflightError } from './books';
+import { importFileDetails, importQueuePreflightError, nextShelfOrder } from './books';
 import { MockApiError, type MockActorRole } from '../scenarios';
 
 type ImportQueue = Schema<'ImportQueue'>;
@@ -27,10 +27,10 @@ export type ImportQueueUploadInput = {
   file: QueueUploadFile;
 };
 
-const activeStatuses = new Set(['uploading', 'draft', 'running', 'failed']);
+const activeStatuses = new Set(['uploading', 'draft', 'running']);
 const editableStatuses = new Set(['uploading', 'draft']);
 
-function invalid(operationId: 'createImportQueue' | 'updateImportQueue' | 'startImportQueue', message: string) {
+function invalid(operationId: 'createImportQueue' | 'startImportQueue', message: string) {
   return new MockApiError(422, message, operationId, 'validation_failed');
 }
 
@@ -74,7 +74,7 @@ function queueFor(
   context: MockRepositoryContext,
   projectId: string,
   queueId: string,
-  operationId: 'listImportQueues' | 'getImportQueue' | 'uploadImportQueueItem' | 'updateImportQueue' | 'startImportQueue' | 'cancelImportQueue',
+  operationId: 'listImportQueues' | 'getImportQueue' | 'uploadImportQueueItem' | 'skipImportQueueItem' | 'startImportQueue' | 'cancelImportQueue',
   allowed?: MockActorRole[],
 ) {
   context.projectFor(projectId, operationId, allowed);
@@ -93,15 +93,12 @@ function validateCreateBody(body: OperationRequest<'createImportQueue'>) {
   const positions: number[] = [];
   for (const item of items) {
     if (!isRecord(item)) throw invalid('createImportQueue', 'Import queue item must be an object.');
-    rejectUnknownKeys('createImportQueue', item, ['clientItemId', 'position', 'sourceFileName', 'detectedBookOrder']);
+    rejectUnknownKeys('createImportQueue', item, ['clientItemId', 'position', 'sourceFileName']);
     if (!isNonEmptyString(item.clientItemId) || clientItemIds.has(item.clientItemId)) {
       throw invalid('createImportQueue', 'Import queue client item ids must be unique non-empty strings.');
     }
     if (!positiveInteger(item.position)) throw invalid('createImportQueue', 'Import queue positions must be positive integers.');
     if (!isNonEmptyString(item.sourceFileName)) throw invalid('createImportQueue', 'Import queue source filename is required.');
-    if (item.detectedBookOrder !== null && !positiveInteger(item.detectedBookOrder)) {
-      throw invalid('createImportQueue', 'Detected book order must be a positive integer or null.');
-    }
     clientItemIds.add(item.clientItemId);
     positions.push(item.position as number);
   }
@@ -109,45 +106,56 @@ function validateCreateBody(body: OperationRequest<'createImportQueue'>) {
   return body;
 }
 
-function validateUpdateBody(body: OperationRequest<'updateImportQueue'>, queue: ImportQueue) {
-  rejectUnknownKeys('updateImportQueue', body, ['expectedVersion', 'items']);
-  if (!positiveInteger(body?.expectedVersion)) throw invalid('updateImportQueue', 'Expected queue version is invalid.');
-  if (!Array.isArray(body?.items) || body.items.length === 0) throw invalid('updateImportQueue', 'Import queue requires at least one item.');
-  const itemIds = new Set(queue.items.map((item) => item.id));
-  const positions: number[] = [];
-  const orders: number[] = [];
-  for (const item of body.items) {
-    rejectUnknownKeys('updateImportQueue', item, ['id', 'position', 'confirmedBookOrder']);
-    if (!itemIds.has(item?.id)) throw new MockApiError(404, 'Resource not found.', 'updateImportQueue');
-    if (!positiveInteger(item.position) || !positiveInteger(item.confirmedBookOrder)) {
-      throw invalid('updateImportQueue', 'Item positions and confirmed orders must be positive integers.');
-    }
-    positions.push(item.position);
-    orders.push(item.confirmedBookOrder);
-  }
-  if (positions.length !== itemIds.size || new Set(positions).size !== positions.length || !contiguous(ordered(positions))) {
-    throw invalid('updateImportQueue', 'Import queue items must map to contiguous positions.');
-  }
-  const sortedOrders = ordered(orders);
-  if (new Set(sortedOrders).size !== sortedOrders.length || sortedOrders[0] !== queue.nextBookOrder
-    || sortedOrders.some((order, index) => order !== queue.nextBookOrder + index)) {
-    throw invalid('updateImportQueue', 'Confirmed book orders must be contiguous and start at the next project volume.');
-  }
-  return body;
-}
-
-function requireVersion(queue: ImportQueue, expectedVersion: number, operationId: 'updateImportQueue' | 'startImportQueue') {
+function requireVersion(queue: ImportQueue, expectedVersion: number) {
   if (queue.version !== expectedVersion) {
-    throw new MockApiError(409, 'Import queue version is stale.', operationId, 'version_conflict');
+    throw new MockApiError(409, 'Import queue version is stale.', 'startImportQueue', 'version_conflict');
   }
 }
 
 function nextOrder(context: MockRepositoryContext, projectId: string, operationId: 'createImportQueue' | 'startImportQueue') {
-  const next = firstMissingBookOrder(context.state.books, projectId);
+  const next = nextShelfOrder(context.state.books, projectId);
   if (next === null) {
     throw new MockApiError(409, 'Existing book order is not contiguous.', operationId, 'import_sequence_conflict');
   }
   return next;
+}
+
+/**
+ * A volume waits for the author at its place (specs/2026-11-11-ux7-upload.md UP3.2): its import Job did not read the
+ * file, or its file did not pass the check and it has no Job — and the author has not skipped it.
+ */
+function waits(item: ImportQueueItem) {
+  return item.processingStatus === 'failed' && (item.importJobId !== null || item.preflightStatus === 'invalid');
+}
+
+/** The import Job of a volume at its place, as the start of the queue and «Заменить файл» queue it. */
+function queueVolumeJob(context: MockRepositoryContext, queue: ImportQueue, item: ImportQueueItem, attempt: number) {
+  const order = context.state.importQueueOrders[item.id]!;
+  const jobId = attempt === 0 ? `${queue.id}-import-job-${item.position}` : `${queue.id}-import-job-${item.position}-${attempt}`;
+  const job = createJob({
+    id: jobId,
+    kind: 'import',
+    status: 'queued',
+    progress: 0,
+    // As the backend names a volume of a queue (specs/2026-11-11-import-speed.md IS2.3: the shelf tells only a single
+    // import by its own line).
+    subject: {
+      type: 'import', id: queue.projectId, projectId: queue.projectId, expectedBookOrder: order,
+      importQueueId: queue.id, importQueueItemId: item.id,
+    },
+    result: {
+      type: 'import',
+      bookId: attempt === 0 ? `${queue.id}-book-${item.position}` : `${queue.id}-book-${item.position}-${attempt}`,
+      chapterCount: 1,
+      paragraphCount: 1,
+      importMode: 'new_book',
+      sourceFileName: item.sourceFileName,
+    },
+    canCancel: true,
+  });
+  context.state.jobs.push(job);
+  context.markJobCreator(job);
+  Object.assign(item, { importJobId: jobId, processingStatus: 'queued', failureClass: null, failedStep: null, updatedAt: now });
 }
 
 export function createImportQueueOperations(context: MockRepositoryContext) {
@@ -163,15 +171,14 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
       if (context.state.importQueues.some((queue) => queue.projectId === projectId && activeStatuses.has(queue.status))) {
         throw new MockApiError(409, 'An active import queue already exists.', 'createImportQueue', 'active_import_queue_exists');
       }
+      nextOrder(context, projectId, 'createImportQueue');
       const queueId = `import-queue-${context.state.nextImportQueueId}`;
-      const nextBookOrder = nextOrder(context, projectId, 'createImportQueue');
       const queue: ImportQueue = {
         id: queueId,
         projectId,
         status: 'uploading',
         version: 1,
         intendedItemCount: request.items.length,
-        nextBookOrder,
         currentItemId: null,
         createdAt: now,
         updatedAt: now,
@@ -185,9 +192,6 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
           sourceFileName: item.sourceFileName,
           mimeType: null,
           sizeBytes: null,
-          detectedBookOrder: item.detectedBookOrder,
-          // Like the backend, only a saved draft confirms a volume number; start requires it.
-          confirmedBookOrder: null,
           preflightStatus: 'uploading',
           preflightError: null,
           processingStatus: 'uploading',
@@ -218,6 +222,10 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
     return projection(queue);
   }
 
+  /**
+   * The file of a volume: of a queue being prepared, or «Заменить файл» of a volume that waits in a running queue —
+   * checked as any file, and then given a new import Job at its place (UP3.2).
+   */
   async function uploadImportQueueItem(
     projectId: string,
     queueId: string,
@@ -232,51 +240,66 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
     }
     const preflightError = importQueuePreflightError(input);
     return context.idempotentCommand('uploadImportQueueItem', `${projectId}:${queueId}`, options, input, () => {
-      if (!editableStatuses.has(queue.status)) {
-        throw new MockApiError(409, 'Only an editable import queue accepts uploads.', 'uploadImportQueueItem', 'queue_not_editable');
-      }
       const item = queue.items.find((candidate) => candidate.id === input.itemId);
       if (!item) throw new MockApiError(404, 'Resource not found.', 'uploadImportQueueItem');
       const details = importFileDetails(input.file);
+      if (queue.status === 'running') {
+        if (!waits(item)) {
+          throw new MockApiError(409, 'Only a volume that waits takes a new file.', 'uploadImportQueueItem', 'conflict');
+        }
+        Object.assign(item, {
+          sourceFileName: details.name,
+          preflightStatus: preflightError ? 'invalid' : 'ready',
+          preflightError,
+          updatedAt: now,
+        });
+        if (!preflightError) {
+          Object.assign(item, { mimeType: details.contentType || null, sizeBytes: details.sizeBytes });
+          context.state.importQueueReplacements[item.id] = (context.state.importQueueReplacements[item.id] ?? 0) + 1;
+          queueVolumeJob(context, queue, item, context.state.importQueueReplacements[item.id]!);
+        }
+        queue.version += 1;
+        queue.updatedAt = now;
+        return projection(queue);
+      }
+      if (!editableStatuses.has(queue.status)) {
+        throw new MockApiError(409, 'Only an editable import queue accepts uploads.', 'uploadImportQueueItem', 'queue_not_editable');
+      }
       Object.assign(item, {
         sourceFileName: details.name,
         mimeType: details.contentType || null,
         sizeBytes: details.sizeBytes,
         preflightStatus: preflightError ? 'invalid' : 'ready',
         preflightError,
-        processingStatus: preflightError ? 'uploading' : 'ready',
+        processingStatus: preflightError ? 'failed' : 'ready',
+        failedStep: preflightError ? 'preflight' : null,
         updatedAt: now,
       });
-      queue.status = queue.items.every((candidate) => candidate.preflightStatus === 'ready') ? 'draft' : 'uploading';
+      // Every file received — checked or not — the queue is a draft (UP1.2).
+      queue.status = queue.items.every((candidate) => candidate.preflightStatus !== 'uploading') ? 'draft' : 'uploading';
       queue.version += 1;
       queue.updatedAt = now;
       return projection(queue);
     });
   }
 
-  async function updateImportQueue(
+  /** «Пропустить» of a volume that waits (UP3.2). */
+  async function skipImportQueueItem(
     projectId: string,
     queueId: string,
-    body: OperationRequest<'updateImportQueue'>,
-  ): Promise<OperationResponse<'updateImportQueue', '200'>> {
-    context.applyOperation('updateImportQueue');
-    const queue = queueFor(context, projectId, queueId, 'updateImportQueue', ['editor', 'admin', 'owner']);
-    const request = validateUpdateBody(body, queue);
-    requireVersion(queue, request.expectedVersion, 'updateImportQueue');
-    if (!editableStatuses.has(queue.status)) {
-      throw new MockApiError(409, 'Only an editable import queue can be saved.', 'updateImportQueue', 'queue_not_editable');
+    itemId: string,
+  ): Promise<OperationResponse<'skipImportQueueItem', '200'>> {
+    context.applyOperation('skipImportQueueItem');
+    const queue = queueFor(context, projectId, queueId, 'skipImportQueueItem', ['editor', 'admin', 'owner']);
+    const item = queue.items.find((candidate) => candidate.id === itemId);
+    if (!item) throw new MockApiError(404, 'Resource not found.', 'skipImportQueueItem');
+    if (queue.status !== 'running' || !waits(item)) {
+      throw new MockApiError(409, 'Only a volume that waits is skipped.', 'skipImportQueueItem', 'conflict');
     }
-    for (const item of request.items) {
-      const target = queue.items.find((candidate) => candidate.id === item.id);
-      if (!target) throw new MockApiError(404, 'Resource not found.', 'updateImportQueue');
-      Object.assign(target, {
-        position: item.position,
-        confirmedBookOrder: item.confirmedBookOrder,
-        updatedAt: now,
-      });
-    }
+    Object.assign(item, { processingStatus: 'skipped', updatedAt: now });
     queue.version += 1;
     queue.updatedAt = now;
+    completeImportQueue(queue);
     return projection(queue);
   }
 
@@ -291,45 +314,21 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
     rejectUnknownKeys('startImportQueue', body, ['expectedVersion']);
     if (!positiveInteger(body?.expectedVersion)) throw invalid('startImportQueue', 'Expected queue version is invalid.');
     return context.idempotentCommand('startImportQueue', `${projectId}:${queueId}`, options, body, () => {
-      requireVersion(queue, body.expectedVersion, 'startImportQueue');
+      requireVersion(queue, body.expectedVersion);
       if (queue.status !== 'draft') throw new MockApiError(409, 'Only a ready draft import queue can start.', 'startImportQueue', 'queue_not_draft');
-      if (queue.items.some((item) => item.preflightStatus !== 'ready' || item.confirmedBookOrder === null)) {
-        throw invalid('startImportQueue', 'Every import queue item must pass preflight and confirm its volume.');
+      if (queue.items.some((item) => item.preflightStatus === 'uploading')) {
+        throw invalid('startImportQueue', 'Every file of the queue must be received.');
       }
-      const nextBookOrder = nextOrder(context, projectId, 'startImportQueue');
-      const orders = ordered(queue.items.map((item) => item.confirmedBookOrder!));
-      if (orders[0] !== nextBookOrder || orders.some((order, index) => order !== nextBookOrder + index)) {
-        throw invalid('startImportQueue', 'Import queue volumes must be contiguous and start at the next project volume.');
-      }
+      // The order of the volumes is the order of the rows, after the books of the shelf (UP2.3).
+      const first = nextOrder(context, projectId, 'startImportQueue');
       for (const item of [...queue.items].sort((left, right) => left.position - right.position)) {
-        const jobId = `${queue.id}-import-job-${item.position}`;
-        const job = createJob({
-          id: jobId,
-          kind: 'import',
-          status: 'queued',
-          progress: 0,
-          subject: { type: 'import', id: projectId, projectId, expectedBookOrder: item.confirmedBookOrder! },
-          result: {
-            type: 'import',
-            bookId: `${queue.id}-book-${item.position}`,
-            chapterCount: 1,
-            paragraphCount: 1,
-            importMode: 'new_book',
-            sourceFileName: item.sourceFileName,
-          },
-          canCancel: true,
-        });
-        context.state.jobs.push(job);
-        context.markJobCreator(job);
-        Object.assign(item, {
-          importJobId: jobId,
-          processingStatus: 'queued',
-          updatedAt: now,
-        });
+        context.state.importQueueOrders[item.id] = first + item.position - 1;
+        // A file that did not pass the check waits at its place without a Job (UP1.2).
+        if (item.preflightStatus === 'ready') queueVolumeJob(context, queue, item, 0);
       }
       queue.status = 'running';
       queue.version += 1;
-      queue.currentItemId = queue.items[0]!.id;
+      queue.currentItemId = queue.items.find((item) => item.importJobId)?.id ?? null;
       queue.startedAt = now;
       queue.updatedAt = now;
       return projection(queue);
@@ -351,12 +350,12 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
       if (job && job.status !== 'succeeded' && job.status !== 'failed') {
         Object.assign(job, { status: 'canceled', canCancel: false, updatedAt: now });
       }
-      if (item.processingStatus === 'failed') {
+      if (item.processingStatus === 'failed' || item.processingStatus === 'skipped') {
         item.updatedAt = now;
       } else if (item.processingStatus === 'succeeded' || item.processingStatus === 'indexing') {
         // Импортированный том сохраняет книгу, а её индекс черновика завершается уже без очереди.
         continue;
-      } else if (item.id === currentItem?.id) {
+      } else if (item.id === currentItem?.id && item.processingStatus === 'importing') {
         Object.assign(item, { processingStatus: 'canceling', updatedAt: now });
       } else {
         Object.assign(item, { processingStatus: 'canceled', updatedAt: now });
@@ -374,7 +373,7 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
     listImportQueues,
     getImportQueue,
     uploadImportQueueItem,
-    updateImportQueue,
+    skipImportQueueItem,
     startImportQueue,
     cancelImportQueue,
   };
@@ -400,12 +399,17 @@ function settleCanceledImportQueue(state: MockState, queue: ImportQueue) {
   queue.updatedAt = now;
 }
 
+/**
+ * A volume starts once the volumes before it are on the shelf and read, wait for the author or were skipped
+ * (UP3.2): a volume in work or a book still read holds it back.
+ */
 export function canProcessImportQueueJob(state: MockState, jobId: string) {
   const linked = linkedQueueItem(state, jobId);
   if (!linked) return true;
   return linked.queue.items
     .filter((item) => item.position < linked.item.position)
-    .every((item) => item.processingStatus === 'succeeded' && item.bookId !== null);
+    .every((item) => item.processingStatus === 'skipped' || waits(item)
+      || (item.processingStatus === 'succeeded' && item.bookId !== null));
 }
 
 export function reconcileImportQueueAfterJob(state: MockState, jobId: string) {
@@ -418,10 +422,8 @@ export function reconcileImportQueueAfterJob(state: MockState, jobId: string) {
     item.bookId = job.result.bookId;
     item.processingStatus = 'indexing';
     item.updatedAt = now;
-    queue.currentItemId = item.id;
   } else if (job?.status === 'failed') {
-    queue.status = 'failed';
-    queue.currentItemId = item.id;
+    // The volume waits for the author at its place; the volumes after it go on (UP3.2).
     item.processingStatus = 'failed';
     item.failureClass = 'unexpected_deterministic_failure';
     item.failedStep = 'import';
@@ -429,9 +431,22 @@ export function reconcileImportQueueAfterJob(state: MockState, jobId: string) {
   } else {
     return;
   }
+  queue.currentItemId = queue.items.find((candidate) => candidate.processingStatus === 'queued'
+    || candidate.processingStatus === 'importing' || candidate.processingStatus === 'indexing')?.id ?? null;
   queue.version += 1;
   queue.updatedAt = now;
   refreshLinks(queue);
+}
+
+/** A running queue ends once its volumes are on the shelf and read or skipped; every volume skipped — it stops. */
+function completeImportQueue(queue: ImportQueue) {
+  if (queue.status !== 'running') return;
+  const kept = queue.items.filter((item) => item.processingStatus !== 'skipped');
+  if (kept.length === 0) queue.status = 'canceled';
+  else if (kept.every((item) => item.processingStatus === 'succeeded')) queue.status = 'succeeded';
+  else return;
+  queue.completedAt = now;
+  queue.currentItemId = null;
 }
 
 /**
@@ -450,12 +465,9 @@ export function settleImportQueueBooks(state: MockState, projectId: string) {
       item.processingStatus = 'succeeded';
       item.updatedAt = now;
     }
-    const current = queue.items.find((item) => item.processingStatus !== 'succeeded');
-    queue.currentItemId = current?.id ?? null;
-    if (queue.status === 'running' && !current) {
-      queue.status = 'succeeded';
-      queue.completedAt = now;
-    }
+    queue.currentItemId = queue.items.find((item) => item.processingStatus === 'queued'
+      || item.processingStatus === 'importing' || item.processingStatus === 'indexing')?.id ?? null;
+    completeImportQueue(queue);
     queue.version += 1;
     queue.updatedAt = now;
     refreshLinks(queue);

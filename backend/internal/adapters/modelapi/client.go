@@ -74,8 +74,9 @@ func New(config Config) (*Client, error) {
 	}, nil
 }
 
-// connected reports whether the client has a model API to call.
-func (client *Client) connected() bool { return strings.TrimSpace(client.config.BaseURL) != "" }
+// Connected reports whether the client has a model API to call: the desktop has none until the author connects an AI
+// (specs/2026-11-12-desk-window.md WN3.1).
+func (client *Client) Connected() bool { return strings.TrimSpace(client.config.BaseURL) != "" }
 
 // Images names the image model and quality: ImageModel, or the image model of the SDK
 // (gpt-image-2) when none is set, and ImageQuality, or medium. The subscription picks quality and
@@ -233,8 +234,15 @@ type inputContent struct {
 // are retried with backoff. Every HTTP attempt holds a place of the process gate and frees it
 // before the retry pause (R11.1).
 func (port Port) Complete(ctx context.Context, instructions, input string) (string, quota.ModelUsage, error) {
+	return port.Stream(ctx, instructions, input, nil)
+}
+
+// Stream is Complete that hands the answer to portions as it comes (specs/2026-11-12-ux10-scene-stream.md ST1.1): the text
+// of the HTTP attempt that goes on so far after each delta, and "" at the start of each attempt — what an attempt that
+// broke gave is gone. Without portions it is Complete.
+func (port Port) Stream(ctx context.Context, instructions, input string, portions func(sofar string)) (string, quota.ModelUsage, error) {
 	client := port.client
-	if !client.connected() {
+	if !client.Connected() {
 		return "", quota.ModelUsage{}, ErrNotConfigured
 	}
 	body := request{
@@ -261,7 +269,10 @@ func (port Port) Complete(ctx context.Context, instructions, input string) (stri
 		if err := client.gate.acquire(ctx, port.class); err != nil {
 			return "", usage, err
 		}
-		text, spent, retry, err := client.once(ctx, payload)
+		if portions != nil {
+			portions("")
+		}
+		text, spent, retry, err := client.once(ctx, payload, portions)
 		client.gate.release()
 		usage = usage.Add(spent)
 		if err == nil {
@@ -287,7 +298,7 @@ type responseUsage struct {
 	} `json:"output_tokens_details"`
 }
 
-func (client *Client) once(ctx context.Context, payload []byte) (string, quota.ModelUsage, bool, error) {
+func (client *Client) once(ctx context.Context, payload []byte, portions func(string)) (string, quota.ModelUsage, bool, error) {
 	var usage quota.ModelUsage
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(client.config.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
@@ -342,6 +353,9 @@ func (client *Client) once(ctx context.Context, payload []byte) (string, quota.M
 		switch event.Type {
 		case "response.output_text.delta":
 			text.WriteString(event.Delta)
+			if portions != nil && event.Delta != "" {
+				portions(text.String())
+			}
 		case "response.completed":
 			completed = true
 			if spent := event.Response.Usage; spent != nil {

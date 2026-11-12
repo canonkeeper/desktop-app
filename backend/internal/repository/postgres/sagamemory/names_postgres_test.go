@@ -165,7 +165,7 @@ func TestStartQueuesAVersionWithoutARegistry(t *testing.T) {
 	seedMemoryProject(t, db)
 	testutil.SeedSagaSearchRows(t, db, memoryProjectID)
 	ctx := context.Background()
-	repository := New(db)
+	repository := siteRepository(db)
 	model := &namesCardModel{}
 	build := mapCardsJob(t, repository, model)
 	if status, err := build.RunForClaim(ctx, claimCardsJobForTest(t, db), cardsSubjectForTest(), true); err != nil || status != jobs.StatusSucceeded {
@@ -195,7 +195,7 @@ func TestQueueLoadedCardsQueuesTheVersions(t *testing.T) {
 	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_saga_names_load")
 	seedMemoryProject(t, db)
 	ctx := context.Background()
-	repository := New(db)
+	repository := siteRepository(db)
 	for run := 1; run <= 2; run++ {
 		if err := repository.QueueLoadedCards(ctx, memoryProjectID); err != nil {
 			t.Fatal(err)

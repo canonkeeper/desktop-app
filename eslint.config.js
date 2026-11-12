@@ -12,6 +12,10 @@ export default [
       'dist-desktop-backend/**',
       // The desktop web build the backend embeds (npm run build:desktop:backend).
       'backend/internal/app/desktop/web/**',
+      // The build of the desktop shell and the set of its installers (desktop/README.md).
+      'desktop/src-tauri/target/**',
+      'desktop/src-tauri/gen/**',
+      'desktop/bundle/**',
       'coverage/**',
       'node_modules/**',
       '.vite/**',
@@ -21,6 +25,7 @@ export default [
       '.local-test/**',
       '.lab/**',
       '**/.worktrees/**',
+      '**/.claude/worktrees/**',
     ],
   },
   js.configs.recommended,

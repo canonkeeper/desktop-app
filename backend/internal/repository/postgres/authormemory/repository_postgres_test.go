@@ -118,6 +118,15 @@ func TestAuthorMemoryRightsPostgres(t *testing.T) {
 	if page.Records[1].AuthorName != "editor@example.test" || page.Records[1].CreatedAt.IsZero() {
 		t.Fatalf("who and when: %+v", page.Records[1])
 	}
+	// specs/2026-11-10-ux8-memory-records.md MR1.5: a record written on the page says so, and a saga of several members signs
+	// its records with their author; a saga of one does not.
+	if !page.Shared || page.Records[1].Origin != (domain.Origin{Kind: domain.OriginManual}) {
+		t.Fatalf("the origin and the authors of a shared saga: %+v", page)
+	}
+	alone := service.Actor{UserID: fixture.outsider.UserID, ProjectID: fixture.foreign}
+	if own, err := store.ListAuthorMemory(ctx, alone, domain.Filter{Limit: 10}); err != nil || own.Shared {
+		t.Fatalf("a saga of one member: %+v, %v", own, err)
+	}
 	for name, attempt := range map[string]func() error{
 		"read": func() error {
 			_, err := store.ListAuthorMemory(ctx, fixture.outsider.Actor, domain.Filter{Limit: 10})

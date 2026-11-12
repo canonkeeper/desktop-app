@@ -14,3 +14,15 @@ it.each([[1365, 640], [1920, 640], [834, 1112]])('makes history optional at %s×
   fireEvent.click(screen.getByRole('button', { name: 'Сохранённый чат' }));
   expect(screen.queryByRole('dialog', { name: 'Чаты' })).toBeNull();
 });
+
+// specs/2026-11-11-ux4-after-answer.md AA1.7 (Ч-43): an open source takes the place of the list of chats at any width.
+it.each([[1920, 1080], [1440, 900]])('folds the list of chats into «Чаты» while a source is open at %s×%s', (width, height) => {
+  vi.stubGlobal('innerWidth', width);
+  vi.stubGlobal('innerHeight', height);
+  const view = render(<ResearchChatLayout sourceOpen={false} sessions={() => <button>Сохранённый чат</button>}><p>Ответ агента</p></ResearchChatLayout>);
+  expect(screen.getByRole('button', { name: 'Сохранённый чат' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Чаты' })).toBeNull();
+  view.rerender(<ResearchChatLayout sourceOpen sessions={() => <button>Сохранённый чат</button>}><p>Ответ агента</p></ResearchChatLayout>);
+  expect(screen.queryByRole('button', { name: 'Сохранённый чат' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Чаты' })).toBeTruthy();
+});

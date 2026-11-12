@@ -3,13 +3,11 @@ import { clone } from './common';
 import type { MockRepositoryContext } from './context';
 import { spendsImage } from './gallery-state';
 import type { MockQuotaDefaults } from './state';
+import { mockPlanSettings } from './tiers';
 
-type DefaultKey = Schema<'AdminQuotaDefaultKey'>;
+type DefaultKey = Schema<'AdminQuotaKey'>;
 
-/**
- * The original limits by default (backend domain/quota.Defaults) and the trial drawings of a new
- * account (domain/illustrations.TrialDrawings), in the order of the tab «Лимиты».
- */
+/** The original value of every writer limit (backend domain/quota.Defaults), in the order of domain/quota.Keys. */
 export const mockCodeDefaults: Readonly<Record<DefaultKey, number>> = {
   chat_turns_per_day: 30,
   active_turns: 2,
@@ -27,7 +25,6 @@ export const mockCodeDefaults: Readonly<Record<DefaultKey, number>> = {
   drawing_turns_per_day: 60,
   draft_turns_per_day: 60,
   draft_rewrites_per_day: 200,
-  trial_drawings: 5,
 };
 
 /** A limit by default in force: the platform's value, else the code's (R7.2). */
@@ -63,13 +60,18 @@ export function createQuotaOperations(context: MockRepositoryContext) {
     context.applyOperation('getAccountQuota');
     const now = new Date();
     const day = moscowDay(now);
-    const limit = (key: DefaultKey) => mockDefault(context.state.quotaDefaults, key);
+    // The tier of the writer stands over the platform for the keys it sets (specs/2026-11-08-subscription-tiers.md TR2.2).
+    const plan = mockPlanSettings(context.state, context.currentPrincipalId());
+    const limit = (key: DefaultKey) => plan[key] ?? mockDefault(context.state.quotaDefaults, key);
     const limits = {
       chatTurnsPerDay: limit('chat_turns_per_day'), activeTurns: limit('active_turns'), importsPerDay: limit('imports_per_day'),
       projects: limit('projects'), projectBooks: limit('project_books'), projectChapters: limit('project_chapters'),
       projectCharacters: limit('project_characters'), accountBooks: limit('account_books'), accountChapters: limit('account_chapters'),
       accountCharacters: limit('account_characters'), imagesPerDay: limit('images_per_day'),
     };
+    const principal = context.currentPrincipalId();
+    const uploadsToday = context.state.gallery.images
+      .filter((image) => image.kind === 'upload' && image.createdBy === principal && moscowDay(new Date(image.createdAt)) === day).length;
     const turns = context.state.jobs.filter((job) => job.kind === 'research_chat_turn');
     const imports = context.state.jobs.filter((job) => job.kind === 'import');
     const owned = context.state.projects;
@@ -91,13 +93,22 @@ export function createQuotaOperations(context: MockRepositoryContext) {
     return clone({
       day,
       resetsAt: new Date(nextMoscowMidnight(now)).toISOString(),
-      chatTurns: counter(turns.filter((job) => moscowDay(new Date(job.createdAt)) === day).length, limits.chatTurnsPerDay),
+      // A correction of a turn is a question of the day as the turn's own question is (specs/2026-11-09-quota-accounting.md Q2.1).
+      chatTurns: counter(turns.filter((job) => moscowDay(new Date(job.createdAt)) === day).reduce((total, job) => total + 1
+        + (job.subject.type === 'research_chat_turn' ? context.state.gallery.turnSteers[job.subject.turnId]?.length ?? 0 : 0), 0), limits.chatTurnsPerDay),
       activeTurns: counter(
         turns.filter((job) => job.status === 'queued' || job.status === 'running' || job.status === 'canceling').length,
         limits.activeTurns,
       ),
       imports: counter(imports.filter((job) => moscowDay(new Date(job.createdAt)) === day).length, limits.importsPerDay),
       images: counter(drawingsToday(day), limits.imagesPerDay),
+      // The mock keeps no day of «Письмо» and of the helpers: their counters stand at nothing used
+      // (specs/2026-11-10-ux2-tariff-account.md TA2.3).
+      imageUploads: counter(uploadsToday, limit('image_uploads_per_day')),
+      chapterDrafts: counter(0, limit('chapter_drafts_per_day')),
+      drawingTurns: counter(0, limit('drawing_turns_per_day')),
+      draftTurns: counter(0, limit('draft_turns_per_day')),
+      draftRewrites: counter(0, limit('draft_rewrites_per_day')),
       projects: counter(owned.length, limits.projects),
       account: {
         books: counter(sum('books'), limits.accountBooks),

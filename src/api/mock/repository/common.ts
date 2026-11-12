@@ -39,7 +39,6 @@ export type DeletedBookSource = DeletedSource<Book>;
 export type DeletedChapterSource = DeletedSource<Chapter>;
 
 export const now = '2026-06-16T05:00:00.000Z';
-export const restoreUntil = new Date(Date.parse(now) + 7 * 24 * 60 * 60 * 1000).toISOString();
 
 const apiBasePath = '/api/v1';
 const minIdempotencyKeyLength = 8;
@@ -50,8 +49,10 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+/** What a deletion puts in «Недавно удалённые»: deleted at the moment of the deletion, for 7 days. */
 function deletedSource<T>(resource: T): DeletedSource<T> {
-  return { resource: clone(resource), deletedAt: now, restoreUntil };
+  const at = Date.now();
+  return { resource: clone(resource), deletedAt: new Date(at).toISOString(), restoreUntil: new Date(at + 7 * 24 * 60 * 60 * 1000).toISOString() };
 }
 
 function deletedSourceRow<T extends { id: string; title: string }>(source: DeletedSource<T>) {

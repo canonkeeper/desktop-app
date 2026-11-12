@@ -61,7 +61,7 @@ describe('feedback primitives', () => {
           Содержимое
         </Card>
         <Chip tone="citation">Кн. II · гл. 12</Chip>
-        <EmptyState action={<button type="button">Новый чат</button>} description="Создайте первый диалог" title="Пока нет чатов" />
+        <EmptyState action={<button type="button">Новый чат</button>} title="Пока нет чатов" why="Задайте первый вопрос о саге." />
       </>,
     );
 

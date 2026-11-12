@@ -175,7 +175,7 @@
             "sessionAuth": []
           }
         ],
-        "x-authz": "Only the current account's personal notes; other accounts' notes are never listed. Project, book and chapter titles appear only while the note source stays readable to the account.",
+        "x-authz": "Only the current account's personal notes; other accounts' notes are never listed. The saga of a note is named while the account is in it, also when its place is gone; its book, chapter and chat — only while the place stays readable to the account.",
         "x-backend-purpose": "resource/query",
         "requestBody": {
           "required": true,
@@ -542,7 +542,7 @@
         ],
         "operationId": "getAccountQuota",
         "summary": "Read the signed-in writer's quotas",
-        "description": "Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads and drawings of the current Moscow day, questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.",
+        "description": "Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.",
         "responses": {
           "200": {
             "description": "Limits in force, today's use and the text of owned projects.",
@@ -572,6 +572,26 @@
                       "images": {
                         "used": 3,
                         "limit": 30
+                      },
+                      "imageUploads": {
+                        "used": 0,
+                        "limit": 30
+                      },
+                      "chapterDrafts": {
+                        "used": 2,
+                        "limit": 20
+                      },
+                      "drawingTurns": {
+                        "used": 5,
+                        "limit": 60
+                      },
+                      "draftTurns": {
+                        "used": 7,
+                        "limit": 60
+                      },
+                      "draftRewrites": {
+                        "used": 11,
+                        "limit": 200
                       },
                       "projects": {
                         "used": 1,
@@ -643,6 +663,52 @@
           }
         ],
         "x-authz": "Authenticated session owner reads only their own quota; no project membership or direct-ID lookup is involved.",
+        "x-backend-purpose": "resource/query"
+      }
+    },
+    "/recently-deleted": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "operationId": "listRecentlyDeleted",
+        "summary": "List what the author deleted and may return.",
+        "description": "«Недавно удалённые» (specs/2026-11-11-ux7-trash.md TB1.1): in one read over every saga of the signed-in author, newest first in each group, the deleted sagas he owns or administers (restoreProject), the deleted books of his live sagas and the deleted chapters of their live books while he is an editor and above (restoreBook, restoreChapter), the live books of those sagas updated from a file whose previous version can still be returned (bookUpdates, revertBookUpdate; specs/2026-11-12-ux10-book-revert.md BR3.3), and in a build with drawings the deleted drawings he may return — those he drew while an editor and above, every one of a saga he owns (restoreDrawing). A row names its saga and place and the end of its 7 days (restoreUntil); a group carries at most 100 rows and its total. Cache-Control: no-store.",
+        "responses": {
+          "200": {
+            "description": "What waits in «Недавно удалённые».",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentlyDeleted"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Authenticated session owner reads only what his own memberships let him return; no direct-ID lookup is involved.",
         "x-backend-purpose": "resource/query"
       }
     },
@@ -1224,6 +1290,7 @@
                       "title": "Книга II. Карта приливов",
                       "subtitle": "Черновая редакция",
                       "order": 2,
+                      "place": 2,
                       "displayNumber": "II",
                       "coverColor": "#4F46E5",
                       "coverUrl": null,
@@ -1653,7 +1720,7 @@
         ],
         "operationId": "getBookExport",
         "summary": "Download a whole book as one file: Word, EPUB, or FB2.",
-        "description": "Builds the file from the published text of the book while it is sent; nothing is stored and no model takes part. A file that cannot be finished ends with a broken connection, never with a clean end of a partial file. A book without published text is refused with the code `book_export.empty`, an unknown format with `book_export.format`.",
+        "description": "Builds the file from the published text of the book while it is sent; nothing is stored and no model takes part. With drawings=true the drawings the author put in the book stand in it after their paragraphs, where the reader shows them (specs/2026-11-12-ux10-book-pictures.md BP2): the main version of a drawing and the author's own pictures, at the size a page shows them by, without a caption; a picture that cannot be read is left out. A build without drawings gives the same file without them. A file that cannot be finished ends with a broken connection, never with a clean end of a partial file. A book without published text is refused with the code `book_export.empty`, an unknown format with `book_export.format`.",
         "parameters": [
           {
             "$ref": "#/components/parameters/BookId"
@@ -1669,6 +1736,15 @@
                 "epub",
                 "fb2"
               ]
+            }
+          },
+          {
+            "name": "drawings",
+            "in": "query",
+            "required": false,
+            "description": "true puts the drawings of the book in the file; without it the file has none.",
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -1799,6 +1875,148 @@
           }
         ],
         "x-authz": "Active editor/admin/owner membership and exact actor-scoped book identity are proven before lifecycle conflict is disclosed.",
+        "x-backend-purpose": "resource/command"
+      }
+    },
+    "/books/{bookId}/update-revert": {
+      "get": {
+        "tags": [
+          "Books"
+        ],
+        "operationId": "previewBookUpdateRevert",
+        "summary": "Tell what a return of a book to the version before its update would do.",
+        "description": "«Вернуть прежнюю версию…» (specs/2026-11-12-ux10-book-revert.md BR2.1): for 7 days after an update of a book from a file (Book.update) the book can be returned to the version before it. The preview reads the snapshot of the update and the book as it stands now and names the chapters whose text comes back (text), those that get back their title, place and italic and bold (place), the chapters the update removed that come back from recently deleted (returned), the chapters the file added that go there for 7 days (removed) and the chapters that stay as they are now with why (kept: edited — changed after the update, deleted — deleted after it, returned — returned by hand already). Each chapter is named by its title now and, when the return gives it another one, by previousTitle. fingerprint names the book the preview read: revertBookUpdate carries it. It changes nothing. A book being updated from a file answers 409 book.busy, a book without a live update 404 book.update_gone. Cache-Control: no-store.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the return would do.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookRevertPreview"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Active editor/admin/owner membership of the saga of the book; viewers receive 403 and books of other sagas 404. The demo saga answers 409 demo_saga.read_only.",
+        "x-backend-purpose": "resource/query"
+      },
+      "post": {
+        "tags": [
+          "Books"
+        ],
+        "operationId": "revertBookUpdate",
+        "summary": "Return a book to the version before its last update from a file.",
+        "description": "«Вернуть версию до обновления» (specs/2026-11-12-ux10-book-revert.md BR2.2, BR2.3): does what previewBookUpdateRevert said, in one transaction, if the book is still the one whose preview gave the fingerprint, else 409 book.update_changed and nothing changes. A changed chapter gets the text and the italic and bold of its revision before the update as a new revision, a chapter whose words stayed gets back its title, place and italic and bold, the chapters the update removed come back from recently deleted while their 7 days go, the chapters the file added go there for 7 days; a chapter changed, deleted or returned after the update stays as it is. The snapshot goes, so Book.update is gone. A return is not an upload: no import Job, no upload of the day, no limit of books; the chapters and text it brings back are held against the limits of chapters and characters of the tier (409 with the quota code, nothing changes). The text index, the cards, the names, the threads and the map are built again by their ordinary path; notes keep their places as after any change of text, chats are untouched. A book being updated answers 409 book.busy, a book without a live update 404 book.update_gone, the demo saga 409 demo_saga.read_only. The answer is the book as listBooks gives it. Cache-Control: no-store.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BookId"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fingerprint"
+                ],
+                "properties": {
+                  "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$",
+                    "description": "The fingerprint of the preview the author agreed to."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The book after the return.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Active editor/admin/owner membership of the saga of the book in a session with its CSRF token; viewers receive 403 and books of other sagas 404. The demo saga answers 409 demo_saga.read_only.",
         "x-backend-purpose": "resource/command"
       }
     },
@@ -2057,82 +2275,6 @@
         "x-authz": "Project member read on the owning queue; cross-project ids return leak-safe 404.",
         "x-backend-purpose": "resource/query"
       },
-      "patch": {
-        "tags": [
-          "Books"
-        ],
-        "operationId": "updateImportQueue",
-        "summary": "Save ordered items and confirmed volume numbers.",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ProjectId"
-          },
-          {
-            "$ref": "#/components/parameters/ImportQueueId"
-          },
-          {
-            "$ref": "#/components/parameters/CsrfToken"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateImportQueueRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved import queue draft.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ImportQueue"
-                }
-              }
-            },
-            "headers": {
-              "Cache-Control": {
-                "schema": {
-                  "type": "string",
-                  "const": "no-store"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          }
-        },
-        "security": [
-          {
-            "sessionAuth": []
-          }
-        ],
-        "x-authz": "Editor/admin/owner may edit an upload/draft queue; viewer receives 403 and cross-project ids return leak-safe 404.",
-        "x-backend-purpose": "resource/command"
-      },
       "delete": {
         "tags": [
           "Books"
@@ -2204,6 +2346,7 @@
         ],
         "operationId": "uploadImportQueueItem",
         "summary": "Upload or replace one durable queue item and run full preflight.",
+        "description": "A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -2281,6 +2424,75 @@
           }
         ],
         "x-authz": "Editor/admin/owner may upload to an owned project queue; viewer receives 403 and cross-project ids return leak-safe 404.",
+        "x-backend-purpose": "resource/command"
+      }
+    },
+    "/projects/{projectId}/import-queues/{queueId}/items/{itemId}": {
+      "delete": {
+        "tags": [
+          "Books"
+        ],
+        "operationId": "skipImportQueueItem",
+        "summary": "Take a volume that did not read out of a running upload («Пропустить»).",
+        "description": "Only a volume of a running queue whose import Job did not read the file waits for the author; skipping it leaves its place empty, holds the volumes after it back no more, and ends the queue once the others are on the shelf and read (a queue whose every volume is skipped ends canceled). Any other volume is 409 (specs/2026-11-11-ux7-upload.md UP3.2).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/ImportQueueId"
+          },
+          {
+            "$ref": "#/components/parameters/ImportQueueItemId"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queue projection with the volume skipped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportQueue"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Editor/admin/owner may skip a waiting volume of an owned project queue; viewer receives 403 and cross-project ids return leak-safe 404.",
         "x-backend-purpose": "resource/command"
       }
     },
@@ -3020,6 +3232,75 @@
         ],
         "x-authz": "Project member read on the owning resource: viewer/editor/admin/owner allowed; non-member direct ids return leak-safe 404.",
         "x-backend-purpose": "query"
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "getCurrentUser",
+        "summary": "Read sanitized auth session",
+        "responses": {
+          "200": {
+            "description": "Sanitized current user/session metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "examples": {
+                  "authSession": {
+                    "summary": "Synthetic sanitized auth/session response",
+                    "value": {
+                      "id": "user-mira",
+                      "displayName": "Мира Волкова",
+                      "email": "mira@example.com",
+                      "emailVerified": true,
+                      "documentsAccepted": true,
+                      "avatarUrl": null,
+                      "createdAt": "2026-06-16T05:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "description": "Returns sanitized user/session metadata only. No cookies, JWTs, refresh tokens, invite secrets or raw CSRF secrets are present. Cache-Control: no-store. A persistent session with less than 29 days left slides to 30 days on this read (the same session, CSRF unchanged) and the session cookie is set again.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Authenticated session owner reads only their own user/session envelope; no project membership or direct-ID lookup is involved.",
+        "x-backend-purpose": "resource/query"
       }
     },
     "/desktop/session": {
@@ -4225,6 +4506,72 @@
         "x-backend-purpose": "resource/query"
       }
     },
+    "/projects/{projectId}/saga/first-questions": {
+      "get": {
+        "operationId": "getSagaFirstQuestions",
+        "tags": [
+          "Search"
+        ],
+        "summary": "Get the questions an empty chat of the saga offers, with the names of the author's book.",
+        "description": "specs/2026-11-10-first-questions.md FQ1.1–FQ1.4, FQ1.9. Built from the row of the map the cards Job prepares, after what the author took off the map, without a model: of the hero, of the hero and his strongest neighbor, of the main place. Empty when the saga has no chapter, the map is not prepared yet (pending says it is still to come) or has no hero; a map behind its cards answers by what is ready and queues no build.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "name": "sourceView",
+            "in": "query",
+            "required": true,
+            "description": "Text version to read.",
+            "schema": {
+              "$ref": "#/components/schemas/SourceView"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zero to three questions, in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaFirstQuestions"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Project members read the published text version; the draft needs editor/admin/owner access (403 for viewers); non-member project ids return leak-safe 404.",
+        "x-backend-purpose": "resource/query"
+      }
+    },
     "/projects/{projectId}/saga/contents": {
       "get": {
         "operationId": "getSagaContents",
@@ -4261,6 +4608,17 @@
             "in": "query",
             "required": false,
             "description": "Word starts a chapter title or summary contains; searches the whole saga.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "chapter",
+            "in": "query",
+            "required": false,
+            "description": "A chapter key as a kept place holds it (a link of an answer, the place of a drawing): the server reads it by the one rule of the keys — a bare number that turned ambiguous still names its first chapter — shows its book and names it in `chapter` under its key of now (specs/2026-11-11-ux7-reorder.md RK1.5).",
             "schema": {
               "type": "string",
               "minLength": 1,
@@ -4337,6 +4695,16 @@
               "minimum": 1,
               "maximum": 100,
               "default": 30
+            }
+          },
+          {
+            "name": "chat",
+            "in": "query",
+            "required": false,
+            "description": "specs/2026-11-11-ux5-proofread-mode.md PM3.3: only the drafts whose proofreading began from a chapter attached in this chat — the card of the chat reads its proofreading by them. A chat without such drafts gives an empty page.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5438,6 +5806,81 @@
             "$ref": "#/components/responses/TooManyRequests"
           }
         }
+      },
+      "post": {
+        "operationId": "createAuthorMaterial",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "Current project editor/admin/owner changes the materials of the author; viewers receive 403 and non-member project ids return leak-safe 404.",
+        "x-backend-purpose": "A record of the materials the author writes by hand.",
+        "x-strict-origin-required": true,
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Write one record of the materials by hand.",
+        "description": "specs/2026-11-10-ux8-memory-records.md MR2.1: what a change says, of the source manual. One name is one record: a name another record has is 409 author_materials.name_taken with materialId of that record. The map falls behind as after a change.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAuthorMaterialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorMaterial"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
       }
     },
     "/projects/{projectId}/author-materials/{materialId}": {
@@ -5455,7 +5898,7 @@
           "Projects"
         ],
         "summary": "Change what a record of the materials says.",
-        "description": "409 conflict: another revision, or another record has the name.",
+        "description": "409 conflict: another revision; 409 author_materials.name_taken: another record has the name, materialId names it (specs/2026-11-10-ux8-memory-records.md MR2.3).",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -7258,7 +7701,7 @@
           "Chat"
         ],
         "summary": "Send the author's correction into the turn working now.",
-        "description": "The correction reaches the model in the same native turn (specs/2026-10-30-chat-steering.md): no new Job, no turn and no question quota. 202 means the turn took it; the timeline shows it as a steer event once the model reaches it. A repeat of an accepted key answers the same steerId and sends nothing. 409 chat.turn_ended: the turn no longer works, chat.steer_retry: it takes no correction right now (it compacts its context or has not started), chat.steer_limit: this author sent 20 corrections into this turn.",
+        "description": "The correction reaches the model in the same native turn (specs/2026-10-30-chat-steering.md): no new Job and no turn. It is a message of the author to the model and spends the daily limit of its session kind as a new turn does: chat_turns_per_day, drawing_turns_per_day or draft_turns_per_day; a correction the turn did not take gives it back (specs/2026-11-09-quota-accounting.md Q2.1, Q2.2). 429 quota.*: that daily limit is spent. 202 means the turn took it; the timeline shows it as a steer event once the model reaches it. A repeat of an accepted key answers the same steerId and sends nothing. 409 chat.turn_ended: the turn no longer works, chat.steer_retry: it takes no correction right now (it compacts its context or has not started), chat.steer_limit: this author sent 20 corrections into this turn.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ChatId"
@@ -7530,6 +7973,15 @@
           "$ref": "#/components/schemas/Id"
         }
       },
+      "ImportQueueItemId": {
+        "name": "itemId",
+        "in": "path",
+        "required": true,
+        "description": "Volume of an import queue.",
+        "schema": {
+          "$ref": "#/components/schemas/Id"
+        }
+      },
       "BookId": {
         "name": "bookId",
         "in": "path",
@@ -7718,7 +8170,9 @@
                   "title": "Unauthorized",
                   "status": 401,
                   "code": "auth.invalid_credentials",
-                  "requestId": "req_synthetic_invalid_credentials"
+                  "requestId": "req_synthetic_invalid_credentials",
+                  "attemptsLeft": 2,
+                  "lockMinutes": 15
                 }
               }
             }
@@ -7926,6 +8380,353 @@
       }
     },
     "schemas": {
+      "RecentlyDeleted": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "«Недавно удалённые» of the author (TB1.1); drawings only in a build that has them.",
+        "required": [
+          "sagas",
+          "books",
+          "chapters",
+          "bookUpdates"
+        ],
+        "properties": {
+          "sagas": {
+            "$ref": "#/components/schemas/RecentlyDeletedSagas"
+          },
+          "books": {
+            "$ref": "#/components/schemas/RecentlyDeletedBooks"
+          },
+          "chapters": {
+            "$ref": "#/components/schemas/RecentlyDeletedChapters"
+          },
+          "bookUpdates": {
+            "$ref": "#/components/schemas/RecentlyUpdatedBooks"
+          },
+          "drawings": {
+            "$ref": "#/components/schemas/RecentlyDeletedDrawings"
+          }
+        }
+      },
+      "RecentlyUpdatedBooks": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The books of live sagas updated from a file whose previous version can still be returned (specs/2026-11-12-ux10-book-revert.md BR3.3), for an editor and above, newest first.",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyUpdatedBook"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many there are; items holds at most 100."
+          }
+        }
+      },
+      "RecentlyUpdatedBook": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A live book updated from a file: revertBookUpdate returns it to the version before the update until revertUntil.",
+        "required": [
+          "id",
+          "projectId",
+          "sagaTitle",
+          "title",
+          "updatedAt",
+          "revertUntil"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The book."
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sagaTitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revertUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecentlyDeletedSagas": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The deleted sagas, newest first.",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyDeletedSaga"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many there are; items holds at most 100."
+          }
+        }
+      },
+      "RecentlyDeletedBooks": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The deleted books of live sagas, newest first.",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyDeletedBook"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many there are; items holds at most 100."
+          }
+        }
+      },
+      "RecentlyDeletedChapters": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The deleted chapters of live books, newest first.",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyDeletedChapter"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many there are; items holds at most 100."
+          }
+        }
+      },
+      "RecentlyDeletedDrawings": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The deleted drawings of live sagas, newest first.",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyDeletedDrawing"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many there are; items holds at most 100."
+          }
+        }
+      },
+      "RecentlyDeletedSaga": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A deleted saga: restoreProject returns it until restoreUntil.",
+        "required": [
+          "id",
+          "title",
+          "books",
+          "deletedAt",
+          "restoreUntil"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "books": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The books that come back with it."
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restoreUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecentlyDeletedBook": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A deleted book: restoreBook returns it until restoreUntil. It is named by its title: «Книга N» is a place among the living books (specs/2026-11-11-ux7-reorder.md RK1.6).",
+        "required": [
+          "id",
+          "projectId",
+          "sagaTitle",
+          "title",
+          "deletedAt",
+          "restoreUntil"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sagaTitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restoreUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecentlyDeletedChapter": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A deleted chapter: restoreChapter returns it until restoreUntil.",
+        "required": [
+          "id",
+          "projectId",
+          "sagaTitle",
+          "bookId",
+          "bookTitle",
+          "bookDisplayNumber",
+          "title",
+          "order",
+          "deletedAt",
+          "restoreUntil"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sagaTitle": {
+            "type": "string"
+          },
+          "bookId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookTitle": {
+            "type": "string"
+          },
+          "bookDisplayNumber": {
+            "type": "string",
+            "description": "The place of its book on the shelf of the saga, «Книга N»."
+          },
+          "title": {
+            "type": "string"
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Its place in its book when it was deleted."
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restoreUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RecentlyDeletedDrawing": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A deleted drawing: restoreDrawing returns it until restoreUntil.",
+        "required": [
+          "id",
+          "projectId",
+          "sagaTitle",
+          "title",
+          "deletedAt",
+          "restoreUntil"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sagaTitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "Empty for a drawing without a title."
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The number of its current version; absent — none."
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "restoreUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "IllustrationJobSubject": {
         "type": "object",
         "additionalProperties": false,
@@ -7980,6 +8781,11 @@
           "activeTurns",
           "imports",
           "images",
+          "imageUploads",
+          "chapterDrafts",
+          "drawingTurns",
+          "draftTurns",
+          "draftRewrites",
           "projects",
           "account",
           "ownedProjects"
@@ -8006,6 +8812,26 @@
           },
           "images": {
             "$ref": "#/components/schemas/QuotaCounter"
+          },
+          "imageUploads": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "The author's own images uploaded today against image_uploads_per_day (refusal 429 quota.image_uploads_daily)."
+          },
+          "chapterDrafts": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "Scenes, checks and proofreadings of «Письмо» started today against chapter_drafts_per_day (429 quota.chapter_drafts_daily)."
+          },
+          "drawingTurns": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "Messages to the helper of «Рисование» today against drawing_turns_per_day (429 quota.drawing_turns_daily)."
+          },
+          "draftTurns": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "Messages to the helper of «Письмо» today against draft_turns_per_day (429 quota.draft_turns_daily)."
+          },
+          "draftRewrites": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "Rewrites of a place and seams of «Письмо» today against draft_rewrites_per_day (429 quota.draft_rewrites_daily)."
           },
           "projects": {
             "$ref": "#/components/schemas/QuotaCounter"
@@ -8262,8 +9088,9 @@
           },
           "body": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 100000
+            "minLength": 0,
+            "maxLength": 100000,
+            "description": "The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2)."
           },
           "revision": {
             "type": "integer",
@@ -8301,8 +9128,9 @@
         "properties": {
           "body": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 100000
+            "minLength": 0,
+            "maxLength": 100000,
+            "description": "The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2)."
           },
           "source": {
             "oneOf": [
@@ -8330,8 +9158,9 @@
         "properties": {
           "body": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 100000
+            "minLength": 0,
+            "maxLength": 100000,
+            "description": "The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2)."
           },
           "expectedRevision": {
             "type": "integer",
@@ -8374,13 +9203,28 @@
           },
           "preview": {
             "type": "string",
-            "maxLength": 240
+            "maxLength": 240,
+            "description": "The beginning of the thought; empty for a note saved without one."
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "The beginning of the quote of a note of a place."
+          },
+          "place": {
+            "type": "string",
+            "description": "The chapter of a note of the book while it lives, as the author reads it everywhere: «Книга 2, гл. 12 „Белый порт“» (specs/2026-11-11-ux7-notes.md NT1.3)."
+          },
+          "chatTitle": {
+            "type": "string",
+            "description": "The chat of a note of an answer while it lives."
           },
           "updatedAt": {
             "$ref": "#/components/schemas/DateTime"
           },
           "projectTitle": {
-            "type": "string"
+            "type": "string",
+            "description": "The saga the note belongs to while the account is in it, also when the place is gone (NT3.2)."
           },
           "bookTitle": {
             "type": "string"
@@ -8473,6 +9317,10 @@
               "unavailable"
             ]
           },
+          "place": {
+            "type": "string",
+            "description": "The chapter of a note of the book while it lives: «Книга 2, гл. 12 „Белый порт“» (NT1.1, NT2.4)."
+          },
           "source": {
             "oneOf": [
               {
@@ -8504,7 +9352,8 @@
           },
           "projectId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The notes of a saga and the own thoughts, which belong to no saga (specs/2026-11-11-ux7-notes.md NT3.2)."
           },
           "bookId": {
             "type": "string",
@@ -8585,6 +9434,21 @@
             "items": {
               "$ref": "#/components/schemas/ValidationIssue"
             }
+          },
+          "attemptsLeft": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "auth.invalid_credentials of loginUser (specs/2026-11-10-ux3-auth.md AU3.3): how many more sign-ins the smaller window of this email takes — from this client address and from all of them; the same for an existing and an unknown email."
+          },
+          "lockMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "auth.invalid_credentials of loginUser: how many minutes a full window keeps the sign-in closed (429 with Retry-After)."
+          },
+          "materialId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "author_materials.name_taken of createAuthorMaterial and updateAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.3): the record of the materials that has the name."
           }
         },
         "additionalProperties": false
@@ -8726,6 +9590,11 @@
               "string",
               "null"
             ]
+          },
+          "demo": {
+            "type": "boolean",
+            "const": true,
+            "description": "Present and true only for the demo saga of the site (specs/2026-11-09-demo-saga.md DS4.1): it stands out of the limits of its owner and takes no text of the author. No request sets it."
           },
           "bookCount": {
             "type": "integer",
@@ -8952,6 +9821,7 @@
           "title",
           "subtitle",
           "order",
+          "place",
           "displayNumber",
           "coverUrl",
           "status",
@@ -8979,7 +9849,12 @@
           "order": {
             "type": "integer",
             "minimum": 1,
-            "description": "One-based book order inside the project."
+            "description": "One-based stored order inside the project: it orders the shelf and keeps the place a deleted book comes back to, so it may hold gaps."
+          },
+          "place": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The number of «Книга N» the author reads: the rank of the book among the living books of the saga in the order of the shelf, 1…n without gaps (specs/2026-11-11-ux7-reorder.md RK1.6)."
           },
           "displayNumber": {
             "type": "string",
@@ -9014,9 +9889,152 @@
           },
           "updatedAt": {
             "$ref": "#/components/schemas/DateTime"
+          },
+          "opening": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "How the book begins, on the listing of the books of a saga only: the first paragraphs with text of its first live chapter, at most 300 letters (specs/2026-11-11-ux9-shelf-chat.md SC1.3). The page asks about a file that begins so as about this book; absent for a book without text."
+          },
+          "update": {
+            "$ref": "#/components/schemas/BookUpdate"
           }
         },
         "additionalProperties": false
+      },
+      "BookUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The last update of the book from a file, for the 7 days its previous version can be returned (specs/2026-11-12-ux10-book-revert.md BR1.3); absent before an update, after the return and after revertUntil. changed counts the chapters whose text, title, place or italic and bold it changed, added and removed the chapters the file added and removed. jobId names the import Job of the update, whose result tells what changed chapter by chapter; null once that Job is gone.",
+        "required": [
+          "at",
+          "revertUntil",
+          "jobId",
+          "changed",
+          "added",
+          "removed"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "revertUntil": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "jobId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "changed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "added": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "removed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "BookRevertChapter": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A chapter a return names: its title now, the title it gets back (previousTitle, when another) and, for a chapter that stays as it is, why: edited — changed after the update, deleted — deleted after it, returned — returned by hand already.",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "previousTitle": {
+            "type": "string"
+          },
+          "stay": {
+            "type": "string",
+            "enum": [
+              "edited",
+              "deleted",
+              "returned"
+            ]
+          }
+        }
+      },
+      "BookRevertPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "What a return of the book to the version before its last update from a file would do (specs/2026-11-12-ux10-book-revert.md BR2.1), the chapters in the order of the book after it.",
+        "required": [
+          "bookId",
+          "bookTitle",
+          "updatedAt",
+          "revertUntil",
+          "fingerprint",
+          "text",
+          "place",
+          "returned",
+          "removed",
+          "kept"
+        ],
+        "properties": {
+          "bookId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookTitle": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "revertUntil": {
+            "$ref": "#/components/schemas/DateTime"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "text": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookRevertChapter"
+            }
+          },
+          "place": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookRevertChapter"
+            }
+          },
+          "returned": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookRevertChapter"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookRevertChapter"
+            }
+          },
+          "kept": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookRevertChapter"
+            }
+          }
+        }
       },
       "BookCoverUploadRequest": {
         "type": "object",
@@ -9143,7 +10161,6 @@
           "status",
           "version",
           "intendedItemCount",
-          "nextBookOrder",
           "currentItemId",
           "items",
           "createdAt",
@@ -9176,10 +10193,6 @@
             "minimum": 1
           },
           "intendedItemCount": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "nextBookOrder": {
             "type": "integer",
             "minimum": 1
           },
@@ -9261,8 +10274,6 @@
           "sourceFileName",
           "mimeType",
           "sizeBytes",
-          "detectedBookOrder",
-          "confirmedBookOrder",
           "preflightStatus",
           "preflightError",
           "processingStatus",
@@ -9304,20 +10315,6 @@
             ],
             "minimum": 0
           },
-          "detectedBookOrder": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1
-          },
-          "confirmedBookOrder": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1
-          },
           "preflightStatus": {
             "type": "string",
             "enum": [
@@ -9338,6 +10335,7 @@
           },
           "processingStatus": {
             "type": "string",
+            "description": "A failed volume waits for the author at its place (specs/2026-11-11-ux7-upload.md UP3.2): its import Job did not read the file (failedStep import), or its file did not pass the check (failedStep preflight, the reason in preflightError) — such a file does not hold the queue back, its start runs the files that passed. A skipped volume left the upload.",
             "enum": [
               "uploading",
               "ready",
@@ -9348,7 +10346,8 @@
               "retrying",
               "succeeded",
               "failed",
-              "canceled"
+              "canceled",
+              "skipped"
             ]
           },
           "failureClass": {
@@ -9454,8 +10453,7 @@
         "required": [
           "clientItemId",
           "position",
-          "sourceFileName",
-          "detectedBookOrder"
+          "sourceFileName"
         ],
         "properties": {
           "clientItemId": {
@@ -9465,19 +10463,13 @@
           },
           "position": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "The row of the volume: the order of the rows is the order of the volumes after the books of the shelf (UP2.3)."
           },
           "sourceFileName": {
             "type": "string",
             "minLength": 1,
             "maxLength": 255
-          },
-          "detectedBookOrder": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1
           }
         }
       },
@@ -9495,49 +10487,6 @@
           "file": {
             "type": "string",
             "format": "binary"
-          }
-        }
-      },
-      "UpdateImportQueueRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "expectedVersion",
-          "items"
-        ],
-        "properties": {
-          "expectedVersion": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "items": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "$ref": "#/components/schemas/UpdateImportQueueItemRequest"
-            }
-          }
-        }
-      },
-      "UpdateImportQueueItemRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "position",
-          "confirmedBookOrder"
-        ],
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/Id"
-          },
-          "position": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "confirmedBookOrder": {
-            "type": "integer",
-            "minimum": 1
           }
         }
       },
@@ -9560,8 +10509,7 @@
         "required": [
           "allowedExtensions",
           "allowedMimeTypes",
-          "maxFileSizeBytes",
-          "nextBookOrder"
+          "maxFileSizeBytes"
         ],
         "properties": {
           "allowedExtensions": {
@@ -9571,13 +10519,23 @@
               "enum": [
                 ".fb2",
                 ".epub",
-                ".docx"
+                ".docx",
+                ".txt",
+                ".md",
+                ".rtf",
+                ".odt",
+                ".fb2.zip"
               ]
             },
             "default": [
               ".fb2",
               ".epub",
-              ".docx"
+              ".docx",
+              ".txt",
+              ".md",
+              ".rtf",
+              ".odt",
+              ".fb2.zip"
             ]
           },
           "allowedMimeTypes": {
@@ -9585,30 +10543,41 @@
             "items": {
               "type": "string",
               "enum": [
-                "application/epub+zip",
                 "application/x-fictionbook+xml",
                 "text/xml",
                 "application/xml",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "application/epub+zip",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "text/plain",
+                "text/markdown",
+                "text/x-markdown",
+                "application/rtf",
+                "text/rtf",
+                "application/vnd.oasis.opendocument.text",
+                "application/zip",
+                "application/x-zip-compressed"
               ]
             },
             "default": [
-              "application/epub+zip",
               "application/x-fictionbook+xml",
               "text/xml",
               "application/xml",
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              "application/epub+zip",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "text/plain",
+              "text/markdown",
+              "text/x-markdown",
+              "application/rtf",
+              "text/rtf",
+              "application/vnd.oasis.opendocument.text",
+              "application/zip",
+              "application/x-zip-compressed"
             ]
           },
           "maxFileSizeBytes": {
             "type": "integer",
             "const": 52428800,
             "description": "Maximum accepted upload size in bytes."
-          },
-          "nextBookOrder": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Authoritative next active volume order for this project."
           }
         }
       },
@@ -10727,6 +11696,10 @@
             "$ref": "#/components/schemas/JobStatus",
             "description": "Status of the latest turn's Job, present with latestTurnJobId. The chat list marks chats whose turn is queued, running or canceling and refreshes while one works."
           },
+          "latestTurnAt": {
+            "$ref": "#/components/schemas/DateTime",
+            "description": "When the latest turn was asked, present with latestTurnId. The list of chats groups the chats by it and /chat without a chat opens the one asked last (specs/2026-11-11-ux4-after-answer.md AA2.1, AA3.1)."
+          },
           "savedAssignment": {
             "anyOf": [
               {
@@ -11187,11 +12160,18 @@
           "attachment": {
             "$ref": "#/components/schemas/ChatAttachmentSummary"
           },
+          "button": {
+            "type": "boolean",
+            "description": "specs/2026-11-11-ux9-writing-b.md WB3.3: a button of the page sent the question (kind user), not the author typing it; the feed of a helper shows it as a line of the press."
+          },
           "phase": {
             "type": "string"
           },
           "tool": {
             "$ref": "#/components/schemas/AgentTimelineToolCall"
+          },
+          "places": {
+            "$ref": "#/components/schemas/ChapterPlaces"
           },
           "outcome": {
             "type": "string",
@@ -11351,6 +12331,74 @@
           },
           "errorCode": {
             "type": "string"
+          },
+          "missing": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scene",
+              "lines"
+            ],
+            "description": "specs/2026-11-11-ux9-writing-a.md WA2.4: with errorCode chapter_draft.keep_missing — the scene of the plan the writing kept losing the author's lines in, and which of them by their numbers from 0 among the lines of the scene to keep: its keepVerbatim, then the authorLine of its beats.",
+            "properties": {
+              "scene": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "lines": {
+                "type": "array",
+                "maxItems": 60,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "writing": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scene",
+              "attempt",
+              "step",
+              "text"
+            ],
+            "description": "specs/2026-11-12-ux10-scene-stream.md ST1.4: the scene the writing writes now, as its answer comes — a draft that may still change, never the text of the chapter. getChapterDraft answers it to an editor of the saga while the Job runs; a reader of the saga, the list of drafts and a Job stopping, waiting or ended have none.",
+            "properties": {
+              "scene": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The number of the scene in the plan."
+              },
+              "attempt": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The call of the scene that goes on, from 1."
+              },
+              "step": {
+                "type": "string",
+                "enum": [
+                  "writing",
+                  "checking",
+                  "again"
+                ],
+                "description": "writing — its answer comes; checking — the answer came whole and the passes over it go; again — it is written again, its text empty and growing anew."
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "lost",
+                  "short"
+                ],
+                "description": "With again: lost — the answer before lost a line of the author to keep word for word; short — it held no scene or too few of its words; absent — the answer before broke off."
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 262144,
+                "description": "The text of the scene so far, cleaned as the scene will be: paragraphs parted by a blank line, no marks."
+              }
+            }
           }
         }
       },
@@ -11370,7 +12418,8 @@
         "required": [
           "number",
           "approved",
-          "stale"
+          "stale",
+          "reason"
         ],
         "properties": {
           "number": {
@@ -11385,6 +12434,19 @@
           "stale": {
             "type": "boolean",
             "description": "The idea changed since this version was made for it."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "first",
+              "answers",
+              "author_words",
+              "from_here",
+              "new_idea",
+              "reverse",
+              "author_edit"
+            ],
+            "description": "Why this version was made (WA4): reverse — the scenes of the author's own text (specs/2026-11-11-ux5-writing-path.md WP1.2, the step a page names)."
           }
         }
       },
@@ -11417,7 +12479,9 @@
               "before_delete",
               "switch",
               "before_upload",
-              "before_proofread"
+              "before_proofread",
+              "before_voice",
+              "author_variant"
             ]
           },
           "words": {
@@ -11434,6 +12498,16 @@
             "type": "integer",
             "description": "The version of the plan it was written by.",
             "minimum": 1
+          },
+          "place": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "specs/2026-11-11-ux9-writing-b.md WB3.1: the first words of what the action after the version changed in the text — the version is named by it; absent when the action took nothing away and on older versions."
+          },
+          "scenes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "WB3.1: of a version written by the writing, the scenes it wrote."
           },
           "createdAt": {
             "type": "string",
@@ -11490,7 +12564,9 @@
               "before_delete",
               "switch",
               "before_upload",
-              "before_proofread"
+              "before_proofread",
+              "before_voice",
+              "author_variant"
             ]
           },
           "words": {
@@ -11508,6 +12584,16 @@
             "description": "The version of the plan it was written by.",
             "minimum": 1
           },
+          "place": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "specs/2026-11-11-ux9-writing-b.md WB3.1: the first words of what the action after the version changed in the text — the version is named by it; absent when the action took nothing away and on older versions."
+          },
+          "scenes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "WB3.1: of a version written by the writing, the scenes it wrote."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -11517,6 +12603,11 @@
             "type": "string",
             "description": "The working text as it stood, ⟦…⟧ marking what the author did not write.",
             "maxLength": 400000
+          },
+          "idea": {
+            "type": "string",
+            "description": "specs/2026-11-10-ux5-voice.md VO1.1: the idea as it stood — kept by the version before a conversation with the voice (before_voice), by the version kept before it was given back and by the author's variant of the idea (author_variant, specs/2026-11-11-ux5-writing-path.md WP5.4); «Вернуть эту версию» gives it back too.",
+            "maxLength": 8000
           },
           "pack": {
             "type": "string",
@@ -11644,6 +12735,11 @@
             "type": "string",
             "maxLength": 200
           },
+          "opening": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "specs/2026-11-11-ux9-writing-a.md WA1.1: the first words of the idea, else of the plain text — what names a chapter without a title in the list and in its head («Кира ждёт у ворот…»). Absent when the draft has neither."
+          },
           "kind": {
             "$ref": "#/components/schemas/ChapterDraftKind"
           },
@@ -11728,6 +12824,10 @@
           },
           "original": {
             "$ref": "#/components/schemas/ChapterDraftOriginal"
+          },
+          "newChapter": {
+            "type": "boolean",
+            "description": "specs/2026-11-10-ux1-writing.md UW1.1: true — the first Job of scenes of this draft would count as a new chapter of the writer's tier (specs/2026-11-08-subscription-tiers.md TR7.1: it edits no chapter of the book, is not nearly done by the author's own words, and no new chapter of it counts yet, TR7.3); false — its scenes are not charged. Absent in a build without tiers and once the chapter is in the book. A page names the price of the chapter by it before the author presses; whether the tier allows a new chapter now is getAccountPlan, and only startChapterDraftJob decides."
           }
         }
       },
@@ -11742,8 +12842,12 @@
           "words",
           "revision",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "idea",
+          "findings",
+          "corrections"
         ],
+        "description": "A draft in the list without its text. The fields after the dates are what names its step in the words of the strip over the chapter (specs/2026-11-11-ux5-writing-path.md WP1.2): the page counts nothing by a guess.",
         "properties": {
           "id": {
             "$ref": "#/components/schemas/Id"
@@ -11761,10 +12865,27 @@
           "words": {
             "type": "integer",
             "minimum": 0,
-            "description": "The words of the working text: tokens between spaces, a dash of a line is no word."
+            "description": "The words of the working text as the head of the chapter counts them (specs/2026-11-12-ux12-writing.md WR2.1; sagadraft.WordsOf): runs of letters, marks and digits — «по-русски» is two words, a dash of a line none."
           },
-          "jobStatus": {
-            "$ref": "#/components/schemas/JobStatus"
+          "idea": {
+            "type": "boolean",
+            "description": "The draft has an idea: words, not spaces."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ChapterDraftPlanState"
+          },
+          "job": {
+            "$ref": "#/components/schemas/ChapterDraftJob"
+          },
+          "findings": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Its open findings of «Сверка»: canon, new, style, craft, seam, plan_follow and the earlier meaning, repeat, machine."
+          },
+          "corrections": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Its open corrections of the proofreading (proofread)."
           },
           "revision": {
             "type": "integer",
@@ -11772,7 +12893,25 @@
           },
           "edits": {
             "type": "boolean",
-            "description": "The draft edits a chapter of the book (A8.7): the list names it «Правка»."
+            "description": "The draft edits a chapter of the book (A8.7): the list keeps it in the group «Правки глав книги»."
+          },
+          "editState": {
+            "type": "string",
+            "enum": [
+              "same",
+              "edited",
+              "changed",
+              "gone"
+            ],
+            "description": "specs/2026-11-11-ux9-writing-a.md WA1.3: where an edit stands against its chapter — same: the book holds its text and title; edited: the author changed them; changed: the chapter changed in the book since; gone: the chapter is deleted. Absent for a draft that edits no chapter."
+          },
+          "opening": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "WA1.1: the first words of the idea, else of the text, naming a draft without a title. Absent when it has neither."
+          },
+          "attachment": {
+            "$ref": "#/components/schemas/ChapterDraftAttachment"
           },
           "createdAt": {
             "type": "string",
@@ -11781,6 +12920,25 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ChapterDraftAttachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chatId",
+          "number"
+        ],
+        "description": "specs/2026-11-11-ux5-proofread-mode.md PM3.3: the chapter attached in the chat the proofreading of a draft began from — the chat and the number of the attachment in it. Kept with the original of the draft; it goes when the chat is deleted or another file is loaded into the draft.",
+        "properties": {
+          "chatId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999
           }
         }
       },
@@ -11897,6 +13055,22 @@
           "keepVersion": {
             "type": "boolean",
             "description": "WA7.7: with text, the working text goes into a version before the edit: the author takes a piece out with the menu of a selection."
+          },
+          "variant": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "specs/2026-11-11-ux5-writing-path.md WP5.4: alone — with expectedRevision and nothing else — the author's text the draft could not take (the chapter changed in another place where he typed) goes into a version author_variant «Ваш вариант»: text, the whole working text he typed, else the draft's; idea, the idea he typed. The draft and its revision stay as they are; the answer is the draft.",
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 400000
+              },
+              "idea": {
+                "type": "string",
+                "maxLength": 8000
+              }
+            }
           }
         }
       },
@@ -12011,7 +13185,7 @@
           "variantGroup": {
             "type": "string",
             "format": "uuid",
-            "description": "The variants of one place: «Оставить этот» one dismisses the others."
+            "description": "The variants of one place: «Взять этот вариант» at one dismisses the others."
           },
           "blocks": {
             "type": "string",
@@ -12065,6 +13239,11 @@
             "type": "string",
             "maxLength": 80,
             "description": "Of a finding of the check of style: its category."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "specs/2026-11-11-ux9-writing-b.md WB2.1: of a finding of style, its category in the author's words by the one table of the check (sagadraft.StyleLabel); absent for any other note."
           },
           "bookQuote": {
             "type": "string",
@@ -12132,7 +13311,9 @@
           "fileName",
           "format",
           "words",
-          "uploadedAt"
+          "uploadedAt",
+          "look",
+          "revisions"
         ],
         "description": "specs/2026-11-07-writing-proofread.md PR7.1: the chapter the author loaded as a file or a text, as parsed; the file itself is not kept. The file with Word revisions is written against it.",
         "properties": {
@@ -12158,6 +13339,15 @@
           "uploadedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "look": {
+            "type": "boolean",
+            "description": "specs/2026-11-07-writing-proofread.md PR9.3: the original keeps the look of its Word file; without it «Сохранить оформление исходного файла» is offered."
+          },
+          "revisions": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "specs/2026-11-11-ux5-proofread-mode.md PM1.4: the revisions of Word the file of getChapterDraftExport has for the draft now, counted by the writer of that file as Word lists them — a stretch of one kind (inserted, deleted, of formatting) is one revision, so a word replaced is two. «Скачать Word с исправлениями (K)» names it."
           }
         }
       },
@@ -12169,7 +13359,8 @@
           "bookWords",
           "changed",
           "gone",
-          "canRevert"
+          "canRevert",
+          "same"
         ],
         "description": "specs/2026-11-05-voice-full-access.md A8.7: the chapter of the book the draft edits. changed — the chapter changed in the book since the draft took it; gone — it is deleted, the draft goes in as a new chapter; canRevert — «Вернуть прежний текст» gives back the text before the last replacement.",
         "properties": {
@@ -12194,6 +13385,10 @@
           },
           "canRevert": {
             "type": "boolean"
+          },
+          "same": {
+            "type": "boolean",
+            "description": "specs/2026-11-11-ux9-writing-a.md WA4.1: the book holds the text and the title of the draft — «Заменить главу в книге» has nothing to put there."
           }
         }
       },
@@ -12236,8 +13431,11 @@
         "enum": [
           "xlsx",
           "docx",
-          "text"
-        ]
+          "csv",
+          "text",
+          "manual"
+        ],
+        "description": "What a record came from: a workbook, a document, a table of a .csv, a pasted text or a .txt/.md, or the page by hand (manual)."
       },
       "AuthorMaterialProperty": {
         "type": "object",
@@ -12344,6 +13542,42 @@
           }
         }
       },
+      "CreateAuthorMaterialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "kind",
+          "description",
+          "properties"
+        ],
+        "description": "specs/2026-11-10-ux8-memory-records.md MR2.1: a record by hand, as a change says it.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuthorMaterialKind"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "properties": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/AuthorMaterialProperty"
+            }
+          },
+          "section": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
       "UpdateAuthorMaterialRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -12392,7 +13626,7 @@
           "file": {
             "type": "string",
             "format": "binary",
-            "description": "An XLSX or a DOCX up to 10 MiB."
+            "description": "An XLSX, a DOCX, a CSV (a table of one sheet: comma, semicolon or tab; UTF-8 or Windows-1251), a TXT or an MD (a text with paragraphs) up to 10 MiB (specs/2026-11-10-ux8-memory-records.md MR2.4)."
           },
           "text": {
             "type": "string",
@@ -12588,6 +13822,7 @@
           "text",
           "revision",
           "author",
+          "origin",
           "createdAt",
           "updatedAt"
         ],
@@ -12606,6 +13841,10 @@
           "chapter": {
             "$ref": "#/components/schemas/SagaChapterRef"
           },
+          "chapterGone": {
+            "type": "boolean",
+            "description": "specs/2026-11-10-ux8-memory-records.md MR1.2: the record names a chapter the saga no longer has; chapter is then absent and the page says «глава удалена»."
+          },
           "name": {
             "type": "string",
             "minLength": 1,
@@ -12619,6 +13858,9 @@
             "type": "string",
             "description": "The display name of who wrote the record."
           },
+          "origin": {
+            "$ref": "#/components/schemas/AuthorMemoryOrigin"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -12630,14 +13872,46 @@
         },
         "description": "One record of the memory of the author."
       },
+      "AuthorMemoryOrigin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "description": "specs/2026-11-10-ux8-memory-records.md MR1.5: where a record came from, by the Job it keeps. manual — written on the page; chat — a turn of a chat, with chatId and title while the chat lives and the reader sees it in the list of chats; draft — the helper of a chapter draft, title is the draft's while it lives; drawing — the helper of a drawing. Neither the question nor the answer.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "chat",
+              "draft",
+              "drawing"
+            ]
+          },
+          "chatId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
       "AuthorMemoryPage": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "data",
-          "meta"
+          "meta",
+          "shared"
         ],
         "properties": {
+          "shared": {
+            "type": "boolean",
+            "description": "MR1.5: the saga has members besides one, so the page signs each record with its author."
+          },
           "data": {
             "type": "array",
             "items": {
@@ -12710,11 +13984,21 @@
           }
         }
       },
+      "ChapterPlaces": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "description": "The places of chapters by their keys, as the author reads them: «Книга 2, гл. 12 „Белый порт“». The page shows a place instead of the key, which is the address of the model; a key the text of the saga has no chapter for is absent."
+      },
       "SagaChapterRef": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "key",
+          "label",
           "chapterId",
           "bookId",
           "bookOrder",
@@ -12726,7 +14010,13 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 32,
-            "description": "Stable chapter key: the global chapter number or b<book>c<chapter>."
+            "description": "Stable chapter key: the global chapter number or b<book>c<chapter>. The address of the model: the page sends it back and never shows it."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "description": "The place of the chapter as the author reads it, «Книга 2, гл. 12 „Белый порт“»: the order of its book, the number its title writes or its place in the book, and the title without that number."
           },
           "chapterId": {
             "$ref": "#/components/schemas/Id"
@@ -12927,6 +14217,48 @@
           }
         },
         "description": "A book of the text version with the keys of its chapters."
+      },
+      "SagaFirstQuestions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "questions",
+          "pending"
+        ],
+        "properties": {
+          "pending": {
+            "type": "boolean",
+            "description": "The text version has chapters and no prepared map yet — its cards are being written, or written and the map not yet built (FQ1.9): the page asks again. False for a saga without a chapter, with a map, behind or not, and with a map without a hero."
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "text"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "hero",
+                    "pair",
+                    "place"
+                  ],
+                  "description": "hero: of the hero of the map; pair: of the hero and his strongest neighbor of the characters; place: of the place of most chapters or, without places, of an item or a faction."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The whole question; a name stands as the map has it."
+                }
+              }
+            }
+          }
+        }
       },
       "SagaMapSearch": {
         "type": "object",
@@ -13554,6 +14886,10 @@
             "items": {
               "$ref": "#/components/schemas/SagaContentsChapter"
             }
+          },
+          "chapter": {
+            "$ref": "#/components/schemas/SagaChapterRef",
+            "description": "The chapter the key of the `chapter` parameter names, under its key of now; absent when the text has no such chapter."
           }
         },
         "description": "Chapter summaries of a book, or the chapters of the whole saga matching a query (at most 200)."
@@ -13578,6 +14914,145 @@
             "items": {
               "$ref": "#/components/schemas/IndexingStep"
             }
+          },
+          "preparation": {
+            "$ref": "#/components/schemas/IndexingPreparation",
+            "description": "Present while the saga is read: its published text is processing, or a new book of an open wave is still to be imported (specs/2026-11-10-ux3-saga-state.md SS1.1, specs/2026-11-09-first-session.md FS5.1); omitted otherwise."
+          },
+          "sagaReady": {
+            "$ref": "#/components/schemas/IndexingSagaReady",
+            "description": "Present for seven days after the saga became ready, while its published text is ready (FS4.1); omitted otherwise."
+          }
+        }
+      },
+      "IndexingPreparation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "remainingSeconds",
+          "letterPromised",
+          "chaptersRead",
+          "chaptersTotal",
+          "booksRead",
+          "booksTotal",
+          "currentBookId",
+          "askable",
+          "books"
+        ],
+        "description": "How far the reading of the saga is (specs/2026-11-10-ux3-saga-state.md SS1.1; specs/2026-11-09-first-session.md FS5): the chapters and books of the published text the helper has read, by the same counters the wave «Сага готова» closes on, with the estimate and the promise of the letter of an open wave. The page says what the server counts and never counts or estimates on its own.",
+        "properties": {
+          "remainingSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Seconds the chapters without cards will take by the pace of the latest cards; null without an open wave, without a pace (fewer than three cards over the last five minutes of the preparation) or while a new book is still to be imported."
+          },
+          "letterPromised": {
+            "type": "boolean",
+            "description": "True when the caller will get the letter «Сага готова»: the preparation lasts longer than two minutes, the letter of this saga goes to him, his address is confirmed and he has not turned such letters off."
+          },
+          "chaptersRead": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Chapters of the published text whose current text has its retelling (the card of the chapter)."
+          },
+          "chaptersTotal": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Live chapters of the published text."
+          },
+          "booksRead": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Books with chapters whose every chapter is read."
+          },
+          "booksTotal": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Books with chapters in the published text."
+          },
+          "currentBookId": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first book in the order of the saga that is not read yet; null while every book there is is read and the file of a new book is still parsed."
+          },
+          "askable": {
+            "type": "boolean",
+            "description": "True once the search finds at least one chapter of the published text: a question may be asked already."
+          },
+          "books": {
+            "type": "array",
+            "description": "The reading of each book with chapters, in the order of the saga.",
+            "items": {
+              "$ref": "#/components/schemas/IndexingPreparationBook"
+            }
+          },
+          "waiting": {
+            "type": "string",
+            "enum": [
+              "helper"
+            ],
+            "description": "What the reading waits for (specs/2026-11-12-desk-window.md WN3.1): helper — the helper of the build is not connected, nobody reads the books, and the counts are of what was read before; remainingSeconds is null and letterPromised false. Absent while the helper reads: the site never sends it."
+          }
+        }
+      },
+      "IndexingPreparationBook": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bookId",
+          "chaptersRead",
+          "chaptersTotal"
+        ],
+        "description": "How far one book of the saga is read (specs/2026-11-10-ux3-saga-state.md SS2.6).",
+        "properties": {
+          "bookId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "chaptersRead": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Its chapters with their retelling."
+          },
+          "chaptersTotal": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Its live chapters."
+          }
+        }
+      },
+      "IndexingSagaReady": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "at",
+          "books",
+          "chapters"
+        ],
+        "description": "The saga became ready to be asked (specs/2026-11-09-first-session.md FS4.1): when, and what is read of it now.",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the preparation ended; the page tells of one readiness once by it."
+          },
+          "books": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Books with chapters in the published text."
+          },
+          "chapters": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Their chapters."
           }
         }
       },
@@ -14563,7 +16038,7 @@
       "ImportPreview": {
         "type": "object",
         "additionalProperties": false,
-        "description": "What update_book with the same file would change, present on update_preview only (specs/2026-10-27-update-book-from-file.md, UC6). Only the creator of the Job reads the places of its chapters.",
+        "description": "What update_book with the same file would change, on update_preview (specs/2026-10-27-update-book-from-file.md, UC6), and what it changed, on update_book since 2026-11-11 (specs/2026-11-11-ux7-trash.md TB4.1: «Что изменилось»). Only the creator of the Job reads the places of its chapters.",
         "required": [
           "newCards",
           "threads",
@@ -14635,6 +16110,11 @@
               "$ref": "#/components/schemas/ImportPreviewPlace"
             },
             "description": "Up to two places of a chapter with other words or signs; only its creator reads them."
+          },
+          "editedOnSite": {
+            "type": "boolean",
+            "const": true,
+            "description": "Present and true on a chapter with other words or signs, or removed, whose text in the book now was written on the site — added from «Письмо» and not rewritten by a file since, or replaced by its edit: the file replaces or removes it (specs/2026-11-11-ux9-shelf-chat.md SC1.4)."
           }
         }
       },

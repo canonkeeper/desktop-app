@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
 } from 'react';
+import { useOverlayHistory } from './overlay-history';
 import type { PresenceStatus } from './use-presence';
 import styles from './overlays.module.css';
 
@@ -53,6 +54,11 @@ function updateModalEnvironment() {
 export interface OverlayProps extends Omit<HTMLAttributes<HTMLDivElement>, 'aria-label' | 'children' | 'role'> {
   canDismiss?: boolean;
   children: ReactNode;
+  /**
+   * «Назад» of the browser closes it first (specs/2026-11-10-ux2-patterns-actions.md UC4). `false` for what the address
+   * opens itself — its own «Назад» closes it.
+   */
+  history?: boolean;
   initialFocusRef?: RefObject<HTMLElement | null>;
   kind: OverlayKind;
   label: string;
@@ -66,6 +72,7 @@ export function Overlay({
   canDismiss = true,
   children,
   className,
+  history = true,
   initialFocusRef,
   kind,
   label,
@@ -79,6 +86,10 @@ export function Overlay({
   const rootRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef(modal);
   modalRef.current = modal;
+  // An overlay over the page holds a step of the history: «Назад» is its «×», and Esc a busy one does not take either.
+  useOverlayHistory(modal && history && state !== 'closing', () => {
+    if (canDismiss) onDismiss();
+  });
 
   useEffect(() => {
     const root = rootRef.current;
@@ -130,9 +141,36 @@ export function Overlay({
       ?? rootRef.current)?.focus();
   }, [modal]);
 
+  // The focused part of a window may leave the page — a line of a list gives way to what it opened — or the author clicks
+  // beside the window: the focus falls to <body>, and Escape and Tab would go past the window, which then cannot be
+  // closed by the keys. The top window takes its keys back from there. A menu of the window keeps its own focus and Escape.
+  const dismissRef = useRef({ canDismiss, onDismiss });
+  dismissRef.current = { canDismiss, onDismiss };
+  useEffect(() => {
+    if (!modal) return undefined;
+    function takeKeysBack(event: globalThis.KeyboardEvent) {
+      const root = rootRef.current;
+      if (!root || activeModal()?.root !== root) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement) return;
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        if (dismissRef.current.canDismiss) dismissRef.current.onDismiss();
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        const focusable = [...root.querySelectorAll<HTMLElement>(focusableSelector)].filter((node) => !node.closest('[hidden], [inert]'));
+        ((event.shiftKey ? focusable.at(-1) : focusable[0]) ?? root).focus();
+      }
+    }
+    document.addEventListener('keydown', takeKeysBack);
+    return () => document.removeEventListener('keydown', takeKeysBack);
+  }, [modal]);
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (!modal || activeModal()?.root !== rootRef.current) return;
     if (event.key === 'Escape') {
+      // A menu of this window closes first, by its own Escape (Popover): the window stays.
+      if (event.target instanceof Element && event.target.closest('[data-pop]')) return;
       event.stopPropagation();
       if (canDismiss) onDismiss();
       return;

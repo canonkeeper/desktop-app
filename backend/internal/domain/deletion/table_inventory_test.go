@@ -59,12 +59,26 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	// Added by forward migration 0114: the consent to cards, the journal of what went to the AI and the Obsidian vault
 	// of a saga in the desktop build, removed with the project.
 	want = append(want, "card_build_permissions", "model_requests", "model_disclosures", "obsidian_vaults")
+	// Added by forward migration 0117: the subscription tiers of the site and the periods of a writer's tier.
+	want = append(want, "subscription_tiers", "subscription_periods")
+	// Added by forward migration 0118: the batches and the keys of a tier, the counters of the tiers of an account
+	// (0119 adds what a writer used of the trials of his tiers to the same row).
+	want = append(want, "subscription_key_batches", "subscription_keys", "subscription_usage")
+	// Added by forward migration 0120: the new chapters charged against a writer's tier.
+	want = append(want, "subscription_chapter_charges")
+	// Forward migration 0121 adds columns only: the trial calls of the voice to subscription_usage, the seconds of the
+	// calls to writer_usage_days.
+	// Added by forward migration 0123: the wave of the preparation of a saga, removed with the project.
+	want = append(want, "saga_ready_waves")
+	// Added by forward migration 0142: the snapshot of the last update of a book from a file, removed with the book.
+	want = append(want, "book_update_snapshots", "book_update_snapshot_chapters")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},
 		"canon_correction_proposals":            {}, // Dropped by forward migration 0038.
 		"export_artifacts":                      {}, // Dropped by forward migration 0046.
 		"governance_writer_leases":              {}, // Dropped by forward migration 0044.
+		"illustration_access_requests":          {}, // Dropped by forward migration 0119.
 		"job_agent_threads":                     {},
 		"reader_annotations":                    {}, // Dropped by forward migration 0047.
 		"runtime_session_deletion_associations": {},
@@ -154,30 +168,33 @@ var removedCanonGraphTables = []string{
 
 func TestTableInventoryIncludesCanonicalSourceTablesWithoutPersistedSteps(t *testing.T) {
 	want := map[string]TableDisposition{
-		"project_source_views":     {"project_source_views", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"book_source_members":      {"book_source_members", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_source_members":   {"chapter_source_members", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_text_index_state": {"chapter_text_index_state", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_text_search_rows": {"chapter_text_search_rows", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_cards":            {"chapter_cards", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_search_texts":     {"chapter_search_texts", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_search_words":     {"chapter_search_words", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_names":               {"saga_names", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_map_graphs":          {"saga_map_graphs", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_map_nodes":           {"saga_map_nodes", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_map_node_parts":      {"saga_map_node_parts", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_map_names":           {"saga_map_names", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_map_hidden":          {"saga_map_hidden", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"saga_threads":             {"saga_threads", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
-		"author_memory":            {"author_memory", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"author_materials":         {"author_materials", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"author_material_imports":  {"author_material_imports", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_drafts":           {"chapter_drafts", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"chapter_draft_notes":      {"chapter_draft_notes", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"card_build_permissions":   {"card_build_permissions", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"model_requests":           {"model_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"model_disclosures":        {"model_disclosures", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
-		"obsidian_vaults":          {"obsidian_vaults", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"project_source_views":          {"project_source_views", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"book_source_members":           {"book_source_members", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_source_members":        {"chapter_source_members", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_text_index_state":      {"chapter_text_index_state", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_text_search_rows":      {"chapter_text_search_rows", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_cards":                 {"chapter_cards", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_search_texts":          {"chapter_search_texts", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_search_words":          {"chapter_search_words", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_names":                    {"saga_names", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_map_graphs":               {"saga_map_graphs", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_map_nodes":                {"saga_map_nodes", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_map_node_parts":           {"saga_map_node_parts", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_map_names":                {"saga_map_names", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_map_hidden":               {"saga_map_hidden", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_threads":                  {"saga_threads", TableActionDeleteWithParent, TableActionDeleteWithParent, TableActionRetainSource},
+		"author_memory":                 {"author_memory", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"author_materials":              {"author_materials", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"author_material_imports":       {"author_material_imports", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_drafts":                {"chapter_drafts", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"chapter_draft_notes":           {"chapter_draft_notes", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"card_build_permissions":        {"card_build_permissions", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"model_requests":                {"model_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"model_disclosures":             {"model_disclosures", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"obsidian_vaults":               {"obsidian_vaults", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"saga_ready_waves":              {"saga_ready_waves", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"book_update_snapshots":         {"book_update_snapshots", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"book_update_snapshot_chapters": {"book_update_snapshot_chapters", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 	}
 
 	for _, disposition := range DeletionTableInventory() {

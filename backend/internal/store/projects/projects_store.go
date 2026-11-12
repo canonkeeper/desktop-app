@@ -21,10 +21,19 @@ type Store struct {
 	*storedb.DB
 	canon                    *canonstore.Store
 	library                  *librarystore.Store
+	quota                    quotastore.Fence
 	projectDeletionFailpoint func(string) error
 }
 
 type Option func(*Store)
+
+// WithQuota gives the store the quota fence of the build (specs/2026-11-08-subscription-tiers.md TR2.4); without it the
+// fence has no plan, as the open core and its tests run.
+func WithQuota(fence quotastore.Fence) Option {
+	return func(store *Store) {
+		store.quota = fence
+	}
+}
 
 const listProjectsForActorCursorSQL = `
 SELECT
@@ -42,7 +51,8 @@ SELECT
   m.role,
   m.removed_at,
   m.created_at,
-  m.updated_at
+  m.updated_at,
+  p.demo
 FROM projects p
 JOIN project_memberships m ON m.project_id = p.id
 LEFT JOIN LATERAL (
@@ -82,6 +92,7 @@ type projectActorCollectionRow struct {
 	MembershipRemovedAt pgtype.Timestamptz
 	MembershipCreatedAt pgtype.Timestamptz
 	MembershipUpdatedAt pgtype.Timestamptz
+	Demo                bool
 }
 
 func New(db *storedb.DB, options ...Option) *Store {
@@ -126,14 +137,21 @@ func (s *Store) CreateProjectWithOwnerMembership(ctx context.Context, input proj
 		} else if err != nil {
 			return err
 		}
-		if err := quotastore.CheckOwnerProjectsInTx(ctx, tx, ownerUserID.String(), 1); err != nil {
-			return err
+		// The demo saga is not a saga of the limit of its owner (specs/2026-11-09-demo-saga.md DS3.2); the index of
+		// the table lets him have one live.
+		if !input.Demo {
+			if err := s.quota.CheckOwnerProjectsInTx(ctx, tx, ownerUserID.String(), 1); err != nil {
+				return err
+			}
 		}
 		queries := sqlc.New(tx)
 		createdProject, err = queries.CreateProject(ctx, sqlc.CreateProjectParams{
 			ID: projectID, OwnerUserID: ownerUserID, Name: input.Title,
-			Description: input.Description, CreatedAt: createdAt,
+			Description: input.Description, Demo: input.Demo, CreatedAt: createdAt,
 		})
+		if isSecondLiveDemoSaga(err) {
+			return projects.ErrConflict
+		}
 		if err != nil {
 			return err
 		}
@@ -205,6 +223,7 @@ func (s *Store) ListProjectsForActor(ctx context.Context, input projects.ListPro
 			&row.MembershipRemovedAt,
 			&row.MembershipCreatedAt,
 			&row.MembershipUpdatedAt,
+			&row.Demo,
 		); err != nil {
 			return nil, err
 		}
@@ -234,6 +253,29 @@ func (s *Store) GetProject(ctx context.Context, actorUserID, projectID string) (
 		return projects.ProjectRecord{}, err
 	}
 	return projectRecordFromGetProjectForActor(row), nil
+}
+
+// DemoProject reads the live demo saga of the owner as he sees it.
+func (s *Store) DemoProject(ctx context.Context, ownerUserID string) (projects.ProjectRecord, error) {
+	ownerUserUUID, err := storedb.ParseUUID(ownerUserID)
+	if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	var projectID pgtype.UUID
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT id FROM projects WHERE owner_user_id = $1 AND demo AND deleted_at IS NULL
+	`, ownerUserUUID).Scan(&projectID); errors.Is(err, pgx.ErrNoRows) {
+		return projects.ProjectRecord{}, projects.ErrNotFound
+	} else if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	return s.GetProject(ctx, ownerUserID, projectID.String())
+}
+
+// isSecondLiveDemoSaga tells the refusal of the index that lets an owner have one live demo saga.
+func isSecondLiveDemoSaga(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "projects_one_live_demo_per_owner"
 }
 
 func (s *Store) UpdateProject(ctx context.Context, input projects.UpdateProjectStoreInput) (projects.ProjectRecord, error) {
@@ -267,6 +309,7 @@ func projectRecord(row sqlc.CreateProjectRow, membership sqlc.ProjectMembership)
 		ID:                row.ID.String(),
 		Title:             row.Name,
 		Description:       row.Description,
+		Demo:              row.Demo,
 		BookCount:         int(row.BookCount),
 		ChapterCount:      int(row.ChapterCount),
 		WordCount:         int(row.WordCount),
@@ -282,6 +325,7 @@ func projectRecordFromActorCollection(row projectActorCollectionRow) projects.Pr
 		ID:           row.ID.String(),
 		Title:        row.Name,
 		Description:  row.Description,
+		Demo:         row.Demo,
 		BookCount:    int(row.BookCount),
 		ChapterCount: int(row.ChapterCount),
 		WordCount:    int(row.WordCount),
@@ -304,6 +348,7 @@ func projectRecordFromGetProjectForActor(row sqlc.GetProjectForActorRow) project
 		ID:           row.ID.String(),
 		Title:        row.Name,
 		Description:  row.Description,
+		Demo:         row.Demo,
 		BookCount:    int(row.BookCount),
 		ChapterCount: int(row.ChapterCount),
 		WordCount:    int(row.WordCount),
@@ -327,6 +372,7 @@ func projectRecordFromUpdateProjectForActor(row sqlc.UpdateProjectForActorRow) p
 		ID:           row.ID.String(),
 		Title:        row.Name,
 		Description:  row.Description,
+		Demo:         row.Demo,
 		BookCount:    int(row.BookCount),
 		ChapterCount: int(row.ChapterCount),
 		WordCount:    int(row.WordCount),

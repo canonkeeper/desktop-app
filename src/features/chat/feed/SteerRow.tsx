@@ -17,7 +17,7 @@ export function SteerRow({ action, images, note, text }: { action?: ReactNode; i
   );
 }
 
-/** Lets the author ask what the end of the turn left unread (R3.6). */
+/** Lets the author ask what the end of the turn left unread as a new question (R3.6; Ч-26). */
 export function AskSteerButton({ onAsk }: { onAsk: () => void }) {
-  return <Button onClick={onAsk} size="sm" variant="outline">Задать вопросом</Button>;
+  return <Button onClick={onAsk} size="sm" variant="outline">Задать новым вопросом</Button>;
 }

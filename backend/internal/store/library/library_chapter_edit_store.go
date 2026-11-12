@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strings"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/library"
 	storedb "canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -55,8 +55,8 @@ func (s *Store) EditedChapterInTx(ctx context.Context, tx pgx.Tx, projectID, cha
 		return library.EditedChapter{}, err
 	}
 	for _, row := range rows {
-		if text := strings.TrimSpace(row.PlainText); text != "" {
-			edited.Paragraphs = append(edited.Paragraphs, text)
+		if strings.TrimSpace(row.PlainText) != "" {
+			edited.Paragraphs = append(edited.Paragraphs, strings.TrimSpace(row.Markdown))
 		}
 	}
 	if len(edited.Paragraphs) == 0 {
@@ -130,14 +130,14 @@ func (s *Store) ReplaceChapterTextInTx(ctx context.Context, tx pgx.Tx, input lib
 		inputs[index] = library.ParagraphInput{Markdown: paragraph}
 	}
 	revision := chapter.revision + 1
-	if _, err := writeImportedChapterText(ctx, tx, sqlc.New(tx), projectID, bookID, chapterID, projectGeneration, bookGeneration,
+	if _, err := writeImportedChapterText(ctx, tx, projectID, bookID, chapterID, projectGeneration, bookGeneration,
 		chapter.generation, chapter.revision, revision, title, chapter.order, importedParagraphContents(inputs), at); err != nil {
 		return 0, err
 	}
 	if err := s.publishBookTextInTx(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, bookTitle); err != nil {
 		return 0, err
 	}
-	if err := quotastore.CheckOwnerSourcesInTx(ctx, tx, input.ProjectID); err != nil {
+	if err := s.quota.CheckOwnerSourcesInTx(ctx, tx, input.ProjectID, quota.MeasureCharacters); err != nil {
 		return 0, err
 	}
 	return revision, nil

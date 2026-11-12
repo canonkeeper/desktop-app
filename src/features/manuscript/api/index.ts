@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import type {
   Chapter,
   ImportQueue,
@@ -17,9 +17,7 @@ import {
 export * from './mutations';
 
 type ManuscriptJobClient = Pick<ManuscriptApiClient, 'getJob'>;
-type DeletedProjectsClient = Pick<ManuscriptApiClient, 'listProjects'>;
-type DeletedBooksClient = Pick<ManuscriptApiClient, 'listBooks'>;
-type DeletedChaptersClient = Pick<ManuscriptApiClient, 'listChapters'>;
+type RecentlyDeletedClient = Pick<ManuscriptApiClient, 'listRecentlyDeleted'>;
 type ManuscriptWorkspaceClient = Pick<ManuscriptApiClient, 'getChapter' | 'getProject' | 'getBook' | 'listBooks' | 'listChapters' | 'listProjects'>;
 type ImportConstraintsClient = Pick<ManuscriptApiClient, 'getImportConstraints'>;
 type ImportQueuesClient = Pick<ManuscriptApiClient, 'listImportQueues'>;
@@ -43,13 +41,15 @@ function manuscriptApiFromMeta<T>(meta: unknown) {
 
 const jobReconciliationIntervalMs = 2_000;
 
-/** `followWhileActive` polls the Job until it ends, for a Job this page started itself. */
-export function useManuscriptJobQuery(api: ManuscriptJobClient, jobId: string, enabled = true, followWhileActive = false) {
-  return useQuery({
+/**
+ * The one query of a Job: every place that reads it — the page that started it, the shell that says its end — sees the
+ * same answer at the same moment (specs/2026-11-12-ux12-shell.md SH2.2). `followWhileActive` polls the Job until it ends.
+ */
+export function manuscriptJobQuery(api: ManuscriptJobClient, jobId: string, followWhileActive = false) {
+  return queryOptions({
     queryKey: manuscriptQueryKeys.job(jobId),
     queryFn: ({ meta }) => manuscriptApiFromMeta<ManuscriptJobClient>(meta).getJob(jobId),
     meta: manuscriptApiMeta(api),
-    enabled: enabled && jobId.length > 0,
     refetchInterval: (query) => followWhileActive
       && ['queued', 'running', 'canceling'].includes(query.state.data?.status ?? 'queued')
       ? jobReconciliationIntervalMs
@@ -57,15 +57,30 @@ export function useManuscriptJobQuery(api: ManuscriptJobClient, jobId: string, e
   });
 }
 
+/** `followWhileActive` polls the Job until it ends, for a Job this page started itself. */
+export function useManuscriptJobQuery(api: ManuscriptJobClient, jobId: string, enabled = true, followWhileActive = false) {
+  return useQuery({ ...manuscriptJobQuery(api, jobId, followWhileActive), enabled: enabled && jobId.length > 0 });
+}
+
 const importQueueReconciliationIntervalMs = 2_000;
 
+/** The volumes the server still works on; one that waits for the author or was skipped asks the server nothing. */
+const workingVolumeStatuses: ReadonlySet<ImportQueue['items'][number]['processingStatus']> = new Set([
+  'uploading', 'ready', 'queued', 'importing', 'indexing', 'retrying', 'canceling',
+]);
+
+/**
+ * A queue is read again while the server works on it. A running queue whose volumes are all read, waiting for the author
+ * at their places (specs/2026-11-11-ux7-upload.md UP3.2) or skipped is still: nothing changes until the author acts.
+ */
 function importQueueNeedsPolling(queue: ImportQueue | undefined) {
-  return queue?.status === 'uploading' || queue?.status === 'running';
+  if (queue?.status === 'uploading') return true;
+  return queue?.status === 'running' && queue.items.some((item) => workingVolumeStatuses.has(item.processingStatus));
 }
 
 /**
- * The formats, size limit and next book number the server accepts, read where the author can
- * load books: every file is checked against them before any transfer (UC3.1, UC3.2).
+ * The formats and the size limit the server accepts, read where the author can load books: every file is checked
+ * against them before any transfer (UC3.1).
  */
 export function useImportConstraintsQuery(api: ImportConstraintsClient, projectId: string, enabled: boolean) {
   return useQuery({
@@ -85,6 +100,20 @@ export function useImportQueuesQuery(api: ImportQueuesClient, projectId: string)
     refetchInterval: (query) => (query.state.data?.data ?? []).some(importQueueNeedsPolling)
       ? importQueueReconciliationIntervalMs
       : false,
+  });
+}
+
+type BookChaptersClient = Pick<ManuscriptApiClient, 'listChapters'>;
+
+/** The query key of every chapter of a book, as «Как разобралась книга» reads them (specs/2026-11-11-ux7-upload.md UP4.2). */
+export const bookChaptersQueryKey = (bookId: string) => [...manuscriptQueryKeys.all, 'book-chapters', bookId] as const;
+
+export function useBookChaptersQuery(api: BookChaptersClient, bookId: string) {
+  return useQuery({
+    queryKey: bookChaptersQueryKey(bookId),
+    queryFn: ({ meta }) => readAllPages((cursor) => manuscriptApiFromMeta<BookChaptersClient>(meta).listChapters(bookId, { cursor })),
+    meta: manuscriptApiMeta(api),
+    enabled: bookId.length > 0,
   });
 }
 
@@ -151,32 +180,15 @@ export function useManuscriptReaderWorkspaceQuery(api: ManuscriptWorkspaceClient
   });
 }
 
-export function useDeletedProjectsQuery(api: DeletedProjectsClient, enabled: boolean) {
+/**
+ * «Недавно удалённые» of the author over all his sagas (specs/2026-11-11-ux7-trash.md TB1.1): one read, read again each
+ * time the window opens.
+ */
+export function useRecentlyDeletedQuery(api: RecentlyDeletedClient, enabled: boolean) {
   return useQuery({
-    queryKey: manuscriptQueryKeys.deletedProjects(),
-    queryFn: ({ meta }) => readAllPages((cursor) => manuscriptApiFromMeta<DeletedProjectsClient>(meta)
-      .listProjects({ state: 'deleted', cursor })),
+    queryKey: manuscriptQueryKeys.recentlyDeleted(),
+    queryFn: ({ meta }) => manuscriptApiFromMeta<RecentlyDeletedClient>(meta).listRecentlyDeleted(),
     meta: manuscriptApiMeta(api),
     enabled,
-  });
-}
-
-export function useDeletedBooksQuery(api: DeletedBooksClient, projectId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: manuscriptQueryKeys.deletedBooks(projectId),
-    queryFn: ({ meta }) => readAllPages((cursor) => manuscriptApiFromMeta<DeletedBooksClient>(meta)
-      .listBooks(projectId!, { state: 'deleted', cursor })),
-    meta: manuscriptApiMeta(api),
-    enabled: enabled && Boolean(projectId),
-  });
-}
-
-export function useDeletedChaptersQuery(api: DeletedChaptersClient, bookId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: manuscriptQueryKeys.deletedChapters(bookId),
-    queryFn: ({ meta }) => readAllPages((cursor) => manuscriptApiFromMeta<DeletedChaptersClient>(meta)
-      .listChapters(bookId!, { state: 'deleted', cursor })),
-    meta: manuscriptApiMeta(api),
-    enabled: enabled && Boolean(bookId),
   });
 }

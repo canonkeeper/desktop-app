@@ -6,20 +6,23 @@
 .body > * { flex-shrink: 0; }
 .muted { color: var(--ck-muted-foreground); font-size: 12px; line-height: 18px; margin: 0; }
 .list { display: grid; gap: 12px; }
-.empty { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
-.empty h3 { margin: 0; font-size: 16px; font-weight: 500; }
 .footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 16px; }
 .newButton { flex: 1; }
-.delete { margin-right: auto; color: var(--ck-destructive); }
 .field { display: flex; flex: 1 0 auto; flex-direction: column; }
 .field > div { display: flex; flex: 1; flex-direction: column; gap: 12px; }
 .textarea { flex: 1; min-height: 180px; resize: none; }
-.source { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.source button { text-align: left; }
-/* .confirm: the panel is the kit dialog's (narrow-windows N7.1). */
-.confirm h3 { margin: 0 0 12px; font-size: 18px; }
-.confirm p { color: var(--ck-muted-foreground); font-size: 14px; line-height: 22px; }
-.confirmActions { display: flex; justify-content: flex-end; gap: 12px; }
+/* Beside the text of the reader the note shares «Содержание» with the text in sight: a shorter field keeps its buttons in
+   the sheet of a phone (specs/2026-11-11-ux7-notes.md NT2.2). */
+.layout[data-beside] .textarea { min-height: 96px; }
+/* The place, the quote and the thought of a note (specs/2026-11-11-ux7-notes.md NT1.1; board 24·19). */
+.place { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ck-muted-foreground); font-size: 14px; line-height: 20px; }
+.place > button { font-size: 14px; }
+.quote { margin: 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--ck-border-strong); color: var(--ck-muted-foreground);
+  font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.quote[data-open] { display: block; overflow: visible; }
+.quoteToggle { align-self: flex-start; }
+.gone { margin: 0; color: var(--ck-color-warning-foreground); font-size: 14px; line-height: 20px; }
 .landing { position: fixed; z-index: 60; top: 68px; right: 24px; max-width: min(440px, calc(100vw - 32px)); }
 :global([data-note-target]) { outline: 2px solid var(--ck-primary); outline-offset: 6px; border-radius: var(--ck-radius-sm); }
 :global(::highlight(note-source)) { background: var(--ck-accent); color: var(--ck-foreground); }

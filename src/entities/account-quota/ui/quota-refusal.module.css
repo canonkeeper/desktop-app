@@ -1,0 +1,80 @@
+/* The block of a refusal by a limit (specs/2026-11-10-ux2-patterns-refusals.md PR2.1; board 15·03, Pattern/Common/Tier
+   Refusal): a card where the author met the limit, three parts and its buttons in a row. It is never squeezed (PR2.6): in a
+   column of flex, such as the shelf, an item that hides its overflow loses its least height and was cut to its frame —
+   the flash is clipped by `clip`, which leaves the block its height, and the block does not shrink. */
+.block {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  gap: 4px;
+  overflow: clip;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 12px 14px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.block p {
+  margin: 0;
+}
+
+.ended {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.returns {
+  color: var(--ck-muted-foreground);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* A refused press lights the block (the bar of «Рисование», DX2.4). */
+.flash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ck-color-warning);
+  opacity: 0;
+  pointer-events: none;
+  animation: flash 900ms ease-out;
+}
+
+@keyframes flash {
+  from { opacity: 0.9; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash { animation: none; }
+}
+
+.spoken {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The quiet line of a limit of space at its action (PR2.7): a line of muted words, its link in the colour of links. */
+.line {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.line a {
+  color: var(--ck-link);
+}

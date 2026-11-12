@@ -8,6 +8,13 @@
   color: var(--ck-foreground);
 }
 
+/* Inside the shell the card stands in the place of the page (specs/2026-11-11-ux9-account.md AC3.2). */
+.inShell {
+  display: grid;
+  justify-items: center;
+  padding: 48px 16px;
+}
+
 .card {
   display: grid;
   gap: 16px;
@@ -20,7 +27,8 @@
 }
 
 .title,
-.message {
+.message,
+.more {
   margin: 0;
 }
 
@@ -32,12 +40,26 @@
   line-height: 1.4;
 }
 
-.message {
+.message,
+.more {
   color: var(--ck-muted-foreground);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.card > button {
-  justify-self: center;
+/* «Обновить» and «К книгам»; «Написать нам» and the code — a line under them. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.code {
+  font-size: 13px;
+}
+
+@media (max-width: 599px) {
+  .actions > * {
+    flex: 1 1 100%;
+  }
 }

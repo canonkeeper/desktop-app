@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +41,10 @@ func seedProject(t *testing.T, database string) materialsProject {
 	register := func(email string) (string, auth.SessionWriteProof) {
 		user, err := accounts.CreateUser(ctx, auth.NewUser{Email: email, DisplayName: email})
 		if err != nil {
+			t.Fatal(err)
+		}
+		// An import is model work, for a verified address only (specs/2026-11-09-quota-accounting.md Q5.3).
+		if _, err := db.Pool.Exec(ctx, `UPDATE users SET email_verified_at = clock_timestamp() WHERE id = $1`, user.ID); err != nil {
 			t.Fatal(err)
 		}
 		session, csrfToken, err := accounts.CreateSession(ctx, auth.NewSession{UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour)})
@@ -313,8 +318,13 @@ func TestRecordsChangeAtTheirRevisionPostgres(t *testing.T) {
 		t.Fatalf("a stale revision: %v", err)
 	}
 	changed.Name = "Страх"
-	if _, err := fixture.store.UpdateAuthorMaterial(ctx, fixture.editor, horror.ID, 2, changed, "страх"); !errors.Is(err, domain.ErrConflict) {
+	// specs/2026-11-10-ux8-memory-records.md MR2.3: a name another record has names that record, and the change keeps nothing.
+	var taken domain.NameTaken
+	if _, err := fixture.store.UpdateAuthorMaterial(ctx, fixture.editor, horror.ID, 2, changed, "страх"); !errors.As(err, &taken) || taken.RecordID != page.Records[0].ID {
 		t.Fatalf("a name another record has: %v", err)
+	}
+	if kept, err := fixture.store.ListAuthorMaterials(ctx, fixture.viewer.Actor, domain.Filter{Limit: 5, Query: "пугает до"}); err != nil || len(kept.Records) != 1 || kept.Records[0].Name != "Ужас" || kept.Records[0].Revision != 2 {
+		t.Fatalf("after a taken name: %+v, %v", kept, err)
 	}
 	stamp := func() string {
 		t.Helper()
@@ -383,5 +393,107 @@ func TestImportKeepsTheDailyQuotaPostgres(t *testing.T) {
 	}
 	if imports != 1 || jobs != 1 {
 		t.Fatalf("%d imports, %d Jobs after a refused start; want only the first", imports, jobs)
+	}
+}
+
+// specs/2026-11-09-quota-accounting.md Q5.2, Q5.3: an import whose Job failed — the model or the worker — gives back the
+// upload of the day; one the author stopped keeps it; the start of model work needs a verified address.
+func TestAFailedImportGivesItsUploadBackPostgres(t *testing.T) {
+	fixture := seedProject(t, "ck_author_materials_quota_back")
+	ctx := context.Background()
+	uploads := func() int64 {
+		t.Helper()
+		var used int64
+		if err := fixture.db.Pool.QueryRow(ctx, `SELECT COALESCE(sum(imports), 0) FROM writer_usage_days WHERE user_id = $1`, fixture.editor.UserID).Scan(&used); err != nil {
+			t.Fatal(err)
+		}
+		return used
+	}
+	failed := fixture.start(t, "key-failed", fileHolds)
+	failure := jobs.Error{Code: "author_materials.unreadable_answer", Message: "no"}
+	if err := fixture.store.FinishImport(ctx, fixture.claimed(t, failed), service.ImportOutcome{Status: jobs.StatusFailed, Error: &failure}); err != nil {
+		t.Fatal(err)
+	}
+	if used := uploads(); used != 0 {
+		t.Fatalf("uploads after a failed import = %d, want 0", used)
+	}
+	stopped := fixture.start(t, "key-stopped", fileHolds)
+	claim := fixture.claimed(t, stopped)
+	if _, err := fixture.db.Pool.Exec(ctx, `UPDATE jobs SET status = 'canceling' WHERE id = $1`, stopped.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.FinishImport(ctx, claim, service.ImportOutcome{Status: jobs.StatusCanceled}); err != nil {
+		t.Fatal(err)
+	}
+	if used := uploads(); used != 1 {
+		t.Fatalf("uploads after an import the author stopped = %d, want 1", used)
+	}
+	if _, err := fixture.db.Pool.Exec(ctx, `UPDATE users SET email_verified_at = NULL WHERE id = $1`, fixture.editor.UserID); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(fileHolds)
+	if _, err := fixture.store.StartAuthorMaterialsImport(ctx, startCommand(fixture.editor, "key-unverified", string(body))); !errors.Is(err, auth.ErrEmailNotVerified) {
+		t.Fatalf("an import of an unverified address = %v", err)
+	}
+}
+
+func createCommand(write service.Write, key string, draft domain.Draft) service.CreateCommand {
+	body, _ := json.Marshal(draft)
+	return service.CreateCommand{
+		Write: write, Draft: draft, Key: strings.ToLower(draft.Name), At: time.Now().UTC(),
+		Replay: service.Replay{ScopeHash: "scope-" + write.UserID, OperationID: "author_materials.create.v1", KeyHash: key, RequestHash: string(body)},
+	}
+}
+
+// specs/2026-11-10-ux8-memory-records.md MR2.1: an editor writes a record by hand, of the source «вручную»; a reader may not,
+// an outsider does not learn the saga is there; a name is one record; the same request under its key is answered again and
+// another under it is a conflict; the stamp of the map follows, as after a change.
+func TestARecordByHandPostgres(t *testing.T) {
+	fixture := seedProject(t, "ck_author_materials_by_hand")
+	ctx := context.Background()
+	stamp := func() string {
+		t.Helper()
+		found, err := sagamemoryrepo.New(fixture.db).CardsStamp(ctx, fixture.editor.ProjectID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return found.Materials
+	}
+	before := stamp()
+	raven := domain.Draft{Name: "Ворон", Kind: domain.KindCharacter, Description: "Наёмник", Properties: []domain.Property{{Key: "Ранг", Value: "B"}}}
+	created, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(fixture.editor, "key-1", raven))
+	if err != nil || created.SourceKind != domain.SourceManual || created.SourceName != "" || created.Name != "Ворон" || created.Revision != 1 {
+		t.Fatalf("created = %+v, %v", created, err)
+	}
+	if after := stamp(); after == before {
+		t.Fatalf("the stamp of the map did not follow a new record: %s", after)
+	}
+	if again, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(fixture.editor, "key-1", raven)); err != nil || again.ID != created.ID {
+		t.Fatalf("the same request again = %+v, %v", again, err)
+	}
+	fox := domain.Draft{Name: "Лиса", Kind: domain.KindCharacter}
+	if _, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(fixture.editor, "key-1", fox)); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("another request under the key: %v", err)
+	}
+	var taken domain.NameTaken
+	if _, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(fixture.editor, "key-2", domain.Draft{Name: "Ворон", Kind: domain.KindPlace})); !errors.As(err, &taken) || taken.RecordID != created.ID {
+		t.Fatalf("a taken name: %v", err)
+	}
+	if _, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(fixture.viewer, "key-3", fox)); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("a reader writes: %v", err)
+	}
+	outsider := fixture.outsider
+	outsider.ProjectID = fixture.editor.ProjectID
+	if _, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(outsider, "key-4", fox)); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("an outsider writes: %v", err)
+	}
+	stale := fixture.editor
+	stale.Proof.CSRFSecretHash = "stale"
+	if _, err := fixture.store.CreateAuthorMaterial(ctx, createCommand(stale, "key-5", fox)); err == nil {
+		t.Fatal("a write without its proof")
+	}
+	page, err := fixture.store.ListAuthorMaterials(ctx, fixture.viewer.Actor, domain.Filter{Limit: 10})
+	if err != nil || page.Total != 1 {
+		t.Fatalf("records = %+v, %v", page, err)
 	}
 }

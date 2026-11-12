@@ -59,7 +59,6 @@ type importConstraintsResponse struct {
 	AllowedExtensions []string `json:"allowedExtensions"`
 	AllowedMIMETypes  []string `json:"allowedMimeTypes"`
 	MaxFileSizeBytes  int64    `json:"maxFileSizeBytes"`
-	NextBookOrder     int      `json:"nextBookOrder"`
 }
 
 func writeImportConstraintsResponse(w http.ResponseWriter, status int, constraints ImportConstraints) {
@@ -68,7 +67,6 @@ func writeImportConstraintsResponse(w http.ResponseWriter, status int, constrain
 		AllowedExtensions: constraints.AllowedExtensions,
 		AllowedMIMETypes:  constraints.AllowedMIMETypes,
 		MaxFileSizeBytes:  constraints.MaxFileSizeBytes,
-		NextBookOrder:     constraints.NextBookOrder,
 	})
 }
 

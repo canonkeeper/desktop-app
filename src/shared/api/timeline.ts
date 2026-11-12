@@ -40,6 +40,8 @@ const eventSchema = z.object({
     title: z.string(),
     words: z.number().int().positive(),
   }).strict().optional(),
+  // A button of the page sent the question (specs/2026-11-11-ux9-writing-b.md WB3.3).
+  button: z.boolean().optional(),
   phase: z.string().optional(),
   tool: z.object({
     namespace: z.string().optional(),
@@ -51,6 +53,8 @@ const eventSchema = z.object({
     // Counted in characters like JSON Schema maxLength and the backend, not UTF-16 units.
     summary: z.string().refine((text) => [...text].length <= 240).optional(),
   }).strict().optional(),
+  // The places of the chapter keys the event shows, as the author reads them (specs/2026-11-10-ux1-names.md N2.1).
+  places: z.record(z.string(), z.string()).optional(),
   outcome: z.enum(['in_progress', 'completed', 'failed', 'interrupted']).optional(),
 }).strict();
 

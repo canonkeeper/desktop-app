@@ -1,40 +1,34 @@
-.page {
+.part {
   display: flex;
   flex-direction: column;
   gap: var(--ck-space-4);
-  max-width: 860px;
-  margin-inline: auto;
-  padding: var(--ck-space-5) var(--ck-space-5) var(--ck-space-7);
-  width: 100%;
 }
 
-.header {
-  align-items: flex-start;
+/* The filters and «Добавить запись» in one row; on a phone the button goes first, the whole width. */
+.tools {
+  align-items: flex-end;
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  justify-content: space-between;
+  gap: 12px;
 }
 
-.title {
-  color: var(--ck-foreground-strong);
-  font-family: var(--ck-font-serif);
-  font-size: 30px;
-  font-weight: 500;
-  margin: 0 0 var(--ck-space-1);
+.tools .filters {
+  flex: 1 1 420px;
 }
 
-.lead,
+@media (max-width: 760px) {
+  .add {
+    order: -1;
+    width: 100%;
+  }
+}
+
 .hint,
 .count,
 .meta {
   color: var(--ck-muted-foreground);
   font-size: 14px;
   margin: 0;
-}
-
-.lead {
-  max-width: 60ch;
 }
 
 .filters {
@@ -95,16 +89,10 @@
   margin-inline-start: auto;
 }
 
-.text,
-.deleted {
+.text {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-
-.deleted {
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 .meta {
@@ -134,4 +122,59 @@
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* «Имя» with the names of the saga (specs/2026-11-10-ux8-memory-records.md MR1.3). */
+.nameField {
+  position: relative;
+}
+
+.names {
+  background: var(--ck-popover);
+  border: 1px solid var(--ck-border);
+  border-radius: 8px;
+  box-shadow: var(--ck-shadow-lg);
+  left: 0;
+  list-style: none;
+  margin: 4px 0 0;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 64px;
+  z-index: 2;
+}
+
+.nameOption {
+  align-items: baseline;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 8px;
+}
+
+.nameOption[aria-selected='true'],
+.nameOption:hover {
+  background: var(--ck-accent);
+}
+
+.nameType {
+  color: var(--ck-muted-foreground);
+  font-size: 0.8125rem;
+}
+
+/* The line under a record: where it came from (MR1.5). */
+.origin {
+  color: var(--ck-muted-foreground);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.originLink {
+  color: inherit;
+  text-decoration: underline;
 }

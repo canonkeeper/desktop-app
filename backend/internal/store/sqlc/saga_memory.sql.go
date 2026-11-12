@@ -732,13 +732,13 @@ func (q *Queries) ListChapterCards(ctx context.Context, arg ListChapterCardsPara
 }
 
 const listChapterCardsCoverage = `-- name: ListChapterCardsCoverage :many
-SELECT text.project_id,
+SELECT text.project_id, text.owner_user_id,
   count(*)::bigint AS texts,
   count(card.chapter_id) FILTER (WHERE card.version = $1::integer)::bigint AS current_cards,
   count(card.chapter_id) FILTER (WHERE card.version <> $1::integer)::bigint AS other_cards,
   coalesce(string_agg(DISTINCT card.model || ' v' || card.version::text, ', '), '')::text AS models
 FROM (
-  SELECT DISTINCT state.project_id, state.chapter_id, state.chapter_content_hash
+  SELECT DISTINCT state.project_id, project.owner_user_id, state.chapter_id, state.chapter_content_hash
   FROM chapter_text_index_state AS state
   JOIN projects AS project ON project.id = state.project_id AND project.deleted_at IS NULL
   JOIN chapters AS chapter ON chapter.id = state.chapter_id AND chapter.project_id = state.project_id AND chapter.deleted_at IS NULL
@@ -754,12 +754,13 @@ FROM (
 ) AS text
 LEFT JOIN chapter_cards AS card
   ON card.project_id = text.project_id AND card.chapter_id = text.chapter_id AND card.content_hash = text.chapter_content_hash
-GROUP BY text.project_id
+GROUP BY text.project_id, text.owner_user_id
 ORDER BY text.project_id
 `
 
 type ListChapterCardsCoverageRow struct {
 	ProjectID    pgtype.UUID `json:"project_id"`
+	OwnerUserID  pgtype.UUID `json:"owner_user_id"`
 	Texts        int64       `json:"texts"`
 	CurrentCards int64       `json:"current_cards"`
 	OtherCards   int64       `json:"other_cards"`
@@ -769,7 +770,8 @@ type ListChapterCardsCoverageRow struct {
 // The operator's chapter-cards status (specs/2026-10-29-chapter-cards-quality.md, UC1): every
 // current chapter text of a live chapter, once per text, and the card it has; model is empty
 // for a text without a card. Like the versions the cards Job builds (IndexedVersions), only
-// projects an active owner or member can open.
+// projects an active owner or member can open. The owner names the saga in the admin service status
+// (specs/2026-11-08-admin-redesign.md AR6.2).
 func (q *Queries) ListChapterCardsCoverage(ctx context.Context, version int32) ([]ListChapterCardsCoverageRow, error) {
 	rows, err := q.db.Query(ctx, listChapterCardsCoverage, version)
 	if err != nil {
@@ -781,6 +783,7 @@ func (q *Queries) ListChapterCardsCoverage(ctx context.Context, version int32) (
 		var i ListChapterCardsCoverageRow
 		if err := rows.Scan(
 			&i.ProjectID,
+			&i.OwnerUserID,
 			&i.Texts,
 			&i.CurrentCards,
 			&i.OtherCards,
@@ -933,16 +936,17 @@ func (q *Queries) ListSagaMapNamesOfNodes(ctx context.Context, arg ListSagaMapNa
 }
 
 const listSagaMemoryBooks = `-- name: ListSagaMemoryBooks :many
-SELECT book.id, book."order", book.title
+SELECT book.id, book."order", book.key_number, book.title
 FROM books AS book
 WHERE book.project_id = $1
   AND book.deleted_at IS NULL
 `
 
 type ListSagaMemoryBooksRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Order int32       `json:"order"`
-	Title string      `json:"title"`
+	ID        pgtype.UUID `json:"id"`
+	Order     int32       `json:"order"`
+	KeyNumber int32       `json:"key_number"`
+	Title     string      `json:"title"`
 }
 
 func (q *Queries) ListSagaMemoryBooks(ctx context.Context, projectID pgtype.UUID) ([]ListSagaMemoryBooksRow, error) {
@@ -954,7 +958,12 @@ func (q *Queries) ListSagaMemoryBooks(ctx context.Context, projectID pgtype.UUID
 	var items []ListSagaMemoryBooksRow
 	for rows.Next() {
 		var i ListSagaMemoryBooksRow
-		if err := rows.Scan(&i.ID, &i.Order, &i.Title); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Order,
+			&i.KeyNumber,
+			&i.Title,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

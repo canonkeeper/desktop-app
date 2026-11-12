@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "start",
+  "description": "The page the shell carries — «CanonKeeper запускается…» and the failure window — opens the data folder, the contact page of the site in the browser of the system and closes the app. The page of the backend gets its own capability for its exact origin when the backend is ready.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-reveal-data-dir", "allow-open-external", "allow-close-window"]
+}

@@ -67,9 +67,11 @@ const (
 	maxPartItems = 300
 )
 
-// MapChapterRef is a chapter as the map and the cards name it, in the shape of the API.
+// MapChapterRef is a chapter as the map and the cards name it, in the shape of the API. Label is its place as the
+// author reads it, «Книга 2, гл. 12 „Белый порт“»: the page shows it and never the key (specs/2026-11-10-ux1-names.md N4.1).
 type MapChapterRef struct {
 	Key       string `json:"key"`
+	Label     string `json:"label"`
 	ChapterID string `json:"chapterId"`
 	BookID    string `json:"bookId"`
 	BookOrder int    `json:"bookOrder"`
@@ -343,7 +345,7 @@ type MapRows struct {
 // BuildMapRows prepares the map of a text version from its cards and the author's materials. index stems the changes (CardSet.Links).
 func BuildMapRows(version *Version, set *CardSet, index *Index, revision string, materials []MapMaterial) MapRows {
 	materials = uniqueMaterials(materials)
-	graph := BuildMap(set)
+	graph := BuildMap(set, materials)
 	graph.AddMaterials(set.Glossary, materials)
 	glossary := set.Glossary
 	nodes := make(map[*GlossaryEntry]*StoredNode, len(glossary.Entries))
@@ -362,7 +364,7 @@ func BuildMapRows(version *Version, set *CardSet, index *Index, revision string,
 	shared := addEvents(set, nodes, graph)
 	relating := addChanges(set.Links(index), nodes)
 	graph.AddChanges(changeChapters(relating, nodes))
-	pruned := graph.PruneLone(len(set.Cards))
+	pruned := graph.PruneWithoutReason(len(set.Cards))
 	own := addMaterialRows(graph, glossary, materials, nodes)
 	for _, link := range graph.Links {
 		source, target := graph.Nodes[link.Source], graph.Nodes[link.Target]
@@ -489,13 +491,13 @@ func addLink(node *StoredNode, link MapLink, other MapNode, otherIndex int, chan
 func mapDocument(version *Version, set *CardSet, graph *Map, revision string) MapDocument {
 	document := MapDocument{
 		Revision: revision, Coverage: MapCoverage{Chapters: len(version.Chapters), WithCards: len(set.Cards)},
-		Chapters: make([]MapChapterRef, len(version.Chapters)), NodesTotal: graph.Candidates,
+		Chapters: make([]MapChapterRef, len(version.Chapters)), NodesTotal: graph.Total,
 		Nodes: make([]MapDocumentNode, len(graph.Nodes)), Links: []MapDocumentLink{},
 	}
 	for i := range version.Chapters {
 		chapter := &version.Chapters[i]
 		document.Chapters[i] = MapChapterRef{
-			Key: chapter.Key, ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
+			Key: chapter.Key, Label: chapter.Place(), ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
 			BookTitle: chapter.BookTitle, Title: chapter.Title, Number: chapter.Number,
 		}
 	}

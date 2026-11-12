@@ -1,0 +1,63 @@
+/* «Настроить сагу» (Pattern/Shell/Saga Settings, 460 px). */
+.settings {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.role {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.note {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* «Удалить сагу» last and apart (S3.2). */
+.danger {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--ck-border);
+  padding-top: 12px;
+}
+
+.danger p {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.delete[data-variant] {
+  justify-self: start;
+  gap: 8px;
+  padding-inline: 8px;
+  color: var(--ck-destructive-text);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

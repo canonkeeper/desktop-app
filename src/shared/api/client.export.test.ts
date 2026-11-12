@@ -21,6 +21,18 @@ describe('getBookExport', () => {
     expect(request.url).toBe('http://test.local/api/v1/books/book-1/export?format=docx');
   });
 
+  // specs/2026-11-12-ux10-book-pictures.md BP3.1: the drawings of the book are asked by drawings=true; without them nothing is sent.
+  it('asks the drawings of the book only when they are wanted', async () => {
+    const fetch = answer(200, 'файл', {});
+    const client = createCanonKeeperApiClient({ baseUrl: 'http://test.local/api/v1', fetch });
+    await client.getBookExport('book-1', 'epub', { drawings: true });
+    await client.getBookExport('book-1', 'epub', { drawings: false });
+    expect(fetch.mock.calls.map(([request]) => request.url)).toEqual([
+      'http://test.local/api/v1/books/book-1/export?format=epub&drawings=true',
+      'http://test.local/api/v1/books/book-1/export?format=epub',
+    ]);
+  });
+
   it('reads a plain name and falls back to one of its own', async () => {
     const plain = createCanonKeeperApiClient({ baseUrl: 'http://test.local/api/v1', fetch: answer(200, 'x', { 'Content-Disposition': 'attachment; filename="My Book.epub"' }) });
     expect((await plain.getBookExport('book-1', 'epub')).fileName).toBe('My Book.epub');
@@ -44,5 +56,15 @@ describe('getBookExport', () => {
       fetch: vi.fn(async () => { throw new TypeError('network error'); }),
     });
     await expect(client.getBookExport('book-1', 'docx')).rejects.toBeInstanceOf(NetworkApiError);
+  });
+});
+
+// specs/2026-11-12-ux10-book-pictures.md BP3.1, BP3.2: how many drawings the files of the books of a saga would carry.
+describe('getBookDrawingCounts', () => {
+  it('reads the drawings of the books of a saga', async () => {
+    const fetch = vi.fn(async (_request: Request) => Response.json({ data: [{ bookId: 'book-1', drawings: 2 }] }));
+    const client = createCanonKeeperApiClient({ baseUrl: 'http://test.local/api/v1', fetch });
+    expect(await client.getBookDrawingCounts('project-1')).toEqual({ data: [{ bookId: 'book-1', drawings: 2 }] });
+    expect(fetch.mock.calls[0]![0].url).toBe('http://test.local/api/v1/projects/project-1/books/drawing-counts');
   });
 });

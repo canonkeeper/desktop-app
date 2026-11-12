@@ -59,6 +59,20 @@ type Handlers struct {
 	useCases       UseCases
 	currentUser    CurrentUser
 	allowedOrigins []string
+	newChapters    NewChapters
+}
+
+// NewChapters says whether the first scenes written in a draft would count as a new chapter of the writer's tier
+// (specs/2026-11-10-ux1-writing.md UW1.2): the build with tiers answers it; a build without them passes none, and its
+// drafts say nothing of it.
+type NewChapters interface {
+	NewChapter(ctx context.Context, draft domain.Draft) (bool, error)
+}
+
+// WithNewChapters makes every draft these handlers answer say whether its scenes would count as a new chapter.
+func (handlers Handlers) WithNewChapters(chapters NewChapters) Handlers {
+	handlers.newChapters = chapters
+	return handlers
 }
 
 func NewHandlers(useCases UseCases, currentUser CurrentUser, allowedOrigins []string) Handlers {
@@ -150,7 +164,7 @@ func (handlers Handlers) list(w http.ResponseWriter, r *http.Request) {
 	}
 	query := map[string]string{}
 	for name, list := range r.URL.Query() {
-		if !slices.Contains([]string{"cursor", "limit"}, name) || len(list) != 1 {
+		if !slices.Contains([]string{"cursor", "limit", "chat"}, name) || len(list) != 1 {
 			WriteError(w, r.Context(), domain.ErrInvalid)
 			return
 		}
@@ -164,7 +178,7 @@ func (handlers Handlers) list(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	view, err := handlers.useCases.List.Execute(r.Context(), actor, query["cursor"], limit)
+	view, err := handlers.useCases.List.Execute(r.Context(), actor, query["cursor"], limit, query["chat"])
 	if err != nil {
 		WriteError(w, r.Context(), err)
 		return
@@ -178,7 +192,7 @@ func (handlers Handlers) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.Get.Execute(r.Context(), actor, DraftID(r))
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
 type placeBody struct {
@@ -208,7 +222,7 @@ func (handlers Handlers) create(w http.ResponseWriter, r *http.Request) {
 		input.Place = domain.Place{BookID: body.Place.BookID, AfterChapterID: body.Place.AfterChapterID}
 	}
 	draft, err := handlers.useCases.Create.Execute(r.Context(), actor, input, request)
-	respondDraft(w, r, http.StatusCreated, draft, err)
+	handlers.respondDraft(w, r, http.StatusCreated, draft, err)
 }
 
 func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
@@ -225,12 +239,19 @@ func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
 		Text             *string         `json:"text"`
 		CaseChoice       json.RawMessage `json:"caseChoice"`
 		KeepVersion      bool            `json:"keepVersion"`
+		Variant          *struct {
+			Text *string `json:"text"`
+			Idea *string `json:"idea"`
+		} `json:"variant"`
 	}
 	if err := ReadBody(w, r, &body); err != nil {
 		WriteError(w, r.Context(), err)
 		return
 	}
 	change := domain.Change{Title: body.Title, Idea: body.Idea, Text: body.Text, KeepVersion: body.KeepVersion}
+	if body.Variant != nil {
+		change.Variant = &domain.Variant{Text: body.Variant.Text, Idea: body.Variant.Idea}
+	}
 	if len(body.CaseChoice) > 0 {
 		// An explicit null gives the case back to the author's words (specs/2026-11-06-writing-agent.md, WA1).
 		var chosen *string
@@ -267,7 +288,7 @@ func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	draft, err := handlers.useCases.Update.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision, change)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
 func (handlers Handlers) delete(w http.ResponseWriter, r *http.Request) {
@@ -306,15 +327,33 @@ func (handlers Handlers) addToBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.AddToBook.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
-func respondDraft(w http.ResponseWriter, r *http.Request, status int, draft domain.Draft, err error) {
+func (handlers Handlers) respondDraft(w http.ResponseWriter, r *http.Request, status int, draft domain.Draft, err error) {
 	if err != nil {
 		WriteError(w, r.Context(), err)
 		return
 	}
-	WriteJSON(w, status, DraftDTO(draft))
+	WriteJSON(w, status, DraftAnswer(r.Context(), handlers.newChapters, draft))
+}
+
+// DraftAnswer is a draft as every operation answers it (specs/2026-11-10-ux1-writing.md UW1.2): the draft of the
+// contract and, in a build with tiers, whether its first scenes would count as a new chapter of the writer's tier. A
+// chapter in the book writes no scenes and says nothing. A read of the tiers that failed is reported and leaves the
+// sign out: what the operation did stands, the page names no price, and the start of the scenes decides as ever.
+func DraftAnswer(ctx context.Context, chapters NewChapters, draft domain.Draft) DraftView {
+	view := draftDTO(draft)
+	if chapters == nil || draft.AddedChapterID != "" {
+		return view
+	}
+	counts, err := chapters.NewChapter(ctx, draft)
+	if err != nil {
+		observability.ReportUnexpectedError(ctx, err)
+		return view
+	}
+	view.NewChapter = &counts
+	return view
 }
 
 // The JSON shapes of contracts/openapi.json (ChapterDraft* schemas).
@@ -335,6 +374,24 @@ type jobView struct {
 	Done      int    `json:"done"`
 	Total     int    `json:"total"`
 	ErrorCode string `json:"errorCode,omitempty"`
+	// Missing is the scene a writing failed on and the numbers of the lines it lost (specs/2026-11-11-ux9-writing-a.md WA2.4).
+	Missing *missingView `json:"missing,omitempty"`
+	// Writing is the scene the writing writes now, a draft that may still change (specs/2026-11-12-ux10-scene-stream.md
+	// ST1.4): the store gives it only to an editor and only while the Job runs.
+	Writing *writingView `json:"writing,omitempty"`
+}
+
+type writingView struct {
+	Scene   int    `json:"scene"`
+	Attempt int    `json:"attempt"`
+	Step    string `json:"step"`
+	Reason  string `json:"reason,omitempty"`
+	Text    string `json:"text"`
+}
+
+type missingView struct {
+	Scene int   `json:"scene"`
+	Lines []int `json:"lines"`
 }
 
 // editView is the chapter of the book a draft edits (A8.7).
@@ -346,6 +403,8 @@ type editView struct {
 	Changed      bool   `json:"changed"`
 	Gone         bool   `json:"gone"`
 	CanRevert    bool   `json:"canRevert"`
+	// Same says the book holds the text and the title of the draft (specs/2026-11-11-ux9-writing-a.md WA4.1).
+	Same bool `json:"same"`
 }
 
 type addedView struct {
@@ -355,8 +414,10 @@ type addedView struct {
 
 // DraftView is a draft as the contract answers it (ChapterDraft).
 type DraftView struct {
-	ID           string     `json:"id"`
-	Title        string     `json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// Opening names a draft without a title by the beginning of its idea or text (WA1.1).
+	Opening      string     `json:"opening,omitempty"`
 	Idea         string     `json:"idea"`
 	Kind         string     `json:"kind"`
 	Stage        string     `json:"stage"`
@@ -380,6 +441,9 @@ type DraftView struct {
 	Plan       *planStateView `json:"plan,omitempty"`
 	// Original is the chapter the author loaded as a file (specs/2026-11-07-writing-proofread.md, PR7.5).
 	Original *originalView `json:"original,omitempty"`
+	// NewChapter says the first scenes written in the draft would count as a new chapter of the writer's tier; nil in a
+	// build without tiers and for a chapter in the book (specs/2026-11-10-ux1-writing.md UW1.1). DraftAnswer sets it.
+	NewChapter *bool `json:"newChapter,omitempty"`
 }
 
 type originalView struct {
@@ -387,12 +451,16 @@ type originalView struct {
 	Format     string    `json:"format"`
 	Words      int       `json:"words"`
 	UploadedAt time.Time `json:"uploadedAt"`
+	// Look says the original keeps the look of its Word file (specs/2026-11-07-writing-proofread.md, PR9.3).
+	Look bool `json:"look"`
+	// Revisions are the revisions of Word the file with corrections has now (specs/2026-11-11-ux5-proofread-mode.md PM1.4).
+	Revisions int `json:"revisions"`
 }
 
-// DraftDTO is the draft as the contract answers it.
-func DraftDTO(draft domain.Draft) DraftView {
+// draftDTO is the draft of the contract without what the build says of it; the operations answer DraftAnswer.
+func draftDTO(draft domain.Draft) DraftView {
 	view := DraftView{
-		ID: draft.ID, Title: draft.Title, Idea: draft.Idea, Kind: string(draft.Kind), Stage: string(draft.Stage()), Text: draft.Text,
+		ID: draft.ID, Title: draft.Title, Opening: domain.Opening(draft.Idea, draft.Text), Idea: draft.Idea, Kind: string(draft.Kind), Stage: string(draft.Stage()), Text: draft.Text,
 		Place: placeView{
 			BookID: draft.Place.BookID, BookTitle: draft.BookTitle,
 			AfterChapterID: draft.Place.AfterChapterID, AfterChapterTitle: draft.AfterChapterTitle, AfterChapterGone: draft.PlaceGone,
@@ -403,42 +471,71 @@ func DraftDTO(draft domain.Draft) DraftView {
 		Case: string(draft.Case(draft.CaseChoice)), CaseChoice: string(draft.CaseChoice),
 	}
 	if draft.PlanNumber > 0 {
-		view.Plan = &planStateView{Number: draft.PlanNumber, Approved: draft.PlanApproved, Stale: draft.PlanStale()}
+		view.Plan = &planStateView{Number: draft.PlanNumber, Approved: draft.PlanApproved, Stale: draft.PlanStale(), Reason: draft.PlanReason}
 	}
 	for i, note := range draft.Notes {
 		view.Notes[i] = NoteDTO(note)
 	}
-	if job := draft.Job; job != nil {
-		view.Job = &jobView{
-			ID: job.ID, Mode: job.Mode, Status: job.Status, Phase: job.Phase, Done: job.Done, Total: job.Total, ErrorCode: job.ErrorCode,
-		}
-	}
+	view.Job = jobDTO(draft.Job)
 	if draft.AddedChapterID != "" {
 		view.Added = &addedView{ChapterID: draft.AddedChapterID, Title: draft.AddedChapterTitle}
 	}
 	if original := draft.Original; original != nil {
-		view.Original = &originalView{FileName: original.FileName, Format: original.Format, Words: original.Words, UploadedAt: original.LoadedAt}
+		view.Original = &originalView{
+			FileName: original.FileName, Format: original.Format, Words: original.Words, UploadedAt: original.LoadedAt, Look: original.Look,
+			Revisions: original.Revisions,
+		}
 	}
 	if edit := draft.Edits; edit != nil {
 		view.Edits = &editView{
 			ChapterID: edit.ChapterID, ChapterTitle: edit.ChapterTitle, BookID: edit.BookID, BookWords: edit.BookWords,
-			Changed: edit.Changed(), Gone: edit.Gone, CanRevert: edit.PreviousRevision > 0 && !edit.Gone && !edit.Changed(),
+			Changed: edit.Changed(), Gone: edit.Gone, CanRevert: edit.PreviousRevision > 0 && !edit.Gone && !edit.Changed(), Same: edit.State() == domain.EditSame,
 		}
 	}
 	return view
 }
 
 type summaryView struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Kind      string    `json:"kind"`
-	Stage     string    `json:"stage"`
-	Words     int       `json:"words"`
-	JobStatus string    `json:"jobStatus,omitempty"`
-	Revision  int64     `json:"revision"`
-	Edits     bool      `json:"edits,omitempty"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Kind     string `json:"kind"`
+	Stage    string `json:"stage"`
+	Words    int    `json:"words"`
+	Revision int64  `json:"revision"`
+	Edits    bool   `json:"edits,omitempty"`
+	// EditState is where an edit stands against its chapter of the book; Opening names a draft without a title
+	// (specs/2026-11-11-ux9-writing-a.md WA1.1, WA1.3).
+	EditState string    `json:"editState,omitempty"`
+	Opening   string    `json:"opening,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// The step of the draft in the words of its strip (specs/2026-11-11-ux5-writing-path.md WP1.2).
+	Idea        bool           `json:"idea"`
+	Plan        *planStateView `json:"plan,omitempty"`
+	Job         *jobView       `json:"job,omitempty"`
+	Findings    int            `json:"findings"`
+	Corrections int            `json:"corrections"`
+	// Attachment is the chapter attached in the chat the proofreading began from (specs/2026-11-11-ux5-proofread-mode.md PM3.3).
+	Attachment *attachmentView `json:"attachment,omitempty"`
+}
+
+type attachmentView struct {
+	ChatID string `json:"chatId"`
+	Number int    `json:"number"`
+}
+
+func jobDTO(job *domain.Job) *jobView {
+	if job == nil {
+		return nil
+	}
+	view := &jobView{ID: job.ID, Mode: job.Mode, Status: job.Status, Phase: job.Phase, Done: job.Done, Total: job.Total, ErrorCode: job.ErrorCode}
+	if job.Missing != nil {
+		view.Missing = &missingView{Scene: job.Missing.Scene, Lines: append([]int{}, job.Missing.Lines...)}
+	}
+	if writing := job.Writing; writing != nil {
+		view.Writing = &writingView{Scene: writing.Scene, Attempt: writing.Attempt, Step: writing.Step, Reason: writing.Reason, Text: writing.Text}
+	}
+	return view
 }
 
 type pageMeta struct {
@@ -456,8 +553,16 @@ func pageDTO(view service.PageView) pageView {
 	page := pageView{Data: make([]summaryView, len(view.Drafts)), Meta: pageMeta{TotalCount: view.Total}}
 	for index, draft := range view.Drafts {
 		page.Data[index] = summaryView{
-			ID: draft.ID, Title: draft.Title, Kind: string(draft.Kind), Stage: string(draft.Stage), Words: draft.Words, JobStatus: draft.JobStatus,
-			Revision: draft.Revision, Edits: draft.Edits, CreatedAt: draft.CreatedAt, UpdatedAt: draft.UpdatedAt,
+			ID: draft.ID, Title: draft.Title, Kind: string(draft.Kind), Stage: string(draft.Stage), Words: draft.Words,
+			Revision: draft.Revision, Edits: draft.Edits, EditState: string(draft.EditState), Opening: draft.Opening,
+			CreatedAt: draft.CreatedAt, UpdatedAt: draft.UpdatedAt,
+			Idea: draft.Idea, Job: jobDTO(draft.Job), Findings: draft.Findings, Corrections: draft.Corrections,
+		}
+		if plan := draft.Plan; plan != nil {
+			page.Data[index].Plan = &planStateView{Number: plan.Number, Approved: plan.Approved, Stale: plan.Stale, Reason: plan.Reason}
+		}
+		if attachment := draft.Attachment; attachment != nil {
+			page.Data[index].Attachment = &attachmentView{ChatID: attachment.ChatID, Number: attachment.Number}
 		}
 	}
 	if view.NextCursor != "" {
@@ -547,8 +652,10 @@ type noteView struct {
 	Recommend string   `json:"recommend,omitempty"`
 	Fallback  string   `json:"fallback,omitempty"`
 	// A note of the writing agent (WA5.6, WA6): its level, the category of style, the book's quote of the canon, the scene.
-	Level     string    `json:"level,omitempty"`
-	Category  string    `json:"category,omitempty"`
+	Level    string `json:"level,omitempty"`
+	Category string `json:"category,omitempty"`
+	// Label names a category of style in the author's words, by the one table of the check (specs/2026-11-11-ux9-writing-b.md WB2.1).
+	Label     string    `json:"label,omitempty"`
 	BookQuote string    `json:"bookQuote,omitempty"`
 	Scene     int       `json:"scene,omitempty"`
 	TurnID    string    `json:"turnId,omitempty"`
@@ -562,8 +669,12 @@ func NoteDTO(note domain.Note) noteView {
 	if refs == nil {
 		refs = []string{}
 	}
+	label := ""
+	if note.Kind == domain.NoteStyle {
+		label = domain.StyleLabel(note.Category)
+	}
 	return noteView{
-		ID: note.ID, Number: note.Number, Kind: string(note.Kind), Target: string(note.Target), Origin: note.Origin, Section: note.Section,
+		Label: label, ID: note.ID, Number: note.Number, Kind: string(note.Kind), Target: string(note.Target), Origin: note.Origin, Section: note.Section,
 		Quote: note.Quote, Body: note.Body, Replacement: note.Replacement, Options: note.Options, Refs: refs, Answer: note.Answer,
 		Status: string(note.Status), VariantGroup: note.VariantGroup, TurnID: note.TurnID, CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt,
 		Blocks: note.Blocks, Known: note.Known, Effects: note.Effects, Recommend: note.Recommend, Fallback: note.Fallback,
@@ -573,7 +684,8 @@ func NoteDTO(note domain.Note) noteView {
 
 // planStateView says on the draft which version of the plan is the latest and whether the author approved it.
 type planStateView struct {
-	Number   int  `json:"number"`
-	Approved bool `json:"approved"`
-	Stale    bool `json:"stale"`
+	Number   int    `json:"number"`
+	Approved bool   `json:"approved"`
+	Stale    bool   `json:"stale"`
+	Reason   string `json:"reason"`
 }

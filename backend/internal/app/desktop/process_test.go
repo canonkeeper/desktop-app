@@ -44,17 +44,20 @@ func desktopBinary(t *testing.T) (binary, resources string) {
 	if resources == "" {
 		t.Skipf("%s is not set", resourcesVariable)
 	}
-	binary = filepath.Join(t.TempDir(), "desktop")
-	build := exec.Command("go", "build", "-o", binary, "./cmd/desktop")
-	build.Dir = filepath.Join("..", "..", "..")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build ./cmd/desktop: %v\n%s", err, output)
-	}
-	return binary, resources
+	return program(t, programOfTheTree), resources
 }
 
 func startBackend(t *testing.T, binary, resources, data string, secrets map[string]string) *backend {
+	t.Helper()
+	process := launchBackend(t, binary, resources, data, secrets)
+	if process.ready.Type != messageReady || process.ready.Port == 0 || process.ready.Code == "" {
+		t.Fatalf("the backend answered %+v instead of ready", process.ready)
+	}
+	return process
+}
+
+// launchBackend starts the backend and keeps its first answer to start in ready, whether ready or fatal.
+func launchBackend(t *testing.T, binary, resources, data string, secrets map[string]string) *backend {
 	t.Helper()
 	command := exec.Command(binary)
 	stdin, err := command.StdinPipe()
@@ -80,9 +83,6 @@ func startBackend(t *testing.T, binary, resources, data string, secrets map[stri
 	process.send(ControlMessage{Type: messageStart, DataDir: data, Resources: resources, Secrets: secrets})
 	process.ready = process.receive(60 * time.Second)
 	process.took = time.Since(started)
-	if process.ready.Type != messageReady || process.ready.Port == 0 || process.ready.Code == "" {
-		t.Fatalf("the backend answered %+v instead of ready", process.ready)
-	}
 	return process
 }
 
@@ -195,6 +195,18 @@ func (browser *client) open(code string) *http.Response {
 // database connects to the cluster of the data directory as the product.
 func database(t *testing.T, data string) *pgx.Conn {
 	t.Helper()
+	cluster := runningCluster(t, data)
+	connection, err := pgx.Connect(context.Background(), cluster.url(productRole, cluster.secrets.Product, databaseName, url.Values{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close(context.Background()) })
+	return connection
+}
+
+// runningCluster is the cluster a backend runs in the data directory: its passwords and how this run listens.
+func runningCluster(t *testing.T, data string) *Cluster {
+	t.Helper()
 	secrets, err := loadClusterSecrets(DataDir{Root: data}.Secret())
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +215,7 @@ func database(t *testing.T, data string) *pgx.Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cluster := &Cluster{secrets: secrets}
+	cluster := &Cluster{data: DataDir{Root: data}, secrets: secrets}
 	for _, line := range strings.Split(string(settings), "\n") {
 		name, value, _ := strings.Cut(line, " = ")
 		value = strings.Trim(value, "'")
@@ -220,12 +232,7 @@ func database(t *testing.T, data string) *pgx.Conn {
 			cluster.port, _ = strconv.Atoi(value)
 		}
 	}
-	connection, err := pgx.Connect(context.Background(), cluster.url(productRole, secrets.Product, databaseName, url.Values{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close(context.Background()) })
-	return connection
+	return cluster
 }
 
 // family are the processes of a run: the backend, its descendants (Codex) and the PostgreSQL of its data directory,

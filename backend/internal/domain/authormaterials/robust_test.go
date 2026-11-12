@@ -74,6 +74,7 @@ func TestParseTellsAFileByItsContent(t *testing.T) {
 		kind SourceKind
 		err  error
 	}{
+		// MR2.4: a text file is read, not refused; refused stays only what cannot be read.
 		"a workbook":                  {workbook, SourceXLSX, nil},
 		"a document":                  {document, SourceDOCX, nil},
 		"nothing at all":              {nil, "", ErrEmpty},
@@ -85,13 +86,13 @@ func TestParseTellsAFileByItsContent(t *testing.T) {
 		"a PDF":                       {[]byte("%PDF-1.7\n%âãÏÓ\n1 0 obj"), "", ErrPDF},
 		"a PNG":                       {[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), "", ErrPicture},
 		"a JPEG":                      {[]byte("\xff\xd8\xff\xe0\x00\x10JFIF\x00"), "", ErrPicture},
-		"a CSV":                       {[]byte("Ворон;персонаж;Наёмник\nЛиса;персонаж;Воровка\n"), "", ErrPlainText},
-		"a CSV of Windows-1251":       {[]byte("\xc2\xee\xf0\xee\xed;\xef\xe5\xf0\xf1\xee\xed\xe0\xe6\r\n"), "", ErrPlainText},
+		"a text":                      {[]byte("Ворон — наёмник.\nЛиса — воровка.\n"), SourceText, nil},
+		"a text of Windows-1251":      {[]byte("\xc2\xee\xf0\xee\xed;\xef\xe5\xf0\xf1\xee\xed\xe0\xe6\r\n"), SourceText, nil},
 		"a zip of something else":     {packed(t, map[string]string{"index.xml": "<x/>"}), "", ErrUnreadable},
 		"bytes of nothing known":      {[]byte{0x00, 0x01, 0x02, 0xfe, 0x00, 0x13}, "", ErrUnreadable},
 	} {
 		t.Run(name, func(t *testing.T) {
-			parsed, kind, err := Parse(want.data)
+			parsed, kind, err := Parse("materials", want.data)
 			if !errors.Is(err, want.err) || kind != want.kind {
 				t.Fatalf("Parse = %q, %v; want %q, %v", kind, err, want.kind, want.err)
 			}
@@ -327,8 +328,9 @@ func FuzzParse(f *testing.F) {
 	}
 	f.Add(cfb("EncryptedPackage"))
 	f.Add([]byte("%PDF-1.7"))
+	f.Add([]byte("Имя;Вид\n\"Ворон;\"\"x\";персонаж\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		parsed, kind, err := Parse(data)
+		parsed, kind, err := Parse("materials.csv", data)
 		if err == nil && (kind == "" || len(parsed.Sections) == 0) {
 			t.Fatalf("read %q without sections: %+v", kind, parsed)
 		}

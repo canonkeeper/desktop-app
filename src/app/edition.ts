@@ -24,7 +24,23 @@ export interface Edition {
   sections: readonly SagaSection[];
   /** The account of the edition: who the author is, the pages before the product and what stands around it. */
   useAccount: (input: EditionAccountInput) => EditionAccount;
+  /**
+   * The marks of the closed sections of the edition in the menu, by the mechanism of the mark of «Чат»: «Рисунки» of the
+   * site (specs/2026-11-11-ux6-drawing-flow.md DF2.2). An edition without such a section has none.
+   */
+  useSectionMarks?: (route: AppRoute, saga: SectionMarksSaga) => SectionMarks;
 }
+
+/** The saga of the page the marks are read for, and whether its author may change it (specs/2026-11-11-ux9-shelf-chat.md SC3.6). */
+export interface SectionMarksSaga {
+  api: CanonKeeperApiClient;
+  projectId: string | null;
+  canEdit: boolean;
+}
+
+/** What a section of the menu has while the author is elsewhere: one on its way, the ready ones not opened. */
+export type SectionMark = { preparing: boolean; ready: number } | null;
+export type SectionMarks = Partial<Record<SagaSection, SectionMark>>;
 
 export interface EditionRoute {
   path: string;

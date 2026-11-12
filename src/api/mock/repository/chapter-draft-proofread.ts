@@ -4,7 +4,7 @@ import { MockApiError } from '../scenarios';
 type Draft = Schema<'ChapterDraft'>;
 type Note = Schema<'ChapterDraftNote'>;
 type NewNote = Omit<Note, 'id' | 'number' | 'status' | 'createdAt' | 'updatedAt'>;
-type Operation = 'startChapterProofread' | 'loadChapterDraftFile';
+type Operation = 'startChapterProofread' | 'loadChapterDraftFile' | 'takeChapterDraftOriginalLook';
 
 /**
  * The proofreading of the mock (specs/2026-11-07-writing-proofread.md, PR2, PR3): a chapter from a file of the author —
@@ -57,10 +57,98 @@ export async function readChapterFile(input: ChapterFileInput, operationId: Oper
 
 export const keepOriginal = (draft: Draft, original: MockOriginal) => {
   originals.set(draft, original);
-  draft.original = { fileName: original.fileName, format: original.format, words: original.text.split(/\s+/u).filter(Boolean).length, uploadedAt: original.uploadedAt };
+  draft.original = {
+    fileName: original.fileName, format: original.format, words: original.text.split(/\s+/u).filter(Boolean).length, uploadedAt: original.uploadedAt,
+    // A Word file keeps its look (PR1.7); a text, Markdown or a chapter from the chat come without it (PR9.3).
+    look: original.format === 'docx',
+    // Each answer counts them anew (mockRevisions).
+    revisions: 0,
+  };
 };
 
 export const originalOf = (draft: Draft) => originals.get(draft);
+
+/** The chapter attached in a chat a proofreading began from (specs/2026-11-11-ux5-proofread-mode.md PM3.3), by its draft. */
+const attachments = new WeakMap<Draft, { chatId: string; number: number }>();
+export const tieToAttachment = (draft: Draft, attachment: { chatId: string; number: number } | null) => {
+  if (attachment) attachments.set(draft, attachment);
+  else attachments.delete(draft);
+};
+export const attachmentOf = (draft: Draft) => attachments.get(draft);
+
+const tokenPattern = /\s+|[\p{L}\p{N}]+|./gu;
+type Kind = 'same' | 'gone' | 'new';
+
+/** The steps turning one list into another by their longest common run: what stays, goes and comes, in order. */
+function steps<T>(a: readonly T[], b: readonly T[]): Kind[] {
+  const lengths = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    for (let j = b.length - 1; j >= 0; j -= 1) lengths[i]![j] = a[i] === b[j] ? lengths[i + 1]![j + 1]! + 1 : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
+  }
+  const out: Kind[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      out.push('same');
+      i += 1;
+      j += 1;
+    } else if (i < a.length && (j === b.length || lengths[i + 1]![j]! >= lengths[i]![j + 1]!)) {
+      out.push('gone');
+      i += 1;
+    } else {
+      out.push('new');
+      j += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The revisions of Word the file with corrections would have (PM1.4), as the mock reckons them: a stretch of deleted or
+ * inserted words is one revision, a word replaced is two; a paragraph put in or taken out whole is one. The server counts
+ * them by the writer of the file itself.
+ */
+export function mockRevisions(draft: Draft) {
+  const original = originals.get(draft);
+  if (!original) return 0;
+  const paragraphs = (text: string) => text.replace(/[⟦⟧⟨⟩⟪⟫]/gu, '').split(/\n+/u).map((line) => line.trim()).filter(Boolean);
+  const before = paragraphs(original.text);
+  const now = paragraphs(draft.text);
+  let count = 0;
+  let previous: Kind = 'same';
+  const step = (kind: Kind) => {
+    if (kind !== 'same' && kind !== previous) count += 1;
+    previous = kind;
+  };
+  const ops = steps(before, now);
+  let a = 0;
+  let b = 0;
+  for (let k = 0; k < ops.length;) {
+    if (ops[k] === 'same') {
+      step('same');
+      a += 1;
+      b += 1;
+      k += 1;
+      continue;
+    }
+    const gone: string[] = [];
+    const put: string[] = [];
+    for (; k < ops.length && ops[k] !== 'same'; k += 1) {
+      if (ops[k] === 'gone') gone.push(before[a++]!);
+      else put.push(now[b++]!);
+    }
+    // A paragraph taken out and one put in at the same place are one paragraph changed word by word.
+    const pairs = Math.min(gone.length, put.length);
+    for (let index = 0; index < pairs; index += 1) {
+      for (const piece of steps(gone[index]!.match(tokenPattern) ?? [], put[index]!.match(tokenPattern) ?? [])) step(piece);
+      step('same');
+    }
+    for (let index = pairs; index < gone.length; index += 1) step('gone');
+    for (let index = pairs; index < put.length; index += 1) step('new');
+  }
+  return count;
+}
 
 /** The corrections the mock finds: a fixed list of fragments, each where it stands once. */
 const corrections: ReadonlyArray<{ find: RegExp; replace: (match: string) => string; category: string; body: string }> = [

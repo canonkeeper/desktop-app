@@ -178,7 +178,7 @@ func initialAssignment(run researchdomain.TurnRun) (string, error) {
 	return encodeAssignment(assignmentInput{
 		Text: run.Question, WorkshopLines: run.WorkshopLines, SourceView: run.SourceView, Scope: run.Scope, BookID: run.BookID,
 		SelectedContext: run.SelectedContext, Images: run.Images, ImageTitles: run.ImageTitles, FirstPhoto: 1,
-		Attachment: run.Attachment,
+		Attachment: run.Attachment, Button: run.Button,
 	})
 }
 
@@ -198,6 +198,8 @@ type assignmentInput struct {
 	// Attachment is the header of the chapter attached to a question (specs/2026-11-07-chat-attach-chapter.md CA3.1); a
 	// correction carries none.
 	Attachment *researchdomain.AssignmentAttachment
+	// Button: a button of the page sent the question (specs/2026-11-11-ux9-writing-b.md WB3.3).
+	Button bool
 }
 
 func encodeAssignment(input assignmentInput) (string, error) {
@@ -213,6 +215,7 @@ func encodeAssignment(input assignmentInput) (string, error) {
 		AttachedPhotos:  attachedPhotos(input.Images, input.ImageTitles, input.FirstPhoto),
 		Correction:      input.Correction,
 		WorkshopLines:   append([]string(nil), input.WorkshopLines...),
+		Button:          input.Button && !input.Correction,
 	}
 	if input.Attachment != nil && !input.Correction {
 		header := *input.Attachment

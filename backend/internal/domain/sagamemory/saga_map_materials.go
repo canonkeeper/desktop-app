@@ -82,6 +82,7 @@ func (m *Map) AddMaterials(glossary *Glossary, materials []MapMaterial) {
 		m.nodeOf[entry] = len(m.Nodes)
 		nodes = append(nodes, texted{node: len(m.Nodes), text: newNamedText(material.Text)})
 		m.Nodes = append(m.Nodes, MapNode{Entry: entry, Category: material.Category, Material: true})
+		m.Total++
 	}
 	for _, source := range nodes {
 		links := 0

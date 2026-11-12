@@ -3,7 +3,10 @@ import { Check, MessageSquare } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { sagaHasChatQueryOptions } from '../../../entities/chat/api';
 import { textSourceView, type ManuscriptApiClient, type Project } from '../../../entities/manuscript/api';
+import { bookFileKinds } from '../../../entities/manuscript/book-file-kinds';
 import { Button } from '../../../ui/controls/Button';
+import { formatCount } from '../../../ui/copy';
+import { firstSagaTitle } from './FirstScreen';
 import styles from './FirstSteps.module.css';
 
 export type FirstStep = 1 | 2 | 3;
@@ -29,57 +32,78 @@ export function useFirstStep({ api, bookCount, canEdit, loaded, project }: {
   return bookCount === 0 ? 2 : 3;
 }
 
+/**
+ * Step 2 calls for as many books as a saga of the tier takes (specs/2026-11-11-ux9-shelf-chat.md SC1.8, J-09): one book —
+ * «Загрузите книгу», more — the whole series up to the limit; null while the limit is unknown or there is none.
+ */
+export function uploadStepWords(sagaBooks: number | null) {
+  if (sagaBooks === 1) return { title: 'Загрузите книгу', text: `${bookFileKinds}. В саге на вашем тарифе — одна книга: начните с первой.` };
+  const upTo = sagaBooks !== null && sagaBooks > 1 ? ` — до ${sagaBooks}. Порядок` : ' — порядок';
+  return { title: 'Загрузите книги', text: `${bookFileKinds}. Можно сразу все книги саги${upTo} покажу перед загрузкой.` };
+}
+
 interface FirstStepsProps {
   bookCount: number;
-  /** Step 1: the form that names the saga. */
-  createSaga: ReactNode;
+  /** The books a saga of the author's tier takes, by the counters of the account; null while unknown or unlimited (SC1.8). */
+  sagaBooks?: number | null;
   onAskFirstQuestion: () => void;
   projectTitle: string | null;
-  step: FirstStep;
+  /** The line of the reading of the saga (specs/2026-11-10-ux3-saga-state.md SS2.5): it stands in step 3 with its one button. */
+  sagaState?: ReactNode;
+  /** Step 1 is done once the saga stands on its shelf: before it there is the first screen (FS1.2). */
+  step: Exclude<FirstStep, 1>;
   /** The saga has text for the chat (`getIndexingStatus` → `exists`). */
   textReady: boolean;
   /** Step 2: the drop zone, or the request to verify the address. */
   uploadBooks: ReactNode;
+  /**
+   * Under the steps while the saga has no book (specs/2026-11-10-ux3-first-screen.md FS1.5): «Посмотреть на примере» and
+   * «Вычитать мою главу» of a build that has them.
+   */
+  ways?: ReactNode;
 }
 
-/** «Три шага» до первого ответа по саге: a done step is checked, the current one acts, the next ones wait (R2.1.1). */
-export function FirstSteps({ bookCount, createSaga, onAskFirstQuestion, projectTitle, step, textReady, uploadBooks }: FirstStepsProps) {
+/**
+ * The steps of a saga to its first answer (R2.1.1; FS1.5): «Сага создана» is checked, the current step acts, the next one
+ * waits. «Добро пожаловать» is said once, on the first screen, and «Три шага» are gone (FS1.2). A saga «Поговорить» or a
+ * proofreading founded is named by the line of the shell, so the step does not name it twice (FS1.4). While the saga is
+ * read, the line of its reading stands in step 3 with its one button (specs/2026-11-10-ux3-saga-state.md SS2.5).
+ */
+export function FirstSteps({ bookCount, onAskFirstQuestion, projectTitle, sagaBooks = null, sagaState, step, textReady, uploadBooks, ways }: FirstStepsProps) {
   const titleId = useId();
+  const upload = uploadStepWords(sagaBooks);
+  const named = projectTitle && projectTitle !== firstSagaTitle;
   return (
-    <section aria-labelledby={titleId} className={styles.panel}>
-      <div className={styles.header}>
-        <h2 id={titleId}>Добро пожаловать в Canon Keeper</h2>
-        <p>Три шага до первого ответа по вашей саге</p>
-      </div>
-      <ol className={styles.steps}>
-        <Step
-          current={step}
-          done={`Сага «${projectTitle ?? ''}» создана`}
-          number={1}
-          text="Сага объединяет книги одной серии. Название можно поменять позже."
-          title="Назовите сагу"
-        >{createSaga}</Step>
-        <Step
-          current={step}
-          done={`Загружено книг: ${bookCount}`}
-          number={2}
-          text="FB2, EPUB или DOCX, лучше все книги серии по порядку. Книга без номера в имени файла получит следующий номер."
-          title="Загрузите книги"
-        >{uploadBooks}</Step>
-        <Step
-          current={step}
-          number={3}
-          text="Когда книга подготовится, спросите о героях, событиях или противоречиях — ответ придёт со ссылками на главы."
-          title="Задайте первый вопрос"
-        >
-          <div className={styles.actions}>
-            <Button disabled={!textReady} onClick={onAskFirstQuestion} variant="primary">
-              <MessageSquare aria-hidden="true" size={16} />Задать первый вопрос
-            </Button>
-          </div>
-        </Step>
-      </ol>
-    </section>
+    <div className={styles.first}>
+      <section aria-labelledby={titleId} className={styles.panel}>
+        <div className={styles.header}>
+          <h2 id={titleId}>До первого ответа</h2>
+        </div>
+        <ol className={styles.steps}>
+          <Step current={step} done={named ? `Сага «${projectTitle}» создана` : 'Сага создана'} number={1} text="" title="Назовите сагу">{null}</Step>
+          <Step
+            current={step}
+            done={formatCount(bookCount, 'книга загружена', 'книги загружены', 'книг загружено')}
+            number={2}
+            text={upload.text}
+            title={upload.title}
+          >{uploadBooks}</Step>
+          <Step
+            current={step}
+            number={3}
+            text="Когда помощник прочитает книгу, спросите о героях, событиях или противоречиях — ответ придёт со ссылками на главы."
+            title="Задайте первый вопрос"
+          >
+            {sagaState ?? <div className={styles.actions}>
+              <Button disabledReason={textReady ? null : 'Помощник начал читать книгу — спросить можно будет через пару минут.'} onClick={onAskFirstQuestion} variant="primary">
+                <MessageSquare aria-hidden="true" size={16} />Задать первый вопрос
+              </Button>
+            </div>}
+          </Step>
+        </ol>
+      </section>
+      {ways ? <div className={styles.ways}>{ways}</div> : null}
+    </div>
   );
 }
 

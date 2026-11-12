@@ -73,12 +73,17 @@ func TestSubmitTurnCreatesQueuedJobWithSessionChatArmRefs(t *testing.T) {
 		reloaded.LatestTurnStatus != string(jobs.StatusQueued) {
 		t.Fatalf("reloaded committed session = %#v, %v", reloaded, err)
 	}
+	// specs/2026-11-11-ux4-after-answer.md AA2.1, AA3.1: the chat says when its last question was asked.
+	if reloaded.LatestTurnAt == nil || !reloaded.LatestTurnAt.Equal(now.Add(time.Second)) {
+		t.Fatalf("reloaded latest turn at = %v, want %v", reloaded.LatestTurnAt, now.Add(time.Second))
+	}
 	listed, err := repository.ListSessions(ctx, service.ListSessionsQuery{
 		Actor: researchdomain.Actor{UserID: submitTurnActorID}, ProjectID: submitTurnProjectID,
 		Scope: researchdomain.ScopeProject, Limit: 10,
 	})
-	if err != nil || len(listed) != 1 || listed[0].LatestTurnJobID != job.ID || listed[0].LatestTurnStatus != string(jobs.StatusQueued) {
-		t.Fatalf("listed sessions = %#v, %v; want the chat with its queued turn", listed, err)
+	if err != nil || len(listed) != 1 || listed[0].LatestTurnJobID != job.ID || listed[0].LatestTurnStatus != string(jobs.StatusQueued) ||
+		listed[0].LatestTurnAt == nil || !listed[0].LatestTurnAt.Equal(now.Add(time.Second)) {
+		t.Fatalf("listed sessions = %#v, %v; want the chat with its queued turn and its time", listed, err)
 	}
 	replayed, err := repository.CreateSession(ctx, create)
 	if err != nil || replayed.ID != session.ID || replayed.SavedAssignment != nil {

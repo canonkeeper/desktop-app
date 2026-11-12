@@ -55,6 +55,19 @@ func TestMigrationQuiescenceAllowsDurableQueuedJobs(t *testing.T) {
 	}
 }
 
+// The build of the threads of a saga runs for hours on a large saga and goes on from its checkpoint after a restart:
+// a cutover of TEST does not wait for it, as a production release does not (specs/2026-10-28-release-artifacts.md).
+func TestMigrationQuiescenceDoesNotWaitForTheSagaLayer(t *testing.T) {
+	queryer := quiescenceQueryerForTest{row: quiescenceRowForTest{values: []any{int64(0)}}}
+	if _, err := checkMigrationQuiescence(context.Background(), &queryer); err != nil {
+		t.Fatal(err)
+	}
+	query := strings.Join(strings.Fields(queryer.query), " ")
+	if !strings.Contains(query, "job.kind <> 'saga_layer'") {
+		t.Fatal("migration quiescence must not wait for the saga layer Job, which resumes from its checkpoint")
+	}
+}
+
 func TestMigrationQuiescenceFailsClosedUnlessExactOwnerIsUnreadable(t *testing.T) {
 	queryer := quiescenceQueryerForTest{row: quiescenceRowForTest{values: []any{int64(0)}}}
 	if _, err := checkMigrationQuiescence(context.Background(), &queryer); err != nil {

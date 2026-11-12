@@ -39,6 +39,10 @@ describe('writer counts (R5.3)', () => {
   it('writes sizes in МБ with a decimal comma', () => {
     expect(formatFileSize(1.2 * 1024 * 1024)).toBe('1,2 МБ');
     expect(formatFileSize(512)).toBe('512 Б');
+    // The pass on TEST 11.11: a file of 4 КБ said «0,0 МБ»; below 0,1 МБ the size is in kilobytes.
+    expect(formatFileSize(4 * 1024)).toBe('4 КБ');
+    expect(formatFileSize(100 * 1024)).toBe('100 КБ');
+    expect(formatFileSize(0.1 * 1024 * 1024)).toBe('0,1 МБ');
   });
 });
 

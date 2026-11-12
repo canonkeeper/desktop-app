@@ -28,7 +28,8 @@ type ImportJobResult struct {
 	RemovedChapters     *int `json:"removedChapters,omitempty"`
 	PunctuationChapters *int `json:"punctuationChapters,omitempty"`
 	RenamedChapters     *int `json:"renamedChapters,omitempty"`
-	// Preview is what an update_preview import would do (R6.2); only its creator reads its places (R6.3).
+	// Preview is what an update_preview import would do (R6.2) and what an update_book import did (TB4.1); only its creator
+	// reads its places (R6.3).
 	Preview *ImportPreview `json:"preview,omitempty"`
 }
 
@@ -68,6 +69,9 @@ type ImportPreviewChapter struct {
 	PreviousTitle string               `json:"previousTitle,omitempty"`
 	Change        string               `json:"change"`
 	Places        []ImportPreviewPlace `json:"places,omitempty"`
+	// EditedOnSite: the text of the chapter in the book now was written on the site — added from «Письмо» or replaced by
+	// its edit — and the file replaces or removes it (specs/2026-11-11-ux9-shelf-chat.md SC1.4).
+	EditedOnSite bool `json:"editedOnSite,omitempty"`
 }
 
 // ImportPreviewPlace is a short place of a changed chapter before and after the update.
@@ -88,7 +92,8 @@ func (r ImportJobResult) validCounters() bool {
 			return false
 		}
 	}
-	if (r.Preview != nil) != (r.ImportMode == "update_preview") || r.Preview != nil && !r.Preview.valid() {
+	// A preview tells what an update would do; an update since 2026-11-11 keeps what it did (specs/2026-11-11-ux7-trash.md TB4.1).
+	if r.ImportMode == "update_preview" && r.Preview == nil || r.Preview != nil && (!update || !r.Preview.valid()) {
 		return false
 	}
 	return r.ImportMode == "new_book" || update
@@ -200,6 +205,85 @@ type ChapterDraftResult struct {
 	// Findings are the corrections a proofreading found in the pieces it read, kept while it runs so a retry goes on
 	// from the first piece not read (specs/2026-11-07-writing-proofread.md, PR3.9); Sealed drops them.
 	Findings []ChapterDraftFinding `json:"findings,omitempty"`
+	// Check is what the last check of the text counted and measured; numbers, not text, so Sealed keeps it.
+	Check *ChapterDraftCheckTally `json:"check,omitempty"`
+	// Missing names the scene a writing failed on, losing the author's lines to keep word for word, and which of its
+	// lines by their numbers among them — numbers, not text, so Sealed keeps it (specs/2026-11-11-ux9-writing-a.md WA2.4).
+	Missing *ChapterDraftMissing `json:"missing,omitempty"`
+	// Writing is the scene a writing writes now, as its answer comes (specs/2026-11-12-ux10-scene-stream.md ST1.2): its own
+	// key of the row, written only under the claim of the running Job; no progress a retry goes on from, and Sealed drops it.
+	Writing *ChapterDraftWriting `json:"writing,omitempty"`
+}
+
+// The steps of the scene in writing (ST1.2): its answer comes, its answer came whole and the passes over it go on, it is
+// written again after an answer that could not be kept.
+const (
+	ChapterDraftWritingStep  = "writing"
+	ChapterDraftCheckingStep = "checking"
+	ChapterDraftAgainStep    = "again"
+)
+
+// Why a scene is written again: the answer lost a line of the author to keep word for word, or held no scene or too few
+// of its words; a broken answer names no reason.
+const (
+	ChapterDraftAgainLost  = "lost"
+	ChapterDraftAgainShort = "short"
+)
+
+// MaxChapterDraftWritingBytes bounds the text of a scene in writing: a scene of the plan is at most some thousands of words.
+const MaxChapterDraftWritingBytes = 256 << 10
+
+// ChapterDraftWriting is the scene in writing: its number in the plan, the call of it that goes on, its step and why it is
+// written again, and the text of the block «сцена» of the answer so far, cleaned as the scene will be.
+type ChapterDraftWriting struct {
+	Scene   int    `json:"scene"`
+	Attempt int    `json:"attempt"`
+	Step    string `json:"step"`
+	Reason  string `json:"reason,omitempty"`
+	Text    string `json:"text,omitempty"`
+}
+
+func (writing ChapterDraftWriting) valid() bool {
+	switch writing.Step {
+	case ChapterDraftWritingStep, ChapterDraftCheckingStep:
+		if writing.Reason != "" {
+			return false
+		}
+	case ChapterDraftAgainStep:
+		if writing.Reason != "" && writing.Reason != ChapterDraftAgainLost && writing.Reason != ChapterDraftAgainShort {
+			return false
+		}
+	default:
+		return false
+	}
+	return writing.Scene >= 1 && writing.Attempt >= 1 && utf8.ValidString(writing.Text) && len(writing.Text) <= MaxChapterDraftWritingBytes
+}
+
+// ChapterDraftMissing is the scene of the plan whose writing kept losing lines of the author, and the lines it lost: their
+// numbers from 0 among the lines of the scene to keep — its «Что сохранить дословно», then the author's lines of its steps.
+type ChapterDraftMissing struct {
+	Scene int   `json:"scene"`
+	Lines []int `json:"lines"`
+}
+
+// ChapterDraftCheckTally is what a check of the writing agent counted and measured (specs/2026-11-11-writing-check-signal.md
+// CS1.1, CS3.2): the questions of layer C asked, answered and answered weak — only a weak answer is a note —, and the
+// measures of style of the text against the author's chapters: the words they were measured on and the measures out of
+// his usual spread, with the numbers the author does not read.
+type ChapterDraftCheckTally struct {
+	Asked    int                   `json:"asked"`
+	Answered int                   `json:"answered"`
+	Weak     int                   `json:"weak"`
+	Words    int                   `json:"words,omitempty"`
+	Measures []ChapterDraftMeasure `json:"measures,omitempty"`
+}
+
+// ChapterDraftMeasure is a measure of style of the text out of the usual spread of the author's chapters.
+type ChapterDraftMeasure struct {
+	Feature string  `json:"feature"`
+	Value   float64 `json:"value"`
+	Mean    float64 `json:"mean"`
+	SD      float64 `json:"sd"`
 }
 
 // ChapterDraftFinding is one correction of a proofreading: the fragment of the working text, what stands there
@@ -236,11 +320,11 @@ const (
 	ChapterDraftPhaseProofread = "proofread"
 )
 
-// Sealed is what stays in the row of a finished Job: nothing of the text. Deleting a draft leaves the same in the rows
-// of its runs (the query EraseChapterDraftJobText).
+// Sealed is what stays in the row of a finished Job: nothing of the text, nor the scene in writing. Deleting a draft leaves
+// the same in the rows of its runs (the query EraseChapterDraftJobText).
 func (r ChapterDraftResult) Sealed() ChapterDraftResult {
 	return ChapterDraftResult{Type: r.Type, Mode: r.Mode, Total: r.Total, Chapters: r.Chapters, Done: r.Done, Pack: r.Pack,
-		BeforeVersion: r.BeforeVersion, WrittenVersion: r.WrittenVersion}
+		BeforeVersion: r.BeforeVersion, WrittenVersion: r.WrittenVersion, Check: r.Check, Missing: r.Missing}
 }
 
 func (ChapterDraftResult) jobResult()   {}

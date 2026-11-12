@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { Overlay } from './Overlay';
-import { Portal } from './Portal';
+import { Portal, useOverlayScrim } from './Portal';
 import type { PresenceStatus } from './use-presence';
 import styles from './overlays.module.css';
 
@@ -8,6 +8,8 @@ export interface DialogProps {
   canDismiss?: boolean;
   children: ReactNode;
   dismissOnScrim?: boolean;
+  /** `false` for a window the address opens: its own «Назад» closes it (UC4). */
+  history?: boolean;
   initialFocusRef?: RefObject<HTMLElement | null>;
   label: string;
   onDismiss: () => void;
@@ -29,6 +31,7 @@ export function Dialog({
   canDismiss,
   children,
   dismissOnScrim = false,
+  history,
   initialFocusRef,
   label,
   onDismiss,
@@ -41,6 +44,7 @@ export function Dialog({
 }: DialogProps) {
   const overlayCanDismiss = canDismiss ?? true;
   const scrimCanDismiss = canDismiss ?? dismissOnScrim;
+  const scrim = useOverlayScrim();
   return (
     <Portal>
       <div
@@ -50,21 +54,25 @@ export function Dialog({
         onPointerDown={(event) => {
           if (scrimCanDismiss && event.target === event.currentTarget) onDismiss();
         }}
+        ref={scrim.ref}
       >
         {/* The panel is the kit's: no dialog floats over the page without one (narrow-windows N7.1). */}
-        <Overlay
-          className={`${styles.dialogPanel}${surface === 'content' ? ` ${styles.contentSurface}` : ''}${panelClassName ? ` ${panelClassName}` : ''}`}
-          {...(width ? { style: { '--dialog-width': `${width}px` } as CSSProperties } : {})}
-          canDismiss={overlayCanDismiss}
-          initialFocusRef={initialFocusRef}
-          kind="dialog"
-          label={label}
-          onDismiss={onDismiss}
-          returnFocusRef={returnFocusRef}
-          state={state}
-        >
-          {children}
-        </Overlay>
+        <scrim.Provider value={scrim.scrim}>
+          <Overlay
+            className={`${styles.dialogPanel}${surface === 'content' ? ` ${styles.contentSurface}` : ''}${panelClassName ? ` ${panelClassName}` : ''}`}
+            {...(width ? { style: { '--dialog-width': `${width}px` } as CSSProperties } : {})}
+            canDismiss={overlayCanDismiss}
+            history={history}
+            initialFocusRef={initialFocusRef}
+            kind="dialog"
+            label={label}
+            onDismiss={onDismiss}
+            returnFocusRef={returnFocusRef}
+            state={state}
+          >
+            {children}
+          </Overlay>
+        </scrim.Provider>
       </div>
     </Portal>
   );

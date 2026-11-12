@@ -48,7 +48,7 @@ func libraryBookFromGetSummarySQL(row sqlc.GetBookSummaryByIDRow) library.Book {
 }
 
 func libraryBookFromListSummarySQL(row sqlc.ListBookSummariesByProjectRow) library.Book {
-	return libraryBookFromSummaryColumns(
+	book := libraryBookFromSummaryColumns(
 		row.ID,
 		row.ProjectID,
 		row.Title,
@@ -64,6 +64,8 @@ func libraryBookFromListSummarySQL(row sqlc.ListBookSummariesByProjectRow) libra
 		row.ChapterCount,
 		row.WordCount,
 	)
+	book.Opening = row.Opening
+	return book
 }
 
 func libraryBookFromSummaryColumns(

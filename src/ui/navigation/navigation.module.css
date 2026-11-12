@@ -87,6 +87,20 @@
 .segmented[data-full-width] .segment { flex: 1; min-width: 0; }
 .segmented[data-size='touch'] .segment { min-height: 44px; }
 
+/* Under a finger and below 900 px a segment is a target of 44 px whatever the page chose (specs/2026-11-11-ux9-shelf-chat.md
+   SC2.1, W-32, W-3B): the control chooses, as `Button` does. */
+@media (pointer: coarse), (max-width: 899px) {
+  .segment {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* A tab too: «Помощник · Сверка · Описание · Правки» of a drawing stood 39 px under a finger (D-67). */
+  .tab {
+    min-height: 44px;
+  }
+}
+
 /* «Наверх»: no room of its own, it keeps to the bottom right of the visible part of its column. */
 .scrollTop {
   position: sticky;

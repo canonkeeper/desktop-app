@@ -1,15 +1,33 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 export type ToastTone = 'neutral' | 'success' | 'warning' | 'error';
-/** A persistent toast stays until it is closed or its action is used. */
-export type ToastInput = { action?: ReactNode; message: string; persistent?: boolean; tone: ToastTone };
-export type ToastItem = ToastInput & { expiresAt?: number; id: number };
+/**
+ * A line of the result of an action (specs/2026-11-10-ux2-patterns-actions.md UC1). `action` is «Отменить» or
+ * «Вернуть» of a reversible action; `detail` is a quieter line under the message: what the message is about. A
+ * persistent line stays until it is closed or its action is used.
+ */
+export type ToastInput = { action?: ReactNode; detail?: string; message: string; persistent?: boolean; tone: ToastTone };
+/** `born` orders the lines of every queue as they came: a host may take only the lines born after it opened. */
+export type ToastItem = ToastInput & { born: number; expiresAt?: number; held?: number; id: number };
 
-const toastDuration: Partial<Record<ToastTone, number>> = {
-  neutral: 6_000,
-  success: 6_000,
-  warning: 10_000,
-};
+let born = 0;
+
+/** The last line born in any queue: a host that takes only new lines marks its opening by it (toast-host.ts). */
+export function lastToastBorn() {
+  return born;
+}
+
+/** How long a line stays (PA1.2): one with «Отменить» at least 10 s, one without an action 5 s; an error stays. */
+export const toastDurations = { action: 10_000, plain: 5_000 } as const;
+/** After the author leaves a held line, it stays at least this long. */
+const afterHold = 2_000;
+/** The lines the region shows at once: an older one goes when a fourth comes. */
+const shown = 3;
+
+function durationOf(input: ToastInput) {
+  if (input.persistent || input.tone === 'error') return undefined;
+  return input.action ? toastDurations.action : toastDurations.plain;
+}
 
 export function useToastQueue() {
   const [queue, setQueue] = useState<ToastItem[]>([]);
@@ -19,10 +37,21 @@ export function useToastQueue() {
   }, []);
   const push = useCallback((input: ToastInput) => {
     const id = ++nextId.current;
-    const duration = input.persistent ? undefined : toastDuration[input.tone];
-    const toast: ToastItem = { ...input, expiresAt: duration ? Date.now() + duration : undefined, id };
-    setQueue((current) => [...current, toast].slice(-3));
+    const duration = durationOf(input);
+    const toast: ToastItem = { ...input, born: born += 1, expiresAt: duration ? Date.now() + duration : undefined, id };
+    setQueue((current) => [...current, toast].slice(-shown));
     return id;
+  }, []);
+  /** The author is on the line — the pointer over it or the focus in it: it waits for him (PA1.2). */
+  const hold = useCallback((id: number) => {
+    setQueue((current) => current.map((toast) => toast.id === id && toast.expiresAt !== undefined
+      ? { ...toast, expiresAt: undefined, held: Math.max(0, toast.expiresAt - Date.now()) }
+      : toast));
+  }, []);
+  const release = useCallback((id: number) => {
+    setQueue((current) => current.map((toast) => toast.id === id && toast.held !== undefined
+      ? { ...toast, expiresAt: Date.now() + Math.max(toast.held, afterHold), held: undefined }
+      : toast));
   }, []);
 
   useEffect(() => {
@@ -32,5 +61,19 @@ export function useToastQueue() {
     return () => timers.forEach(window.clearTimeout);
   }, [dismiss, queue]);
 
-  return { dismiss, push, queue };
+  return { dismiss, hold, push, queue, release };
+}
+
+export type ToastQueue = ReturnType<typeof useToastQueue>;
+/** What a page needs of the one area of the toasts: to put a line and to take it away. */
+export type Toasts = Pick<ToastQueue, 'dismiss' | 'push'>;
+
+/** The one queue of the toasts of a tab, owned by the root (PA1.1): a page puts its lines through it. */
+export const ToastsContext = createContext<Toasts | null>(null);
+
+/** The one area of the toasts of the root (PA1.1); a page has no area of its own. */
+export function useToasts(): Toasts {
+  const toasts = useContext(ToastsContext);
+  if (!toasts) throw new Error('useToasts needs the one area of the toasts of the root (ToastsContext).');
+  return toasts;
 }

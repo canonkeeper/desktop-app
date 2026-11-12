@@ -133,8 +133,13 @@ const (
 // Due says whether a build is worth paying for (R2.2): there is none yet, or at least two chapters have a new
 // card since it and they are not less than 5 chapters or 3 % of the chapters: one changed chapter never rebuilds
 // the threads, also in a small saga (specs/2026-10-27-update-book-from-file.md, R5.1). A chapter without a card
-// waits for its card; a card carried over a change of signs is the card the build read (R3.3).
+// waits for its card; a card carried over a change of signs is the card the build read (R3.3). The volumes put in
+// another order make a build due with no new card: the registry is gathered volume after volume in the order of
+// reading (specs/2026-11-11-ux7-reorder.md RK2.3).
 func Due(current, built []Stamp) bool {
+	if reordered(current, built) {
+		return true
+	}
 	stored := make(map[string]Stamp, len(built))
 	for _, stamp := range built {
 		stored[stamp.Chapter] = stamp
@@ -150,6 +155,26 @@ func Due(current, built []Stamp) bool {
 		return false
 	}
 	return len(built) == 0 || changed >= dueAtLeastEver && (changed >= dueChapters || changed*100 >= duePercent*len(current))
+}
+
+// reordered says whether the chapters the build and the text share stand in another order.
+func reordered(current, built []Stamp) bool {
+	position := make(map[string]int, len(built))
+	for i, stamp := range built {
+		position[stamp.Chapter] = i
+	}
+	last := -1
+	for _, stamp := range current {
+		at, ok := position[stamp.Chapter]
+		if !ok {
+			continue
+		}
+		if at < last {
+			return true
+		}
+		last = at
+	}
+	return false
 }
 
 // DueAfter is Due for a change the cards do not have yet (R6.2): changed chapters will get a new card, of total

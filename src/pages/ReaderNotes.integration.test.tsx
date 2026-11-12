@@ -7,8 +7,10 @@ import { useReaderPreferencesStore } from '../entities/manuscript/display-prefer
 import { createAppRoute, parseRoute } from '../shared/navigation/app-route';
 import { NotesProvider } from '../features/notes/NotesProvider';
 import { ManuscriptReaderMode } from '../features/manuscript/reader/ManuscriptReaderMode';
+import { InShell } from '../app/shell/AppShell.test-helpers';
+import { ToastsProvider } from '../ui/feedback/Toast';
 
-vi.mock('@tanstack/react-router', () => ({ useBlocker: vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({ useBlocker: vi.fn(() => ({ status: 'idle' })) }));
 
 function renderReader(search = '', viewer = false) {
   const api = createMockApiClient();
@@ -23,10 +25,10 @@ function renderReader(search = '', viewer = false) {
       setRoute(createAppRoute(path, query));
     };
     return <NotesProvider api={api} accountId="user-mira" navigate={go} route={route}>
-      <ManuscriptReaderMode api={api} navigate={go} onLogout={vi.fn()} route={route} userName="Мира Волкова" />
+      <InShell api={api} navigate={go} route={route}><ManuscriptReaderMode api={api} navigate={go} route={route} /></InShell>
     </NotesProvider>;
   }
-  render(<QueryClientProvider client={client}><Reader /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><ToastsProvider><Reader /></ToastsProvider></QueryClientProvider>);
   return { api, createNote, navigate };
 }
 
@@ -37,26 +39,24 @@ describe('Reader with unified Notes', () => {
     useReaderPreferencesStore.getState().resetReaderPreferences();
   });
 
-  it('opens common Notes over the same Reader and keeps appearance controls on return', async () => {
-    const { navigate } = renderReader();
+  // «Заметка» of the top bar of the shell opens a new note over the reader; its list is one step back (S1.2).
+  it('opens common Notes over the same Reader and keeps the look of the text on return', async () => {
+    const { navigate } = renderReader('view=open');
     const text = await screen.findByRole('document');
-    const controls = screen.getAllByLabelText('Настройки чтения')[0]!;
-    fireEvent.click(within(controls).getByRole('button', { name: 'Размер текста' }));
-    fireEvent.click(within(controls).getByRole('radio', { name: 'Сепия' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Заметки' })[0]!);
+    const look = await screen.findByRole('dialog', { name: 'Вид текста' });
+    fireEvent.click(within(look).getByRole('button', { name: 'А+ крупнее' }));
+    fireEvent.click(within(look).getByRole('radio', { name: 'Сепия' }));
+    fireEvent.click(within(document.querySelector<HTMLElement>('[data-shell-top-bar]')!).getByRole('button', { name: 'Заметка' }));
     const panel = await screen.findByRole('dialog', { name: 'Заметки' });
+    expect(await within(panel).findByLabelText('Ваша мысль')).toBeTruthy();
+    fireEvent.click(within(panel).getByRole('button', { name: 'К списку заметок' }));
     expect(await within(panel).findByRole('option', { name: /Проверить, кто первым назвал порт/ })).toBeTruthy();
     expect(text.isConnected).toBe(true);
     expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(within(panel).getByRole('button', { name: 'Закрыть заметки' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Заметки' })).toBeNull());
     expect(screen.getByRole('document')).toBe(text);
-    expect(controls.isConnected).toBe(true);
-    expect(document.querySelector('[data-display-size="large"][data-display-theme="sepia"]')).toBeTruthy();
-    fireEvent.click(within(controls).getByRole('button', { name: 'Режим фокуса' }));
-    expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({ focus: '1' }));
-    fireEvent.click(within(controls).getByRole('button', { name: 'Выйти из режима фокуса' }));
-    expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({ focus: undefined }));
+    expect(document.querySelector('[data-display-size="20"][data-display-theme="sepia"]')).toBeTruthy();
   });
 
   it.each([false, true])('captures native text in a personal draft without moving the Reader, viewer=%s', async (viewer) => {
@@ -72,14 +72,18 @@ describe('Reader with unified Notes', () => {
     const quote = selection.toString();
     fireEvent.pointerUp(paragraph);
     expect(screen.queryByText(/Выбран фрагмент/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'В заметки' }));
-    expect((await screen.findByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe(quote);
+    fireEvent.click(within(screen.getByRole('toolbar', { name: 'Действия с выделением' })).getByRole('button', { name: 'Заметка' }));
+    // The selected words are the quote of the note; its thought starts empty (specs/2026-11-11-ux7-notes.md NT1.2).
+    expect((await screen.findByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('');
+    expect(screen.getByRole('blockquote', { name: 'Цитата' }).textContent).toBe(paragraph.textContent);
     expect(body.isConnected).toBe(true);
     expect(navigate).not.toHaveBeenCalled();
     expect(createNote).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    // RD3.6: the note saved is a line of the one area of the root, not a bar over the page.
     await screen.findByText('Заметка сохранена');
-    expect(createNote).toHaveBeenCalledWith(expect.objectContaining({ body: quote, source: {
+    expect(quote.length).toBeGreaterThan(0);
+    expect(createNote).toHaveBeenCalledWith(expect.objectContaining({ body: '', source: {
       kind: 'chapter', quote: paragraph.textContent,
       locator: expect.objectContaining({ paragraphId: paragraph.dataset.paragraphId, targetView: 'published' }),
     } }), expect.anything());
@@ -90,37 +94,19 @@ describe('Reader with unified Notes', () => {
     await screen.findByRole('document');
     expect(document.querySelector('[data-paragraph-id="p-12-03"] mark')).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: 'Заметки' })).toBeNull();
-    expect(screen.queryByLabelText('Текст заметки')).toBeNull();
+    expect(screen.queryByLabelText('Ваша мысль')).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getAllByLabelText('Настройки чтения')[0]!).getByRole('button', { name: 'Режим фокуса' }));
+    fireEvent.click(within(document.querySelector<HTMLElement>('[data-reader-bar]')!).getByRole('button', { name: 'Аа' }));
     const target = navigate.mock.calls.at(-1)![1];
-    expect(target).toMatchObject({ paragraphId: 'p-12-03', expectedRevision: '7', focus: '1' });
+    expect(target).toMatchObject({ paragraphId: 'p-12-03', expectedRevision: '7', view: 'open' });
     for (const key of ['pane', 'note', 'notes', 'annotationId']) expect(target[key]).toBeUndefined();
   });
 
-  it('keeps an invalid legacy source visible instead of editing or choosing the first paragraph', async () => {
+  it('opens the chapter from its top for an invalid legacy source, without editing or lighting a paragraph', async () => {
     renderReader('pane=notes&note=edit&annotationId=missing&paragraphId=missing');
-    expect(await screen.findByText('Фрагмент больше не найден')).toBeTruthy();
-    expect(screen.queryByRole('document')).toBeNull();
-    expect(screen.queryByLabelText('Текст заметки')).toBeNull();
-  });
-
-  it('opens the same Notes from mobile and exposes appearance/focus through View', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-    renderReader();
-    const text = await screen.findByRole('document');
-    const actions = within(screen.getByLabelText('Мобильные действия чтения'));
-    fireEvent.click(actions.getByText('Заметки'));
-    const notes = await screen.findByRole('dialog', { name: 'Заметки' });
-    fireEvent.click(within(notes).getByRole('button', { name: 'Закрыть заметки' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Заметки' })).toBeNull());
-    fireEvent.click(actions.getByText('Вид'));
-    const appearance = within(await screen.findByRole('dialog', { name: 'Вид' }));
-    fireEvent.click(appearance.getByRole('radio', { name: 'Крупный' }));
-    fireEvent.click(appearance.getByRole('radio', { name: 'Тёмная' }));
-    fireEvent.click(appearance.getByRole('button', { name: 'Режим фокуса' }));
-    expect(appearance.getByRole('button', { name: 'Выйти из режима фокуса' })).toBeTruthy();
-    expect(text.isConnected).toBe(true);
-    expect(document.querySelector('[data-display-size="large"][data-display-theme="dark"][data-focus]')).toBeTruthy();
+    expect(await screen.findByText('Этого абзаца в главе больше нет — показываю главу с начала')).toBeTruthy();
+    expect(screen.getByRole('document')).toBeTruthy();
+    expect(document.querySelector('[role="document"] mark')).toBeNull();
+    expect(screen.queryByLabelText('Ваша мысль')).toBeNull();
   });
 });

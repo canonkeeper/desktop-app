@@ -1,14 +1,16 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { isApiStatusFailure, publicApiErrorMessage } from '../../../entities/api-errors';
 import {
-  authorMaterialKinds, type AuthorMaterialKind, type AuthorMaterialsApiClient, type UpdateAuthorMaterial,
+  authorMaterialKinds, createIdempotencyKey, type AuthorMaterialKind, type AuthorMaterialsApiClient, type CreateAuthorMaterial,
 } from '../../../entities/author-materials/api';
 import type { SagaMapNodeCard } from '../../../entities/saga/api';
+import { toHref } from '../../../shared/navigation/app-route';
 import { Button } from '../../../ui/controls/Button';
 import { Field } from '../../../ui/controls/Field';
 import { Select } from '../../../ui/controls/Select';
 import { Textarea } from '../../../ui/controls/Textarea';
 import { Alert } from '../../../ui/feedback/Alert';
+import { Confirm, deletionLines } from '../../../ui/overlays/Confirm';
 import { Dialog } from '../../../ui/overlays/Dialog';
 import { propertiesToText, textToProperties } from './properties-text';
 import { useMaterialsMutation } from './use-materials-mutation';
@@ -19,8 +21,14 @@ export type EditedMaterial = NonNullable<SagaMapNodeCard['material']>;
 
 const saveMessages = {
   forbidden: 'Менять материалы может редактор саги.',
-  conflict: 'Запись уже изменили или это имя занято. Закройте окно и откройте её снова.',
+  // MR2.3: what the author typed stays in the fields.
+  conflict: 'Запись изменили в другом окне. Ваш текст сохранён в поле — откройте запись заново и вставьте его.',
 };
+
+/** The record of a name another record has (MR2.3): the problem names it. */
+function takenName(error: unknown) {
+  return isApiStatusFailure(error) && error.problem.code === 'author_materials.name_taken';
+}
 
 interface DialogProps {
   api: AuthorMaterialsApiClient;
@@ -29,43 +37,60 @@ interface DialogProps {
   projectId: string;
 }
 
-/** «Править» a record (R9.6): everything it says, the properties as lines «Ключ: значение». */
-export function MaterialEditor({ api, material, onClose, projectId }: DialogProps) {
-  const [name, setName] = useState(material.name);
-  const [kind, setKind] = useState<AuthorMaterialKind>(material.kind);
-  const [description, setDescription] = useState(material.description);
-  const [properties, setProperties] = useState(propertiesToText(material.properties));
-  const save = useMaterialsMutation(projectId, (body: UpdateAuthorMaterial) => api.updateAuthorMaterial(projectId, material.id, body), (card, updated) => ({
+/**
+ * «Изменить» a record (R9.6), or «Записать самому» — a new one by hand (specs/2026-11-10-ux8-memory-records.md MR2.2): everything
+ * it says, the properties as lines «Ключ: значение». A name another record has is said at the field «Имя» with the way to that
+ * record in a tab of its own; the dialog stays with what the author typed.
+ */
+export function MaterialEditor({ api, material, onClose, projectId }: Omit<DialogProps, 'material'> & { material?: EditedMaterial }) {
+  const [name, setName] = useState(material?.name ?? '');
+  const [kind, setKind] = useState<AuthorMaterialKind>(material?.kind ?? 'character');
+  const [description, setDescription] = useState(material?.description ?? '');
+  const [properties, setProperties] = useState(propertiesToText(material?.properties ?? []));
+  const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
+  const save = useMaterialsMutation(projectId, (body: CreateAuthorMaterial) => {
+    if (material) return api.updateAuthorMaterial(projectId, material.id, { ...body, expectedRevision: material.revision });
+    // The same record sent again goes under the same replay key.
+    const fingerprint = JSON.stringify(body);
+    if (attempt.current?.fingerprint !== fingerprint) attempt.current = { fingerprint, key: createIdempotencyKey('createAuthorMaterial') };
+    return api.createAuthorMaterial(projectId, body, { idempotencyKey: attempt.current.key });
+  }, (card, updated) => ({
     ...card,
     material: card.material?.id === updated.id ? updated : card.material,
     namedIn: card.namedIn.map((record) => (record.id === updated.id ? { id: updated.id, name: updated.name, kind: updated.kind } : record)),
   }));
+  const taken = takenName(save.error);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     save.mutate({
-      name: name.trim(), kind, description: description.trim(), properties: textToProperties(properties), section: material.section,
-      expectedRevision: material.revision,
+      name: name.trim(), kind, description: description.trim(), properties: textToProperties(properties),
+      ...(material ? { section: material.section } : {}),
     }, { onSuccess: onClose });
   };
+  const title = material ? 'Изменить запись' : 'Новая запись';
   return (
-    <Dialog canDismiss={!save.isPending} label="Изменить запись" onDismiss={onClose} width={560}>
+    <Dialog canDismiss={!save.isPending} label={title} onDismiss={onClose} width={560}>
       <form className={styles.form} onSubmit={submit}>
-        <h2>Изменить запись</h2>
-        <Field label="Имя" maxLength={200} onChange={(event) => setName(event.target.value)} required value={name} />
+        <h2>{title}</h2>
+        <Field error={taken ? (
+          // specs/2026-11-11-ux8-map.md MP3.6: the record on the page of the memory, in a tab of its own — this form keeps its text.
+          <>Запись с таким именем уже есть — <a href={toHref('/memory', { projectId, part: 'materials', q: name.trim() })} rel="noopener" target="_blank"
+            title="Откроется в новой вкладке — набранное здесь останется">открыть её</a></>
+        ) : undefined} label="Имя" maxLength={200} onChange={(event) => setName(event.target.value)} required value={name} />
         <Select<AuthorMaterialKind> label="Что это" onValueChange={setKind} options={[...authorMaterialKinds]} value={kind} />
         <Textarea label="Описание" maxLength={8000} onChange={(event) => setDescription(event.target.value)} rows={6} value={description} />
         <Textarea hint="По одному на строку: «Ранг: Уникальный»." label="Свойства" onChange={(event) => setProperties(event.target.value)} rows={4} value={properties} />
-        {save.isError ? <Alert tone="error">{publicApiErrorMessage(save.error, 'Не удалось сохранить запись.', saveMessages)}</Alert> : null}
+        {save.isError && !taken ? <Alert tone="error">{publicApiErrorMessage(save.error, 'Не удалось сохранить запись.', saveMessages)}</Alert> : null}
         <div className={styles.actions}>
           <Button disabled={save.isPending} onClick={onClose} variant="ghost">Отмена</Button>
-          <Button disabled={save.isPending || !name.trim()} type="submit" variant="primary">Сохранить</Button>
+          <Button disabled={save.isPending} disabledReason={save.isPending || name.trim() ? null : 'Сначала напишите имя.'} type="submit" variant="primary">Сохранить</Button>
         </div>
       </form>
     </Dialog>
   );
 }
 
-/** «Удалить» a record (R9.6); onDeleted is for the card a record was all of. */
+/** «Удалить запись…» of a record (R9.6, PA3.1): it does not come back; onDeleted is for the card a record was all of. */
 export function MaterialDeletion({ api, material, onClose, onDeleted, projectId }: DialogProps & { onDeleted?: () => void }) {
   const remove = useMaterialsMutation(projectId, () => api.deleteAuthorMaterial(projectId, material.id, material.revision), (card) => ({
     ...card,
@@ -79,16 +104,10 @@ export function MaterialDeletion({ api, material, onClose, onDeleted, projectId 
   }, () => undefined);
   const gone = isApiStatusFailure(remove.error) && remove.error.status === 404;
   return (
-    <Dialog canDismiss={!remove.isPending} label="Удалить запись" onDismiss={onClose} width={560}>
-      <div className={styles.form}>
-        <h2>Удалить запись</h2>
-        <p>«{material.name}» уйдёт из ваших материалов. В книге ничего не изменится.</p>
-        {remove.isError ? <Alert tone="error">{gone ? 'Этой записи уже нет.' : publicApiErrorMessage(remove.error, 'Не удалось удалить запись.', saveMessages)}</Alert> : null}
-        <div className={styles.actions}>
-          <Button disabled={remove.isPending} onClick={onClose} variant="ghost">Отмена</Button>
-          <Button disabled={remove.isPending || gone} onClick={confirm} variant="danger">Удалить</Button>
-        </div>
-      </div>
-    </Dialog>
+    <Confirm action="Удалить запись" also="В книге ничего не изменится." busy={remove.isPending}
+      error={remove.isError ? (gone ? 'Этой записи уже нет.' : publicApiErrorMessage(remove.error, 'Не удалось удалить запись.', saveMessages)) : null}
+      irreversible onCancel={onClose} onConfirm={gone ? onClose : confirm} title={`Удалить запись «${material.name}»?`}>
+      {deletionLines.gone}
+    </Confirm>
   );
 }

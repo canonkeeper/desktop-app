@@ -112,7 +112,7 @@ func failure(t *testing.T, result agent.ToolResult) toolFailure {
 // a tool of the build (the site's saga.image) stands before the reading of the attached chapter, and the chat has no
 // tool that draws, chooses a variant, checks a drawing or sets a reference.
 func TestBundleOffersOnlySagaMemoryTools(t *testing.T) {
-	bundle := Bundle(readServiceStub{}, memoryStub{})
+	bundle := Bundle(readServiceStub{}, memoryStub{}, true)
 	var names []string
 	for _, spec := range bundle.Tools {
 		names = append(names, spec.Namespace+"."+spec.Name)
@@ -135,7 +135,7 @@ func TestBundleOffersOnlySagaMemoryTools(t *testing.T) {
 		Run: func(context.Context, service.ToolContext, json.RawMessage) (service.ToolOutput, error) {
 			return service.ToolOutput{Text: "ok\n"}, nil
 		}}
-	tools := Bundle(readServiceStub{}, memoryStub{}, extra).Tools
+	tools := Bundle(readServiceStub{}, memoryStub{}, true, extra).Tools
 	if last := tools[len(tools)-2:]; last[0].Name != "extra" || last[1].Name != "attachment" {
 		t.Fatalf("a tool of the build stands at %v", last)
 	}
@@ -144,7 +144,7 @@ func TestBundleOffersOnlySagaMemoryTools(t *testing.T) {
 // The chat skill reaches the model as developer instructions read from the repository profile:
 // Codex expands a $skill mention only in user input, so a mention in instructions loses the text.
 func TestBundleSkillIsTheRepositoryChatSkill(t *testing.T) {
-	skill := Bundle(readServiceStub{}, memoryStub{}).SkillName
+	skill := Bundle(readServiceStub{}, memoryStub{}, true).SkillName
 	body, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "codex-homes", "research-chat", "skills", skill, "SKILL.md"))
 	if skill == "" || err != nil || !strings.Contains(string(body), "name: "+skill) {
 		t.Fatalf("skill %q: %v", skill, err)

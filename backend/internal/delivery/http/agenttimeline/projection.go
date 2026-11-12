@@ -27,6 +27,7 @@ type Timeline interface {
 
 type Handlers struct {
 	timeline                   Timeline
+	places                     Places
 	currentUser                CurrentUserService
 	jobs                       JobAccessService
 	allowedOrigins             []string
@@ -62,7 +63,12 @@ type EventDTO struct {
 	FirstPhoto     int              `json:"firstPhoto,omitempty"`
 	SteerID        string           `json:"steerId,omitempty"`
 	Attachment     *AttachmentDTO   `json:"attachment,omitempty"`
-	Tool           *ToolDTO         `json:"tool,omitempty"`
+	// Button: a button of the page sent the question (specs/2026-11-11-ux9-writing-b.md WB3.3).
+	Button bool     `json:"button,omitempty"`
+	Tool   *ToolDTO `json:"tool,omitempty"`
+	// Places name the chapters of the keys the event shows — the arguments of its tool, the source links of its text —
+	// as the author reads them (specs/2026-11-10-ux1-names.md N2.1).
+	Places map[string]string `json:"places,omitempty"`
 }
 
 // AttachmentDTO is the card of the chapter attached to a question (specs/2026-11-07-chat-attach-chapter.md CA4.1).
@@ -107,21 +113,37 @@ type EnvelopeDTO struct {
 }
 
 func (handlers *Handlers) Snapshot(ctx context.Context, projectID, jobID string, cursor ...string) (SnapshotDTO, error) {
-	if handlers == nil || handlers.timeline == nil {
-		return SnapshotDTO{}, ErrUnavailable
-	}
 	if err := validateCursor(cursor); err != nil {
 		return SnapshotDTO{}, err
+	}
+	return handlers.snapshot(ctx, projectID, jobID, placeMemo{})
+}
+
+func (handlers *Handlers) snapshot(ctx context.Context, projectID, jobID string, memo placeMemo) (SnapshotDTO, error) {
+	if handlers == nil || handlers.timeline == nil {
+		return SnapshotDTO{}, ErrUnavailable
 	}
 	snapshot, err := handlers.timeline.Snapshot(ctx, projectID, jobID)
 	if err != nil {
 		return SnapshotDTO{}, err
 	}
-	return snapshotDTO(snapshot), nil
+	dto := snapshotDTO(snapshot)
+	if err := handlers.namePlaces(ctx, projectID, dto.Events, memo); err != nil {
+		return SnapshotDTO{}, err
+	}
+	return dto, nil
 }
 
 func (handlers *Handlers) Live(ctx context.Context, projectID, jobID string, cursor ...string) (EnvelopeDTO, error) {
-	snapshot, err := handlers.Snapshot(ctx, projectID, jobID, cursor...)
+	if err := validateCursor(cursor); err != nil {
+		return EnvelopeDTO{}, err
+	}
+	return handlers.live(ctx, projectID, jobID, placeMemo{})
+}
+
+// live is the snapshot a stream sends; memo is what the stream has named so far.
+func (handlers *Handlers) live(ctx context.Context, projectID, jobID string, memo placeMemo) (EnvelopeDTO, error) {
+	snapshot, err := handlers.snapshot(ctx, projectID, jobID, memo)
 	if err != nil {
 		return EnvelopeDTO{}, err
 	}
@@ -139,7 +161,7 @@ func snapshotDTO(snapshot domain.Snapshot) SnapshotDTO {
 			Cursor: eventCursor(event), ID: event.ID, JobID: event.JobID, Kind: event.Kind,
 			LogicalSection: event.LogicalSection, Outcome: event.Outcome, Phase: event.Phase,
 			ProviderItemID: event.ItemID, ProviderTurnID: event.TurnID, Role: string(event.Role), Text: event.Text,
-			Images: append([]int(nil), event.Images...), FirstPhoto: event.FirstPhoto, SteerID: event.SteerID,
+			Images: append([]int(nil), event.Images...), FirstPhoto: event.FirstPhoto, SteerID: event.SteerID, Button: event.Button,
 		}
 		if event.Attachment != nil {
 			mapped.Attachment = &AttachmentDTO{Number: event.Attachment.Number, Title: event.Attachment.Title, Words: event.Attachment.Words}

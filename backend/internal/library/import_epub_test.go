@@ -29,7 +29,7 @@ func TestParseEPUB(t *testing.T) {
 	if chapter.Title != "Chapter One" {
 		t.Fatalf("bad chapter title %q", chapter.Title)
 	}
-	if got := chapter.Paragraphs; len(got) != 2 || got[0] != "First paragraph." || got[1] != "Second paragraph." {
+	if got := textsOf(chapter.Paragraphs); len(got) != 2 || got[0] != "First paragraph." || got[1] != "Second paragraph." {
 		t.Fatalf("bad paragraphs %#v", got)
 	}
 }
@@ -64,15 +64,15 @@ func TestParseEPUBSplitsDocumentAtChapterHeadings(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ChapterImport{
-		{Title: "Книга. Часть первая. Глава I. Поездка", Paragraphs: []string{"Посвящение.", "Первый.", "Письмо,", "Второй."}},
-		{Title: "Глава II. Гроза", Paragraphs: []string{"Третий.", "Вывеска", "Четвёртый."}},
-		{Title: "Глава III.", Paragraphs: []string{"Пятый."}},
+		{Title: "Книга. Часть первая. Глава I. Поездка", Paragraphs: paragraphsOf("Посвящение.", "Первый.", "Письмо,", "Второй.")},
+		{Title: "Глава II. Гроза", Paragraphs: paragraphsOf("Третий.", "Вывеска", "Четвёртый.")},
+		{Title: "Глава III.", Paragraphs: paragraphsOf("Пятый.")},
 	}
 	if len(book.Chapters) != len(want) {
 		t.Fatalf("chapters = %#v, want %#v", book.Chapters, want)
 	}
 	for index, chapter := range book.Chapters {
-		if chapter.Title != want[index].Title || strings.Join(chapter.Paragraphs, "|") != strings.Join(want[index].Paragraphs, "|") {
+		if chapter.Title != want[index].Title || strings.Join(textsOf(chapter.Paragraphs), "|") != strings.Join(textsOf(want[index].Paragraphs), "|") {
 			t.Fatalf("chapter %d = %#v, want %#v", index, chapter, want[index])
 		}
 	}

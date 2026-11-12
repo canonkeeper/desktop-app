@@ -108,6 +108,8 @@ export function createContactOperations(context: MockRepositoryContext) {
     uploaderId: string | null, context_?: Schema<'FeedbackContextInput'>,
   ): MockFeedbackMessage {
     if (!draftKeyPattern.test(draftKey) || blocks.length === 0) throw invalid(operationId);
+    // The code for support of the error the window was opened from (specs/2026-11-10-ux2-contact.md CT1.3).
+    if (context_?.code !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u.test(context_.code)) throw invalid(operationId);
     const kept: MockFeedbackMessage['blocks'] = [];
     let runes = 0;
     const images: string[] = [];
@@ -146,7 +148,7 @@ export function createContactOperations(context: MockRepositoryContext) {
   }
 
   function subjectOf(topic: MockFeedbackThread['topic'], blocks: MockFeedbackMessage['blocks']) {
-    const labels = { bug: 'Ошибка', idea: 'Предложение', question: 'Вопрос', other: 'Другое' };
+    const labels = { bug: 'Ошибка', idea: 'Предложение', question: 'Вопрос', tariff: 'Тариф и ключ', other: 'Другое' };
     for (const block of blocks) {
       if (!('text' in block)) continue;
       const line = block.text.split('\n').map((value) => value.replace(/^- /, '').replace(/\*\*|_/g, '').trim()).find(Boolean);
@@ -214,7 +216,7 @@ export function createContactOperations(context: MockRepositoryContext) {
 
   async function createFeedbackThread(body: OperationRequest<'createFeedbackThread'>): Promise<OperationResponse<'createFeedbackThread', '201'>> {
     const user = ownUser('createFeedbackThread', false);
-    if (body.website || !['bug', 'idea', 'question', 'other'].includes(body.topic)) throw invalid('createFeedbackThread');
+    if (body.website || !['bug', 'idea', 'question', 'tariff', 'other'].includes(body.topic)) throw invalid('createFeedbackThread');
     const email = (body.email ?? '').trim() || user?.email || '';
     if (!emailPattern.test(email)) throw invalid('createFeedbackThread');
     const replayed = sentDraft(body.draftKey);

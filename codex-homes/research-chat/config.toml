@@ -1,4 +1,4 @@
-# Codex 0.165 would run the chat model from its built-in catalog: Responses Lite with one tool call
+# Codex 0.167.2 would run the chat model from its built-in catalog: Responses Lite with one tool call
 # per answer, code mode and terse answers. This catalog names no model in use, so the chat model runs
 # on Codex fallback metadata as it did on 0.153.4: saga tools called directly and in parallel, the
 # 1M window of the environment config (specs/2026-10-28-codex-0165.md).
@@ -25,9 +25,19 @@ enable_mcp_apps = false
 plugins = false
 tool_suggest = false
 sleep_tool = false
+# On by default since Codex 0.167: they let a thread start a turn by itself after turn/completed or start
+# explorers, workflows and agent worktrees; a turn of CanonKeeper ends at turn/completed.
+exec_exit_notifications = false
+workflows = false
+wake_on_agent_messages = false
+explorer_profile = false
+agent_worktree_isolation = false
 
+# The agents stay off. Were they turned on, their tools would come under the new namespace of Codex 0.167,
+# which it gives without tool_namespace only while agent_worktree_isolation is on.
 [features.multi_agent_v2]
 enabled = false
+tool_namespace = "agents"
 
 [agents]
 enabled = false

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": ["../bundle/canonkeeper-backend"],
+    "resources": {
+      "../bundle/postgres/": "postgres/",
+      "../bundle/codex/": "codex/",
+      "../bundle/codex-homes/": "codex-homes/"
+    }
+  }
+}

@@ -534,3 +534,42 @@ func TestQueueMissingLayersGoesThroughEveryVersion(t *testing.T) {
 		t.Fatalf("Execute() = %d, %v, queued %v", queued, err, store.queued)
 	}
 }
+
+// specs/2026-11-11-ux7-reorder.md RK2.3: the volumes put in another order make the threads due with no new card; the
+// build asks no volume again — its answer is bound to its chapters — and gathers the registry in the new order, the
+// moved volume under its new number.
+func TestAMoveOfTheVolumesGathersTheThreadsAgainWithoutAskingTheVolumes(t *testing.T) {
+	model, usage := newLayerModel(), &layerUsage{}
+	store, build := layerFixture(model, usage)
+	if _, err := build.RunForClaim(context.Background(), layerClaim, layerSubject); err != nil {
+		t.Fatal(err)
+	}
+	moved := layerVersion("h1")
+	chapters := append([]sagamemory.Chapter(nil), moved.Chapters...)
+	for i := range chapters {
+		chapters[i].BookOrder = 3 - chapters[i].BookOrder
+	}
+	moved = sagamemory.NewVersion(layerProjectID, "draft", "fp-moved", chapters)
+	store.stamps = stampsOf(moved)
+	queued, err := NewQueueDue(store).Execute(context.Background(), layerProjectID, "draft")
+	if err != nil || !queued {
+		t.Fatalf("the threads after a move of the volumes: queued %v, %v", queued, err)
+	}
+	again := NewBuildLayer(sagamemorytest.NewSaga(moved, nil, map[int]*sagamemory.Card{
+		0: layerCards()[2], 1: layerCards()[0], 2: layerCards()[1],
+	}), store, model, usage, "test-model", 4, nil)
+	model.calls, model.inputs = map[string]int{}, map[string][]string{}
+	if status, err := again.RunForClaim(context.Background(), layerClaim, layerSubject); err != nil || status != jobs.StatusSucceeded {
+		t.Fatalf("the build after the move = %q, %v", status, err)
+	}
+	if model.count("map") != 0 || model.count("reduce") != 1 {
+		t.Fatalf("calls after the move = %v", model.calls)
+	}
+	reduce := model.inputs["reduce"][0]
+	if !strings.HasPrefix(reduce, `{"open":[{"т":1,`) || !strings.Contains(reduce, `"Нить из ТОМ 2"`) {
+		t.Fatalf("the registry after the move is gathered from %s", reduce)
+	}
+	if books := store.stored.Layer.Books; len(books) != 2 || books[0].ID != "b2" || books[0].Order != 1 || books[1].Order != 2 {
+		t.Fatalf("the volumes of the build after the move = %+v", books)
+	}
+}

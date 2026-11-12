@@ -25,6 +25,16 @@ WHERE project_id = sqlc.arg(project_id)
   AND deleted_at IS NULL
 FOR SHARE;
 
+-- name: LockCurrentSourceChapters :many
+SELECT id, lifecycle_generation
+FROM chapters
+WHERE project_id = sqlc.arg(project_id)
+  AND book_id = sqlc.arg(book_id)
+  AND id = ANY(sqlc.arg(chapter_ids)::uuid[])
+  AND deleted_at IS NULL
+ORDER BY id
+FOR SHARE;
+
 -- name: LockCurrentSourceChaptersForBook :many
 SELECT id
 FROM chapters
@@ -122,28 +132,6 @@ ON CONFLICT (project_id, source_view, book_id) DO UPDATE
 SET project_lifecycle_generation = EXCLUDED.project_lifecycle_generation,
     book_lifecycle_generation = EXCLUDED.book_lifecycle_generation,
     title = EXCLUDED.title;
-
--- name: UpsertChapterSourceMember :exec
-INSERT INTO chapter_source_members (
-  project_id, source_view, project_lifecycle_generation,
-  book_id, book_lifecycle_generation,
-  chapter_id, chapter_lifecycle_generation, source_revision,
-  title, chapter_order
-)
-VALUES (
-  sqlc.arg(project_id), sqlc.arg(source_view), sqlc.arg(project_lifecycle_generation),
-  sqlc.arg(book_id), sqlc.arg(book_lifecycle_generation),
-  sqlc.arg(chapter_id), sqlc.arg(chapter_lifecycle_generation), sqlc.arg(source_revision),
-  sqlc.arg(title), sqlc.arg(chapter_order)
-)
-ON CONFLICT (project_id, source_view, chapter_id) DO UPDATE
-SET project_lifecycle_generation = EXCLUDED.project_lifecycle_generation,
-    book_id = EXCLUDED.book_id,
-    book_lifecycle_generation = EXCLUDED.book_lifecycle_generation,
-    chapter_lifecycle_generation = EXCLUDED.chapter_lifecycle_generation,
-    source_revision = EXCLUDED.source_revision,
-    title = EXCLUDED.title,
-    chapter_order = EXCLUDED.chapter_order;
 
 -- name: NormalizePublishedChapterOrder :exec
 WITH ordered AS (

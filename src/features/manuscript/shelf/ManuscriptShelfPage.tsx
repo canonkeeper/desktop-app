@@ -1,6 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { type ChangeEvent, type DragEvent, useEffect, useRef, useState } from 'react';
-import { invalidateAccountQuota } from '../../../entities/account-quota/api';
+import { useQuery } from '@tanstack/react-query';
+import { Upload } from 'lucide-react';
+import { sagaHasAnswerQueryOptions } from '../../../entities/chat/api';
+import { Button } from '../../../ui/controls/Button';
+import { LinkAction } from '../../../ui/controls/LinkAction';
+import { type ChangeEvent, useRef, useState } from 'react';
 import { publicApiErrorMessage } from '../../../entities/api-errors';
 import type { Book, BookExportFormat, ManuscriptApiClient } from '../../../entities/manuscript/api';
 import * as manuscriptApi from '../../../entities/manuscript/api';
@@ -8,93 +11,104 @@ import type { AppRoute, RouteNavigate } from '../../../shared/navigation/app-rou
 import { formatProjectMeta } from '../../../ui/copy';
 import { usePresence } from '../../../ui/overlays/use-presence';
 import { EmailVerificationNotice } from '../../../ui/feedback/EmailVerificationNotice';
-import { useAccountSession } from '../../../shared/session/account-session';
-import { useBookExportMutation, useCancelJobMutation, useImportQueuesQuery, useManuscriptJobQuery } from '../api';
-import { BookIndexingCard } from './BookIndexingCard';
+import { LongWork } from '../../../ui/feedback/LongWork';
+import { emailUnverifiedShort, useAccountSession } from '../../../shared/session/account-session';
+import { useBookExportMutation, useRecentlyDeletedQuery, useManuscriptJobQuery, useRestartIndexingMutation } from '../api';
 import { BookCoverEditor } from './BookCoverEditor';
-import { DeletedSourcesDialog } from './DeletedSourcesDialog';
+import { FirstScreen, firstSagaTitle } from './FirstScreen';
 import { FirstSteps, useFirstStep } from './FirstSteps';
-import { ImportQueueDialog } from './ImportQueueDialog';
+import { MoreHints } from './MoreHints';
+import { useReconcileFinishedQueue } from './useReconcileFinishedQueue';
 import { RejectedImportFiles } from './RejectedImportFiles';
+import { UploadOrderDialog } from './UploadOrderDialog';
+import { UploadCard } from './UploadCard';
+import { UploadLine, useUploadEnd } from './UploadLine';
+import { BookParseSummary } from './BookParseSummary';
+import { PageFileDropOverlay, usePageFileDrop } from './PageFileDrop';
+import { useUpload } from './useUpload';
+import { Confirm } from '../../../ui/overlays/Confirm';
+import { useSagaState } from './SagaState';
+import { bookStateOf, waitingLine } from '../../../entities/manuscript/preparation-copy';
 import { saveFile } from '../../../ui/save-file';
-import { BookActionMenu, ShelfBooks } from './ShelfBooks';
+import { BookActionMenu } from './BookActionMenu';
+import { DownloadDialog } from './BookDownload';
+import { useSagaSections } from '../../../ui/saga-sections';
+import { ShelfBooks } from './ShelfBooks';
 import { useBookFileUpdate } from './BookFileUpdate';
-import { ConfirmDelete, ConfirmProjectDelete } from './ShelfLayers';
-import { SearchPanel } from '../SearchPanel';
-import { chapterSearchDestination } from '../search-result-navigation';
+import { ConfirmDelete } from './ShelfLayers';
+import { useDeletedSagaToast } from './useDeletedSagaToast';
+import { useToasts } from '../../../ui/feedback/useToastQueue';
+import { noDemoOffer, noProofreadOffer, useShelfSlot } from './shelf-slot';
 import {
+  DeletedSagasEntry,
+  DemoSagaNotice,
   FirstProjectPanel,
   ShelfBooksHeader,
   ShelfHeader,
-  ShelfImportDropzone,
   type ShelfLoadStatus,
   ShelfStatusMessages,
   ProjectMissingState,
 } from './ShelfHeader';
 import { ShelfQuotaHints } from './ShelfQuotaHints';
-import { ShelfMobileNavigation, ShelfProjectMenu, ShelfTopBar, ShelfWorkspaceNavigation } from './ShelfNavigation';
+import { useAccountQuota } from '../../../entities/account-quota/api';
 import { useBookNavigation } from '../../../entities/manuscript/useBookNavigation';
-import { useNotes } from '../../../shared/notes/notes-context';
-import { useShelfSearch } from './useShelfSearch';
-import { useImportQueue } from './useImportQueue';
-import { useShelfBookActions } from './useShelfBookActions';
+import { readerHrefOf, useShelfBookActions } from './useShelfBookActions';
+import { useBookMove } from './useBookMove';
 import { useShelfProjectActions } from './useShelfProjectActions';
 import { useVoiceFirstSaga, useVoicePlace } from '../../../shared/navigation/voice-place';
-import { TopBarTalk } from '../../../ui/navigation/TopBarStrip';
-import {
-  activeJobBookId,
-  isActiveImportJob,
-  unfinishedIndexingBookId,
-} from './shelf-jobs';
+import { useShellActions } from '../../../ui/shell/shell-actions';
+import { isActiveImportJob, isActiveJob, isNewBookOnItsWay } from './shelf-jobs';
+import { updateLine } from './book-revert-words';
 import styles from './ManuscriptShelfPage.module.css';
 
-/** The saga «Поговорить» founds for an author without one: the voice asks him how to call it. */
-const firstSagaTitle = 'Моя сага';
+/** The books a saga takes by the counters of the account (SC1.8): null while they are not read or nothing is limited. */
+function sagaBooksLimit(quota: ReturnType<typeof useAccountQuota>['data'], projectId: string | null) {
+  const limit = quota?.ownedProjects.find((owned) => owned.projectId === projectId)?.sources.books?.limit ?? 0;
+  return limit > 0 ? limit : null;
+}
 
 interface ManuscriptShelfPageProps {
   api: ManuscriptApiClient;
   navigate: RouteNavigate;
-  onLogout?: () => void;
   route: AppRoute;
-  userName: string;
 }
 
+/**
+ * «Книги», the shelf: the books of the saga of the address, their preparation and upload. The top bar, the
+ * sections, the menu of the saga, «Поиск по книгам» and «Недавно удалённые» are the shell's
+ * (specs/2026-11-10-ux2-shell-core.md SC1.2); the shelf asks it for the windows it opens.
+ */
 export function ManuscriptShelfPage(props: ManuscriptShelfPageProps) {
   const projectRouteKey = props.route.query.get('projectId') ?? '';
   return <ManuscriptShelfProjectRoute key={projectRouteKey} {...props} />;
 }
 
-function ManuscriptShelfProjectRoute({ api, navigate, onLogout, route, userName }: ManuscriptShelfPageProps) {
-  const queryClient = useQueryClient();
+function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPageProps) {
   const requestedProjectId = route.query.get('projectId');
+  // An old address with `bookId` opens the shelf as usual: there is no chosen book (specs/2026-11-11-ux7-shelf.md SF1.2).
   const requestedBookId = route.query.get('bookId');
-  const [selectedBookId, setSelectedBookId] = useState(requestedBookId ?? '');
   const [notice, setNotice] = useState('');
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(route.query.get('menu') === 'open');
-  const [deletedSourcesOpen, setDeletedSourcesOpen] = useState(false);
-  const [projectDeleteOpen, setProjectDeleteOpen] = useState(false);
-  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [indexingCardDismissed, setIndexingCardDismissed] = useState(false);
+  // «Как разобралась книга» of the books it names (specs/2026-11-11-ux7-upload.md UP4.2).
+  const [summary, setSummary] = useState<string[] | null>(null);
+  // «Скачать книгу…» of a book: the window of the kind of its file (specs/2026-11-11-ux9-shelf-chat.md SC1.5).
+  const [downloading, setDownloading] = useState<Book | null>(null);
+  const drawingsHere = useSagaSections().includes('drawing');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const deletedSourcesTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const reconciledTerminalQueues = useRef(new Set<string>());
+  const shell = useShellActions();
+  const toasts = useToasts();
+  const announceDeleted = useDeletedSagaToast({ api, navigate, toasts });
   const shelfQuery = manuscriptApi.useManuscriptShelfQuery(api, { projectId: requestedProjectId });
   const workspace = shelfQuery.data;
   const projects = workspace?.projects ?? [];
   const project = workspace?.project ?? null;
   useVoicePlace(project?.id, { page: 'books' });
-  const currentProjectRole = manuscriptApi.projectRole(project);
-  const canDeleteProject = currentProjectRole === 'owner' || currentProjectRole === 'admin';
   const books = workspace?.books ?? [];
   const canEditManuscript = workspace?.canEditManuscript ?? false;
-  const notes = useNotes();
+  // The place of reading the author came back with from the reader: the book and its chapter (specs/2026-11-10-ux2-shell.md S2.2).
+  const readingChapterId = route.query.get('chapterId');
+  const readingBook = readingChapterId ? books.find((book) => book.id === requestedBookId) ?? null : null;
   const bookNavigation = useBookNavigation({
-    api, navigate, projectId: project?.id,
-    bookId: books.some((book) => book.id === requestedBookId) ? requestedBookId ?? undefined : undefined,
-    chapterId: route.query.get('chapterId') ?? undefined,
+    api, navigate, projectId: project?.id, bookId: readingBook?.id, chapterId: readingChapterId ?? undefined,
   });
   const jobs = workspace?.jobs ?? [];
   const status: ShelfLoadStatus = shelfQuery.isPending
@@ -105,243 +119,83 @@ function ManuscriptShelfProjectRoute({ api, navigate, onLogout, route, userName 
         ? 'ready'
         : 'empty';
   const sourceView = manuscriptApi.textSourceView;
+  // A new book on its way to the shelf by a single import (specs/2026-11-11-import-speed.md IS2.3).
+  const bookOnItsWay = jobs.some(isNewBookOnItsWay);
+  // The status of the saga the shelf, its line and the words of its books say (specs/2026-11-10-ux3-saga-state.md UC2);
+  // while a new book is put on the shelf and its text is indexed, it is read until the saga has text to read (IS2.2).
   const indexingStatusQuery = manuscriptApi.useIndexingStatusQuery(api, project?.id ?? '', {
-    enabled: Boolean(project),
+    enabled: Boolean(project), follow: true,
+    untilText: bookOnItsWay || jobs.some((job) => job.kind === 'canon_text_index' && isActiveJob(job)),
   });
-  const importQueuesQuery = useImportQueuesQuery(api, project?.id ?? '');
-  const latestImportQueue = [...(importQueuesQuery.data?.data ?? [])]
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+  // What the upload window says of readiness is what the server says of the saga (specs/2026-11-10-ux1-shelf.md UXS3.3). A
+  // reading that waits for the helper reads nothing: the books move, and the end of an upload says its line
+  // (specs/2026-11-12-desk-window.md WN3.2).
+  const sagaWaiting = waitingLine(indexingStatusQuery.data?.preparation);
+  const sagaPreparing = Boolean(indexingStatusQuery.data?.preparation && !sagaWaiting)
+    || indexingStatusQuery.data?.[sourceView]?.context?.state === 'processing';
+  // «Что ещё можно» in place of the steps, once the saga has its first answer (specs/2026-11-10-ux3-first-screen.md FS3.3).
+  const sagaHasAnswer = useQuery({
+    ...sagaHasAnswerQueryOptions(api, { projectId: project?.id ?? '', sourceView }),
+    enabled: Boolean(project) && canEditManuscript,
+  }).data === true;
+  // One way from a file to a book (specs/2026-11-11-ux7-upload.md): the upload is the server's queue and the files of this tab.
+  const upload = useUpload({ api, books, canEdit: canEditManuscript && !(project?.demo ?? false), projectId: project?.id ?? null });
+  const latestImportQueue = upload.latest;
   const terminalImportQueue = latestImportQueue
     && (latestImportQueue.status === 'failed' || latestImportQueue.status === 'succeeded' || latestImportQueue.status === 'canceled')
     ? latestImportQueue
     : null;
-  // Only the newest queue is active; an older failed one is history.
-  const activeImportQueue = latestImportQueue
-    && (latestImportQueue.status === 'uploading' || latestImportQueue.status === 'draft'
-      || latestImportQueue.status === 'running' || latestImportQueue.status === 'failed')
-    ? latestImportQueue
-    : null;
-  const activeImportQueueItem = activeImportQueue?.items.find((item) => item.id === activeImportQueue.currentItemId) ?? null;
-  const currentQueueBookId = activeImportQueueItem?.bookId ?? null;
-  const currentQueueJobId = activeImportQueueItem?.importJobId ?? null;
 
-  useEffect(() => {
-    if (!project || !terminalImportQueue) return;
-    const terminalKey = `${terminalImportQueue.id}:${terminalImportQueue.version}`;
-    if (reconciledTerminalQueues.current.has(terminalKey)) return;
-    reconciledTerminalQueues.current.add(terminalKey);
-    const jobIds = new Set(terminalImportQueue.items.map((item) => item.importJobId)
-      .filter((jobId): jobId is string => Boolean(jobId)));
-    void Promise.all([
-      invalidateAccountQuota(queryClient),
-      ...[...jobIds].map((jobId) => queryClient.invalidateQueries({
-        queryKey: manuscriptApi.manuscriptQueryKeys.job(jobId),
-        exact: true,
-      })),
-      queryClient.invalidateQueries({
-        queryKey: manuscriptApi.manuscriptQueryKeys.indexingStatus(project.id),
-        exact: false,
-      }),
-      // This route reads the shelf by `?projectId`, or without it for the default saga.
-      ...[...new Set([project.id, requestedProjectId])].map((shelfProjectId) => queryClient.invalidateQueries({
-        queryKey: manuscriptApi.manuscriptQueryKeys.shelf({ projectId: shelfProjectId }),
-        exact: true,
-      })),
-    ]);
-  }, [project, queryClient, requestedProjectId, terminalImportQueue]);
-  const routeMenuBookId = route.query.get('bookMenu') === 'open' ? route.query.get('bookId') ?? selectedBookId : null;
-  const routeMobileMenuOpen = route.query.get('menu') === 'open';
-
-  useEffect(() => {
-    setMobileMenuOpen(routeMobileMenuOpen);
-  }, [routeMobileMenuOpen]);
-
-  useEffect(() => {
-    if (requestedBookId !== null) setSelectedBookId(requestedBookId);
-  }, [requestedBookId]);
-
-  const selectedBook = books.find((book) => book.id === selectedBookId) ?? null;
-  const {
-    openSearchResult,
-    resetForProject,
-    runSearch,
-    searchCoverage,
-    searchError,
-    searchRequestId,
-    searchOpen,
-    searchResults,
-    searchScope,
-    searchStatus,
-    searchTerm,
-    searchTriggerRef,
-    setSearchOpen,
-    setSearchTerm,
-    selectSearchScope,
-  } = useShelfSearch({ api, book: selectedBook, navigate, project, sourceView });
-
-  useEffect(() => {
-    if (!workspace) return;
-    if (!workspace.canEditManuscript) resetForProject();
-    setSelectedBookId((current) => {
-      const preferredBook =
-        workspace.books
-          .filter((book) => book.status === 'ready')
-          .sort((left, right) => right.chapterCount - left.chapterCount || left.order - right.order)[0] ?? workspace.books[0];
-      if (requestedBookId !== null) return requestedBookId;
-      if (importQueuesQuery.isPending) return current;
-      const indexingBookId = unfinishedIndexingBookId(indexingStatusQuery.data, sourceView);
-      return currentQueueBookId
-        ?? indexingBookId
-        ?? workspace.books.find((book) => book.id === current)?.id
-        ?? preferredBook?.id
-        ?? '';
-    });
-  }, [
-    currentQueueBookId,
-    importQueuesQuery.data,
-    importQueuesQuery.isPending,
-    indexingStatusQuery.data,
-    requestedBookId,
-    resetForProject,
-    sourceView,
-    workspace,
-  ]);
+  useReconcileFinishedQueue({ projectId: project?.id ?? null, requestedProjectId, queue: terminalImportQueue });
 
   const explicitProjectMissing = requestedProjectId !== null
     && shelfQuery.data !== undefined
     && shelfQuery.data.project === null;
-  const explicitBookMissing = requestedBookId !== null
-    && shelfQuery.data?.project !== null
-    && shelfQuery.data?.books.every((book) => book.id !== requestedBookId) === true;
-  const chatProjectId = requestedProjectId ?? project?.id ?? undefined;
-  const firstStep = useFirstStep({
-    api, bookCount: books.length, canEdit: canEditManuscript, project,
-    loaded: !explicitProjectMissing && !explicitBookMissing && (status === 'empty' || status === 'ready'),
+  const shelfLoaded = !explicitProjectMissing && (status === 'empty' || status === 'ready');
+  const deletedSagaCount = useRecentlyDeletedQuery(api, shelfLoaded && !project).data?.sagas.total ?? 0;
+  const firstStepOfSaga = useFirstStep({
+    api, bookCount: books.length, canEdit: canEditManuscript, project, loaded: shelfLoaded,
   });
-  const currentQueuePreferredJobId = activeImportQueue?.status === 'running'
-    || activeImportQueue?.status === 'failed'
-    ? currentQueueJobId ?? undefined
-    : undefined;
-  // The active text index or cards Job of the project comes from the authoritative Jobs list;
-  // the project-wide status names books, not Jobs.
-  const activeIndexingJob = jobs.find((job) => (
-    (job.kind === 'canon_text_index' || job.kind === 'chapter_cards')
-    && (job.status === 'queued' || job.status === 'running' || job.status === 'canceling')
-  ));
+  // The demo saga of the site takes no books of the author (specs/2026-11-09-demo-saga.md DS4.2): its shelf has no
+  // upload, and «Три шага» — the steps to a saga of his own — are not about it.
+  const demo = project?.demo === true;
+  const firstStep = demo ? null : firstStepOfSaga;
+  const shelfSlot = useShelfSlot();
+  // The update of a book from a file in work closes a new upload and the deletion of its book; the reading of the saga
+  // after it is told by the status, not by Jobs (SS2.1).
   const activeBookUpdateJob = jobs.find((job) => manuscriptApi.isBookUpdateJob(job)
     && (job.status === 'queued' || job.status === 'running' || job.status === 'canceling'));
-  const exactPipelineJobId = currentQueuePreferredJobId ?? activeBookUpdateJob?.id ?? activeIndexingJob?.id ?? '';
-  const pipelineJobQuery = useManuscriptJobQuery(api, exactPipelineJobId, Boolean(exactPipelineJobId));
-  const indexingJob = pipelineJobQuery.data?.subject.projectId === project?.id ? pipelineJobQuery.data : null;
-  const activeJob = indexingJob
-    && (indexingJob.status === 'queued' || indexingJob.status === 'running' || indexingJob.status === 'canceling')
-    ? indexingJob
-    : null;
-  const activeBookJobFor = (bookId: string) => indexingJob && activeJobBookId(indexingJob) === bookId
-    ? indexingJob
-    : null;
-  const {
-    changeCover,
-    closeBookMenu,
-    closeCoverEditor,
-    coverEditorBook,
-    deleteBook,
-    deleteConfirmOpen,
-    deletingBook,
-    dismissDeleteConfirmation,
-    menuBookId,
-    menuPosition,
-    openBook,
-    openBookMenu,
-    requestDeleteBook,
-  } = useShelfBookActions({
+  const importJobId = activeBookUpdateJob?.id ?? '';
+  const importJobQuery = useManuscriptJobQuery(api, importJobId, Boolean(importJobId));
+  const importJob = importJobQuery.data?.subject.projectId === project?.id ? importJobQuery.data : null;
+  const activeImportJob = importJob && isActiveImportJob(importJob) ? importJob : null;
+  const bookActions = useShelfBookActions({
     api,
     books,
     jobs,
     canEditManuscript,
     navigate,
-    navigateManuscript,
-    routeMenuBookId,
-    selectedBook,
-    selectedBookId,
-    setNotice,
-    setSelectedBookId,
+    onDeleted: (book) => announceDeleted({ kind: 'book', id: book.id, projectId: book.projectId, title: book.title }),
+    toasts,
   });
-  const importQueue = useImportQueue({ api, canEditManuscript, projectId: project?.id ?? null });
   const bookUpdate = useBookFileUpdate({ api, canUpdate: canEditManuscript, onNotice: setNotice, projectId: project?.id ?? null });
-  const cancelJobMutation = useCancelJobMutation(api);
   const bookExport = useBookExportMutation(api);
   // An unverified address imports nothing: every import entry stays closed (UC1.4).
   const emailUnverified = Boolean(useAccountSession()?.emailVerification);
-  const importBlocked = emailUnverified || importQueue.isOpen || importQueue.operationPending
-    || Boolean(activeJob && isActiveImportJob(activeJob));
-  const {
-    deleteCurrentProject,
-    deletingProject,
-    createFirstProject,
-    creatingFirstProject,
-    handleRestoredSource,
-    renameCurrentProject,
-  } = useShelfProjectActions({
-    api,
-    navigate,
-    project,
-    resetForProject,
-    selectedBookId,
-    setNotice,
-    setProjectMenuOpen,
-    setSelectedBookId,
+  // The books of all sagas at their limit: the zone of a drop says so instead of calling for a file (PR2.7).
+  const quota = useAccountQuota(api, canEditManuscript).data;
+  const uploadRunning = Boolean(upload.queue) || upload.sending || Boolean(activeImportJob);
+  // Why «Добавить книги» and a drop on the page wait now (UP1.1, UP3.5).
+  const importReason = emailUnverified ? emailUnverifiedShort
+    : upload.blockedReason
+      ?? (activeImportJob || bookUpdate.busy ? 'Дождитесь, пока книга обновится из файла.' : null);
+  const importBlocked = Boolean(importReason);
+  // «Переставить…» and the drag of a card (specs/2026-11-11-ux7-reorder.md RK2): not while books are read or uploaded.
+  const bookMove = useBookMove({
+    api, books, canEdit: canEditManuscript, demo, reading: sagaPreparing, toasts,
+    uploading: uploadRunning || bookUpdate.busy || Boolean(activeBookUpdateJob),
   });
-  // A stopped import created no book to prepare: the import queue explains it, and the card
-  // returns to the selected book.
-  const displayedIndexingJob = indexingJob?.kind === 'import'
-    && (indexingJob.status === 'failed' || indexingJob.status === 'canceled')
-    ? null
-    : indexingJob;
-  const displayedActiveJob = displayedIndexingJob?.id === activeJob?.id ? activeJob : null;
-  const indexingJobSourceView = displayedIndexingJob?.subject.type === 'canon_text_index'
-    || displayedIndexingJob?.subject.type === 'chapter_cards'
-    ? displayedIndexingJob.subject.sourceView
-    : undefined;
-  const statusIndexingBookId = unfinishedIndexingBookId(
-    indexingStatusQuery.data,
-    indexingJobSourceView ?? sourceView,
-  );
-  const indexingBookId = displayedIndexingJob?.kind === 'canon_text_index' || displayedIndexingJob?.kind === 'chapter_cards'
-    ? statusIndexingBookId ?? selectedBook?.id ?? null
-    : displayedIndexingJob
-      ? activeJobBookId(displayedIndexingJob)
-      : selectedBook?.id ?? null;
-  const visibleJobForBook = (bookId: string) =>
-    activeBookJobFor(bookId) ?? (indexingJob &&
-      (activeJobBookId(indexingJob) === bookId || statusIndexingBookId === bookId) ? indexingJob : null);
-  const indexingQueueFileName = importQueue.rows.find((row) => (
-    row.bookId === indexingBookId || row.jobId === displayedIndexingJob?.id
-  ))?.fileName;
-  const indexingBookTitle =
-    (indexingBookId ? books.find((book) => book.id === indexingBookId)?.title : undefined) ??
-    indexingQueueFileName ??
-    selectedBook?.title ??
-    project?.title ??
-    'Текущая сага';
-  function navigateManuscript(
-    overrides: Record<string, string | undefined>,
-    options?: { replace?: boolean },
-  ) {
-    const query = {
-      projectId: requestedProjectId ?? project?.id ?? undefined,
-      bookId: requestedBookId ?? (selectedBookId || undefined),
-      indexing: route.query.get('indexing') ?? undefined,
-      menu: mobileMenuOpen ? 'open' : undefined,
-      bookMenu: menuBookId ? 'open' : undefined,
-      ...overrides,
-    };
-    if (options) {
-      navigate('/manuscript/books', query, options);
-    } else {
-      navigate('/manuscript/books', query);
-    }
-  }
+  const { createFirstProject, creatingFirstProject, foundFirstSaga, quotaRefusalOfNotice } = useShelfProjectActions({ api, navigate, setNotice });
 
   function chooseImportFile() {
     if (importBlocked) return;
@@ -356,20 +210,9 @@ function ManuscriptShelfProjectRoute({ api, navigate, onLogout, route, userName 
     fileInputRef.current?.click();
   }
 
-  function setNavigationMenuOpen(open: boolean) {
-    setMobileMenuOpen(open);
-    // Opening navigation must not bind a default project and remount its trigger.
-    navigateManuscript({
-      projectId: requestedProjectId ?? undefined,
-      bookId: requestedBookId ?? undefined,
-      menu: open ? 'open' : undefined,
-    });
-  }
-
-  function openImportFiles(files: readonly File[]) {
+  function openImportFiles(files: readonly File[], bookId: string | null = null) {
     if (importBlocked || !project || !canEditManuscript || files.length === 0) return;
-    setIndexingCardDismissed(false);
-    importQueue.openFiles(files);
+    void upload.choose(files, books.find((book) => book.id === bookId) ?? null);
   }
 
   function handleImportInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -378,366 +221,295 @@ function ManuscriptShelfProjectRoute({ api, navigate, onLogout, route, userName 
     openImportFiles(files);
   }
 
-  function handleDropZoneDrop(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    openImportFiles([...(event.dataTransfer.files ?? [])]);
-  }
+  // UP1.1: a file carried over any place of the shelf is taken there; the browser never opens it in place of the page.
+  const drop = usePageFileDrop({
+    blockedReason: importReason, enabled: Boolean(project) && !demo && !explicitProjectMissing,
+    onFiles: openImportFiles, onRefused: (reason) => toasts.push({ message: 'Книги сейчас не добавить', detail: reason, tone: 'warning' }),
+  });
+  const uploadEnd = useUploadEnd({
+    books, latest: latestImportQueue, onLook: setSummary, preparing: sagaPreparing, toasts, waiting: sagaWaiting,
+  });
 
-  async function downloadBook(book: Book, format: BookExportFormat) {
-    setNotice(`Готовим файл книги «${book.title}»…`);
+  async function downloadBook(book: Book, format: BookExportFormat, drawings: boolean) {
+    // While the file is made, the line of the long work stands in the place of the notice (PS3.3); its end is a toast (PA1.1).
     try {
-      const file = await bookExport.mutateAsync({ bookId: book.id, format });
+      const file = await bookExport.mutateAsync({ bookId: book.id, format, drawings });
       saveFile(file);
-      setNotice(`Скачано: ${file.fileName}`);
+      toasts.push({ message: `Скачано: ${file.fileName}`, tone: 'success' });
     } catch (error) {
-      setNotice(publicApiErrorMessage(error, 'Не удалось скачать книгу. Попробуйте снова.', {
-        codes: { 'book_export.empty': 'В этой книге пока нет текста: скачивать нечего.' },
-        forbidden: 'Скачать книгу может её владелец, администратор или редактор.',
-      }));
+      toasts.push({
+        message: 'Книга не скачалась',
+        detail: publicApiErrorMessage(error, 'Не удалось скачать книгу. Попробуйте снова.', {
+          codes: { 'book_export.empty': 'В этой книге пока нет текста: скачивать нечего.' },
+          forbidden: 'Скачать книгу может её владелец, администратор или редактор.',
+        }),
+        tone: 'error',
+      });
     }
   }
 
-  async function cancelActiveJob() {
-    if (!activeJob || cancelJobMutation.isPending || importQueue.operationPending || !canEditManuscript) return;
-    const copy = activeJob.kind === 'import'
-      ? { pending: 'Отменяем импорт...', success: 'Импорт отменен, контекст полки сохранен.', failure: 'Не удалось отменить импорт.' }
-      : { pending: 'Отменяем подготовку…', success: 'Подготовка отменена.', failure: 'Не удалось отменить подготовку.' };
-    setNotice(copy.pending);
-    try {
-      if (activeJob.kind === 'import') {
-        if (!await importQueue.cancel()) {
-          setNotice(copy.failure);
-          return;
-        }
-      } else {
-        await cancelJobMutation.mutateAsync(activeJob.id);
-      }
-      setNotice(copy.success);
-    } catch (error) {
-      setNotice(publicApiErrorMessage(error, copy.failure));
-    }
-  }
-
-  const importZone = !explicitProjectMissing && !explicitBookMissing ? <ShelfImportDropzone
-    active={dragActive}
-    disabled={!project || !canEditManuscript || importBlocked}
-    onChooseFile={chooseImportFile}
-    onDrop={handleDropZoneDrop}
-    onSetActive={setDragActive}
-  /> : null;
-  const createProject = (title: string) => createFirstProject(title).then((created) => {
-    if (created) setProjectCreateOpen(false);
-    return created;
+  // The first steps call for the books with the same entry as the top of the shelf (UP1.1): there is no zone of their own.
+  const addBooks = !explicitProjectMissing ? (
+    <div className={styles.addBooks}>
+      <Button disabledReason={importReason} onClick={chooseImportFile} variant="primary">
+        <Upload aria-hidden="true" size={16} />Добавить книги
+      </Button>
+      <span>или перетащите файлы на страницу</span>
+    </div>
+  ) : null;
+  // «Попробовать на примере» of the site stands on a shelf without a book (specs/2026-11-09-demo-saga.md DS1.1), and
+  // stays while the example is being opened, whatever the shelf shows by then.
+  const useDemoOffer = shelfSlot?.useDemoOffer ?? noDemoOffer;
+  const offer = useDemoOffer({ emailUnverified, onOpenSaga: (projectId) => navigate('/manuscript/books', { projectId }) });
+  const demoOffer = offer.preparing || (shelfLoaded && !demo && books.length === 0) ? offer.element : null;
+  // «Вычитать мою главу» of a build with «Письмо» (specs/2026-11-10-ux3-first-screen.md FS1.2, FS1.5): the first screen
+  // founds «Моя сага» for it; the card stays under the steps until the saga has a book.
+  const useProofreadOffer = shelfSlot?.useProofreadOffer ?? noProofreadOffer;
+  const proofreadOffer = useProofreadOffer({
+    projectId: project?.id ?? null,
+    emailUnverified,
+    foundSaga: () => foundFirstSaga(firstSagaTitle),
+    onOpenDraft: (projectId, draftId) => navigate('/writing', { projectId, draft: draftId, tab: 'check' }),
   });
   useVoiceFirstSaga(workspace && projects.length === 0 ? () => createFirstProject(firstSagaTitle) : null);
-  const projectTitle = explicitProjectMissing ? 'Сага не найдена' : project?.title ?? 'Сага';
   const projectMeta = explicitProjectMissing ? 'Сага недоступна' : formatProjectMeta(project);
-  const menuBook = books.find((book) => book.id === menuBookId) ?? selectedBook;
+  const exportingBook = bookExport.isPending ? books.find((book) => book.id === bookExport.variables?.bookId) : undefined;
+  const sagaReading = useSagaState({
+    api, books, canEdit: canEditManuscript, jobs, projectId: project?.id ?? '',
+    // The file of a volume the server reads now: the line of the reading names it while it is parsed (SS2.1).
+    fileName: upload.volumes.find((volume) => volume.state === 'loading')?.fileName ?? null,
+    onAskQuestion: () => navigate('/chat', { projectId: project?.id }),
+    // A reader opens the book he read last, else the first one (SC1.2).
+    onRead: books.length ? () => bookActions.openBook(readingBook ?? books[0]!) : undefined,
+  });
+  // UP3.1: one line of the saga over the books — the upload over the reading.
+  const uploadLineElement = <UploadLine end={uploadEnd.end} onLook={uploadEnd.look} upload={upload} />;
+  const sagaState = <>{uploadLineElement}{sagaReading}</>;
+  const sagaStateShown = Boolean(sagaReading) || Boolean(upload.line || upload.stopped || uploadEnd.end || upload.failure);
+  const summaryBooks = summary ? books.filter((book) => summary.includes(book.id)) : [];
+  const sourceNames = Object.fromEntries((latestImportQueue?.items ?? [])
+    .filter((item) => item.bookId).map((item) => [item.bookId!, item.sourceFileName]));
 
-  const searchPresence = usePresence(searchOpen);
-  const bookMenuPresence = usePresence(menuBookId && menuBook ? menuBook : null);
-  const mobileMenuPresence = usePresence(mobileMenuOpen);
-  const deletePresence = usePresence(deleteConfirmOpen && selectedBook ? selectedBook : null);
-  const projectDeletePresence = usePresence(projectDeleteOpen && project ? project : null);
-  const lastMenuPosition = useRef(menuPosition);
-  if (menuPosition) {
-    lastMenuPosition.current = menuPosition;
+  const bookMenuPresence = usePresence(bookActions.menuBook);
+  // «Что изменилось» of the last update of a book from a file, for the 7 days the server keeps it (specs/2026-11-12-ux10-book-revert.md BR3.1).
+  const openChanges = (book: Book) => shell.openBookChanges({ bookId: book.id, projectId: book.projectId, jobId: book.update?.jobId ?? undefined });
+  const deletePresence = usePresence(bookActions.deleteTarget);
+  const lastMenuAnchor = useRef(bookActions.menuAnchor);
+  if (bookActions.menuAnchor) lastMenuAnchor.current = bookActions.menuAnchor;
+  // «Дочитать» of a book is the restart of the reading of the saga, the one of its line (SF2.2).
+  const restart = useRestartIndexingMutation(api);
+  // Why «Новая версия из файла…» and «Удалить книгу…» of a book wait now (specs/2026-11-10-ux2-patterns-refusals.md PR1.1).
+  const updateReasonOf = (book: Book) => bookActions.isBookUpdating(book.id) ? 'Книга уже обновляется из файла.'
+    : emailUnverified ? emailUnverifiedShort
+      : uploadRunning || bookUpdate.busy ? 'Пока идёт загрузка книг — новую версию можно будет выбрать после неё.' : null;
+  // UP3.5: while books are uploaded no book of the saga is deleted — the server holds the places of the volumes.
+  const deleteReasonOf = (book: Book) => bookActions.isBookUpdating(book.id) ? 'Пока книга обновляется из файла, удалить её нельзя.'
+    : upload.queue ? 'Пока идёт загрузка книг, удалить книгу нельзя — дождитесь её конца.' : null;
+
+  // Before the first saga — one screen with its ways in (specs/2026-11-10-ux3-first-screen.md FS1.2).
+  if (firstStep === 1) {
+    return (
+      <div className={styles.content}>
+        <FirstScreen
+          createSaga={<FirstProjectPanel creating={creatingFirstProject} onCreate={createFirstProject} stacked />}
+          example={demoOffer}
+          proofread={proofreadOffer}
+        />
+        <ShelfStatusMessages emptySaga={false} error={null} notice={notice} noticeRefusal={quotaRefusalOfNotice(notice)}
+          onRetry={() => void shelfQuery.refetch()} retrying={false} status="empty" />
+        {/* UXS4.1: an author without a saga finds the sagas he deleted. */}
+        {deletedSagaCount > 0 ? <DeletedSagasEntry count={deletedSagaCount} onOpen={shell.openDeleted} /> : null}
+      </div>
+    );
   }
 
   return (
-    <main className={styles.workspace}>
-      <ShelfTopBar
-        accountMenuOpen={accountMenuOpen}
-        onDismissAccountMenu={() => setAccountMenuOpen(false)}
-        onLogout={onLogout}
-        onOpenMobileMenu={() => setNavigationMenuOpen(true)}
-        onOpenSearch={() => setSearchOpen(true)}
-        onToggleAccountMenu={() => setAccountMenuOpen((value) => !value)}
-        searchTriggerRef={searchTriggerRef}
-        talk={<TopBarTalk />}
-        userName={userName}
-      />
-
-      {searchPresence.mounted ? (
-        <SearchPanel
-          api={api}
-          onOpenChapter={(locator) => {
-            setSearchOpen(false);
-            const destination = chapterSearchDestination(locator);
-            navigate(destination.path, destination.query);
-          }}
-          coverage={searchCoverage}
-          bookName={selectedBook?.title}
-          bookScopeDisabled={!selectedBook}
-          scope={searchScope}
-          searchRequestId={searchRequestId}
-          state={searchPresence.status}
-          onClose={() => {
-            setSearchOpen(false);
-            searchTriggerRef.current?.focus();
-          }}
-          onOpenResult={openSearchResult}
-          onRunSearch={(event) => {
-            event?.preventDefault();
-            void runSearch();
-          }}
-          results={searchResults}
-          returnFocusRef={searchTriggerRef}
-          searchError={searchError}
-          searchStatus={searchStatus}
-          searchTerm={searchTerm}
-          sourceView={sourceView}
-          setScope={selectSearchScope}
-          setSearchTerm={setSearchTerm}
-          title="Поиск по книгам"
-          variant="shelf"
-        />
-      ) : null}
-
-      {bookNavigation.picker}
-      <div className={styles.body}>
-        <ShelfWorkspaceNavigation
-          onOpenReader={bookNavigation.onOpenReader}
-          onOpenNotes={() => navigate('/notes')}
-          onOpenSaga={() => navigate('/saga', { projectId: chatProjectId })}
-          onOpenWriting={() => navigate('/writing', { projectId: chatProjectId })}
-          onOpenDrawing={() => navigate('/drawing', { projectId: chatProjectId })}
-          onOpenGallery={() => navigate('/gallery', { projectId: chatProjectId })}
-          onCreateNote={notes ? () => notes.capture({ body: '' }) : undefined}
-          onOpenChat={() => navigate('/chat', { projectId: chatProjectId })}
-          onOpenManuscript={() => navigate('/manuscript/books', {
-            projectId: project?.id ?? undefined,
-            bookId: selectedBook?.id,
-          })}
-          onOpenProjectMenu={() => setProjectMenuOpen((value) => !value)}
-          projectMeta={projectMeta}
-          projectTitle={projectTitle}
-        />
-
+    <>
         <section className={styles.content} aria-label="Книги саги">
           {explicitProjectMissing ? null : <ShelfHeader
-            canEditManuscript={!explicitBookMissing && canEditManuscript}
+            canEditManuscript={canEditManuscript}
+            demo={demo}
             fileInputRef={fileInputRef}
             importBlocked={importBlocked}
+            importReason={importReason ?? undefined}
             onChooseImportFile={chooseImportFile}
             onImportInputChange={handleImportInputChange}
-            onOpenImportQueue={() => importQueue.show?.()}
-            projectExists={!explicitBookMissing && Boolean(project)}
+            projectExists={Boolean(project)}
             projectMeta={projectMeta}
-            projectTitle={project || status !== 'empty' ? projectTitle : 'Добро пожаловать'}
-            showActions={!explicitBookMissing}
-            showOpenImportQueue={!explicitBookMissing && importQueue.canReopen === true}
+            continueReading={readingBook ? { book: readingBook.title, onOpen: bookNavigation.onOpenReader } : undefined}
+            materials={project ? <>
+              {shelfSlot?.materialsFromFiles ? 'Навыки, места и герои из таблиц — в ' : 'Навыки, места и герои — в '}
+              <LinkAction onClick={() => navigate('/memory', { projectId: project.id, part: 'materials' })}>«Ваши материалы»</LinkAction>
+            </> : undefined}
           />}
-          {explicitProjectMissing || explicitBookMissing || !canEditManuscript ? null
+          {explicitProjectMissing || !canEditManuscript || demo ? null
             : <ShelfQuotaHints api={api} projectId={project?.id ?? null} />}
 
           {explicitProjectMissing ? (
-            <ProjectMissingState
-              onOpenChat={() => navigate('/chat')}
-              onOpenLibrary={() => navigate('/manuscript/books', {})}
-            />
-          ) : explicitBookMissing ? (
-            <p className={styles.notice}>Книга недоступна или не найдена</p>
+            <ProjectMissingState onChoose={(id) => navigate('/manuscript/books', { projectId: id })} onCreate={shell.openNewSaga} sagas={projects} />
           ) : <ShelfStatusMessages
-            emptySaga={Boolean(project) && firstStep === null}
+            emptySaga={Boolean(project) && firstStep === null && !demo && !bookOnItsWay && upload.volumes.length === 0}
             error={shelfQuery.isError && !workspace ? shelfQuery.error : null}
-            importQueueActive={Boolean(activeImportQueue && !importQueue.isDialogVisible)}
-            notice={notice}
+            notice={notice || (bookUpdate.working ?? '')}
+            noticeRefusal={quotaRefusalOfNotice(notice)}
             onRetry={() => void shelfQuery.refetch()}
             retrying={shelfQuery.isRefetching}
             status={status}
+            work={exportingBook ? <LongWork label={`Готовим файл книги «${exportingBook.title}»`} title={`Готовим файл книги «${exportingBook.title}»`} /> : undefined}
           />}
-          {importQueue.isOpen ? null : <RejectedImportFiles files={importQueue.rejectedFiles} onDismiss={importQueue.dismiss} />}
-          {projectCreateOpen && firstStep !== 1 ? (
-            <FirstProjectPanel creating={creatingFirstProject} heading={<h2>Новая сага</h2>} onCreate={createProject} />
+          <RejectedImportFiles files={upload.refused.map((file) => ({ fileName: file.file.name, message: file.reason }))}
+            onChoose={chooseImportFile} onDismiss={upload.dismissRefused} />
+          {/* The steps, and once the saga has answered, what else it can (FS3.3); the example takes no hints of its own. */}
+          {!firstStep && project && sagaHasAnswer && canEditManuscript && !demo ? (
+            <MoreHints authorId={project.currentMembership.userId} onOpen={(path) => navigate(path, { projectId: project.id })} />
           ) : null}
           {firstStep ? <FirstSteps
+            ways={firstStep === 2 && (demoOffer || proofreadOffer) ? <>{demoOffer}{proofreadOffer}</> : null}
             bookCount={books.length}
-            createSaga={<FirstProjectPanel creating={creatingFirstProject} onCreate={createProject} />}
+            sagaBooks={sagaBooksLimit(quota, project?.id ?? null)}
             onAskFirstQuestion={() => navigate('/chat', { projectId: project?.id })}
             projectTitle={project?.title ?? null}
             step={firstStep}
             textReady={indexingStatusQuery.data?.[sourceView]?.exists === true}
-            uploadBooks={emailUnverified ? <EmailVerificationNotice surface="shelf" /> : importZone}
+            sagaState={firstStep === 3 && sagaStateShown ? sagaState : null}
+            uploadBooks={<>{emailUnverified ? <EmailVerificationNotice /> : addBooks}{firstStep === 2 ? sagaState : null}</>}
           /> : null}
-          {project && !explicitBookMissing && !indexingCardDismissed && (
-            displayedIndexingJob || (selectedBook && selectedBook.wordCount > 0)
-          ) ? (
-            <BookIndexingCard
-              api={api}
-              bookId={indexingBookId}
-              bookPendingCreation={Boolean(displayedIndexingJob?.kind === 'import' && indexingBookId === null)}
-              bookTitle={indexingBookTitle}
-              books={books}
-              canCancel={Boolean(displayedActiveJob?.canCancel && canEditManuscript && !importQueue.operationPending)}
-              canceling={cancelJobMutation.isPending || importQueue.operationPending}
-              canEditManuscript={canEditManuscript}
-              jobSourceView={indexingJobSourceView}
-              onAskQuestion={() => navigate('/chat', { projectId: project.id })}
-              onCancel={displayedActiveJob?.canCancel && canEditManuscript && !importQueue.operationPending ? () => void cancelActiveJob() : undefined}
-              onDismiss={() => setIndexingCardDismissed(true)}
-              projectId={project.id}
-              sourceView={sourceView}
-            />
-          ) : null}
+          {/* SS2.1, SS2.5: one block of the state of the saga over the books; while the first steps go, it stands in them. */}
+          {firstStep === 2 || firstStep === 3 ? null : sagaState}
 
-          {project && !explicitBookMissing ? <ShelfBooksHeader /> : null}
-          {!explicitProjectMissing && !explicitBookMissing ? <ShelfBooks
-            indexingJobFor={visibleJobForBook}
+          {project ? <ShelfBooksHeader /> : null}
+          {!explicitProjectMissing ? <ShelfBooks
             books={books}
-            onOpenMenu={openBookMenu}
-            onOpenReader={(book) => void openBook(book)}
-            onSelectBook={(bookId) => {
-              setSelectedBookId(bookId);
-              navigateManuscript({ bookId });
+            finishing={restart.isPending}
+            hrefOf={readerHrefOf}
+            onFinish={() => restart.mutate({ projectId: project?.id ?? '', sourceView }, {
+              onError: (error) => toasts.push({
+                message: 'Не удалось дочитать', detail: publicApiErrorMessage(error, 'Попробуйте ещё раз.'), tone: 'error',
+              }),
+            })}
+            onChanges={openChanges}
+            onOpen={bookActions.openBook}
+            onOpenMenu={bookActions.openBookMenu}
+            move={bookMove.available ? { onDrop: bookMove.drop, reason: bookMove.reason, refuse: bookMove.refuse } : null}
+            fileOver={importReason ? null : drop.overBook}
+            onRename={bookActions.rename}
+            onRenameEnd={bookActions.endRename}
+            renaming={bookActions.renaming}
+            stateOf={(book) => bookStateOf(book, indexingStatusQuery.data, bookActions.isBookUpdating(book.id))}
+            upload={{
+              queue: upload.queue, volumes: upload.volumes,
+              card: (volume, shape) => (
+                <UploadCard api={api} onFile={(itemId, file) => void upload.replaceFile(itemId, file)} onSkip={(itemId) => void upload.skip(itemId)}
+                  quota={quota} shape={shape} skipping={upload.skipping === volume.itemId} volume={volume} />
+              ),
             }}
-            selectedBookId={selectedBookId}
           /> : null}
 
-          {/* The first steps hold the drop zone until the saga has a book (R2.1.2). */}
-          {firstStep === 1 || firstStep === 2 ? null : <>
-            {!explicitProjectMissing && !explicitBookMissing && canEditManuscript ? <EmailVerificationNotice surface="shelf" /> : null}
-            {importZone}
-          </>}
+          {firstStep === 2 ? null : demo ? (
+            <DemoSagaNotice credit={shelfSlot?.demoCredit} onCreateSaga={shell.openNewSaga} />
+          ) : !explicitProjectMissing && canEditManuscript ? <EmailVerificationNotice /> : null}
+          {firstStep === 2 ? null : demoOffer}
         </section>
-      </div>
 
-      <ShelfProjectMenu
-        canManageProject={canDeleteProject}
-        canOpenDeletedSources={!explicitBookMissing && canEditManuscript}
-        currentProject={project}
-        deletedSourcesTriggerRef={deletedSourcesTriggerRef}
-        onCreateProject={() => {
-          setProjectMenuOpen(false);
-          setProjectCreateOpen(true);
-        }}
-        onDismiss={() => setProjectMenuOpen(false)}
-        onOpenDeletedSources={() => setDeletedSourcesOpen(true)}
-        onRenameProject={renameCurrentProject}
-        onRequestDeleteProject={() => {
-          setProjectMenuOpen(false);
-          setProjectDeleteOpen(true);
-        }}
-        onSelectProject={(projectId) => {
-          setProjectMenuOpen(false);
-          navigate('/manuscript/books', { projectId });
-        }}
-        open={projectMenuOpen}
-        projects={projects}
-      />
-
-      {importQueue.isOpen ? (
-        <ImportQueueDialog
-          books={books}
-          onOpenItem={(row) => {
-            if (!row.bookId) return;
-            navigateManuscript({
-              projectId: project?.id,
-              bookId: row.bookId,
-            });
+      <PageFileDropOverlay blockedReason={importReason} book={books.find((book) => book.id === drop.overBook)?.title} over={drop.over} />
+      {upload.order ? (
+        <UploadOrderDialog books={books} busy={upload.sending} onClose={upload.closeOrder} onReplaceRefused={upload.replaceRefused}
+          onRows={upload.setOrderRows} onSend={(rows) => void upload.sendRows(rows)} refused={upload.order.refused}
+          room={upload.room} rows={upload.order.rows} />
+      ) : null}
+      {upload.question ? (
+        <Confirm
+          action="Заменить"
+          alternative={{ label: 'Добавить новой', onClick: upload.addAnyway }}
+          consent="no"
+          onCancel={upload.dismissQuestion}
+          onConfirm={() => {
+            const { book, file } = upload.question!;
+            upload.dismissQuestion();
+            bookUpdate.read(book, file.file);
           }}
-          queue={importQueue}
-        />
+          title={upload.question.cover
+            ? `Заменить «${upload.question.book.title}» этим файлом или добавить новой книгой?`
+            : `«${upload.question.book.title}» уже есть в саге. Заменить её этим файлом или добавить новой книгой?`}
+        >
+          «Заменить» покажет, что изменится в книге, — до вашего «Обновить книгу» она не меняется.
+        </Confirm>
+      ) : null}
+      {summary && summaryBooks.length > 0 ? (
+        <BookParseSummary api={api} books={summaryBooks} onClose={() => setSummary(null)}
+          onRead={(book) => { setSummary(null); bookActions.openBook(book); }}
+          onRename={(book) => bookActions.startRename(book)} sourceNames={sourceNames} toasts={toasts} />
       ) : null}
 
       {bookMenuPresence.mounted && bookMenuPresence.value ? (
         <BookActionMenu
+          anchor={bookActions.menuAnchor ?? lastMenuAnchor.current}
           book={bookMenuPresence.value}
-          canEditManuscript={canEditManuscript}
-          indexingJob={visibleJobForBook(bookMenuPresence.value.id)}
-          onChangeCover={() => void changeCover(bookMenuPresence.value!)}
-          onClose={closeBookMenu}
-          onDelete={() => requestDeleteBook(bookMenuPresence.value!.id)}
-          onDownload={(format) => {
+          canEdit={canEditManuscript}
+          deleteReason={deleteReasonOf(bookMenuPresence.value)}
+          onChangeCover={() => bookActions.changeCover(bookMenuPresence.value!)}
+          onClose={bookActions.closeBookMenu}
+          onDelete={() => bookActions.requestDeleteBook(bookMenuPresence.value!)}
+          onDownload={() => {
             const book = bookMenuPresence.value!;
-            closeBookMenu();
-            void downloadBook(book, format);
+            bookActions.closeBookMenu();
+            setDownloading(book);
           }}
-          onOpenRead={() => void openBook(bookMenuPresence.value!)}
-          onUpdateFromFile={() => {
+          moveReason={bookMove.reason}
+          onMove={bookMove.available ? () => {
             const book = bookMenuPresence.value!;
-            closeBookMenu();
+            bookActions.leaveMenu();
+            bookMove.open(book, bookActions.menuTrigger);
+          } : undefined}
+          onParseSummary={() => {
+            const book = bookMenuPresence.value!;
+            bookActions.closeBookMenu();
+            setSummary([book.id]);
+          }}
+          onReadFromStart={() => bookActions.readFromStart(bookMenuPresence.value!)}
+          onRename={() => bookActions.startRename(bookMenuPresence.value!)}
+          onUpdateFromFile={demo ? undefined : () => {
+            const book = bookMenuPresence.value!;
+            bookActions.closeBookMenu();
             bookUpdate.choose(book);
           }}
-          position={menuPosition ?? lastMenuPosition.current}
           state={bookMenuPresence.status}
-          updateDisabled={importBlocked || bookUpdate.busy}
+          updated={bookMenuPresence.value.update ? { summary: updateLine(bookMenuPresence.value.update), onOpen: () => {
+            const book = bookMenuPresence.value!;
+            bookActions.closeBookMenu();
+            openChanges(book);
+          } } : undefined}
+          updateReason={updateReasonOf(bookMenuPresence.value)}
         />
+      ) : null}
+      {downloading ? (
+        <DownloadDialog busy={false} heading={`Скачать книгу «${downloading.title}»`} onClose={() => setDownloading(null)}
+          drawings={drawingsHere ? { api, projectId: downloading.projectId, bookIds: [downloading.id] } : null}
+          onDownload={(format, drawings) => {
+            const book = downloading;
+            setDownloading(null);
+            void downloadBook(book, format, drawings);
+          }} />
       ) : null}
       {bookUpdate.element}
+      {bookMove.element}
 
-      {canEditManuscript && coverEditorBook ? (
-        <BookCoverEditor
-          api={api}
-          book={coverEditorBook}
-          onClose={closeCoverEditor}
-          onNotice={setNotice}
-          onUpdated={(updated) => setSelectedBookId(updated.id)}
-        />
+      {canEditManuscript && bookActions.coverEditorBook ? (
+        <BookCoverEditor api={api} book={bookActions.coverEditorBook} onClose={bookActions.closeCoverEditor} />
       ) : null}
-
-      <ShelfMobileNavigation
-        onOpenReader={bookNavigation.onOpenReader}
-        onOpenNotes={() => navigate('/notes')}
-        onOpenSaga={() => navigate('/saga', { projectId: chatProjectId })}
-        onOpenWriting={() => navigate('/writing', { projectId: chatProjectId })}
-        onOpenDrawing={() => navigate('/drawing', { projectId: chatProjectId })}
-        onOpenGallery={() => navigate('/gallery', { projectId: chatProjectId })}
-        onCreateNote={notes ? () => notes.capture({ body: '' }) : undefined}
-        mounted={mobileMenuPresence.mounted}
-        onClose={() => setNavigationMenuOpen(false)}
-        onOpenChat={() => navigate('/chat', { projectId: chatProjectId })}
-        onOpenManuscript={() => navigate('/manuscript/books', {
-          projectId: project?.id ?? undefined,
-          bookId: selectedBook?.id,
-        })}
-        onOpenProjectMenu={() => {
-          setNavigationMenuOpen(false);
-          setProjectMenuOpen(true);
-        }}
-        projectMeta={projectMeta}
-        projectTitle={projectTitle}
-        state={mobileMenuPresence.status}
-      />
 
       {deletePresence.mounted && deletePresence.value ? (
         <ConfirmDelete
           book={deletePresence.value}
-          isDeleting={deletingBook}
-          onClose={dismissDeleteConfirmation}
-          onDelete={() => void deleteBook(deletePresence.value!)}
+          error={bookActions.deleteError}
+          isDeleting={bookActions.deletingBook}
+          onClose={bookActions.dismissDeleteConfirmation}
+          onDelete={() => void bookActions.deleteBook(deletePresence.value!)}
           state={deletePresence.status}
         />
       ) : null}
 
-      {projectDeletePresence.mounted && projectDeletePresence.value ? (
-        <ConfirmProjectDelete
-          isDeleting={deletingProject}
-          onClose={() => setProjectDeleteOpen(false)}
-          onDelete={() => {
-            void deleteCurrentProject().then((deleted) => {
-              if (deleted) setProjectDeleteOpen(false);
-            });
-          }}
-          project={projectDeletePresence.value}
-          state={projectDeletePresence.status}
-        />
-      ) : null}
 
-      {deletedSourcesOpen ? (
-        <DeletedSourcesDialog
-          api={api}
-          bookId={selectedBook?.id ?? null}
-          onClose={() => {
-            setDeletedSourcesOpen(false);
-            deletedSourcesTriggerRef.current?.focus();
-          }}
-          onRestored={(source) => void handleRestoredSource(source)}
-          projectId={project?.id ?? null}
-        />
-      ) : null}
-
-    </main>
+    </>
   );
 }

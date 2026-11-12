@@ -1,0 +1,46 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 220px;
+  padding: 6px;
+}
+
+.item {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--ck-foreground);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--ck-muted);
+}
+
+@media (pointer: coarse) {
+  .item {
+    min-height: 44px;
+  }
+}
+
+/* The mark of a switch of the menu that is on. */
+.check {
+  margin-left: auto;
+  color: var(--ck-primary);
+}

@@ -45,7 +45,7 @@ func (h Handlers) CreateProject(w http.ResponseWriter, r *http.Request) {
 		writeProjectServiceError(w, err)
 		return
 	}
-	writeProjectResponse(w, http.StatusCreated, project)
+	WriteProjectResponse(w, http.StatusCreated, project)
 }
 
 func (h Handlers) GetProject(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +58,7 @@ func (h Handlers) GetProject(w http.ResponseWriter, r *http.Request) {
 		writeProjectServiceError(w, err)
 		return
 	}
-	writeProjectResponse(w, http.StatusOK, project)
+	WriteProjectResponse(w, http.StatusOK, project)
 }
 
 func (h Handlers) UpdateProject(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +81,7 @@ func (h Handlers) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeProjectServiceError(w, err)
 		return
 	}
-	writeProjectResponse(w, http.StatusOK, project)
+	WriteProjectResponse(w, http.StatusOK, project)
 }
 
 func (h Handlers) DeleteProject(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func (h Handlers) RestoreProject(w http.ResponseWriter, r *http.Request) {
 		writeProjectServiceError(w, err)
 		return
 	}
-	writeProjectResponse(w, http.StatusOK, project)
+	WriteProjectResponse(w, http.StatusOK, project)
 }
 
 type createProjectRequest struct {
@@ -177,6 +177,7 @@ type projectResponse struct {
 	ID                string                    `json:"id"`
 	Title             string                    `json:"title"`
 	Description       string                    `json:"description"`
+	Demo              bool                      `json:"demo,omitempty"`
 	BookCount         int                       `json:"bookCount"`
 	ChapterCount      int                       `json:"chapterCount"`
 	WordCount         int                       `json:"wordCount"`
@@ -209,6 +210,7 @@ func projectResponseFromRecord(project ProjectRecord) projectResponse {
 		ID:                project.ID,
 		Title:             project.Title,
 		Description:       project.Description,
+		Demo:              project.Demo,
 		BookCount:         project.BookCount,
 		ChapterCount:      project.ChapterCount,
 		WordCount:         project.WordCount,
@@ -227,7 +229,7 @@ func projectResponseFromRecord(project ProjectRecord) projectResponse {
 	return response
 }
 
-func writeProjectResponse(w http.ResponseWriter, status int, project ProjectRecord) {
+func WriteProjectResponse(w http.ResponseWriter, status int, project ProjectRecord) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeProjectJSON(w, status, projectResponseFromRecord(project))
 }

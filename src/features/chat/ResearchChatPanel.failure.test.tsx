@@ -7,6 +7,7 @@ import { normalScenario } from '../../api/mock/scenarios';
 import { ApiStatusError, createIdempotencyKey, type AgentTimelineEvent } from '../../shared/api';
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 const question = 'Сколько лет Мире в главе 12?';
 
@@ -41,10 +42,10 @@ async function renderFailedTurn(code: string, outcome: 'failed' | 'interrupted' 
   const createTurn = vi.spyOn(api, 'createChatTurn');
   const onSelectChatId = vi.fn();
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}><ToastsProvider>
       <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={onSelectChatId} projectId={projectId}
         selectedChatId={chat.id} sourceView="published" />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   const block = await screen.findByRole('alert');
   return { block, createTurn, jobId: turn.jobId, onSelectChatId };
@@ -68,10 +69,10 @@ describe('Research Chat turn failures (UC4.2)', () => {
       }, new Response(null, { status: 503 })))
       .mockResolvedValue({ eof: true, needsReconcile: false, nextCursor: null, events: [] } as unknown as Awaited<ReturnType<typeof api.getAgentTimeline>>);
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}><ToastsProvider>
         <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()} projectId={projectId}
           selectedChatId={chat.id} sourceView="published" />
-      </QueryClientProvider>,
+      </ToastsProvider></QueryClientProvider>,
     );
 
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
@@ -83,55 +84,67 @@ describe('Research Chat turn failures (UC4.2)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  // specs/2026-11-10-ux1-chat.md CH3.6; specs/2026-11-10-ux4-chat-waiting.md CW2.8: one block of the common look under the
+  // question in the word «помощник», the count as it is (the server gave the unit back), «Повторить вопрос», the code and
+  // a letter; no second line of the feed.
   it.each([
-    ['model.server_overloaded', 'Модель перегружена', 'Подождите пару минут и спросите снова — вопрос сохранён.'],
-    ['model.http_connection_failed', 'Нет связи с моделью', 'Связь с сервисом модели прервалась. Спросите снова через несколько минут.'],
-    ['model.turn_failed', 'Не удалось получить ответ', 'Спросите снова. Если ошибка повторится — напишите в поддержку, код уже в письме.'],
-    ['worker.handler_failed', 'Не удалось получить ответ', 'Спросите снова. Если ошибка повторится — напишите в поддержку, код уже в письме.'],
-    ['runtime.client_start_failed', 'Не удалось получить ответ', 'Спросите снова. Если ошибка повторится — напишите в поддержку, код уже в письме.'],
-  ])('%s: one block with its title, what to do, the code and a letter; one «Спросить снова»', async (code, title, hint) => {
+    ['model.server_overloaded', 'Помощник сейчас перегружен', 'Подождите пару минут и спросите снова — вопрос сохранён. Этот вопрос не засчитан.'],
+    ['model.http_connection_failed', 'Нет связи с помощником', 'Связь с помощником прервалась. Спросите снова через несколько минут. Этот вопрос не засчитан.'],
+    ['model.turn_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
+    ['worker.handler_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
+    ['runtime.client_start_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
+  ])('%s: one block with its title, what to do, the count, the code and a letter', async (code, title, hint) => {
     const { block, createTurn, jobId } = await renderFailedTurn(code);
 
-    expect(within(block).getByText(title)).toBeTruthy();
+    expect(block.getAttribute('aria-label')).toBe(title);
     expect(within(block).getByText(hint)).toBeTruthy();
     expect(within(block).getByText(`mock-${jobId}`).closest('span')?.textContent).toBe(`Код для поддержки: mock-${jobId}`);
-    expect(letterOf(within(block).getByRole('link', { name: 'Написать в поддержку' }))).toContain(`Canon Keeper: ошибка mock-${jobId}`);
+    expect(letterOf(within(block).getByRole('link', { name: 'Написать нам' }))).toContain(`CanonKeeper: ошибка mock-${jobId}`);
     expect(screen.getAllByRole('alert')).toHaveLength(1);
-    expect(screen.getByText('Ответ не получен.')).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/Не удалось выполнить задачу|Агент не завершил/u);
+    // The block stands under the question of its turn; the feed says nothing a second time.
+    const question = screen.getByRole('note', { name: 'Вопрос автора' });
+    expect(question.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Ответ не получен|Не удалось выполнить задачу|Агент не завершил|модел/u);
     expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Новая попытка' })).toBeNull();
 
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question.textContent));
+    // «Повторить вопрос» puts the question into the field; «Спросить снова» of the field sends it.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Вопрос' }), { target: { value: '' } });
+    fireEvent.click(within(block).getByRole('button', { name: 'Повторить вопрос' }));
+    expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question.textContent);
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Вопрос' }));
     const askAgain = screen.getAllByRole('button', { name: 'Спросить снова' });
     expect(askAgain).toHaveLength(1);
     fireEvent.click(askAgain[0]!);
-    await waitFor(() => expect(createTurn).toHaveBeenCalledWith(expect.any(String), { body: question }, { idempotencyKey: expect.any(String) }));
+    await waitFor(() => expect(createTurn).toHaveBeenCalledWith(expect.any(String), { body: question.textContent }, { idempotencyKey: expect.any(String) }));
   });
 
-  it('an interrupted turn says the answer stopped and offers to ask again', async () => {
+  it('an interrupted turn says the service stopped it and offers to ask again', async () => {
     const { block } = await renderFailedTurn('model.turn_interrupted', 'interrupted');
 
-    expect(within(block).getByText('Ответ прерван')).toBeTruthy();
-    expect(within(block).getByText('Ответ остановили или сервис перезапускался. Спросите снова — вопрос сохранён.')).toBeTruthy();
-    expect(screen.getByText('Ответ остановлен.')).toBeTruthy();
+    expect(block.getAttribute('aria-label')).toBe('Ответ прервался');
+    expect(within(block).getByText('Мы обновляли сервис, и ответ остановился. Спросите снова — вопрос сохранён. Этот вопрос не засчитан.')).toBeTruthy();
+    expect(screen.queryByText(/Вы остановили/u)).toBeNull();
     expect(await screen.findByRole('button', { name: 'Спросить снова' })).toBeTruthy();
   });
 
-  it('the shared model limit keeps the question in the field without an immediate retry', async () => {
+  // specs/2026-11-11-ux9-shelf-chat.md SC3.2 (Ч-32): the shared limit of the service says when to come back and gives
+  // «Повторить вопрос», the question uncounted.
+  it('the shared limit of the service says «Сервис перегружен», when to repeat, and gives «Повторить вопрос»', async () => {
     const { block } = await renderFailedTurn('model.usage_limit_exceeded');
 
-    expect(within(block).getByText('Модель сейчас недоступна')).toBeTruthy();
-    expect(within(block).getByText(/Исчерпан общий лимит обращений к модели/u)).toBeTruthy();
-    expect(within(block).queryByRole('button')).toBeNull();
+    expect(block.getAttribute('aria-label')).toBe('Сервис перегружен');
+    expect(within(block).getByText('Вопрос не засчитан — повторите через несколько минут.')).toBeTruthy();
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question));
-    expect(screen.queryByRole('button', { name: /Спросить снова|Повторить/u })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Вопрос' }), { target: { value: '' } });
+    fireEvent.click(within(block).getByRole('button', { name: 'Повторить вопрос' }));
+    expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question);
   });
 
-  it('a chat too long for the model leads to a new chat', async () => {
+  it('a chat too long for the helper leads to a new chat', async () => {
     const { block, onSelectChatId } = await renderFailedTurn('model.context_window_exceeded');
 
-    expect(within(block).getByText('Чат стал слишком длинным')).toBeTruthy();
+    expect(block.getAttribute('aria-label')).toBe('Разговор стал слишком длинным для помощника');
     expect(within(block).getByText(/Начните новый чат — книги и прежние ответы никуда не денутся/u)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Спросить снова' })).toBeNull();
     fireEvent.click(within(block).getByRole('button', { name: 'Новый чат' }));
@@ -144,17 +157,19 @@ describe('Research Chat turn failures (UC4.2)', () => {
       type: 'about:blank', title: 'Service Unavailable', status: 503, code: 'service_unavailable', requestId: 'send-503',
     }, new Response(null, { status: 503 })));
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}><ToastsProvider>
         <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()} projectId={projectId}
           selectedChatId="" sourceView="published" />
-      </QueryClientProvider>,
+      </ToastsProvider></QueryClientProvider>,
     );
     fireEvent.change(await screen.findByRole('textbox', { name: 'Вопрос' }), { target: { value: question } });
     fireEvent.click(screen.getByRole('button', { name: 'Спросить' }));
 
     const block = await screen.findByRole('alert');
     expect(within(block).getByText('Вопрос не отправлен')).toBeTruthy();
+    // A question that never went was not counted at all: nothing to give back, nothing to say of it.
     expect(within(block).getByText('Сервис временно недоступен. Вопрос сохранён — отправьте его ещё раз через минуту.')).toBeTruthy();
+    expect(block.textContent).not.toContain('не засчитан');
     expect(within(block).getByText('send-503')).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question);
     expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();

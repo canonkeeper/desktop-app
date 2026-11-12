@@ -1,7 +1,7 @@
 -- name: ListAuthorMemory :many
 WITH filtered AS (
   SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-         record.created_by, record.created_at, record.updated_at
+         record.created_by, record.created_at, record.updated_at, record.job_id
   FROM author_memory AS record
   WHERE record.project_id = sqlc.arg(project_id)
     AND (sqlc.arg(kinds)::text[] = '{}' OR record.kind = ANY(sqlc.arg(kinds)::text[]))
@@ -11,7 +11,7 @@ WITH filtered AS (
       OR strpos(lower(coalesce(record.name, '')), lower(sqlc.arg(search_query))) > 0)
 )
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, author.display_name AS author_name,
+       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name,
        (SELECT count(*) FROM filtered) AS total_count
 FROM filtered AS record
 JOIN users AS author ON author.id = record.created_by
@@ -27,7 +27,7 @@ RETURNING id;
 
 -- name: GetAuthorMemory :one
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, author.display_name AS author_name
+       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name
 FROM author_memory AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE record.project_id = sqlc.arg(project_id) AND record.id = sqlc.arg(id);
@@ -46,3 +46,22 @@ WHERE project_id = sqlc.arg(project_id) AND id = sqlc.arg(id) AND revision = sql
 -- name: DeleteAuthorMemory :execrows
 DELETE FROM author_memory
 WHERE project_id = sqlc.arg(project_id) AND id = sqlc.arg(id) AND revision = sqlc.arg(expected_revision);
+
+-- name: ListAuthorMemoryConversations :many
+-- What is left of the conversations the records of a page were made in (specs/2026-11-10-ux8-memory-records.md MR1.5):
+-- the session of the turn of each Job, alive or deleted, and the title of the draft its helper writes. A chat of the draft
+-- text version is named only to an editor, as the list of chats does.
+SELECT turn.job_id, chat.id AS chat_id, chat.kind AS session_kind, chat.title AS chat_title,
+       (chat.deleted_at IS NULL)::boolean AS alive,
+       (chat.source_view = 'published' OR sqlc.arg(editor)::boolean)::boolean AS visible,
+       coalesce((SELECT draft.title FROM chapter_drafts AS draft
+                 WHERE draft.project_id = chat.project_id AND draft.chat_id = chat.id
+                 ORDER BY draft.created_at, draft.id LIMIT 1), '')::text AS draft_title
+FROM chat_turns AS turn
+JOIN chat_sessions AS chat ON chat.id = turn.chat_id AND chat.project_id = turn.project_id
+WHERE turn.project_id = sqlc.arg(project_id) AND turn.job_id = ANY(sqlc.arg(job_ids)::uuid[]);
+
+-- name: CountAuthorMemoryMembers :one
+-- How many members the saga has now: the page signs a record with its author only in a saga of several (MR1.5).
+SELECT count(*) FROM project_memberships AS member
+WHERE member.project_id = sqlc.arg(project_id) AND member.removed_at IS NULL;

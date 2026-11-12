@@ -115,7 +115,10 @@ type ChapterDraftSubject struct {
 	Place          *ChapterDraftPlace `json:"place,omitempty"`
 	Instruction    string             `json:"instruction,omitempty"`
 	Seams          []int              `json:"seams,omitempty"`
-	Erased         bool               `json:"erased,omitempty"`
+	// Release are lines of the author the scenes of this run need not keep word for word: «Писать сцену без этой фразы»
+	// after a writing that kept losing them (specs/2026-11-11-ux9-writing-a.md WA2.4). Text of the author: erased with it.
+	Release []string `json:"release,omitempty"`
+	Erased  bool     `json:"erased,omitempty"`
 }
 
 func (ChapterDraftSubject) jobSubject()       {}

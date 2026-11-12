@@ -48,7 +48,7 @@ const allowedCorsOrigins = new Set([
  * (specs/2026-10-29-saga-illustrations.md UC8, UC15).
  */
 const imageDrawingOperationIds: OperationId[] = [
-  'cutoutProjectImage', 'createProjectImageVariant', 'chooseProjectImageVariant', 'enlargeProjectImage', 'createProjectImageLayer', 'createProjectCharacterSheet',
+  'cutoutProjectImage', 'changeProjectImageAngle', 'createProjectImageVariant', 'chooseProjectImageVariant', 'redrawProjectImageVariant', 'enlargeProjectImage', 'createProjectImageLayer', 'createProjectCharacterSheet',
   'createIllustrationStyleSketches', 'deleteProjectImages', 'uploadProjectImage',
   // The workshop (specs/2026-11-02-image-workshop.md).
   'createDrawing', 'drawDrawing', 'chooseProjectImageLayerVariant', 'submitDrawingTurn',
@@ -58,6 +58,7 @@ const imageDrawingOperationIds: OperationId[] = [
 ];
 const idempotentOperations = new Set<OperationId>([
   'createAuthorMemory',
+  'createAuthorMaterial',
   'createChapterDraft',
   'startChapterDraftJob',
   'startChapterProofread',
@@ -77,6 +78,7 @@ const idempotentOperations = new Set<OperationId>([
 ]);
 const repositoryManagedIdempotencyOperations = new Set<OperationId>([
   'createAuthorMemory',
+  'createAuthorMaterial',
   'createChapterDraft',
   'startChapterDraftJob',
   'createPersonalNote',
@@ -285,10 +287,14 @@ function enforceMswRequest(
 
 const mswPublicOperations = new Set<OperationId>([
   'getCsrfToken', 'registerUser', 'loginUser', 'confirmEmailVerification', 'requestPasswordReset', 'resetPassword',
+  // The page «Новый пароль» checks its link on opening (specs/2026-11-10-ux3-auth.md AU4.1).
+  'checkPasswordResetLink',
   'readPromoLink', 'answerPromoLink', 'revokePromoLink',
   'takeReadingTestPair', 'voteReadingTestPair',
   // «Связаться с нами» of a guest (specs/2026-11-07-contacts.md F1).
   'getContacts', 'uploadFeedbackImage', 'createFeedbackThread',
+  // «Тарифы» of a guest (specs/2026-11-08-subscription-tiers.md TR1.6).
+  'listSubscriptionTiers',
   // The window of the desktop opens its session with a one-time code (specs/2026-11-07-desktop-app.md DA3.3).
   'openDesktopSession',
 ]);

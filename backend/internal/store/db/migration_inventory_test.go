@@ -19,8 +19,8 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 115 {
-		t.Fatalf("migration inventory length = %d, want 115", len(inventory))
+	if len(inventory) != 143 {
+		t.Fatalf("migration inventory length = %d, want 143", len(inventory))
 	}
 	if inventory[0].Version != 0 || inventory[0].Name != "0000_schema_migrations.sql" {
 		t.Fatalf("first migration = %+v", inventory[0])
@@ -309,6 +309,90 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	}
 	if inventory[114].Version != 114 || inventory[114].Name != "0114_desktop_app.sql" {
 		t.Fatalf("desktop app migration = %+v", inventory[114])
+	}
+	if inventory[115].Version != 115 || inventory[115].Name != "0115_chat_attachment_document.sql" {
+		t.Fatalf("chat attachment document migration = %+v", inventory[115])
+	}
+	if inventory[116].Version != 116 || inventory[116].Name != "0116_text_faces.sql" {
+		t.Fatalf("text faces migration = %+v", inventory[116])
+	}
+	if inventory[117].Version != 117 || inventory[117].Name != "0117_subscription_tiers.sql" {
+		t.Fatalf("subscription tiers migration = %+v", inventory[117])
+	}
+	if inventory[118].Version != 118 || inventory[118].Name != "0118_subscription_keys.sql" {
+		t.Fatalf("subscription keys migration = %+v", inventory[118])
+	}
+	if inventory[119].Version != 119 || inventory[119].Name != "0119_tier_drawings.sql" {
+		t.Fatalf("tier drawings migration = %+v", inventory[119])
+	}
+	if inventory[120].Version != 120 || inventory[120].Name != "0120_subscription_chapter_charges.sql" {
+		t.Fatalf("subscription chapter charges migration = %+v", inventory[120])
+	}
+	if inventory[121].Version != 121 || inventory[121].Name != "0121_subscription_voice.sql" {
+		t.Fatalf("subscription voice migration = %+v", inventory[121])
+	}
+	if inventory[122].Version != 122 || inventory[122].Name != "0122_plan_keys_without_platform_defaults.sql" {
+		t.Fatalf("plan keys without platform defaults migration = %+v", inventory[122])
+	}
+	if inventory[123].Version != 123 || inventory[123].Name != "0123_saga_ready.sql" {
+		t.Fatalf("saga ready migration = %+v", inventory[123])
+	}
+	if inventory[124].Version != 124 || inventory[124].Name != "0124_demo_saga.sql" {
+		t.Fatalf("demo saga migration = %+v", inventory[124])
+	}
+	if inventory[125].Version != 125 || inventory[125].Name != "0125_saga_map_places.sql" {
+		t.Fatalf("saga map places migration = %+v", inventory[125])
+	}
+	if inventory[126].Version != 126 || inventory[126].Name != "0126_service_letters.sql" {
+		t.Fatalf("service letters migration = %+v", inventory[126])
+	}
+	if inventory[127].Version != 127 || inventory[127].Name != "0127_feedback_tariff_topic.sql" {
+		t.Fatalf("feedback tariff topic migration = %+v", inventory[127])
+	}
+	if inventory[128].Version != 128 || inventory[128].Name != "0128_author_materials_by_hand.sql" {
+		t.Fatalf("author materials by hand migration = %+v", inventory[128])
+	}
+	if inventory[129].Version != 129 || inventory[129].Name != "0129_draft_version_before_voice.sql" {
+		t.Fatalf("draft version before voice migration = %+v", inventory[129])
+	}
+	if inventory[130].Version != 130 || inventory[130].Name != "0130_tier_limits.sql" {
+		t.Fatalf("tier limits migration = %+v", inventory[130])
+	}
+	if inventory[131].Version != 131 || inventory[131].Name != "0131_note_thought_beside_quote.sql" {
+		t.Fatalf("note thought beside quote migration = %+v", inventory[131])
+	}
+	if inventory[132].Version != 132 || inventory[132].Name != "0132_draft_version_author_variant.sql" {
+		t.Fatalf("draft version author variant migration = %+v", inventory[132])
+	}
+	if inventory[133].Version != 133 || inventory[133].Name != "0133_drawing_book_place.sql" {
+		t.Fatalf("drawing book place migration = %+v", inventory[133])
+	}
+	if inventory[134].Version != 134 || inventory[134].Name != "0134_drawing_trash.sql" {
+		t.Fatalf("drawing trash migration = %+v", inventory[134])
+	}
+	if inventory[135].Version != 135 || inventory[135].Name != "0135_book_key_numbers.sql" {
+		t.Fatalf("book key numbers migration = %+v", inventory[135])
+	}
+	if inventory[136].Version != 136 || inventory[136].Name != "0136_cards_one_per_saga.sql" {
+		t.Fatalf("cards one per saga migration = %+v", inventory[136])
+	}
+	if inventory[137].Version != 137 || inventory[137].Name != "0137_proofread_from_chat.sql" {
+		t.Fatalf("proofread from chat migration = %+v", inventory[137])
+	}
+	if inventory[138].Version != 138 || inventory[138].Name != "0138_upload_volume_waits.sql" {
+		t.Fatalf("upload volume waits migration = %+v", inventory[138])
+	}
+	if inventory[139].Version != 139 || inventory[139].Name != "0139_drawing_angle.sql" {
+		t.Fatalf("drawing angle migration = %+v", inventory[139])
+	}
+	if inventory[140].Version != 140 || inventory[140].Name != "0140_user_last_seen.sql" {
+		t.Fatalf("user last seen migration = %+v", inventory[140])
+	}
+	if inventory[141].Version != 141 || inventory[141].Name != "0141_chapter_draft_version_place.sql" {
+		t.Fatalf("chapter draft version place migration = %+v", inventory[141])
+	}
+	if inventory[142].Version != 142 || inventory[142].Name != "0142_book_update_snapshots.sql" {
+		t.Fatalf("book update snapshots migration = %+v", inventory[142])
 	}
 	if inventory[64].Version != 64 || inventory[64].Name != "0064_illustration_checks.sql" {
 		t.Fatalf("illustration checks migration = %+v", inventory[64])

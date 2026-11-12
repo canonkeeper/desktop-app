@@ -24,7 +24,9 @@ describe('mock uploads of the author\'s own images', () => {
       .toBe('illustrations.upload_consent_required');
 
     const image = await api.uploadProjectImage(projectId, { file: png(), consentVersion: '2026-11-04' }, { idempotencyKey: 'idem-upload-1' });
-    expect(image).toMatchObject({ number: 3, kind: 'upload', status: 'ready', title: 'Анна у окна', prompt: '', canDelete: true });
+    // Without the author's caption it is «Моя картинка от <день>», not the name of the file (specs/2026-11-12-ux12-drawings.md DW4.1).
+    expect(image).toMatchObject({ number: 3, kind: 'upload', status: 'ready', prompt: '', canDelete: true });
+    expect(image.title).toMatch(/^Моя картинка от \d{1,2} [а-я]+$/u);
     expect(image.fileUrl).toContain('/images/3/file?size=full');
     expect(image.screenUrl).toContain('/images/3/file?size=screen');
     const replay = await api.uploadProjectImage(projectId, { file: png(), consentVersion: '2026-11-04' }, { idempotencyKey: 'idem-upload-1' });
@@ -39,7 +41,7 @@ describe('mock uploads of the author\'s own images', () => {
   // R15.8, R14.1: an upload is a branch of its own; a drawing made from it starts another branch.
   it('keeps an upload a branch of one version that the drawings made from it do not join', async () => {
     const api = createMockApiClient();
-    const sketch = await api.uploadProjectImage(projectId, { file: png('Эскиз замка.png'), consentVersion: '2026-11-04' }, { idempotencyKey: 'idem-upload-b' });
+    const sketch = await api.uploadProjectImage(projectId, { file: png('Эскиз замка.png'), title: 'Эскиз замка', consentVersion: '2026-11-04' }, { idempotencyKey: 'idem-upload-b' });
     expect(sketch.branch).toBe(sketch.number);
     const castle = await api.agentDrawVersion(projectId, sketch.number, { instruction: 'Дорисуй замок' });
     expect(castle).toMatchObject({ kind: 'scene', title: 'Эскиз замка', baseImage: sketch.number, branch: castle.number });

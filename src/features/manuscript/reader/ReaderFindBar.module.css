@@ -1,0 +1,57 @@
+/* «Найти» in the book (RD2.1; Pattern/Reader/Find Bar): a bar over the text, under the line of the reader. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 4px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+}
+
+.field {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: var(--ck-input);
+  color: var(--ck-foreground);
+  font: inherit;
+  font-size: 15px;
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: 0;
+}
+
+.count {
+  flex: none;
+  padding: 0 6px;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .bar {
+    flex-wrap: wrap;
+  }
+
+  .field {
+    flex-basis: 100%;
+  }
+
+  .all span {
+    display: none;
+  }
+}
+
+/* The bar has its own «×»: the cross of the browser in the field would be a second one. */
+.field::-webkit-search-cancel-button {
+  display: none;
+  appearance: none;
+}

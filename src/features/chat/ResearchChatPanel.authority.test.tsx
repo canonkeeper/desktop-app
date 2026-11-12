@@ -6,6 +6,7 @@ import { projectId } from '../../api/mock/repository/fixtures';
 import { ApiStatusError, type AgentTimelineEvent } from '../../shared/api';
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440);
@@ -50,7 +51,7 @@ function renderPanel(
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ) {
   const view = render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}><ToastsProvider>
       <ResearchChatPanel
         api={api}
         canCreate={canCreate}
@@ -60,7 +61,7 @@ function renderPanel(
         selectedChatId={selectedChatId}
         sourceView="published"
       />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   return { queryClient, view };
 }
@@ -89,7 +90,7 @@ describe('Research Chat authority', () => {
     renderPanel(api, session.id);
     await screen.findByRole('button', { name: 'Остановить' });
     const live = await screen.findByRole('region', { name: 'Готовим ответ' });
-    await waitFor(() => expect(live.textContent).toContain('Обдумывает следующий шаг'));
+    await waitFor(() => expect(live.textContent).toContain('Думаю, где искать дальше'));
     const remark = (await screen.findByText('источник')).closest('[data-activity-kind="assistant"]')!;
     expect(remark.querySelector('strong')?.textContent).toBe('источник');
     expect(remark.querySelector('b')).toBeNull();
@@ -114,10 +115,10 @@ describe('Research Chat authority', () => {
     const { queryClient, view } = renderPanel(api, session.id);
     await screen.findByRole('region', { name: 'Готовим ответ' });
 
-    view.rerender(<QueryClientProvider client={queryClient}>
+    view.rerender(<QueryClientProvider client={queryClient}><ToastsProvider>
       <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()}
         projectId={projectId} selectedChatId={second.id} sourceView="published" />
-    </QueryClientProvider>);
+    </ToastsProvider></QueryClientProvider>);
 
     expect(screen.queryByRole('region', { name: 'Готовим ответ' })).toBeNull();
   });
@@ -157,10 +158,10 @@ describe('Research Chat authority', () => {
     const { queryClient, view } = renderPanel(api, first.session.id);
     fireEvent.click(await screen.findByRole('button', { name: 'Остановить' }));
     await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
-    view.rerender(<QueryClientProvider client={queryClient}>
+    view.rerender(<QueryClientProvider client={queryClient}><ToastsProvider>
       <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()}
         projectId={projectId} selectedChatId={second.id} sourceView="published" />
-    </QueryClientProvider>);
+    </ToastsProvider></QueryClientProvider>);
     const stop = await screen.findByRole('button', { name: 'Остановить' });
     await waitFor(() => expect(stop).toHaveProperty('disabled', false));
     fireEvent.click(stop);
@@ -221,8 +222,8 @@ describe('Research Chat authority', () => {
     renderPanel(api, '', canCreate);
 
     await screen.findByText(canCreate
-      ? /Задайте первый вопрос/u
-      : /Пока нет доступных чатов/u);
+      ? /Спросите о героях, местах и событиях книги/u
+      : /В этой саге вы читатель: чаты ведёт автор/u);
     expect(screen.queryByText('Задача запущена')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Готовим ответ' })).toBeNull();
     expect(timeline).not.toHaveBeenCalled();
@@ -243,8 +244,10 @@ describe('Research Chat authority', () => {
       act(() => socket.message({ cursor: answer.cursor, event: answer, type: 'event' }));
       expect(await screen.findByText(answer.text!)).toBeTruthy();
       act(() => socket.message({ type: 'reconnecting', message: 'Восстанавливаем соединение.' }));
-      // The stream recovers by itself: the block explains it and offers no button (R4.2.7).
-      expect(await screen.findByText('Связь прервалась — восстанавливаем. Ответ продолжает готовиться на сервере.')).toBeTruthy();
+      // The stream recovers by itself: a quiet line under the status of the turn, no block and no button
+      // (specs/2026-11-11-ux4-after-answer.md AA2.6, Ч-74).
+      expect(await screen.findByText('Связь прервалась — восстанавливаю, ответ готовится')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
       expect(screen.getByRole('region', { name: 'Готовим ответ' })).toBeTruthy();
       expect(screen.queryByRole('textbox', { name: 'Вопрос' })).toBeNull();
@@ -356,7 +359,7 @@ describe('Research Chat authority', () => {
     expect(await screen.findByText('Ответ остаётся доступен')).toBeTruthy();
 
     rendered.view.rerender(
-      <QueryClientProvider client={rendered.queryClient}>
+      <QueryClientProvider client={rendered.queryClient}><ToastsProvider>
         <ResearchChatPanel
           api={api}
           canCreate={false}
@@ -366,7 +369,7 @@ describe('Research Chat authority', () => {
           selectedChatId={session.id}
           sourceView="published"
         />
-      </QueryClientProvider>,
+      </ToastsProvider></QueryClientProvider>,
     );
 
     expect(screen.getByText('Ответ остаётся доступен')).toBeTruthy();
@@ -421,10 +424,10 @@ describe('Research Chat authority', () => {
       expect(createTurn).toHaveBeenCalledTimes(2);
       expect(screen.getByRole('region', { name: 'Готовим ответ' })).toBeTruthy();
     } else {
-      view.rerender(<QueryClientProvider client={queryClient}>
+      view.rerender(<QueryClientProvider client={queryClient}><ToastsProvider>
         <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()}
           projectId={projectId} selectedChatId={other.id} sourceView="published" />
-      </QueryClientProvider>);
+      </ToastsProvider></QueryClientProvider>);
       await waitFor(() => expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('disabled', false));
     }
     expect(screen.queryByText('Вопрос не отправлен')).toBeNull();
@@ -440,7 +443,7 @@ describe('Research Chat authority', () => {
       tool: { name: 'search', namespace: 'saga', status: 'completed', success: true },
     });
     act(() => socket.message({ cursor: bare.cursor, event: bare, type: 'event' }));
-    expect((await screen.findAllByText('Поиск в тексте саги')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Искал в книгах')).length).toBeGreaterThan(0);
     const described = {
       ...bare,
       cursor: 'tl_2',
@@ -449,7 +452,7 @@ describe('Research Chat authority', () => {
       tool: { ...bare.tool, arguments: { queries: ['Шорох'] }, summary: '«Шорох» (any): 56 абзацев в 23 главах' },
     };
     act(() => socket.message({ cursor: described.cursor, event: described, type: 'event' }));
-    expect((await screen.findByText('Поиск «Шорох»')).closest('li')!.textContent).toBe('Поиск «Шорох» — 56 абзацев в 23 главах');
+    expect((await screen.findByText('Искал «Шорох»')).closest('li')!.textContent).toBe('Искал «Шорох» — 56 мест в 23 главах');
     const raw = {
       ...bare,
       cursor: 'tl_3',

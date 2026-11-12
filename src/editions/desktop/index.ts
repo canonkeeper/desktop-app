@@ -4,8 +4,11 @@ import { openPages } from '../../app/pages';
 import { openRoutes } from '../../routing/routes';
 import type { SagaSection } from '../../ui/saga-sections';
 
-/** The sections of the desktop app (DA2.8); «Что помнит помощник» and «Материалы автора» open from the saga map. */
-const desktopSections: readonly SagaSection[] = ['manuscript', 'reader', 'chat', 'saga', 'notes'];
+/**
+ * The sections of the desktop app by the one table of the menu (DA2.8, specs/2026-11-10-ux2-shell-core.md SC2.1): its open
+ * pages and «Недавно удалённые»; «Рисование», «Галерея» and «Письмо» are of the site, a book opens from the shelf.
+ */
+const desktopSections: readonly SagaSection[] = ['manuscript', 'saga', 'memory', 'chat', 'notes', 'deleted'];
 
 /**
  * No sign-in, documents, landing or account menu (DA2.7, DA13.5): the author is the local one, known once the app opens

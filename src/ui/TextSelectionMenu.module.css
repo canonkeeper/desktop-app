@@ -1,23 +1,46 @@
+/* One row of words under icons over a selection (RD3.1; Pattern/Text Selection/Menu). */
 .menu {
   position: fixed;
   z-index: 110;
-  display: grid;
-  width: min(240px, calc(100vw - 16px));
-  max-height: calc(100dvh - 16px);
-  overflow: auto;
+  display: flex;
+  max-width: calc(100vw - 16px);
+  /* A window narrower than the row (320 px) folds it in two; the words stay whole. */
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 2px;
   border: 1px solid var(--ck-border);
   border-radius: var(--ck-radius-md);
-  padding: 6px;
-  background: var(--ck-card);
+  padding: 4px;
+  background: var(--ck-popover, var(--ck-card));
   color: var(--ck-foreground);
-  box-shadow: var(--ck-shadow-sm);
+  box-shadow: var(--ck-shadow-md, var(--ck-shadow-sm));
 }
 
-.menu button {
-  justify-content: flex-start;
-  gap: 8px;
-  padding-inline: 10px;
-  font-size: 13px;
-  font-weight: 400;
+.item {
+  display: inline-flex;
+  min-width: 56px;
+  min-height: 48px;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 4px 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.item:hover {
+  background: var(--ck-secondary);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: -2px;
 }

@@ -1,226 +1,212 @@
-import type { SourceCitation } from '../../../shared/navigation/chat-source';
-import { describeDrawAction, describeWorkshopAction, drawTools, workshopTools, type DrawActionFacts, type DrawTool, type WorkshopTool } from './draw-actions';
+import { paragraphsLabel, type Places } from '../../../shared/text/place';
+import { describeDraftAction, isDraftTool, momentWords } from './draft-actions';
+import type { ActionDescription, ActionKind, ActionStatus, SagaToolCall } from './action-types';
+import { describeDrawAction, describeWorkshopAction, drawTools, painterRefusal, workshopTools, type DrawTool, type WorkshopTool } from './draw-actions';
 
-export type ActionKind = 'search' | 'read' | 'chapters' | 'glossary' | 'threads' | 'changes' | 'scan' | 'remember' | 'memory' | 'draw' | 'other';
-export type ActionStatus = 'running' | 'done' | 'error';
+export type { ActionDescription, ActionKind, ActionStatus, SagaToolCall } from './action-types';
 
-/** One tool call as the author reads it: what was asked, what came back, where it leads. */
-export interface ActionDescription {
-  kind: ActionKind;
-  /** What the agent did, e.g. «Поиск «Шорох»». */
-  label: string;
-  /** The same in the present tense for the status of a running turn, e.g. «Ищет «Шорох»». */
-  activity: string;
-  /** What came back, e.g. «56 абзацев в 23 главах», or the message of a failed call. */
-  detail?: string;
-  /** The text a read call returned, to open beside the chat. */
-  source?: SourceCitation;
-  /** A drawing tool: its drawing and what it draws (illustrations R1.6, R8.1). */
-  drawing?: DrawActionFacts;
-  /** What saga.remember kept, so the feed can undo it (specs/2026-11-02-writer-workshop.md, Decision log 03.11). */
-  remembered?: { kind: string; text: string };
-}
+type SagaKind = Exclude<ActionKind, 'other' | 'draw'>;
 
-export interface SagaToolCall {
-  namespace?: string;
-  name: string;
-  arguments?: Record<string, unknown>;
-  summary?: string;
-}
-
-const fallbacks: Record<Exclude<ActionKind, 'other' | 'draw'>, [string, string]> = {
-  search: ['Поиск в тексте саги', 'Ищет в тексте саги'],
-  read: ['Чтение главы', 'Читает главу'],
-  chapters: ['Список глав', 'Смотрит список глав'],
-  glossary: ['Словарь саги', 'Смотрит словарь'],
-  threads: ['Нити саги', 'Смотрит нити саги'],
-  changes: ['Изменения по ходу саги', 'Прослеживает изменения'],
-  scan: ['Просмотр текста', 'Просматривает текст целиком'],
-  remember: ['Запись в память автора', 'Записывает в память автора'],
-  memory: ['Память автора', 'Читает память автора'],
+/** The line of a call without arguments: [done, running]. */
+const plainWords: Record<SagaKind, [string, string]> = {
+  search: ['Искал в книгах', 'Ищу в книгах'],
+  read: ['Прочитал главу', 'Читаю главу'],
+  chapters: ['Посмотрел оглавление', 'Смотрю оглавление'],
+  glossary: ['Посмотрел, что известно об именах', 'Смотрю, что известно об именах'],
+  entity: ['Собрал всё о герое', 'Собираю всё о герое'],
+  timeline: ['Посмотрел, когда что было', 'Смотрю, когда что было'],
+  threads: ['Посмотрел сюжетные линии', 'Смотрю сюжетные линии'],
+  changes: ['Посмотрел, что менялось', 'Слежу, как менялось'],
+  scan: ['Перечитал подряд', 'Перечитываю подряд'],
+  // «Что помнит помощник» has one name (specs/2026-11-10-ux2-memory-page.md MP1.4): the line says what the helper does with it.
+  remember: ['Запомнил', 'Запоминаю'],
+  memory: ['Сверился с тем, что вы просили помнить', 'Сверяюсь с тем, что вы просили помнить'],
 };
 
-/** The tools of the helper of a chapter draft (specs/2026-11-02-writer-workshop.md W1.3, W4.5): what each does. */
-const draftActions: Readonly<Record<string, [string, string]>> = {
-  state: ['Черновик', 'Читает черновик'],
-  brief: ['Справка к главе', 'Пишет справку к главе'],
-  notes: ['Заметки к черновику', 'Пишет заметки к черновику'],
-  variants: ['Варианты сцены', 'Предлагает варианты сцены'],
-  replace: ['Заменено в тексте', 'Заменяет в тексте'],
-  continue: ['Дописано по замыслу', 'Дописывает по замыслу'],
-};
-
-const noteActions: Readonly<Record<string, [string, string]>> = {
-  canon: ['Сверка с каноном', 'Сверяет с каноном'],
-  question: ['Вопросы автору', 'Записывает вопросы автору'],
-};
+/** A reading of the saga that did not work: the helper goes on, so the line says only that (CW1.4, ux1-names N2.4). */
+const triedAnotherWay = 'не получилось, пробую иначе';
+const chapterNotFound = 'Не нашёл такую главу — ищу иначе';
 
 /**
- * Describes a call of the saga tools by its arguments and the first line of its result (the
- * timeline summary). Tools of the previous assistant and calls without arguments get a plain
- * line by name.
+ * Describes a call of the saga tools by its arguments, the first line of its result (the timeline summary) and the places
+ * of the chapters its arguments name (`places` of the event: the server writes them beside the keys, so a chapter has its
+ * name while it is still read and its key is never shown — specs/2026-11-10-ux1-names.md N2). One table for the chat and
+ * the helpers of «Письмо» and «Рисование» (CW1.1, CW1.3); the first line of a result is read for numbers only, it is
+ * written for the model.
  */
-export function describeSagaAction(tool: SagaToolCall, status: ActionStatus): ActionDescription {
+export function describeSagaAction(tool: SagaToolCall, status: ActionStatus, places: Places = {}): ActionDescription {
+  const failed = status === 'error';
   if (tool.namespace === 'saga' && (drawTools as readonly string[]).includes(tool.name)) {
-    const failure = status === 'error' ? tool.summary?.trim() || undefined : undefined;
-    const described = describeDrawAction(tool.name as DrawTool, tool.arguments, failure ? undefined : tool.summary);
-    return withOptional({ kind: 'draw', label: described.label, activity: described.activity, drawing: described.drawing }, { detail: failure ?? described.detail });
+    const described = describeDrawAction(tool.name as DrawTool, tool.arguments, failed ? undefined : tool.summary, places);
+    return withOptional({ kind: 'draw', label: described.label, activity: described.activity, drawing: described.drawing }, { detail: failed ? refusal(tool) : described.detail });
   }
   if (tool.namespace === 'drawing' && (workshopTools as readonly string[]).includes(tool.name)) {
-    const failure = status === 'error' ? tool.summary?.trim() || undefined : undefined;
-    const described = describeWorkshopAction(tool.name as WorkshopTool, tool.arguments, failure ? undefined : tool.summary);
-    return withOptional({ kind: 'draw', label: described.label, activity: described.activity, ...('drawing' in described ? { drawing: described.drawing } : {}) }, { detail: failure ?? described.detail });
+    const described = describeWorkshopAction(tool.name as WorkshopTool, tool.arguments, failed ? undefined : tool.summary);
+    return withOptional({ kind: 'draw', label: described.label, activity: described.activity, ...('drawing' in described ? { drawing: described.drawing } : {}) },
+      { detail: failed ? refusal(tool) : described.detail });
   }
-  if (tool.namespace === 'draft' && tool.name in draftActions) {
-    const notes = tool.name === 'notes' ? noteActions[String(tool.arguments?.kind)] : undefined;
-    const [label, activity] = notes ?? draftActions[tool.name]!;
-    const summary = tool.summary?.trim() || undefined;
-    return withOptional({ kind: 'other', label, activity }, { detail: tool.name === 'state' && status !== 'error' ? undefined : summary });
+  if (isDraftTool(tool)) return describeDraftAction(tool, status, triedAnotherWay);
+  if (tool.namespace === 'saga' && tool.name === 'moment') {
+    return withOptional({ kind: 'other', label: momentWords[0], activity: momentWords[1] }, { detail: failed ? triedAnotherWay : undefined });
   }
-  if (tool.namespace === 'saga' && tool.name === 'attachment') return describeAttachmentRead(tool.arguments ?? {}, status === 'error' ? tool.summary?.trim() : undefined);
-  const kind = tool.namespace === 'saga' && tool.name in fallbacks ? tool.name as Exclude<ActionKind, 'other' | 'draw'> : null;
-  if (!kind) return { kind: 'other', label: 'Работа с текстом', activity: 'Работает с текстом' };
+  if (tool.namespace === 'saga' && tool.name === 'attachment') return describeAttachmentRead(tool.arguments ?? {}, failed);
+  const kind = tool.namespace === 'saga' && tool.name in plainWords ? tool.name as SagaKind : null;
+  if (!kind) return withOptional({ kind: 'other', label: 'Поработал с текстом', activity: 'Работаю с текстом' }, { detail: failed ? triedAnotherWay : undefined });
   const args = tool.arguments;
-  const summary = tool.summary?.trim() || undefined;
-  const failure = status === 'error' ? summary : undefined;
   if (!args) {
-    const [label, activity] = fallbacks[kind];
-    return withOptional({ kind, label, activity }, { detail: failure });
+    const [label, activity] = plainWords[kind];
+    return withOptional({ kind, label, activity }, { detail: failed ? triedAnotherWay : undefined });
   }
-  const described = describers[kind](args, status === 'error' ? undefined : summary);
-  return withOptional({ kind, ...described, label: described.label }, { detail: failure ?? described.detail });
+  const described = describers[kind](args, failed ? undefined : tool.summary?.trim() || undefined, places);
+  if (!failed) return { kind, ...described };
+  // A step the helper corrected itself is an ordinary line: no message for the model, no source to open (N2.4).
+  if (kind === 'read' && !places[text(args.chapter) ?? '']) return { kind, label: chapterNotFound, activity: chapterNotFound };
+  return { kind, label: described.label, activity: described.activity, detail: triedAnotherWay };
+}
+
+/** A tool of a drawing that refused: the reason of the painter is the author's, any other message is for the model. */
+function refusal(tool: SagaToolCall) {
+  const reason = painterRefusal(tool.summary);
+  return reason ? `${reason} — пробую иначе` : triedAnotherWay;
 }
 
 /**
  * The reading of the chapter of the author attached to the chat (specs/2026-11-07-chat-attach-chapter.md CA3.2): its
  * paragraphs open beside the chat as a source does.
  */
-function describeAttachmentRead(args: Record<string, unknown>, failure?: string): ActionDescription {
+function describeAttachmentRead(args: Record<string, unknown>, failed: boolean): ActionDescription {
   const number = integer(args.attachment);
   const from = integer(args.from);
   const to = integer(args.to);
-  const paragraphs = from && to ? from === to ? `¶${from}` : `¶${from}–${to}` : from ? `с ¶${from}` : undefined;
-  return withOptional({ kind: 'read', label: number ? `Глава автора, приложение ${number}` : 'Глава автора', activity: 'Читает приложенную главу' }, {
-    detail: failure ?? paragraphs,
-    source: number ? { chapterKey: `a${number}`, ...(from ? { from, to: to && to >= from ? to : from } : {}) } : undefined,
+  const paragraphs = from && to ? paragraphsLabel(from, to) : from ? `с абзаца ${from}` : undefined;
+  return withOptional({ kind: 'read', label: 'Прочитал вашу главу', activity: 'Читаю вашу главу' }, {
+    detail: failed ? triedAnotherWay : paragraphs,
+    source: number && !failed ? { chapterKey: `a${number}`, ...(from ? { from, to: to && to >= from ? to : from } : {}) } : undefined,
   });
 }
 
 type Described = Omit<ActionDescription, 'kind'>;
 
+/** What the author asked the helper to remember, by its kind: «Ваши поправки — пока нет». */
 const memoryKinds: Readonly<Record<string, string>> = {
-  plan: 'план', correction: 'поправка', style_rule: 'правило стиля', rejected: 'отвергнуто',
+  plan: 'Ваши планы', correction: 'Ваши поправки', style_rule: 'Ваши правила стиля', rejected: 'Что вы отвергли',
 };
 
-const describers: Record<Exclude<ActionKind, 'other' | 'draw'>, (args: Record<string, unknown>, summary?: string) => Described> = {
-  search(args, summary) {
+const describers: Record<SagaKind, (args: Record<string, unknown>, summary: string | undefined, places: Places) => Described> = {
+  search(args, summary, places) {
     const queries = strings(args.queries);
     const offset = integer(args.offset);
-    const label = join(`Поиск ${quoteList(queries)}`, range(args), books(args), offset ? `дальше с ${offset + 1}-го` : undefined);
+    const where = join(range(args, places), books(args, 'в книге', 'в книгах'), offset ? `дальше с ${offset + 1}-го места` : undefined);
     const found = summary ? /^«(.+)» \([a-z]+\): (\d+) абзац\S* в (\d+) глав/u.exec(summary) : null;
     let detail: string | undefined;
     if (found) {
-      const paragraphs = Number(found[2]);
+      const count = Number(found[2]);
       const chapters = Number(found[3]);
-      const count = paragraphs === 0 ? 'ничего не найдено'
-        : `${paragraphs} ${plural(paragraphs, ['абзац', 'абзаца', 'абзацев'])} в ${chapters} ${chapters % 10 === 1 && chapters % 100 !== 11 ? 'главе' : 'главах'}`;
-      detail = queries.length > 1 && paragraphs > 0 ? `«${found[1]}»: ${count}` : count;
+      const placesFound = count === 0 ? 'ничего не нашёл'
+        : `${count} ${plural(count, ['место', 'места', 'мест'])} в ${chapters} ${chapters % 10 === 1 && chapters % 100 !== 11 ? 'главе' : 'главах'}`;
+      detail = queries.length > 1 && count > 0 ? `«${found[1]}»: ${placesFound}` : placesFound;
     }
-    return withOptional({ label, activity: `Ищет ${quoteList(queries, 2)}` }, { detail });
+    return withOptional({ label: join(`Искал ${quoteList(queries)}`, where), activity: `Ищу в книгах: ${quoteList(queries, 2)}` }, { detail });
   },
-  read(args, summary) {
+  read(args, summary, places) {
     const chapterKey = text(args.chapter) ?? '';
-    const header = summary ? /^(?:Том (\d+), )?(.+?) — гл\. \S+, абзацы ¶(\d+)–¶(\d+) из (\d+)/u.exec(summary) : null;
-    if (header) {
-      const from = Number(header[3]);
-      const to = Number(header[4]);
-      const paragraphs = from === to ? `¶${from}` : `¶${from}–${to}`;
-      return {
-        label: header[2]!,
-        activity: `Читает главу ${chapterKey}`,
-        detail: join(`${paragraphs} из ${header[5]}`, header[1] ? `том ${header[1]}` : undefined),
-        source: { chapterKey, from, to },
-      };
+    // The chapter is named by the server; a chapter the text lost is named by the title its reading returned.
+    const place = places[chapterKey] ?? (summary ? /^(?:Том \d+, )?(.+?) — /u.exec(summary)?.[1] : undefined);
+    const label = place ? `Прочитал: ${place}` : 'Прочитал главу';
+    const activity = place ? `Читаю: ${place}` : 'Читаю главу';
+    const read = summary ? /, абзацы ¶(\d+)–¶(\d+) из (\d+)/u.exec(summary) : null;
+    if (read) {
+      const from = Number(read[1]);
+      const to = Number(read[2]);
+      return { label, activity, detail: `${paragraphsLabel(from, to)} из ${read[3]}`, source: { chapterKey, from, to } };
     }
     const span = readSpan(args);
-    return withOptional({ label: `Глава ${chapterKey}`, activity: `Читает главу ${chapterKey}` }, {
-      detail: span ? span.from === span.to ? `¶${span.from}` : `¶${span.from}–${span.to}` : undefined,
+    return withOptional({ label, activity }, {
+      detail: span ? paragraphsLabel(span.from, span.to) : undefined,
       source: { chapterKey, ...(span ?? {}) },
     });
   },
-  chapters(args, summary) {
-    const detailMode = args.detail === 'summary' ? 'с пересказами' : args.detail === 'card' ? 'с карточками' : undefined;
+  chapters(args, summary, places) {
+    const retold = args.detail === 'summary' || args.detail === 'card';
     const title = text(args.title);
-    const count = summary ? /^Глав: (\d+)/u.exec(summary) : null;
-    return withOptional({
-      label: join('Список глав', range(args), books(args), title ? `«${title}»` : undefined, detailMode),
-      activity: 'Смотрит список глав',
-    }, { detail: count ? `${count[1]} ${plural(Number(count[1]), ['глава', 'главы', 'глав'])}` : undefined });
+    const counted = summary ? /^Глав: (\d+)/u.exec(summary) : null;
+    const count = counted ? Number(counted[1]) : undefined;
+    const where = join(range(args, places), books(args, 'книга', 'книги'), title ? `«${title}»` : undefined);
+    const chapters = count === undefined ? undefined : `${count} ${plural(count, ['главы', 'глав', 'глав'])}`;
+    if (retold) {
+      return { label: join(`Просмотрел краткое содержание ${chapters ?? 'глав'}`, where), activity: 'Смотрю оглавление' };
+    }
+    return withOptional({ label: join('Посмотрел оглавление', where), activity: 'Смотрю оглавление' },
+      { detail: count === undefined ? undefined : `${count} ${plural(count, ['глава', 'главы', 'глав'])}` });
   },
   glossary(args, summary) {
     const query = text(args.query);
     const types = strings(args.types);
-    const count = summary ? /^Найдено записей: (\d+)/u.exec(summary) : null;
-    return withOptional({
-      label: query ? `Словарь: «${query}»` : types.length ? `Словарь: ${types.join(', ')}` : 'Словарь саги',
-      activity: query ? `Ищет в словаре «${query}»` : 'Смотрит словарь',
-    }, { detail: count ? `${count[1]} ${plural(Number(count[1]), ['запись', 'записи', 'записей'])}` : undefined });
+    const counted = summary ? /^Найдено записей: (\d+)/u.exec(summary) : null;
+    const detail = counted ? `${counted[1]} ${plural(Number(counted[1]), ['имя', 'имени', 'имён'])}` : undefined;
+    if (query) return withOptional({ label: `Что известно о „${query}“`, activity: `Смотрю, что известно о „${query}“` }, { detail });
+    if (types.length) return withOptional({ label: `Что известно об именах: ${types.join(', ')}`, activity: `Смотрю, что известно об именах: ${types.join(', ')}` }, { detail });
+    return { label: plainWords.glossary[0], activity: plainWords.glossary[1] };
+  },
+  entity(args, _summary, places) {
+    const name = text(args.name);
+    const at = places[text(args.at) ?? ''];
+    if (!name) return { label: plainWords.entity[0], activity: plainWords.entity[1] };
+    return { label: join(`Собрал всё о „${name}“`, at ? `к главе: ${at}` : undefined), activity: `Собираю всё о „${name}“` };
+  },
+  timeline(args, _summary, places) {
+    const query = text(args.query);
+    return { label: join(plainWords.timeline[0], query ? `«${query}»` : undefined, range(args, places)), activity: plainWords.timeline[1] };
   },
   remember(args, summary) {
-    const kind = typeof args.kind === 'string' ? memoryKinds[args.kind] : undefined;
     const note = text(args.text);
+    const quoted = note ? `«${shorten(note, 80)}»` : undefined;
+    const label = quoted ? `Запомнил: ${quoted}` : 'Запомнил';
+    const activity = quoted ? `Запоминаю: ${quoted}` : 'Запоминаю';
     if (note && summary?.startsWith('Запись сохранена') && typeof args.kind === 'string') {
-      return { label: `Запомнил: «${shorten(note, 80)}»`, activity: 'Записывает в память автора', remembered: { kind: args.kind, text: note } };
+      return { label, activity, remembered: { kind: args.kind, text: note } };
     }
-    return {
-      label: join('Запись в память автора', kind, note ? `«${shorten(note, 80)}»` : undefined),
-      activity: 'Записывает в память автора',
-    };
+    return { label, activity };
   },
   memory(args, summary) {
     const kind = typeof args.kind === 'string' ? memoryKinds[args.kind] : undefined;
     const query = text(args.query);
-    const count = summary ? /^Записей: (\d+)/u.exec(summary) : null;
-    const total = count ? Number(count[1]) : 0;
+    const counted = summary ? /^Записей: (\d+)/u.exec(summary) : null;
+    const total = counted ? Number(counted[1]) : 0;
     return withOptional({
-      label: join('Память автора', kind, query ? `«${query}»` : undefined),
-      activity: 'Читает память автора',
-    }, { detail: !count ? undefined : total === 0 ? 'записей нет' : `${total} ${plural(total, ['запись', 'записи', 'записей'])}` });
+      label: join(kind ?? plainWords.memory[0], query ? `«${query}»` : undefined),
+      activity: plainWords.memory[1],
+    }, { detail: !counted ? undefined : total === 0 ? 'пока нет' : `${total} ${plural(total, ['запись', 'записи', 'записей'])}` });
   },
   threads(args, summary) {
     const arcs = args.part === 'arcs';
-    const what = arcs ? 'Арки саги' : 'Нити саги';
     const who = text(args.who);
     const query = text(args.query);
     const kind = text(args.kind);
-    const count = summary ? /^(Нитей|Арок): (\d+)/u.exec(summary) : null;
-    const total = count ? Number(count[2]) : 0;
-    const detail = !count ? undefined
-      : total === 0 ? 'ничего не найдено'
-      : `${total} ${count[1] === 'Арок' ? plural(total, ['арка', 'арки', 'арок']) : plural(total, ['нить', 'нити', 'нитей'])}`;
-    return withOptional({
-      label: join(what, who ? `«${who}»` : undefined, query ? `«${query}»` : undefined, kind, args.level === 'all' ? 'с нитями книг' : undefined),
-      activity: `Смотрит ${arcs ? 'арки' : 'нити'} саги`,
-    }, { detail: detail ?? (summary?.startsWith('Нитей и арок пока нет') ? 'слой ещё не собран' : undefined) });
+    const counted = summary ? /^(Нитей|Арок): (\d+)/u.exec(summary) : null;
+    const total = counted ? Number(counted[2]) : 0;
+    const detail = !counted ? (summary?.startsWith('Нитей и арок пока нет') ? 'ещё собираются' : undefined) : total === 0 ? 'не нашёл' : String(total);
+    const label = arcs ? 'Главные линии саги'
+      : join(`Сюжетные линии${who ? ` с „${who}“` : ''}${query ? ` про „${query}“` : ''}`, kind ? `вид: ${kind}` : undefined, args.level === 'all' ? 'вместе с линиями книг' : undefined);
+    return withOptional({ label, activity: arcs ? 'Смотрю главные линии саги' : 'Смотрю сюжетные линии' }, { detail });
   },
-  changes(args, summary) {
+  changes(args, summary, places) {
     const subject = text(args.subject) ?? '';
-    const count = summary ? /^Изменений: (\d+)/u.exec(summary) : null;
-    const detail = count
-      ? `${count[1]} ${plural(Number(count[1]), ['изменение', 'изменения', 'изменений'])}`
-      : summary?.startsWith('Изменений не найдено') ? 'ничего не найдено' : undefined;
-    return withOptional({
-      label: join(`Изменения: «${subject}»`, range(args)),
-      activity: `Прослеживает изменения «${subject}»`,
-    }, { detail });
+    const counted = summary ? /^Изменений: (\d+)/u.exec(summary) : null;
+    const detail = counted
+      ? `${counted[1]} ${plural(Number(counted[1]), ['перемена', 'перемены', 'перемен'])}`
+      : summary?.startsWith('Изменений не найдено') ? 'перемен не нашёл' : undefined;
+    return withOptional({ label: join(`Что менялось у „${subject}“`, range(args, places)), activity: `Слежу, как менялось: „${subject}“` }, { detail });
   },
-  scan(args, summary) {
-    const task = text(args.task) ?? '';
+  scan(args, summary, places) {
+    const task = text(args.task);
+    const sought = task ? `: «${shorten(task, 80)}»` : '';
     const found = summary ? /Найдено: (\d+)/u.exec(summary) : null;
+    const count = found ? Number(found[1]) : undefined;
     return withOptional({
-      label: join(`Просмотр текста: «${shorten(task, 80)}»`, range(args), books(args)),
-      activity: 'Просматривает текст целиком',
-    }, { detail: found ? `найдено ${found[1]}` : undefined });
+      label: join(`${plainWords.scan[0]}${sought}`, range(args, places), books(args, 'книга', 'книги')),
+      activity: `${plainWords.scan[1]}${task ? `: «${shorten(task, 60)}»` : ''}`,
+    }, { detail: count === undefined ? undefined : count === 0 ? 'ничего не нашёл' : `${count} ${plural(count, ['место', 'места', 'мест'])}` });
   },
 };
 
@@ -234,18 +220,17 @@ function readSpan(args: Record<string, unknown>): { from: number; to: number } |
   return { from: Math.max(1, around - radius), to: around + radius };
 }
 
-function range(args: Record<string, unknown>) {
-  const from = text(args.from);
-  const to = text(args.to);
-  if (from && to) return `гл. ${from}–${to}`;
-  if (from) return `с гл. ${from}`;
-  return to ? `до гл. ${to}` : undefined;
+/** «с главы: Книга 1, гл. 1 „Туманный берег“ · до главы: Книга 2, гл. 16 „Журнал Савы“»: the chapters a call is bound to, by their places. */
+function range(args: Record<string, unknown>, places: Places) {
+  const from = places[text(args.from) ?? ''];
+  const to = places[text(args.to) ?? ''];
+  return join(from ? `с главы: ${from}` : undefined, to ? `до главы: ${to}` : undefined) || undefined;
 }
 
-function books(args: Record<string, unknown>) {
+function books(args: Record<string, unknown>, one: string, many: string) {
   const list = Array.isArray(args.books) ? args.books.filter((book): book is number => Number.isInteger(book)) : [];
   if (!list.length) return undefined;
-  return list.length === 1 ? `том ${list[0]}` : `тома ${list.join(', ')}`;
+  return list.length === 1 ? `${one} ${list[0]}` : `${many} ${list.join(', ')}`;
 }
 
 function quoteList(values: readonly string[], shown = 3) {

@@ -1,18 +1,7 @@
 .editor {
-  position: fixed;
-  z-index: 70;
-  top: 80px;
-  right: 28px;
   display: flex;
-  width: 360px;
-  max-height: calc(100dvh - 112px);
   flex-direction: column;
-  gap: 12px;
-  overflow: auto;
-  border-radius: var(--ck-radius-lg);
-  background: var(--ck-card);
-  padding: 14px;
-  box-shadow: var(--ck-shadow-lg);
+  gap: 16px;
 }
 
 .header,
@@ -28,46 +17,67 @@
   gap: 12px;
 }
 
-.header h2,
-.header p,
-.status,
-.fileMeta {
-  margin: 0;
-}
-
 .header h2 {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.header p,
-.status,
-.fileMeta,
-.progress span {
-  color: var(--ck-muted-foreground);
-  font-size: 12px;
-  line-height: 1.4;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  line-height: 1.3;
 }
 
 .body {
   display: flex;
+  gap: 20px;
+}
+
+/* SF4.1: the cover of this book as it will stand on the shelf, with the colour chosen now. */
+.sample {
+  width: 140px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--ck-radius-md);
+}
+
+.sample > div {
+  height: 210px;
+}
+
+.choice {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+}
+
+.colours {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.colours legend,
+.label {
+  margin: 0 0 8px;
+  padding: 0;
+  color: var(--ck-foreground);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .palette {
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-md);
-  padding: 12px;
 }
 
 .swatch {
-  width: 44px;
-  height: 44px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
   border: 2px solid transparent;
   border-radius: 999px;
+  color: var(--ck-picture-foreground);
   cursor: pointer;
 }
 
@@ -76,19 +86,29 @@
   outline-offset: 2px;
 }
 
-.localPreview {
-  display: grid;
-  width: 100%;
-  height: 150px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: var(--ck-radius-md);
+.colourName,
+.note,
+.fileMeta,
+.progress span {
+  margin: 6px 0 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-.localPreview img {
-  width: 100px;
-  height: 150px;
-  object-fit: contain;
+.picture {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.picture .label {
+  margin-bottom: 2px;
+}
+
+.fileInput {
+  display: none;
 }
 
 .progress {
@@ -99,41 +119,44 @@
   flex: 1;
 }
 
-.fileMeta {
-  font-family: var(--ck-font-mono);
-}
-
-.confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-
 .actions {
   justify-content: flex-end;
   gap: 10px;
 }
 
-@media (max-width: 760px) {
-  .editor {
-    top: auto;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    width: min(390px, 100dvw);
-    max-height: 90dvh;
-    border-radius: var(--ck-radius-lg) var(--ck-radius-lg) 0 0;
-    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+@media (max-width: 520px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .sample {
+    width: 100%;
+  }
+
+  .sample > div {
+    height: 150px;
   }
 
   .actions {
     align-items: stretch;
-    flex-direction: column;
+    flex-direction: column-reverse;
   }
 
   .actions button {
     width: 100%;
     min-height: 44px;
   }
+}
+
+@media (pointer: coarse) {
+  .swatch {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* «Выбрать из рисунков саги» (specs/2026-11-11-ux9-shelf-chat.md SC1.6): the drawings of the saga under the cover. */
+.drawings {
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
 }

@@ -42,6 +42,9 @@ func NewService(store Store, ids IDGenerator, clock Clock) *Service {
 type CreateProjectInput struct {
 	Title       string
 	Description string
+	// Demo makes the demo saga of the actor (specs/2026-11-09-demo-saga.md DS3.1). No request carries it: only the
+	// use case of the example sets it.
+	Demo bool
 }
 
 type ListProjectsInput struct {
@@ -98,7 +101,16 @@ func (s *Service) CreateProject(ctx context.Context, actorUserID string, input C
 		Title:             title,
 		Description:       input.Description,
 		CreatedAt:         now,
+		Demo:              input.Demo,
 	})
+}
+
+// DemoProject is the live demo saga the actor owns, or ErrNotFound.
+func (s *Service) DemoProject(ctx context.Context, actorUserID string) (ProjectRecord, error) {
+	if actorUserID == "" {
+		return ProjectRecord{}, ErrForbidden
+	}
+	return s.store.DemoProject(ctx, actorUserID)
 }
 
 func (s *Service) ListProjects(ctx context.Context, actorUserID string, input ListProjectsInput) (ProjectPage, error) {

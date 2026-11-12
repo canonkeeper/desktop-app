@@ -1,6 +1,7 @@
 import createClient, { type Client } from 'openapi-fetch';
 import type { paths } from './generated/openapi';
 import { operationManifest, type OperationId } from './generated/operation-manifest';
+import { noteServerDate } from '../clock/server-clock';
 import type {
   ApiClient,
   ApiProblem,
@@ -165,10 +166,17 @@ export class OpenApiClientTransport implements ApiClient {
 
   constructor(options: CanonKeeperApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? defaultBaseUrl();
+    const send = options.fetch ?? ((request: Request) => globalThis.fetch(request));
     this.client = createClient<paths>({
       baseUrl: this.baseUrl,
       credentials: 'include',
-      fetch: options.fetch ?? ((request) => globalThis.fetch(request)),
+      // The Date of every answer keeps the clock of the server this tab counts by (specs/2026-11-11-ux9-shelf-chat.md SC3.8).
+      fetch: async (request) => {
+        const sentAt = Date.now();
+        const response = await send(request);
+        noteServerDate(response.headers.get('Date'), sentAt, Date.now());
+        return response;
+      },
     });
   }
 
@@ -229,13 +237,24 @@ export class OpenApiClientTransport implements ApiClient {
     }
   }
 
-  /** A GET that answers with a file: the bytes and the name the server gave it. */
-  protected async requestFile<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string): Promise<DownloadedFile> {
+  /**
+   * An operation that answers with a file: the bytes and the name the server gave it. A write goes with its body and the
+   * same request-forgery protection as request (the batch of keys of the tiers).
+   */
+  protected async requestFile<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown): Promise<DownloadedFile> {
     const route = operationManifest[operationId];
+    return this.withCsrfRecovery(needsCsrf(route.method, {}), () => this.requestFileOnce(operationId, params, fallbackName, body));
+  }
+
+  private async requestFileOnce<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown): Promise<DownloadedFile> {
+    const route = operationManifest[operationId];
+    const csrfToken = needsCsrf(route.method, {}) ? await this.ensureCsrfToken() : undefined;
     const openApiRequest = this.client.request as unknown as OpenApiFetchRequest;
     let result: OpenApiFetchResult;
     try {
-      result = await openApiRequest(route.method.toLowerCase() as Lowercase<typeof route.method>, route.path, { params, parseAs: 'blob' });
+      result = await openApiRequest(route.method.toLowerCase() as Lowercase<typeof route.method>, route.path, {
+        params: withContractHeaders(route.method, params, {}, csrfToken), parseAs: 'blob', ...(body === undefined ? {} : { body }),
+      });
     } catch (error) {
       throw new NetworkApiError(error);
     }

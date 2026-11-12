@@ -26,6 +26,7 @@ const (
 
 	operationStart   = "author_materials.import.v1"
 	operationConfirm = "author_materials.confirm.v1"
+	operationCreate  = "author_materials.create.v1"
 )
 
 // Actor is who reads the records of which project.
@@ -110,8 +111,46 @@ func (useCase List) Execute(ctx context.Context, actor Actor, input ListInput) (
 	return useCase.Store.ListAuthorMaterials(ctx, actor, filter)
 }
 
-// UpdateStore replaces what a record says when it is still at the expected revision; domain.ErrConflict when it is not
-// or another record has the name, domain.ErrNotFound without one.
+// CreateCommand is one record the author writes on the page, with its idempotency record.
+type CreateCommand struct {
+	Write
+	Replay
+	Draft domain.Draft
+	Key   string
+	At    time.Time
+}
+
+// CreateStore keeps a record of the source «вручную» under its idempotency key: a replay of the same request returns the
+// record it made, another request under the key is domain.ErrConflict; a name another record has is domain.NameTaken.
+type CreateStore interface {
+	CreateAuthorMaterial(ctx context.Context, command CreateCommand) (domain.Record, error)
+}
+
+// Create is createAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.1): the author writes one record by hand.
+type Create struct {
+	Store CreateStore
+	Now   func() time.Time
+}
+
+func (useCase Create) Execute(ctx context.Context, actor Write, draft domain.Draft, request RequestPath) (domain.Record, error) {
+	clean, ok := domain.CleanDraft(draft)
+	key := sagamemory.GlossaryKey(clean.Name)
+	if !ok || key == "" {
+		return domain.Record{}, domain.ErrInvalid
+	}
+	body, err := json.Marshal(clean)
+	if err != nil {
+		return domain.Record{}, domain.ErrInvalid
+	}
+	replay, err := replayOf(actor, request, operationCreate, hashText(string(body)))
+	if err != nil {
+		return domain.Record{}, err
+	}
+	return useCase.Store.CreateAuthorMaterial(ctx, CreateCommand{Write: actor, Replay: replay, Draft: clean, Key: key, At: useCase.Now().UTC()})
+}
+
+// UpdateStore replaces what a record says when it is still at the expected revision; domain.ErrConflict when it is not,
+// domain.NameTaken when another record has the name, domain.ErrNotFound without one.
 type UpdateStore interface {
 	UpdateAuthorMaterial(ctx context.Context, actor Write, recordID string, expected int64, draft domain.Draft, key string) (domain.Record, error)
 }
@@ -208,7 +247,7 @@ func readSource(input StartInput) (domain.Parsed, domain.SourceKind, error) {
 		if input.Text != "" {
 			return domain.Parsed{}, "", domain.ErrInvalid
 		}
-		return domain.Parse(input.Content)
+		return domain.Parse(input.FileName, input.Content)
 	}
 	if input.Text == "" {
 		return domain.Parsed{}, "", domain.ErrInvalid

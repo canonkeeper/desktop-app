@@ -24,6 +24,9 @@ func CreateVersionInTx(ctx context.Context, queries *sqlc.Queries, project, id p
 		ProjectID: project, DraftID: id, Reason: string(version.Reason), Text: version.Text,
 		Words: int32(version.Words), AuthorWords: int32(version.AuthorWords), JobID: job,
 	}
+	if version.Idea != nil {
+		params.Idea = pgtype.Text{String: *version.Idea, Valid: true}
+	}
 	if version.PlanNumber > 0 {
 		params.PlanNumber = pgtype.Int4{Int32: int32(version.PlanNumber), Valid: true}
 	}
@@ -32,6 +35,9 @@ func CreateVersionInTx(ctx context.Context, queries *sqlc.Queries, project, id p
 		if params.PackID, err = storedb.ParseUUID(version.PackID); err != nil {
 			return 0, domain.ErrInvalid
 		}
+	}
+	if version.Place != "" {
+		params.Place = pgtype.Text{String: version.Place, Valid: true}
 	}
 	if len(version.Support) > 0 {
 		body, err := json.Marshal(version.Support)
@@ -68,7 +74,8 @@ func (repository *Repository) ChapterDraftVersions(ctx context.Context, actor se
 		versions = make([]domain.Version, len(rows))
 		for i, row := range rows {
 			versions[i] = domain.Version{Number: int(row.Number), Reason: domain.VersionReason(row.Reason), Words: int(row.Words),
-				AuthorWords: int(row.AuthorWords), PlanNumber: int(row.PlanNumber.Int32), CreatedAt: row.CreatedAt.Time.UTC()}
+				AuthorWords: int(row.AuthorWords), PlanNumber: int(row.PlanNumber.Int32), CreatedAt: row.CreatedAt.Time.UTC(),
+				Place: row.Place.String, Scenes: int(row.Scenes)}
 		}
 		return nil
 	})
@@ -100,7 +107,10 @@ func VersionInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.
 	}
 	version := domain.Version{
 		Number: int(row.Number), Reason: domain.VersionReason(row.Reason), Text: row.Text, Words: int(row.Words), AuthorWords: int(row.AuthorWords),
-		PlanNumber: int(row.PlanNumber.Int32), CreatedAt: row.CreatedAt.Time.UTC(),
+		PlanNumber: int(row.PlanNumber.Int32), CreatedAt: row.CreatedAt.Time.UTC(), Place: row.Place.String,
+	}
+	if row.Idea.Valid {
+		version.Idea = &row.Idea.String
 	}
 	if row.PackID.Valid {
 		version.PackID = storedb.UUIDString(row.PackID)
@@ -153,7 +163,18 @@ func (repository *Repository) TakeChapterDraftVersion(ctx context.Context, write
 		if take.Whole {
 			reason = domain.VersionBeforeRestore
 		}
-		if _, err := SaveVersionInTx(ctx, queries, project, id, domain.NewVersion(reason, draft.Text)); err != nil {
+		before := domain.NewVersion(reason, draft.Text)
+		// A piece put in place of a place names that place (specs/2026-11-11-ux9-writing-b.md WB3.1).
+		if !take.Whole {
+			before.Place = domain.ChangedPlace(draft.Text, text)
+		}
+		// A version that keeps the idea gives it back whole too, and the draft before the return keeps its idea the same
+		// way: «Вернуть как было до разговора» and its «Отменить» (specs/2026-11-10-ux5-voice.md VO1.3).
+		idea := draft.Idea
+		if take.Whole && version.Idea != nil {
+			before, idea = before.WithIdea(draft.Idea), *version.Idea
+		}
+		if _, err := SaveVersionInTx(ctx, queries, project, id, before); err != nil {
 			return err
 		}
 		book, chapter, err := OptionalPlace(draft.Place)
@@ -161,7 +182,7 @@ func (repository *Repository) TakeChapterDraftVersion(ctx context.Context, write
 			return err
 		}
 		if err := queries.UpdateChapterDraft(ctx, sqlc.UpdateChapterDraftParams{
-			ProjectID: project, ID: id, Title: draft.Title, BookID: book, AfterChapterID: chapter, Idea: draft.Idea, Kind: string(draft.Kind),
+			ProjectID: project, ID: id, Title: draft.Title, BookID: book, AfterChapterID: chapter, Idea: idea, Kind: string(draft.Kind),
 			Body: text, Actor: actor,
 		}); err != nil {
 			return err

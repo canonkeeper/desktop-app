@@ -77,7 +77,7 @@ export interface paths {
         };
         /**
          * List the author's feedback
-         * @description «Мои обращения»: the signed-in author's threads, those with an unread reply of support first, then the latest, each with its first message; unread counts the threads with an unread reply. Cache-Control: no-store.
+         * @description «Ответы» of «Написать нам»: the signed-in author's threads, those with an unread reply of support first, then the latest, each with its first message; unread counts the threads with an unread reply. Cache-Control: no-store.
          */
         get: operations["listFeedbackThreads"];
         put?: never;
@@ -203,7 +203,7 @@ export interface paths {
         put?: never;
         /**
          * Reply on the site
-         * @description The administrator's reply, blocks of text and images of his draft: the thread becomes answered; the author gets «Вам ответили по обращению «…»» with the text, the number of images and a link to the site, a guest the text with the images attached and the way to write again. A repeat under the same draftKey answers the same thread without a second letter. Writes feedback_replied to the backend journal with ids only. Cache-Control: no-store.
+         * @description The administrator's reply, blocks of text and images of his draft: the thread becomes answered; the author gets «Ответ на ваше сообщение: …» with the text, the number of images and the button «Открыть на сайте», a guest the text with the images attached and the button «Написать нам». A repeat under the same draftKey answers the same thread without a second letter. Writes feedback_replied to the backend journal with ids only. Cache-Control: no-store.
          */
         post: operations["replyAdminFeedback"];
         delete?: never;
@@ -226,6 +226,250 @@ export interface paths {
          */
         put: operations["setAdminFeedbackStatus"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the tiers of the site
+         * @description The four tiers by rank with the link to the lot on FunPay (null — not on sale yet) and their limits. The site keeps no price: it is only on the page of the lot. No sign-in is needed: the page «Тарифы» of a guest shows them. A change of the administrator is read by the next request. Cache-Control: no-cache.
+         */
+        get: operations["listSubscriptionTiers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the signed-in writer's tier
+         * @description The tier in force of the writer of the session — the highest of his running periods, else «Бесплатно» — when it ends with the adjoining periods of the same tier, and his periods: those that run or wait, then those that ended in the last 90 days. trials are the trials left on the tier in force (TR6.1, TR8.1); chapter is its window of new chapters, those that count now and when a place frees (TL3.3); voice is what the tier lets him talk today (TR8.1). The limits of the tier the quota fence takes are already in getAccountQuota. Cache-Control: no-store.
+         */
+        get: operations["getAccountPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the tiers as stored
+         * @description The four tiers by rank with every value the administrator sets. Cache-Control: no-store.
+         */
+        get: operations["listAdminSubscriptionTiers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/tiers/{tier}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change a tier
+         * @description Sets every value of a tier at once: the link to the lot (https://funpay.com/…, at most 300 characters; null for «Бесплатно») and every limit (each within what its key keeps; activeTurns and importsPerDay at least 1; chaptersPerWindow and chapterEveryDays at least 1 together, or null together — no window; specs/2026-11-11-tier-limits.md TL2.3). A wrong value is 400 request.validation and nothing changes; an unknown tier is 404. Every changed field is one tier_changed line of the backend journal with the tier, the field, the value before and after; the same values write nothing. The next operation of any writer of the tier reads the new values. Cache-Control: no-store.
+         */
+        put: operations["setAdminSubscriptionTier"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/writers/{userId}/plan/periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give a writer a tier
+         * @description Adds a period of a paid tier from now for exactly one term: days (1–3660), until a Moscow day later than today (the period ends at the midnight after it) or forever. The highest running period is the writer's tier; the time of the others runs in parallel. A wrong body is 400 request.validation; a deleted or unknown account is 404. Writes tier_granted with the account, the tier, the start, the end and the period to the backend journal. Cache-Control: no-store.
+         */
+        post: operations["grantAdminWriterTier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/writers/{userId}/plan/periods/{periodId}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End a period of a writer's tier early
+         * @description A running period ends now; a future one gets its start as its end and never begins. A period that ended already is 409 tiers.period_over; a period of another account, a deleted or unknown account is 404. Writes tier_period_ended with the account, the tier, the period and its end to the backend journal. Cache-Control: no-store.
+         */
+        post: operations["endAdminWriterPeriod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/plan/keys/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a key of a tier
+         * @description Tells what the key will do and redeems nothing (TR5.1): its tier and days and the effect — extends (a period of the same tier with an end runs or waits; the new one begins where the last ends), starts_now (the new period begins now; the running periods of other tiers, listed in running, go on in parallel and the highest tier is in force) or unneeded (the tier of the key runs without term; startsAt and endsAt are null). The key is typed as the author likes: lower case, spaces, hyphens, with or without CK, O for 0, I and L for 1. A key of a wrong form, unknown or revoked is 422 tiers.key_invalid; one redeemed by another account is 409 tiers.key_used; one this account already redeemed is 409 tiers.key_own, which counts no refusal. Every refused key counts: from the tenth in a Moscow day both operations of a key answer 429 tiers.key_attempts with Retry-After until the Moscow midnight without looking the key up. The key goes to no journal and no answer; a refusal writes key_refused with the account and the code. Cache-Control: no-store.
+         */
+        post: operations["checkSubscriptionKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/plan/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redeem a key of a tier
+         * @description Redeems the key in one transaction (TR5.2): under the lock of the account the key is taken by its hash, the period is added by the rule of checkSubscriptionKey with the source key, and the key is marked redeemed by this account with its period. A key is redeemed once; a repeat of the same account with the same key answers the same plan and period without a second period, so a double click is safe without an idempotency key. A key of the tier the account has without term is 409 tiers.key_unneeded and stays unredeemed. The refusals and the count of refused keys are those of checkSubscriptionKey, except that a key this account already redeemed answers its period again. Writes key_redeemed with the account, the batch, the tier and the period to the backend journal, never the key. Cache-Control: no-store.
+         */
+        post: operations["redeemSubscriptionKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/demo-saga": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open the demo saga of the author
+         * @description «Попробовать на примере» (specs/2026-11-09-demo-saga.md DS1): answers the demo saga of the signed-in author — «Игрок» of F. M. Dostoevsky from Wikisource, 17 chapters — as a saga of the contract with demo: true. An author without one gets it made and seeded with its book by the import of the product; an author with one gets the same saga, never a copy: an account has at most one live demo saga. The operation mends itself: a demo saga that holds neither its book nor an import of it is seeded again. The demo saga stands out of the limits of sagas, books, chapters and characters of its owner and spends no upload of the day; it takes no text of the author — every write that adds or changes text in it answers 409 demo_saga.read_only. Questions, drawings and writing in it spend the ordinary limits. The request has no body. The text of the saga is ready when getIndexingStatus says so. Cache-Control: no-store.
+         */
+        post: operations["openDemoSaga"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/key-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the batches of keys
+         * @description Every batch of keys, the newest first: its tier, days, note, who made it and when, how many keys it has, how many were redeemed and revoked, and its revocation. No key: the base keeps only their hashes. Cache-Control: no-store.
+         */
+        get: operations["listAdminKeyBatches"];
+        put?: never;
+        /**
+         * Make a batch of keys
+         * @description Makes count keys (1–500) of a paid tier, each for 30 days, in one transaction: 25 characters of Crockford's Base32 from a cryptographic source, 125 bits, of which the base keeps only the SHA-256. The answer is the one time the keys exist outside: a text file to save, one key a line as CK-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX, LF between lines, no header — the list for the automatic delivery of a FunPay lot. The keys cannot be read again: a lost file is a revoked batch and a new one. A wrong body is 400 request.validation. Writes key_batch_created with the batch, the tier and the count to the backend journal, never a key. At most 10 batches an hour. Cache-Control: no-store.
+         */
+        post: operations["createAdminKeyBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/key-batches/{batchId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke the unredeemed keys of a batch
+         * @description Every unredeemed key of the batch is refused from now as an unknown one (tiers.key_invalid); the redeemed keys and the periods they gave stay. A repeat revokes nothing and keeps the moment of the first revocation. An unknown batch is 404. Writes key_batch_revoked with the batch and how many keys this call revoked to the backend journal. Cache-Control: no-store.
+         */
+        post: operations["revokeAdminKeyBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/writers/{userId}/plan/trials/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give a writer back the trials of his tiers
+         * @description Gives back the trials the body names (TR3.4): images sets the trial drawings he used to 0, chapters returns the trial new chapters of «Письмо» that count, voiceCalls sets the trial calls of the voice he used to 0, so that trial of his tier in force is whole again. At least one kind is named. Writes tier_trials_reset with the account, the kinds and what he had used to the backend journal. A body that names nothing or an unknown field is 400; a deleted or unknown account is 404. Answers the writer's plan after it. Cache-Control: no-store.
+         */
+        post: operations["resetAdminWriterTrials"];
         delete?: never;
         options?: never;
         head?: never;
@@ -591,9 +835,29 @@ export interface paths {
         };
         /**
          * Read the signed-in writer's quotas
-         * @description Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads and drawings of the current Moscow day, questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.
+         * @description Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.
          */
         get: operations["getAccountQuota"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recently-deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List what the author deleted and may return.
+         * @description «Недавно удалённые» (specs/2026-11-11-ux7-trash.md TB1.1): in one read over every saga of the signed-in author, newest first in each group, the deleted sagas he owns or administers (restoreProject), the deleted books of his live sagas and the deleted chapters of their live books while he is an editor and above (restoreBook, restoreChapter), the live books of those sagas updated from a file whose previous version can still be returned (bookUpdates, revertBookUpdate; specs/2026-11-12-ux10-book-revert.md BR3.3), and in a build with drawings the deleted drawings he may return — those he drew while an editor and above, every one of a saga he owns (restoreDrawing). A row names its saga and place and the end of its 7 days (restoreUntil); a group carries at most 100 rows and its total. Cache-Control: no-store.
+         */
+        get: operations["listRecentlyDeleted"];
         put?: never;
         post?: never;
         delete?: never;
@@ -615,6 +879,30 @@ export interface paths {
          * @description specs/2026-11-03-voice-assistant.md V1.9: keeps the signed-in user's voice of the co-author for his next conversations; a call that goes on keeps its voice. Only a voice of VoiceStatus.voices is taken (400 request.validation). Responses are no-store.
          */
         put: operations["setAccountVoice"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/letters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the letters the signed-in author gets.
+         * @description specs/2026-11-09-first-session.md FS3.2, specs/2026-11-10-service-letters.md M4.5: the signed-in author's choice of the letters of the site. sagaReady is the letter «Сага готова» — one letter after books are loaded, when the saga can be asked; tierLetters are «Письма о сроке тарифа» — three days before the end of a paid tier and on the day it ends; the receipt of a tier goes always. Both on by default. Responses are no-store.
+         */
+        get: operations["getAccountLetters"];
+        /**
+         * Choose the letters the signed-in author gets.
+         * @description specs/2026-11-09-first-session.md FS3.2, specs/2026-11-10-service-letters.md M4.5: keeps the letters the signed-in author names — at least one of sagaReady and tierLetters; a letter he does not name stays as it is — and answers his whole choice. Only the author himself changes it: a session opened on his behalf is refused with 403 account.own_session_required. Responses are no-store.
+         */
+        put: operations["setAccountLetters"];
         post?: never;
         delete?: never;
         options?: never;
@@ -770,32 +1058,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read the signed-in author's access to illustrations
-         * @description The author's own right to illustrations (specs/2026-10-29-saga-illustrations.md R11.1): trial while trial drawings are left (an account gets the trial of a new account once: the administrator's trial_drawings, 5 by default), active through activeUntil (a Moscow day, inclusive; null — without end), blocked by the administrator, none otherwise. images counts the drawings of the current Moscow day against images_per_day and resets at resetsAt; request is the pending request for access. Drawings, region edits, variants, sheets and sketches of an account that may not draw are refused with 403 illustrations.locked; the drawings already made stay readable whatever the right. Cache-Control: no-store.
+         * Read the signed-in author's right to draw
+         * @description The author's own right to draw (specs/2026-11-08-subscription-tiers.md TR6.1, TR6.5): active while his images_per_day in force is above zero — on his tier or by his own limit; trial while the trial drawings of his tier in force are left (trialLeft: the trial of the tier less those he used in the life of the account); blocked by the administrator; none otherwise. images counts the drawings of the current Moscow day against images_per_day — trial drawings are counted too, without its check — and resets at resetsAt. Drawings, region edits, variants, sheets and sketches of an account that may not draw are refused with 403 illustrations.locked; the drawings already made stay readable whatever the right. Cache-Control: no-store.
          */
         get: operations["getIllustrationAccess"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/illustrations/access-requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ask for access to illustrations
-         * @description Keeps one pending request of the signed-in author for the admin panel and writes it to the support mailbox (R11.5). A repeat while the request is pending sends it again with the new text at most once a day: sooner is 429 illustrations.request_pending with Retry-After. Active access is 409 illustrations.active; an author whose email is not verified gets 403 auth.email_unverified. The administrator grants the request by turning access on, or declines it; the author gets a letter either way. Cache-Control: no-store.
-         */
-        post: operations["createIllustrationAccessRequest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -811,51 +1079,11 @@ export interface paths {
         };
         get?: never;
         /**
-         * Turn a writer's illustrations on or off
-         * @description Leaves the writer's right none, active (until a Moscow day from today on, inclusive, or without end when until is absent or null) or blocked; resetTrial gives back the trial drawings of a new account, trial_drawings of getAdminQuotaDefaults (none with the trial is trial); imagesPerDay sets the writer's images_per_day (a number ≥ 0 or default) in the same transaction. Turning access on grants the pending request. Writes illustrations_access_changed (and quota_override_changed for imagesPerDay) to the backend journal with the administrator's id and via admin, without the writer's address; turning access on writes «Иллюстрации включены до …» or «Иллюстрации включены» to the writer. An until that is not a day from today on, until without active, an unknown state or field is 400; a deleted or unknown account is 404. Answers the right after the change. Cache-Control: no-store.
+         * Block or unblock a writer's drawing
+         * @description blocked turns the writer's drawing off whatever his tier («Выключить рисунки»); none turns it back on («Включить обратно»): drawing by the day and the trial drawings come from his tier and his own images_per_day. Writes illustrations_access_changed with the account, the block before and after, the administrator's id and via admin to the backend journal, without the writer's address. Another state or field is 400; a deleted or unknown account is 404. Answers the right after the change. Cache-Control: no-store.
          */
         put: operations["setAdminWriterIllustrations"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/illustration-requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the requests for access to illustrations
-         * @description The requests of live accounts, pending first, newest first (at most 200), with each writer's address and right now, and the number of pending requests for the counter of the admin panel. Cache-Control: no-store.
-         */
-        get: operations["listAdminIllustrationRequests"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/illustration-requests/{requestId}/decline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Decline a request for access to illustrations
-         * @description Declines a pending request and writes «Пока не можем включить иллюстрации» to the writer with the administrator's message, if any. A request already granted or declined is 409; an unknown request or one of a deleted account is 404. Writes illustrations_access_changed to the backend journal with the administrator's id and via admin, without the writer's address. Cache-Control: no-store.
-         */
-        post: operations["declineAdminIllustrationRequest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -871,12 +1099,12 @@ export interface paths {
         };
         /**
          * Read the limits by default
-         * @description Every writer limit by default in the order of AdminQuotaKey, then trial_drawings, the trial drawings an account gets with its right to illustrations when it has no right row yet: code is the original value of the code, platform the value the administrator set or null, effective the one in force (platform, else code). A writer's limit in force is his own value, else effective. updatedAt is the last change or null. Cache-Control: no-store.
+         * @description Every writer limit by default in the order of AdminQuotaKey: code is the original value of the code, platform the value the administrator set or null, effective the one in force (platform, else code). A writer's limit in force is his own value, else effective. updatedAt is the last change or null. Cache-Control: no-store.
          */
         get: operations["getAdminQuotaDefaults"];
         /**
          * Change the limits by default
-         * @description Sets the listed limits by default to a number ≥ 0 (at most 2147483647; bigint for project_characters and account_characters) or returns them to the original value of the code with default, in one transaction. They hold from the next operation of every writer without his own limit and, for trial_drawings, for an account that gets its right row afterwards; writers' own limits and existing right rows do not change. Only a key whose value changes is written and returned, so a repeated request changes nothing; every changed key is one quota_default_changed line of the backend journal with the key, before, after, the code's value, the administrator's id and via admin. An unknown key, a value out of bounds or an empty change is 400. Cache-Control: no-store.
+         * @description Sets the listed limits by default to a number ≥ 0 (at most 2147483647) or returns them to the original value of the code with default, in one transaction. They hold from the next operation of every writer without his own limit; writers' own limits do not change. Only a key whose value changes is written and returned, so a repeated request changes nothing; every changed key is one quota_default_changed line of the backend journal with the key, before, after, the code's value, the administrator's id and via admin. An unknown key, a value out of bounds or an empty change is 400. Cache-Control: no-store.
          */
         put: operations["setAdminQuotaDefaults"];
         post?: never;
@@ -917,7 +1145,7 @@ export interface paths {
         put?: never;
         /**
          * Authenticate with email and password.
-         * @description Exchanges credentials with strict local Origin and CSRF before cookie mutation. Errors are non-enumerating and responses are no-store.
+         * @description Exchanges credentials with strict local Origin and CSRF before cookie mutation. Errors are non-enumerating and responses are no-store. A refused sign-in (401 auth.invalid_credentials) carries attemptsLeft and lockMinutes, the same for an existing and an unknown email; a closed window answers 429 with Retry-After.
          */
         post: operations["loginUser"];
         delete?: never;
@@ -986,6 +1214,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Fix the unverified address of the signed-in writer.
+         * @description Moves the signed-in writer's unverified address to another one and queues the verification letter to it (specs/2026-11-10-ux3-auth.md AU1.8, AU1.9). The same address sends the letter again. One transaction under the user row lock: the letters of verification count in the account limit (one a minute, five a day; 429 with Retry-After), the links sent to the old address — verification and password reset — stop working, a new verification link is stored for the new address; sessions stay. A verified address answers 409 auth.email_already_verified and never changes here; an address of another account answers 409 auth.email_taken, the same word as registerUser; a malformed one 400 request.validation; impersonation answers 409. The journal names the account, never an address. Responses are no-store.
+         */
+        put: operations["changeUnverifiedEmail"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the devices the signed-in author is signed in on.
+         * @description specs/2026-11-10-ux2-tariff-account.md TA5.2: how many live sessions the signed-in author opened himself, this one included — a session an administrator opened on his behalf does not count. Only the number: no address, device or time of any session is answered or kept. Responses are no-store.
+         */
+        get: operations["getAccountSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out on every other device.
+         * @description specs/2026-11-10-ux2-tariff-account.md TA5.3: revokes every session of the signed-in author but this one — the sessions an administrator opened on his behalf too — in one transaction under the user row lock and the lock of this session's write proof; this session stays with its CSRF. Chat turns started from the ended sessions stop. Answers how many live sessions of the author ended. Impersonation answers 409. The journal names the account and the count. Responses are no-store.
+         */
+        post: operations["logoutOtherSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the name of the signed-in author.
+         * @description specs/2026-11-10-ux2-tariff-account.md TA5.1: keeps the name the signed-in author typed by the rule of the registration — trimmed, 1 to 120 characters (400 request.validation) — under the user row lock and the lock of this session's write proof, and answers the session with it. The address and the sessions stay. Impersonation answers 409. The journal names the account, never the name. Responses are no-store.
+         */
+        put: operations["setAccountName"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/password-reset": {
         parameters: {
             query?: never;
@@ -1020,6 +1328,26 @@ export interface paths {
          * @description Sets the new password (at least 8 characters) by the token from the URL fragment of the reset letter. One transaction verifies the address, uses every reset token of the account, revokes all its sessions (chat turns started from them stop) and opens a 30-day persistent session for this browser; a «password changed» letter is queued. An unknown, expired or used token answers 400 auth.token_invalid; an impersonation cookie answers 409. Responses are no-store.
          */
         post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a password reset link before the new password is typed.
+         * @description Answers the address a live reset link went to, so the page «Новый пароль» says at once whether the link works and names the account for the password manager (specs/2026-11-10-ux3-auth.md AU4.1). The token comes from the URL fragment of the reset letter and is stored only as SHA-256; the check spends nothing and writes nothing. An unknown, expired, used, foreign-purpose token or one of an address the account left answers 400 auth.token_invalid, the code of resetPassword; an impersonation cookie answers 409. The same strict Origin, CSRF and per-client budget as resetPassword. Responses are no-store.
+         */
+        post: operations["checkPasswordResetLink"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1264,9 +1592,29 @@ export interface paths {
         };
         /**
          * Download a whole book as one file: Word, EPUB, or FB2.
-         * @description Builds the file from the published text of the book while it is sent; nothing is stored and no model takes part. A file that cannot be finished ends with a broken connection, never with a clean end of a partial file. A book without published text is refused with the code `book_export.empty`, an unknown format with `book_export.format`.
+         * @description Builds the file from the published text of the book while it is sent; nothing is stored and no model takes part. With drawings=true the drawings the author put in the book stand in it after their paragraphs, where the reader shows them (specs/2026-11-12-ux10-book-pictures.md BP2): the main version of a drawing and the author's own pictures, at the size a page shows them by, without a caption; a picture that cannot be read is left out. A build without drawings gives the same file without them. A file that cannot be finished ends with a broken connection, never with a clean end of a partial file. A book without published text is refused with the code `book_export.empty`, an unknown format with `book_export.format`.
          */
         get: operations["getBookExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/books/drawing-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the drawings each book of a saga would carry in its file.
+         * @description The drawings getBookExport with drawings=true puts in the file of each book, counted by the same rule: the main version of a drawing and the author's own pictures that stand in its chapters, ready (specs/2026-11-12-ux10-book-pictures.md BP3.1, BP3.2). A book without drawings is not listed. Only a build with drawings serves it.
+         */
+        get: operations["getBookDrawingCounts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1286,6 +1634,30 @@ export interface paths {
         put?: never;
         /** Restore a recently deleted book. */
         post: operations["restoreBook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/books/{bookId}/update-revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tell what a return of a book to the version before its update would do.
+         * @description «Вернуть прежнюю версию…» (specs/2026-11-12-ux10-book-revert.md BR2.1): for 7 days after an update of a book from a file (Book.update) the book can be returned to the version before it. The preview reads the snapshot of the update and the book as it stands now and names the chapters whose text comes back (text), those that get back their title, place and italic and bold (place), the chapters the update removed that come back from recently deleted (returned), the chapters the file added that go there for 7 days (removed) and the chapters that stay as they are now with why (kept: edited — changed after the update, deleted — deleted after it, returned — returned by hand already). Each chapter is named by its title now and, when the return gives it another one, by previousTitle. fingerprint names the book the preview read: revertBookUpdate carries it. It changes nothing. A book being updated from a file answers 409 book.busy, a book without a live update 404 book.update_gone. Cache-Control: no-store.
+         */
+        get: operations["previewBookUpdateRevert"];
+        put?: never;
+        /**
+         * Return a book to the version before its last update from a file.
+         * @description «Вернуть версию до обновления» (specs/2026-11-12-ux10-book-revert.md BR2.2, BR2.3): does what previewBookUpdateRevert said, in one transaction, if the book is still the one whose preview gave the fingerprint, else 409 book.update_changed and nothing changes. A changed chapter gets the text and the italic and bold of its revision before the update as a new revision, a chapter whose words stayed gets back its title, place and italic and bold, the chapters the update removed come back from recently deleted while their 7 days go, the chapters the file added go there for 7 days; a chapter changed, deleted or returned after the update stays as it is. The snapshot goes, so Book.update is gone. A return is not an upload: no import Job, no upload of the day, no limit of books; the chapters and text it brings back are held against the limits of chapters and characters of the tier (409 with the quota code, nothing changes). The text index, the cards, the names, the threads and the map are built again by their ordinary path; notes keep their places as after any change of text, chats are untouched. A book being updated answers 409 book.busy, a book without a live update 404 book.update_gone, the demo saga 409 demo_saga.read_only. The answer is the book as listBooks gives it. Cache-Control: no-store.
+         */
+        post: operations["revertBookUpdate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1342,8 +1714,7 @@ export interface paths {
         delete: operations["cancelImportQueue"];
         options?: never;
         head?: never;
-        /** Save ordered items and confirmed volume numbers. */
-        patch: operations["updateImportQueue"];
+        patch?: never;
         trace?: never;
     };
     "/projects/{projectId}/import-queues/{queueId}/items": {
@@ -1355,9 +1726,32 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Upload or replace one durable queue item and run full preflight. */
+        /**
+         * Upload or replace one durable queue item and run full preflight.
+         * @description A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409.
+         */
         post: operations["uploadImportQueueItem"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/import-queues/{queueId}/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take a volume that did not read out of a running upload («Пропустить»).
+         * @description Only a volume of a running queue whose import Job did not read the file waits for the author; skipping it leaves its place empty, holds the volumes after it back no more, and ends the queue once the others are on the shelf and read (a queue whose every volume is skipped ends canceled). Any other volume is 409 (specs/2026-11-11-ux7-upload.md UP3.2).
+         */
+        delete: operations["skipImportQueueItem"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1844,6 +2238,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/saga/first-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the questions an empty chat of the saga offers, with the names of the author's book.
+         * @description specs/2026-11-10-first-questions.md FQ1.1–FQ1.4, FQ1.9. Built from the row of the map the cards Job prepares, after what the author took off the map, without a model: of the hero, of the hero and his strongest neighbor, of the main place. Empty when the saga has no chapter, the map is not prepared yet (pending says it is still to come) or has no hero; a map behind its cards answers by what is ready and queues no build.
+         */
+        get: operations["getSagaFirstQuestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/saga/contents": {
         parameters: {
             query?: never;
@@ -1903,6 +2317,26 @@ export interface paths {
          */
         put: operations["updateChapterDraftPlan"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/chapter-drafts/{draftId}/plan/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the text over a plan «from here to the end» that came.
+         * @description specs/2026-11-11-ux9-writing-b.md WB1.2: «Оставить как было» of a plan «Переписать отсюда до конца» that waits for «Писать»: the latest versions of the plan made from that point and not approved go, with the open questions their turns asked, and the version before them is the latest again (none, when the tail plan was the first); the working text, its revision and the approval do not change. Made at the latest version the author saw: 409 chapter_draft.plan_changed when another stands, chapter_draft.busy while a run works, chapter_draft.added; 400 request.validation when the latest version is no plan of a tail waiting for «Писать».
+         */
+        post: operations["withdrawChapterDraftPlan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2032,7 +2466,7 @@ export interface paths {
         put?: never;
         /**
          * Write the chapter of a draft.
-         * @description specs/2026-11-04-writing-plain-path.md P3, P5. A run brings the helper's block to prose and leaves the rest of the text to the sign; with rework it writes the whole text the author sees; a plan not yet written goes through a rough sketch. Without a block and without rework no Job starts: the working text is the chapter as it stands, outcome says there is nothing to write. A turn of the helper that wrote a block starts its run by itself at its end; this operation is the author's retry and the rework. What a Job makes reaches the draft when it ends. A Job counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After until 00:00 Moscow time; a replay of the same request under the Idempotency-Key spends nothing and answers the draft as it stands, another one is 409.
+         * @description specs/2026-11-04-writing-plain-path.md P3, P5. A run brings the helper's block to prose and leaves the rest of the text to the sign; with rework it writes the whole text the author sees; a plan not yet written goes through a rough sketch. Without a block and without rework no Job starts: the working text is the chapter as it stands, outcome says there is nothing to write. A turn of the helper that wrote a block starts its run by itself at its end; this operation is the author's retry and the rework. What a Job makes reaches the draft when it ends. A Job counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After until 00:00 Moscow time; a replay of the same request under the Idempotency-Key spends nothing and answers the draft as it stands, another one is 409. The first Job of scenes of a draft is a new chapter of the tier of the author who starts it (specs/2026-11-08-subscription-tiers.md TR7) unless the draft edits a chapter of the book, its case is nearly_done or its plan is from_here or reverse: a tier with a window of N new chapters in K days (specs/2026-11-11-tier-limits.md TL3.1) refuses one while N of the window began in the last K days with 429 tiers.chapter_wait and Retry-After until a place frees; a tier without a window refuses it once its trial new chapters count with 403 tiers.chapter_none. A refusal leaves nothing: the plan is not approved, nothing is spent. A new chapter whose Job ends without a scene is given back by itself. The other scenes of a draft, selection, seams, check and proofread are no new chapter.
          */
         post: operations["startChapterDraftJob"];
         delete?: never;
@@ -2175,8 +2609,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Dismiss a note or answer a question on a chapter in writing.
-         * @description «Отклонить» (specs/2026-11-02-writer-workshop.md, W4.4, W7.1): the note stays and is no more shown; a dismissed note answers as it is. An answer to a question of the helper (W6.3) — a letter of its options or the author's own words — makes it answered and goes into the state line of the next turn; the draft is the author's to change by it. The revision of the draft does not move. 400 for an answer to a note that is no question, 409 chapter_draft.added once the chapter is in the book.
+         * Dismiss a note, open an applied finding again or answer a question on a chapter in writing.
+         * @description «Отклонить» (specs/2026-11-02-writer-workshop.md, W4.4, W7.1): the note stays and is no more shown; a dismissed note answers as it is. An answer to a question of the helper (W6.3) — a letter of its options or the author's own words — makes it answered and goes into the state line of the next turn; the draft is the author's to change by it. «Отменить» of a replacement (specs/2026-11-10-ux1-writing.md UW4.2) — status open — opens again a finding or a correction the author applied, once its quote stands in the working text again, and «Вернуть замечание» (specs/2026-11-11-ux5-notes-in-text.md NT1.4) one he left as it is, while its quote stands there; an open note answers as it is. The revision of the draft does not move. 400 for an answer to a note that is no question and for opening a note that comes back neither way (a variant of a place, what the helper replaced, a question, a note without a quote); 409 chapter_draft.note_stale while the replacement still stands in the text, 409 chapter_draft.busy while a run works, 409 chapter_draft.added once the chapter is in the book.
          */
         patch: operations["updateChapterDraftNote"];
         trace?: never;
@@ -2192,9 +2626,29 @@ export interface paths {
         put?: never;
         /**
          * Start the proofreading of a chapter of the author from a file or a text.
-         * @description specs/2026-11-07-writing-proofread.md PR2.1: one operation — a new draft with the text of the file, its original kept parsed (paragraphs with italic and bold, never the file), the case «почти готова», and the Job of the proofreading (mode proofread) — in one transaction; a refusal leaves nothing. The chat and the voice call it as it is. A .docx, .txt or .md up to 10 MiB (413 chapter_draft.file_too_large), read by the extension of its name (422 chapter_draft.file_format), or a text; 422 chapter_draft.file_unreadable, chapter_draft.no_text, chapter_draft.text_too_long (past 400 000 signs or 30 000 words). The text of the saga need not be ready: its names are read if they are. Counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After; a replay of the same request under the Idempotency-Key answers the same draft and spends nothing, another one is 409.
+         * @description specs/2026-11-07-writing-proofread.md PR2.1: one operation — a new draft with the text of the file, its original kept parsed (paragraphs with italic and bold, never the file), the case «почти готова», and the Job of the proofreading (mode proofread) — in one transaction; a refusal leaves nothing. The chat and the voice call it as it is. A chapter attached in the chat (chatId with attachment) is remembered by its draft (specs/2026-11-11-ux5-proofread-mode.md PM3.3): the same attachment again answers that draft and starts no second proofreading, nothing is spent. A .docx, .txt or .md up to 10 MiB (413 chapter_draft.file_too_large), read by the extension of its name (422 chapter_draft.file_format), or a text; 422 chapter_draft.file_unreadable, chapter_draft.no_text, chapter_draft.text_too_long (past 400 000 signs or 30 000 words). The text of the saga need not be ready: its names are read if they are. Counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After; a replay of the same request under the Idempotency-Key answers the same draft and spends nothing, another one is 409.
          */
         post: operations["startChapterProofread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/chapter-drafts/{draftId}/original/look": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take the look of the author's Word file for the original of a draft.
+         * @description specs/2026-11-07-writing-proofread.md PR9: the Word file of the same text as the original becomes the original with its look (styles, theme, section, the properties of paragraphs and runs), so the file with Word revisions is written in it; the working text, the revision, the notes, the versions and the Job stay, so the same file gives the same original again. 422 chapter_draft.no_look for a file that is not Word or brings no look, chapter_draft.original_differs for another text, chapter_draft.no_original without an original; refusals of the file as startChapterProofread.
+         */
+        post: operations["takeChapterDraftOriginalLook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2290,7 +2744,7 @@ export interface paths {
         };
         /**
          * Whether the current user may talk to the voice co-author in the project.
-         * @description specs/2026-11-03-voice-assistant.md V1.1, V1.9: talk is true when voice is configured on the server; modes are the places where the agent works in this release (writing — a chapter open in «Письмо»); voice is the current user's voice of the co-author (marin until he chooses one) and voices the voices he may choose. The page shows «Поговорить» where talk is true, the place has a mode and the actor may act there.
+         * @description specs/2026-11-03-voice-assistant.md V1.1, V1.9: talk is true when voice is configured on the server; modes are the places where the agent works in this release (writing — a chapter open in «Письмо»); voice is the current user's voice of the co-author (marin until he chooses one) and voices the voices he may choose. The page shows «Поговорить» where talk is true, the place has a mode and the actor may act there. allowance is what the user's tier lets him talk (specs/2026-11-08-subscription-tiers.md TR8.5): by the day with the seconds left of his Moscow day, a trial call, or none — then «Поговорить» stays and says why with the way to «Тарифы».
          */
         get: operations["getProjectVoice"];
         put?: never;
@@ -2309,8 +2763,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The control channel of a voice call with the co-author.
-         * @description specs/2026-11-03-voice-assistant.md V0–V3: a WebSocket on the site's own origin. The client's first text frame is {"type":"start","sdp":<offer of an RTCPeerConnection with exactly one audio line and no data channel>,"csrf":<the session's CSRF token>,"place":<VoiceCallPlace>}; later it may send only {"type":"end"}, {"type":"forget"} — «Стереть» of the summaries of the draft, answered by recall with empty text (V1.10) — {"type":"place","place":<VoiceCallPlace>} — the author went to another page of the saga and the agent follows him there in the same call (V2.4) — or {"type":"page","page":{request, outcome, path, dialog, scroll, focus, cut, items}} — the answer to a page frame: how the action went and what is on the screen; a password field is never in it (specs/2026-11-05-voice-full-access.md A3) — or {"type":"quality","quality":{packetsReceived, packetsLost, concealedSamples, totalSamplesReceived, jitterBufferDelay, jitterBufferEmittedCount, bitrateKbps, roundTripTime}} — numbers the browser measured of the incoming audio (getStats), every 15 s and before its end; the server writes the last into the request line of the call with the gateway's id of the call (V0.11); anything else closes the socket 1008. The server checks the place, the right (an editor or above of the project), the CSRF token and the offer, creates the WebRTC call of the gateway with its own key, answers {"type":"answer","sdp":…} and keeps the call's sideband: it sets the agent's instructions and tools by the mode of the place — writing on a chapter of «Письмо», drawing in «Рисование», ask on any other page — runs every tool call with the author's rights and sends VoiceCallEvent frames: states, the lines of the agent, the mode, the strip of scenes, a changed draft, the summary of the last conversation about the draft (recall), a chapter or a chat on the screen (link), a changed drawing, a press of the page's own button or a page to open, and the end with its reason. A deep question goes to the chat of the saga as a turn of the author (his quota), the words for a drawing to the helper of the drawing; their answers come back into the conversation. A conversation the author spoke in about a chapter leaves a summary of a few lines at the draft, and its plan of scenes is kept (V1.10, V1.11). One live call per user: a new one ends the previous (replaced). A call has no length of its own: it ends after 10 minutes without a word of the author, an answer of the agent or a tool call (idle), with the summary of the conversation. Neither audio nor a transcript is stored.
+         * The control channel of a conversation with the voice assistant.
+         * @description specs/2026-11-03-voice-assistant.md V0–V3: a WebSocket on the site's own origin. The client's first text frame is {"type":"start","sdp":<offer of an RTCPeerConnection with exactly one audio line and no data channel>,"csrf":<the session's CSRF token>,"place":<VoiceCallPlace>}; later it may send only {"type":"end"}, {"type":"forget"} — «Стереть» of the summaries of the draft, answered by recall with empty text (V1.10) — {"type":"place","place":<VoiceCallPlace>} — the author went to another page of the saga and the agent follows him there in the same call (V2.4) — or {"type":"page","page":{request, outcome, path, dialog, scroll, focus, cut, items}} — the answer to a page frame: how the action went and what is on the screen; a password field is never in it (specs/2026-11-05-voice-full-access.md A3) — or {"type":"pause"} and {"type":"resume"} — «Пауза» and «Продолжить» of the strip — or {"type":"typing","field":"idea"|"text"} — the author types in that field of his chapter himself, and the scribe waits until he stopped for 5 s (specs/2026-11-10-ux5-voice.md VO2.1, VO3.2; none of them carries his words) — or {"type":"quality","quality":{packetsReceived, packetsLost, concealedSamples, totalSamplesReceived, jitterBufferDelay, jitterBufferEmittedCount, bitrateKbps, roundTripTime}} — numbers the browser measured of the incoming audio (getStats), every 15 s and before its end; the server writes the last into the request line of the call with the gateway's id of the call (V0.11); anything else closes the socket 1008. The server checks the place, the right (an editor or above of the project), the CSRF token and the offer, creates the WebRTC call of the gateway with its own key, answers {"type":"answer","sdp":…,"seconds":…} — seconds is how long the call may last by the author's tier — and keeps the call's sideband: it sets the agent's instructions and tools by the mode of the place — writing on a chapter of «Письмо», drawing in «Рисование», ask on any other page — runs every tool call with the author's rights and sends VoiceCallEvent frames: states, the lines of the agent, the mode, the strip of scenes, a changed draft, the summary of the last conversation about the draft (recall), a chapter or a chat on the screen (link), a changed drawing, a press of the page's own button or a page to open, what the conversation did so far in numbers (summary, after each thing it did and before its end; specs/2026-11-10-ux5-voice.md VO1.2) and the end with its reason. The first change of a conversation in a draft keeps the draft before it — text and idea — as a version of the reason before_voice, in the same transaction (VO1.1). On a pause the voice keeps silent and nothing it hears is written; the time of the tier goes on. A deep question goes to the chat of the saga as a turn of the author (his quota), the words for a drawing to the helper of the drawing; their answers come back into the conversation. A conversation the author spoke in about a chapter leaves a summary of a few lines at the draft, and its plan of scenes is kept (V1.10, V1.11). One live call per user: a new one ends the previous (replaced). A call lasts what the author's tier lets him talk (specs/2026-11-08-subscription-tiers.md TR8): by the day, what is left of the minutes of his Moscow day; else a trial call of the tier, spent before the gateway and given back when the gateway creates no call; without either the call ends before the gateway with minutes (the day spent) or plan (no minutes, no trial call left). The voice hears a minute before the end; the call then ends with minutes and the summary of the conversation, as by «Закончить». It also ends after 10 minutes without a word of the author, an answer of the agent or a tool call (idle), with the summary of the conversation. The seconds of a call are counted for the day it began; neither audio nor a transcript is stored.
          */
         get: operations["streamVoiceCall"];
         put?: never;
@@ -2334,7 +2788,11 @@ export interface paths {
          */
         get: operations["listAuthorMaterials"];
         put?: never;
-        post?: never;
+        /**
+         * Write one record of the materials by hand.
+         * @description specs/2026-11-10-ux8-memory-records.md MR2.1: what a change says, of the source manual. One name is one record: a name another record has is 409 author_materials.name_taken with materialId of that record. The map falls behind as after a change.
+         */
+        post: operations["createAuthorMaterial"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2351,7 +2809,7 @@ export interface paths {
         get?: never;
         /**
          * Change what a record of the materials says.
-         * @description 409 conflict: another revision, or another record has the name.
+         * @description 409 conflict: another revision; 409 author_materials.name_taken: another record has the name, materialId names it (specs/2026-11-10-ux8-memory-records.md MR2.3).
          */
         put: operations["updateAuthorMaterial"];
         post?: never;
@@ -2625,7 +3083,7 @@ export interface paths {
         get?: never;
         /**
          * Keep the description of a drawing and its link to a chapter and cards.
-         * @description Replaces the description of the drawing and its optional link. A drawing needs neither: a scene that is not in the book yet is a record like any other. A card is an entry of the glossary or, by its name alone, one the glossary does not have.
+         * @description Replaces the description of the drawing and its optional link. A drawing needs neither: a scene that is not in the book yet is a record like any other. A card is an entry of the glossary or, by its name alone, one the glossary does not have. bookAfter puts the drawing into the book after a paragraph of its chapter or takes it out of the book (specs/2026-11-11-ux6-drawing-flow.md DF4.2).
          */
         put: operations["updateProjectImageDetails"];
         post?: never;
@@ -2700,6 +3158,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/images/{number}/angle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draw a drawing from another point of view.
+         * @description «Сменить ракурс» (specs/2026-11-11-drawing-angle.md DA2.1–DA2.5): a new version of the drawing of ready drawing K that shows the same scene from where the author put the camera, relative to the frame of K. K is its base, with its subjects, chapter and sources; its caption and facts are those of K. The artist gets K alone with the instruction of the backend that says in words how the camera moved; no reference goes along. An axis within 7° (the distance within 0.07) of the point of K is that point; all three there, or a value out of its bounds, answers 400. The new version does not become the current one by itself. Drawn by an illustration Job. A used up images_per_day answers 429 quota.images_daily with the reset time; an actor whose email is not verified gets 403 auth.email_unverified. A replay of the Idempotency-Key returns what the first request started; the same key with another camera answers 409. An account without the right to illustrations (no trial drawings left and no active access, or access turned off) gets 403 illustrations.locked and nothing is started; trial drawings are spent one per drawing in the same transaction. A drawing waiting for the choice of a variant answers 409 illustrations.variant_pending.
+         */
+        post: operations["changeProjectImageAngle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/images/{number}/variants": {
         parameters: {
             query?: never;
@@ -2711,7 +3189,7 @@ export interface paths {
         put?: never;
         /**
          * Regenerate a drawing.
-         * @description «Перегенерировать»: ready drawing K drawn again from scratch, not an edit, with the same description, base, references, sources and style, in its branch; a new version of a style sketch is a sketch too. The optional body says what the author wants of it; without a body, or with an empty object, it is drawn as K was. The body is part of the request: the same Idempotency-Key with another body answers 409. A version redrawn from its base at twice its size takes no body field, a cutout only note: they would not reach the model, and asking for them answers 400. A used up images_per_day answers 429 quota.images_daily with the reset time; an actor whose email is not verified gets 403 auth.email_unverified. A replay of the Idempotency-Key returns what the first request started. An account without the right to illustrations (no trial drawings left and no active access, or access turned off) gets 403 illustrations.locked and nothing is started; trial drawings are spent one per drawing in the same transaction.
+         * @description «Перегенерировать»: ready drawing K drawn again from scratch, not an edit, with the same description, base, references, sources and style, in its branch; a new version of a style sketch is a sketch too. The optional body says what the author wants of it; without a body, or with an empty object, it is drawn as K was. The body is part of the request: the same Idempotency-Key with another body answers 409. A version redrawn from its base at twice its size takes no body field, a cutout only note: they would not reach the model, and asking for them answers 400. A used up images_per_day answers 429 quota.images_daily with the reset time; an actor whose email is not verified gets 403 auth.email_unverified. A replay of the Idempotency-Key returns what the first request started. An account without the right to illustrations (no trial drawings left and no active access, or access turned off) gets 403 illustrations.locked and nothing is started; trial drawings are spent one per drawing in the same transaction. whenFree (specs/2026-11-12-ux12-drawings.md DW5.1): the same edit again after the last edit of the version ended at the image limit of the service with retryAt ahead — its Job starts a little after that time, cancelDeferredDrawing takes it off until then; without such a time it is 400 illustrations.not_busy.
          */
         post: operations["createProjectImageVariant"];
         delete?: never;
@@ -2740,6 +3218,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/images/{number}/redraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draw a variant that did not come out again.
+         * @description «Нарисовать этот ещё раз» (specs/2026-11-12-ux10-drawing-ops.md DO1): variant K of a group not chosen yet — waiting for the choice or failed whole — that failed (draw_failed or draw_limited) is drawn again in its place: its number, group, description, staging, angle and inputs stay, the failed attempt is shown no more, and a Job of its own draws it. Nothing is spent while a row of the group holds its spend; a group that failed whole and gave its drawing back spends one drawing again, as its first row did. The choice is not made or undone. A version of a drawing out of any group — «Нарисовать заново», «Сменить ракурс», a variant of a group chosen from — that failed is drawn again the same way, the same work in its place, and spends one drawing as a new version does (specs/2026-11-12-ux12-drawings.md DW5.1); while a choice waits it is 409 illustrations.variant_pending, and an enlargement or a picture of no drawing answers 409. A variant or a version drawn or ready answers 409; one the image model refused answers 409 illustrations.refused (the same description meets the same refusal). The right to illustrations and the daily quota are checked when the redraw spends (403 illustrations.locked, 429 quota.images_daily).
+         */
+        post: operations["redrawProjectImageVariant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/drawings": {
         parameters: {
             query?: never;
@@ -2749,7 +3247,7 @@ export interface paths {
         };
         /**
          * List the drawings of the workshop.
-         * @description By their last action, newest first, with the current version of each.
+         * @description By their last action, newest first, or in the order of the chapters of the saga, with the current version of each (specs/2026-11-10-drawings-list-server.md DL1). The parameters narrow the list together; the cursor carries the order it was given in, and a cursor of another order is 400.
          */
         get: operations["listDrawings"];
         put?: never;
@@ -2758,6 +3256,26 @@ export interface paths {
          * @description A drawing with nothing drawn yet: no model is called and nothing is spent. A button's request writes the idea on the server in the words the chat question had, with the kind and binding of the button. A chapter the saga does not have is 400; a chapter before the text is indexed is 503 saga.not_ready. A replay under the Idempotency-Key answers the first drawing; another request under it is 409.
          */
         post: operations["createDrawing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/drawings/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the drawings of the workshop and say what they can be narrowed by.
+         * @description The counts of the states of the drawings the parameters narrow the list to, as listDrawings with the same parameters and state finds them, and everything the list can be narrowed by, whatever the parameters: the names of who is in the frame, the chapters of the saga with drawings in their order, the number of looks (specs/2026-11-10-drawings-list-server.md DL2).
+         */
+        get: operations["getDrawingsFacets"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2779,8 +3297,8 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete a drawing whole.
-         * @description Every version of the drawing with its layers and files and the drawing go in one transaction; versions still drawn end without the model. Another drawing made from the same upload stays.
+         * Delete a drawing to «Недавно удалённые».
+         * @description specs/2026-11-11-ux7-trash.md TB3.1: the conversation of its helper goes at once by the deletion of a chat; the drawing with its versions, layers, files and looks lies in «Недавно удалённые» for 7 days, read by nothing — the lists, the book, the map, the tools — and restoreDrawing returns it. After the 7 days the sweep removes its versions with their layers and files and the drawing; another drawing made from the same upload stays. A version still drawn goes on. Nothing of the day is given back (TB3.3).
          */
         delete: operations["deleteDrawing"];
         options?: never;
@@ -2803,9 +3321,49 @@ export interface paths {
         put?: never;
         /**
          * Draw a drawing by its brief.
-         * @description The author's click «Нарисовать N вариантов» draws by the brief of expectedRevision (another one is 409 drawing.brief_changed): the image model reads the pieces without labels, the critic the facts. One version becomes current when the drawing has none; 2–4 variants need as many stagings in the brief (otherwise 400) and wait for the choice, paid once. While a group of variants or of edit candidates waits it is 409 illustrations.variant_pending. Only the images the author chose go into the model besides the brief and the saga style sample: no reference of a subject joins by itself. The right to illustrations and the daily quota are checked in the transaction that queues the Jobs (403 illustrations.locked, 429 quota.images_daily).
+         * @description The author's click «Нарисовать N вариантов» draws by the brief of expectedRevision (another one is 409 drawing.brief_changed): the image model reads the pieces without labels, the critic the facts. One version becomes current when the drawing has none; 2–4 variants are drawn by the stagings of the brief, the first of them, and the ones it lacks the server picks itself, each different (specs/2026-11-11-ux6-drawing-flow.md DF3.3); they wait for the choice, paid once. While a group of variants or of edit candidates waits it is 409 illustrations.variant_pending. Only the images the author chose go into the model besides the brief and the saga style sample: no reference of a subject joins by itself. The right to illustrations and the daily quota are checked in the transaction that queues the Jobs (403 illustrations.locked, 429 quota.images_daily).
          */
         post: operations["drawDrawing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/drawings/{drawingId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a drawing from «Недавно удалённые».
+         * @description specs/2026-11-11-ux7-trash.md TB3.1: the drawing comes back in its place with its number, versions, current version, looks and chapter and charges nothing (TB3.3). A drawing back already or past its 7 days is 409; one of another saga or not deleted by anyone is 404.
+         */
+        post: operations["restoreDrawing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/drawings/{drawingId}/deferred/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel what of a drawing waits for the service of drawings.
+         * @description «Отменить» of «Нарисую после 12:50» (specs/2026-11-12-ux10-drawing-ops.md DO2.2): every picture and edit of the drawing put off by whenFree (specs/2026-11-12-ux12-drawings.md DW5.1) is taken off the queue in one transaction while the worker has not claimed its Job; each ends as it was before it was put off — failed at the image limit of the service, retryAt about when it was to start — and what it spent goes to another variant of its group or back to the author, as at the end of its Job. Nothing put off, or a picture of it claimed already (it is drawn now), answers 409 and changes nothing.
+         */
+        post: operations["cancelDeferredDrawing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2823,7 +3381,7 @@ export interface paths {
         put?: never;
         /**
          * Write to the helper of a drawing.
-         * @description The first message opens the session of the helper of the drawing — a chat session of its own kind, not in the list of chats. The question is the author's words with one line of the drawing's state. Asking is allowed while a choice waits; the helper's edits then wait for it. An editor or above with the right to illustrations (403 illustrations.locked); the turns count drawing_turns_per_day (429 quota.drawing_turns_daily) and, with the questions of the chat, active_turns (429 quota.active_turns). A replay under the Idempotency-Key answers the first turn.
+         * @description The first message opens the session of the helper of the drawing — a chat session of its own kind, not in the list of chats. The question is the author's words with one line of the drawing's state. Asking is allowed while a choice waits; the helper's edits then wait for it. The helper reads the published text of the saga: in a saga with no book yet it is 409 drawing.text_not_ready. An editor or above with the right to illustrations (403 illustrations.locked); the turns count drawing_turns_per_day (429 quota.drawing_turns_daily) and, with the questions of the chat, active_turns (429 quota.active_turns). A replay under the Idempotency-Key answers the first turn.
          */
         post: operations["submitDrawingTurn"];
         delete?: never;
@@ -2967,7 +3525,7 @@ export interface paths {
         put?: never;
         /**
          * Upload the author's own image into the saga gallery.
-         * @description The author's own image (specs/2026-10-29-saga-illustrations.md UC15) becomes a gallery item of the kind upload: ready at once, with its number K, a caption and no description, model, check or Job; the chat model sees it with saga.image and draws from it (references, base_image). The file is trusted only once it decodes as PNG, JPEG or WebP: up to 20 MiB, sides from 16 to 16384 px and at most 50 megapixels by its header before its pixels are decoded; a JPEG is turned upright by its EXIF orientation; what is kept is a new PNG of at most 2048 px on its long side without any metadata (EXIF, GPS, XMP, ICC profile, text chunks) and its 512 px copy. title is the caption (else the file name without its extension, else «Изображение автора»), cut to 80 characters. The author confirms once per edition of the legal documents that he has the rights to his images and the consent of the people on them and that they go to the image model: consentVersion of the current edition (getIllustrationAccess uploads.consentVersion) keeps that confirmation in the same transaction; without the confirmation of the current edition the upload is 409 illustrations.upload_consent_required. Uploads count against image_uploads_per_day (429 quota.image_uploads_daily with Retry-After until 00:00 Moscow time) and spend neither trial drawings nor images_per_day; they need the right to draw (403 illustrations.locked) and are switched on by the backend (403 illustrations.uploads_off). 413 illustrations.upload_too_large, 415 illustrations.upload_unsupported, 422 illustrations.upload_dimensions. A replay of the same file, caption and confirmation under the Idempotency-Key answers the first upload; another one is 409. An actor whose email is not verified gets 403 auth.email_unverified.
+         * @description The author's own image (specs/2026-10-29-saga-illustrations.md UC15) becomes a gallery item of the kind upload: ready at once, with its number K, a caption and no description, model, check or Job; the chat model sees it with saga.image and draws from it (references, base_image). The file is trusted only once it decodes as PNG, JPEG or WebP: up to 20 MiB, sides from 16 to 16384 px and at most 50 megapixels by its header before its pixels are decoded; a JPEG is turned upright by its EXIF orientation; what is kept is a new PNG of at most 2048 px on its long side without any metadata (EXIF, GPS, XMP, ICC profile, text chunks) and its 512 px copy. title is the author's caption, cut to 80 characters; without one the upload is «Моя картинка от 10 ноября» by the Moscow day it was made (specs/2026-11-12-ux12-drawings.md DW4.1) — the name of the file is not read. The author confirms once per edition of the legal documents that he has the rights to his images and the consent of the people on them and that they go to the image model: consentVersion of the current edition (getIllustrationAccess uploads.consentVersion) keeps that confirmation in the same transaction; without the confirmation of the current edition the upload is 409 illustrations.upload_consent_required. Uploads count against image_uploads_per_day (429 quota.image_uploads_daily with Retry-After until 00:00 Moscow time) and spend neither trial drawings nor images_per_day; they need the right to draw (403 illustrations.locked) and are switched on by the backend (403 illustrations.uploads_off). 413 illustrations.upload_too_large, 415 illustrations.upload_unsupported, 422 illustrations.upload_dimensions. A replay of the same file, caption and confirmation under the Idempotency-Key answers the first upload; another one is 409. An actor whose email is not verified gets 403 auth.email_unverified.
          */
         post: operations["uploadProjectImage"];
         delete?: never;
@@ -3164,7 +3722,7 @@ export interface paths {
         put?: never;
         /**
          * Send the author's correction into the turn working now.
-         * @description The correction reaches the model in the same native turn (specs/2026-10-30-chat-steering.md): no new Job, no turn and no question quota. 202 means the turn took it; the timeline shows it as a steer event once the model reaches it. A repeat of an accepted key answers the same steerId and sends nothing. 409 chat.turn_ended: the turn no longer works, chat.steer_retry: it takes no correction right now (it compacts its context or has not started), chat.steer_limit: this author sent 20 corrections into this turn.
+         * @description The correction reaches the model in the same native turn (specs/2026-10-30-chat-steering.md): no new Job and no turn. It is a message of the author to the model and spends the daily limit of its session kind as a new turn does: chat_turns_per_day, drawing_turns_per_day or draft_turns_per_day; a correction the turn did not take gives it back (specs/2026-11-09-quota-accounting.md Q2.1, Q2.2). 429 quota.*: that daily limit is spent. 202 means the turn took it; the timeline shows it as a steer event once the model reaches it. A repeat of an accepted key answers the same steerId and sends nothing. 409 chat.turn_ended: the turn no longer works, chat.steer_retry: it takes no correction right now (it compacts its context or has not started), chat.steer_limit: this author sent 20 corrections into this turn.
          */
         post: operations["steerChatTurn"];
         delete?: never;
@@ -3242,11 +3800,252 @@ export interface components {
             email?: string | null;
             note?: string | null;
         };
+        /** @description The limits of a tier (TR1.2; specs/2026-11-11-tier-limits.md TL2.1): what it promises, then the guards of what spends the model or holds text. Each but trialImages, trialChapters, trialVoiceCalls and trialVoiceCallMinutes is the writer's limit of its key unless he has his own; accountCharacters and accountChapters hold one saga alike. image_uploads_per_day is no tier's. */
+        TierLimits: {
+            /** @description Live sagas the writer owns. */
+            projects: number;
+            /** @description Live books in one saga the writer owns (project_books): what the tier promises — the books count in every saga. */
+            projectBooks: number;
+            /** @description Live books in every live saga the writer owns together (account_books): a guard, sagas times their books by the grid. */
+            books: number;
+            /** @description Questions of the chat in a Moscow day. */
+            chatTurnsPerDay: number;
+            /** @description Drawings in a Moscow day; 0 — none by the day. */
+            imagesPerDay: number;
+            /** @description Trial drawings for the life of the account. */
+            trialImages: number;
+            /** @description New chapters of «Письмо» with the helper in any chapterEveryDays days in a row (specs/2026-11-11-tier-limits.md TL3.1); null together with chapterEveryDays — no window, only the trial chapters. */
+            chaptersPerWindow: number | null;
+            /** @description The length of the window of new chapters in days; null together with chaptersPerWindow — no window. */
+            chapterEveryDays: number | null;
+            /** @description Trial new chapters for the life of the account. */
+            trialChapters: number;
+            /** @description The writing of scenes, the checks and the proofreading of chapters in a Moscow day (chapter_drafts_per_day). */
+            chapterDraftsPerDay: number;
+            /** @description Minutes of the voice co-author in a Moscow day; 0 — none by the day. */
+            voiceMinutesPerDay: number;
+            /** @description Trial calls of the voice co-author for the life of the account. */
+            trialVoiceCalls: number;
+            /** @description The length of a trial call in minutes. */
+            trialVoiceCallMinutes: number;
+            /** @description Characters of the text in every live saga the writer owns, and in one saga alike (account_characters, project_characters). */
+            accountCharacters: number;
+            /** @description Chapters in every live saga the writer owns, and in one saga alike (account_chapters, project_chapters). */
+            accountChapters: number;
+            /** @description Messages to the helper of a drawing in a Moscow day. */
+            drawingTurnsPerDay: number;
+            /** @description Messages to the helper of the writing in a Moscow day. */
+            draftTurnsPerDay: number;
+            /** @description Rewrites of a place and checks of the seams in a Moscow day. */
+            draftRewritesPerDay: number;
+            /** @description Uploads of books and materials in a Moscow day. */
+            importsPerDay: number;
+            /** @description Answers of the chat and of the helpers being prepared at once. */
+            activeTurns: number;
+        };
         /**
-         * @description «Ошибка», «Предложение», «Вопрос», «Другое».
+         * @description A tier: «Бесплатно», «Художник», «Писатель», «Профи».
          * @enum {string}
          */
-        FeedbackTopic: "bug" | "idea" | "question" | "other";
+        SubscriptionTierCode: "free" | "artist" | "writer" | "pro";
+        /** @description A tier of the site (TR1.1): its name, rank, the link to its lot on FunPay and its limits. The price is only on the page of the lot. */
+        SubscriptionTier: {
+            code: components["schemas"]["SubscriptionTierCode"];
+            title: string;
+            /** @description free 0 < artist 1 < writer 2 < pro 3; the highest running period is in force. */
+            rank: number;
+            /** @description The lot with the automatic delivery of keys; null — not on sale yet. */
+            lotUrl: string | null;
+            limits: components["schemas"]["TierLimits"];
+        };
+        /** @description The four tiers by rank. */
+        SubscriptionTierList: {
+            tiers: components["schemas"]["SubscriptionTier"][];
+        };
+        /** @description A period of a writer's tier (TR3.1). Periods never merge; the time of one runs in parallel with another. */
+        SubscriptionPeriod: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            tier: "artist" | "writer" | "pro";
+            /** Format: date-time */
+            startsAt: string;
+            /**
+             * Format: date-time
+             * @description null — without term; equal to startsAt — a future period ended before it began.
+             */
+            endsAt: string | null;
+            /**
+             * @description A key bought on FunPay, the administrator, or the launch of the tiers.
+             * @enum {string}
+             */
+            source: "key" | "admin" | "launch";
+        };
+        /** @description The tier of a writer (TR9.8): the tier in force — the highest running period, else «Бесплатно» — its end with the adjoining periods of the same tier, and the periods: those that run or wait, then those that ended in the last 90 days; the trials left on the tier in force; the new chapters of «Письмо» of its window and when a place frees (TR7.6, specs/2026-11-11-tier-limits.md TL3.3); what the tier lets him talk today (TR8). */
+        AccountPlan: {
+            tier: components["schemas"]["SubscriptionTier"];
+            /**
+             * Format: date-time
+             * @description null — without term, or «Бесплатно».
+             */
+            until: string | null;
+            periods: components["schemas"]["SubscriptionPeriod"][];
+            trials: components["schemas"]["AccountPlanTrials"];
+            chapter: components["schemas"]["AccountPlanChapter"];
+            voice: components["schemas"]["AccountPlanVoice"];
+        };
+        /** @description The trials left on the tier in force (TR9.8): its trial drawings and its trial calls of the voice less those the account used in its life, and its trial new chapters less those that count (TR7.3), never below 0. */
+        AccountPlanTrials: {
+            imagesLeft: number;
+            chaptersLeft: number;
+            voiceCallsLeft: number;
+        };
+        /** @description The new chapters of «Письмо» on the tier in force (specs/2026-11-08-subscription-tiers.md TR7.4–TR7.6; specs/2026-11-11-tier-limits.md TL3.1, TL3.3): a new chapter is the first Job of scenes of a draft the writing agent writes. A page shows it as a hint before the author presses anything; only startChapterDraftJob decides. */
+        AccountPlanChapter: {
+            /** @description The window of the tier: so many new chapters in any windowDays days in a row; null — no window, only the trial new chapters (trials.chaptersLeft). */
+            perWindow: number | null;
+            /** @description The length of the window in days; null — no window. */
+            windowDays: number | null;
+            /** @description The new chapters of the window that count now: begun in its last windowDays days; 0 without a window. */
+            used: number;
+            /**
+             * Format: date-time
+             * @description When a place of the window frees while used is perWindow or more: the start of the new chapter numbered used − perWindow by time plus windowDays days; null — a place is free now, or no window.
+             */
+            nextAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the latest new chapter that counts began, trial or window; null — none.
+             */
+            lastAt: string | null;
+        };
+        /** @description What the tier in force lets the writer talk to the voice co-author (specs/2026-11-08-subscription-tiers.md TR8.1, TR9.8): daily — minutesPerDay of a Moscow day, secondsLeftToday of them left; trial — trial calls of callSeconds (their count is trials.voiceCallsLeft); none — neither. */
+        AccountPlanVoice: {
+            /** @enum {string} */
+            kind: "daily" | "trial" | "none";
+            minutesPerDay: number;
+            secondsLeftToday: number;
+            callSeconds: number;
+        };
+        /** @description The trials to give back: at least one kind, each named true. */
+        ResetAdminWriterTrialsRequest: {
+            /**
+             * @description The trial drawings.
+             * @constant
+             */
+            images?: true;
+            /**
+             * @description The trial new chapters of «Письмо» (TR7.3): their charges are returned.
+             * @constant
+             */
+            chapters?: true;
+            /**
+             * @description The trial calls of the voice co-author.
+             * @constant
+             */
+            voiceCalls?: true;
+        };
+        /** @description Every value of a tier at once (TR1.7). */
+        SetAdminSubscriptionTierRequest: {
+            /** @description null for «Бесплатно» and a tier not on sale. */
+            lotUrl: string | null;
+            limits: components["schemas"]["TierLimits"];
+        };
+        /** @description A tier from now (TR3.2) with exactly one term: days, until a Moscow day (inclusive) later than today, or forever. */
+        GrantAdminWriterTierRequest: {
+            /** @enum {string} */
+            tier: "artist" | "writer" | "pro";
+            days?: number;
+            /**
+             * Format: date
+             * @description The last Moscow day of the period.
+             */
+            until?: string;
+            /** @constant */
+            forever?: true;
+        };
+        /** @description A key as the author typed or pasted it. */
+        SubscriptionKeyRequest: {
+            /** @description CK-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX; case, spaces, hyphens and the prefix do not matter. */
+            key: string;
+        };
+        /** @description What a key will do (TR5.1). */
+        SubscriptionKeyCheck: {
+            /** @enum {string} */
+            tier: "artist" | "writer" | "pro";
+            days: number;
+            /**
+             * @description extends — the new period begins where the last of the same tier ends; starts_now — it begins now, the periods in running go on in parallel; unneeded — the tier of the key runs without term, the key is not redeemed.
+             * @enum {string}
+             */
+            effect: "extends" | "starts_now" | "unneeded";
+            /**
+             * Format: date-time
+             * @description null when the key is not needed.
+             */
+            startsAt: string | null;
+            /**
+             * Format: date-time
+             * @description null when the key is not needed.
+             */
+            endsAt: string | null;
+            /** @description The running periods of other tiers: they go on in parallel, and the highest tier is in force. */
+            running: {
+                /** @enum {string} */
+                tier: "artist" | "writer" | "pro";
+                /**
+                 * Format: date-time
+                 * @description null — without term.
+                 */
+                endsAt: string | null;
+            }[];
+        };
+        /** @description A redeemed key (TR5.2): the plan of the account after it and the period it gave. */
+        SubscriptionKeyRedemption: {
+            plan: components["schemas"]["AccountPlan"];
+            period: components["schemas"]["SubscriptionPeriod"];
+        };
+        /** @description A batch of keys of one tier (TR4.4); its keys are not kept, only their hashes. */
+        AdminKeyBatch: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            tier: "artist" | "writer" | "pro";
+            days: number;
+            note: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: uuid
+             * @description The administrator who made the batch.
+             */
+            createdBy: string;
+            keys: number;
+            redeemed: number;
+            revoked: number;
+            /**
+             * Format: date-time
+             * @description The first revocation of the batch; null — never revoked.
+             */
+            revokedAt: string | null;
+        };
+        /** @description The batches of keys, the newest first. */
+        AdminKeyBatchList: {
+            batches: components["schemas"]["AdminKeyBatch"][];
+        };
+        /** @description A batch of keys (TR4.3): a paid tier, how many keys and a note of one line. */
+        CreateAdminKeyBatchRequest: {
+            /** @enum {string} */
+            tier: "artist" | "writer" | "pro";
+            count: number;
+            /** @description Such as «лот FunPay, 08.11»: one line without leading or trailing spaces. */
+            note?: string | null;
+        };
+        /**
+         * @description «Ошибка», «Предложение», «Вопрос», «Тариф и ключ», «Другое».
+         * @enum {string}
+         */
+        FeedbackTopic: "bug" | "idea" | "question" | "tariff" | "other";
         /**
          * @description «Новое» or «Отвечено».
          * @enum {string}
@@ -3276,21 +4075,24 @@ export interface components {
             /** @description The 512 px copy as a data address. */
             preview: string;
         };
-        /** @description What the page knows by itself: its path without query and ids, the class of the browser, a phone or not and the width of the screen. No secrets, tokens or text of books. */
+        /** @description What the page knows by itself: its path without query and ids, the class of the browser, a phone or not and the width of the screen, and the code for support of the error or the refusal the window was opened from. No secrets, tokens or text of books. */
         FeedbackContextInput: {
             page: string;
             /** @enum {string} */
             browser: "chrome" | "edge" | "firefox" | "safari" | "yandex" | "other";
             mobile: boolean;
             width: number;
+            /** @description The code for support of the error or the refusal: a request id, the id of a job or the code of a refusal. */
+            code?: string;
         };
-        /** @description The context of an author's message; build is the revision of the backend. */
+        /** @description The context of an author's message; code is the code for support the window was opened with, build is the revision of the backend. */
         FeedbackContext: {
             page: string;
             /** @enum {string} */
             browser: "chrome" | "edge" | "firefox" | "safari" | "yandex" | "other";
             mobile: boolean;
             width: number;
+            code?: string;
             build?: string;
         };
         /** @description A block of a message: a paragraph of text with simple marks (**bold**, _italic_, lines «- » of a list, [text](https://…)) or an image of the draft by its id. Never HTML. */
@@ -3397,18 +4199,6 @@ export interface components {
         AdminFeedbackList: {
             threads: components["schemas"]["AdminFeedbackThread"][];
             new: number;
-        };
-        /** @description Who the writer is, as his card tells it (specs/2026-11-07-contacts.md R1.3). */
-        AdminIllustrationRequestWriter: {
-            name: string;
-            registeredAt: components["schemas"]["DateTime"];
-            /** @description Live sagas the writer owns. */
-            projects: number;
-            /** @description Live books of those sagas. */
-            books: number;
-            lastLoginAt: components["schemas"]["DateTime"] | null;
-            /** @description Moscow day of the last question. */
-            lastQuestionDay: string | null;
         };
         /**
          * @description Where CanonKeeper shows the materials: its blog on author.today, its home page, its social networks.
@@ -3645,6 +4435,8 @@ export interface components {
             subjectName: string;
             /** @description Chapter key the reference is valid from; null — from the start. */
             fromChapter: string | null;
+            /** @description The place of fromChapter as the author reads it, «Книга 2, гл. 12 „Белый порт“»; absent from the start and for a chapter the text of the saga does not have. */
+            fromPlace?: string;
             /** @description The caption that tells this look from the others of the entry from one chapter, such as «в форме демона»; other angles of one look share it; absent on the main look. */
             look?: string;
         };
@@ -3811,6 +4603,16 @@ export interface components {
              * @description When the image provider resets the image limit that stopped it (errorCode draw_limited); null when the provider did not say or for any other outcome.
              */
             retryAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When a drawing put off until the service of drawings is free starts (specs/2026-11-12-ux10-drawing-ops.md DO2.3): its Job waits in the queue and the worker does not take it before; cancelDeferredDrawing takes it off until then. Absent for any other drawing.
+             */
+            startsAfter?: string;
+            /**
+             * Format: date-time
+             * @description When the work of its latest Job began (specs/2026-11-12-ux12-drawings.md DW1.2): the first claim of the worker, or — while no worker has taken it — when the Job was made. The time of a drawing at work and how long it took count from it; a variant drawn again keeps createdAt of its group. Absent without a Job (an upload).
+             */
+            startedAt?: string;
             canDelete: boolean;
             /** Format: date-time */
             createdAt: string;
@@ -3837,6 +4639,8 @@ export interface components {
             check?: components["schemas"]["SagaImageCheck"];
             /** @description How many drawings the branch has; present only on the items of a listing with group=branch. */
             versions?: number;
+            /** @description Where the camera of a version of «Сменить ракурс» stood relative to its base, with its caption; present only on such versions. */
+            angle?: components["schemas"]["SagaImageAngle"];
             /**
              * @description A version redrawn tile by tile from its base at twice its size; present only on such versions.
              * @constant
@@ -3851,6 +4655,8 @@ export interface components {
             attachedImages?: number[];
             /** @description The drawing has no background: an item or a version with its background cut away. Present only when true. */
             transparent?: boolean;
+            /** @description The place the author gave the drawing in the book (DF4.2): 0 — not in the book; N — after paragraph N of its chapter; absent — after the last paragraph of its sources there, or at its end. The main variant carries it: a choice of another one gives it the same place. */
+            bookAfter?: number;
             /**
              * Format: uuid
              * @description The group of a variant that waits for the author's choice; absent on a plain drawing and on the one chosen.
@@ -3869,6 +4675,18 @@ export interface components {
              * @description The drawing of the workshop this version belongs to («Открыть в мастерской»); null for an upload of the author.
              */
             drawingId?: string | null;
+            places?: components["schemas"]["ChapterPlaces"];
+        };
+        /** @description The camera of a version of «Сменить ракурс», relative to the frame of its base. */
+        SagaImageAngle: {
+            /** @description Degrees around the scene; positive — the camera went to the right. */
+            azimuth: number;
+            /** @description Degrees above the point of the base; negative — below it. */
+            elevation: number;
+            /** @description The distance to the scene as a part of that of the base: below 1 — nearer. */
+            distance: number;
+            /** @description The caption of the version for the author, in the words of the line «Камера: …» of the page: «ракурс: справа спереди, выше, ближе». */
+            label: string;
         };
         SagaImageList: {
             data: components["schemas"]["SagaImage"][];
@@ -3905,6 +4723,8 @@ export interface components {
                 name: string;
             }[];
             sourceView: components["schemas"]["SourceView"];
+            /** @description The place of the drawing in the book (specs/2026-11-11-ux6-drawing-flow.md DF4.2): N — after paragraph N of the chapter, at most as many as it has (otherwise 400); 0 — not in the book, the chapter kept; null — back to its place by its sources. Absent — kept while the chapter stays, cleared with another chapter. A paragraph needs a chapter (otherwise 400). */
+            bookAfter?: number | null;
         };
         SetSagaImageReferenceRequest: {
             /** @description Glossary entry key. */
@@ -3960,6 +4780,16 @@ export interface components {
              * @description When the image provider resets the image limit that stopped it (errorCode draw_limited); null when the provider did not say or for any other outcome.
              */
             retryAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When an edit put off until the service of drawings is free starts (specs/2026-11-12-ux12-drawings.md DW5.1): its Job waits in the queue and the worker does not take it before; cancelDeferredDrawing takes it off until then. Absent for any other edit.
+             */
+            startsAfter?: string;
+            /**
+             * Format: date-time
+             * @description When the work of its Job began (DW1.2): the first claim of the worker, or — while no worker has taken it — when the Job was made.
+             */
+            startedAt?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -4072,8 +4902,17 @@ export interface components {
             aspect?: components["schemas"]["SagaImageAspect"];
             /** @description The images the author chose. Present, also empty, the drawing takes exactly these with the images the drawing was attached: no other reference joins them. Without the field those of drawing K go. Not drawing K itself; with the images attached at most 9, otherwise 400. A number that is not a ready image of this project is 404. */
             references?: number[];
-            /** @description 1 — one new version, which does not become current by itself; 2–4 — a group of variants by as many stagings of the brief of the drawing, waiting for the choice; another count than the brief has stagings is 400. While a choice of the drawing waits it is 409 illustrations.variant_pending. */
+            /** @description 1 — one new version, which does not become current by itself; 2–4 — a group of variants waiting for the choice, by the stagings of the brief of the drawing, the first of them, and the ones it lacks the server picks itself, each different (specs/2026-11-11-ux6-drawing-flow.md DF3.3). While a choice of the drawing waits it is 409 illustrations.variant_pending. */
             variants?: number;
+        };
+        /** @description Where the author put the camera, relative to the frame of drawing K. An axis within 7° (the distance within 0.07) of the point of K is that point; all three there is 400. */
+        ChangeSagaImageAngleRequest: {
+            /** @description Degrees around the scene; 0 — as now; positive — the camera went to the right. */
+            azimuth: number;
+            /** @description Degrees above the point of K; 0 — as now; negative — below it. */
+            elevation: number;
+            /** @description The distance to the scene as a part of that of K; 1 — as now. */
+            distance: number;
         };
         /**
          * @description The step of a drawing by its state on the server (specs/2026-11-05-drawing-one-screen.md D10.2): variants — a group of variants waits for the choice; refine — it has a current version; describe — it has a description and no version; idea — otherwise.
@@ -4128,6 +4967,8 @@ export interface components {
             references: number[] | null;
             /** @description The author's own images attached to the drawing. */
             images: number[];
+            /** @description The style of the saga — its words and its sample — is off for this drawing: «✕» of «Стиль саги: …» or a template of its own manner. Absent — false. */
+            withoutStyle?: boolean;
         };
         /** @description A drawing in the list of the workshop. */
         DrawingSummary: {
@@ -4151,12 +4992,23 @@ export interface components {
              */
             updatedAt: string;
             /**
-             * @description What the tile of the drawing says is happening (specs/2026-11-05-drawing-one-screen.md D1.5): working — a picture, an edit or a turn of its helper is at work; choosing — a choice waits for the author; failed — its latest picture did not come out; null — nothing.
+             * @description What the tile of the drawing says is happening (specs/2026-11-05-drawing-one-screen.md D1.5): working — a picture, an edit or a turn of its helper is at work; deferred — a picture waits until the service of drawings is free and starts by itself at startsAfter (specs/2026-11-12-ux10-drawing-ops.md DO2.3); choosing — a choice waits for the author; failed — its latest picture did not come out; null — nothing.
              * @enum {string|null}
              */
-            activity: "working" | "choosing" | "failed" | null;
+            activity: "working" | "deferred" | "choosing" | "failed" | null;
+            /**
+             * Format: date-time
+             * @description When its earliest picture put off until the service of drawings is free starts (DO2.3): the worker does not take it before; absent — nothing of it is put off.
+             */
+            startsAfter?: string;
             /** @description The picture of its tile (D1.5): the current version, otherwise its first ready variant, otherwise its first variant; null — no picture yet. */
             cover: components["schemas"]["SagaImage"] | null;
+            /** @description Who or what is in the frame, as the description names them. */
+            subjects: string[];
+            /** @description The place of the chapter of the drawing as the author reads it, «Книга 2, гл. 12 „Белый порт“»; absent without a chapter or for one the text of the saga does not have. */
+            place?: string;
+            /** @description The names whose look a version of the drawing is, by name; empty — nobody's. */
+            lookOf: string[];
         };
         /** @description A drawing of the workshop (IW5): the idea, the brief with origin labels, the current version and the choices waiting. While a choice waits no layer, group or version of the drawing starts (409 illustrations.variant_pending). */
         Drawing: {
@@ -4198,18 +5050,173 @@ export interface components {
              */
             chatId: string | null;
             /**
-             * @description What the tile of the drawing says is happening (specs/2026-11-05-drawing-one-screen.md D1.5): working — a picture, an edit or a turn of its helper is at work; choosing — a choice waits for the author; failed — its latest picture did not come out; null — nothing.
+             * @description What the tile of the drawing says is happening (specs/2026-11-05-drawing-one-screen.md D1.5): working — a picture, an edit or a turn of its helper is at work; deferred — a picture waits until the service of drawings is free and starts by itself at startsAfter (specs/2026-11-12-ux10-drawing-ops.md DO2.3); choosing — a choice waits for the author; failed — its latest picture did not come out; null — nothing.
              * @enum {string|null}
              */
-            activity: "working" | "choosing" | "failed" | null;
+            activity: "working" | "deferred" | "choosing" | "failed" | null;
+            /**
+             * Format: date-time
+             * @description When its earliest picture put off until the service of drawings is free starts (DO2.3): the worker does not take it before; absent — nothing of it is put off.
+             */
+            startsAfter?: string;
             /** @description The picture of its tile (D1.5): the current version, otherwise its first ready variant, otherwise its first variant; null — no picture yet. */
             cover: components["schemas"]["SagaImage"] | null;
+            places?: components["schemas"]["ChapterPlaces"];
+        };
+        /** @description «Недавно удалённые» of the author (TB1.1); drawings only in a build that has them. */
+        RecentlyDeleted: {
+            sagas: components["schemas"]["RecentlyDeletedSagas"];
+            books: components["schemas"]["RecentlyDeletedBooks"];
+            chapters: components["schemas"]["RecentlyDeletedChapters"];
+            bookUpdates: components["schemas"]["RecentlyUpdatedBooks"];
+            drawings?: components["schemas"]["RecentlyDeletedDrawings"];
+        };
+        /** @description The books of live sagas updated from a file whose previous version can still be returned (specs/2026-11-12-ux10-book-revert.md BR3.3), for an editor and above, newest first. */
+        RecentlyUpdatedBooks: {
+            items: components["schemas"]["RecentlyUpdatedBook"][];
+            /** @description How many there are; items holds at most 100. */
+            total: number;
+        };
+        /** @description A live book updated from a file: revertBookUpdate returns it to the version before the update until revertUntil. */
+        RecentlyUpdatedBook: {
+            /**
+             * Format: uuid
+             * @description The book.
+             */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            sagaTitle: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            revertUntil: string;
+        };
+        /** @description The deleted sagas, newest first. */
+        RecentlyDeletedSagas: {
+            items: components["schemas"]["RecentlyDeletedSaga"][];
+            /** @description How many there are; items holds at most 100. */
+            total: number;
+        };
+        /** @description The deleted books of live sagas, newest first. */
+        RecentlyDeletedBooks: {
+            items: components["schemas"]["RecentlyDeletedBook"][];
+            /** @description How many there are; items holds at most 100. */
+            total: number;
+        };
+        /** @description The deleted chapters of live books, newest first. */
+        RecentlyDeletedChapters: {
+            items: components["schemas"]["RecentlyDeletedChapter"][];
+            /** @description How many there are; items holds at most 100. */
+            total: number;
+        };
+        /** @description The deleted drawings of live sagas, newest first. */
+        RecentlyDeletedDrawings: {
+            items: components["schemas"]["RecentlyDeletedDrawing"][];
+            /** @description How many there are; items holds at most 100. */
+            total: number;
+        };
+        /** @description A deleted saga: restoreProject returns it until restoreUntil. */
+        RecentlyDeletedSaga: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @description The books that come back with it. */
+            books: number;
+            /** Format: date-time */
+            deletedAt: string;
+            /** Format: date-time */
+            restoreUntil: string;
+        };
+        /** @description A deleted book: restoreBook returns it until restoreUntil. It is named by its title: «Книга N» is a place among the living books (specs/2026-11-11-ux7-reorder.md RK1.6). */
+        RecentlyDeletedBook: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            sagaTitle: string;
+            title: string;
+            /** Format: date-time */
+            deletedAt: string;
+            /** Format: date-time */
+            restoreUntil: string;
+        };
+        /** @description A deleted chapter: restoreChapter returns it until restoreUntil. */
+        RecentlyDeletedChapter: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            sagaTitle: string;
+            /** Format: uuid */
+            bookId: string;
+            bookTitle: string;
+            /** @description The place of its book on the shelf of the saga, «Книга N». */
+            bookDisplayNumber: string;
+            title: string;
+            /** @description Its place in its book when it was deleted. */
+            order: number;
+            /** Format: date-time */
+            deletedAt: string;
+            /** Format: date-time */
+            restoreUntil: string;
+        };
+        /** @description A deleted drawing: restoreDrawing returns it until restoreUntil. */
+        RecentlyDeletedDrawing: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            projectId: string;
+            sagaTitle: string;
+            /** @description Empty for a drawing without a title. */
+            title: string;
+            /** @description The number of its current version; absent — none. */
+            number?: number;
+            /** Format: date-time */
+            deletedAt: string;
+            /** Format: date-time */
+            restoreUntil: string;
         };
         DrawingPage: {
             data: components["schemas"]["DrawingSummary"][];
             meta: components["schemas"]["PageMeta"];
         };
-        /** @description A drawing button outside the workshop: «Нарисовать героя» (hero), «Портрет на главу» (portrait), «Нарисовать эту сцену» (scene, with paragraphs), «Иллюстрировать главу» (chapter). Its idea is written on the server in the words the chat question had. */
+        /** @description How many drawings the file of each book of a saga would carry (specs/2026-11-12-ux10-book-pictures.md BP3.1). */
+        BookDrawingCounts: {
+            /** @description The books with drawings in the order of the shelf; a book that is not here has none. */
+            data: {
+                /** Format: uuid */
+                bookId: string;
+                drawings: number;
+            }[];
+        };
+        /** @description What the list of drawings can be narrowed by and how many drawings each state has (specs/2026-11-10-drawings-list-server.md DL2.1). */
+        DrawingsFacets: {
+            /** @description The drawings the parameters narrow the list to: all of them and those of each state of listDrawings. */
+            counts: {
+                all: number;
+                waiting: number;
+                failed: number;
+                working: number;
+            };
+            /** @description Every name of who is in the frame of the drawings of the saga, the spellings that differ in case only as one — the most frequent, the first in the alphabet on a tie — most drawings first, then by name. */
+            subjects: {
+                name: string;
+                drawings: number;
+            }[];
+            /** @description The chapters of the saga with drawings, in the order of the saga; a chapter the saga does not have is absent. */
+            chapters: {
+                /** @description The value of the chapter parameter of the list. */
+                chapter: string;
+                /** @description The place of the chapter as the author reads it, «Книга 2, гл. 12 „Белый порт“». */
+                place: string;
+                drawings: number;
+            }[];
+            /** @description How many drawings are the look of somebody. */
+            looks: number;
+        };
+        /** @description A drawing button outside the workshop: «Нарисовать героя» (hero), «Портрет на главу» (portrait), «Нарисовать эту сцену» (scene, with paragraphs), «Иллюстрировать главу» (chapter). Its idea is written on the server in the words of the author: the chapter is named by its place, «Книга 1, гл. XIV, абзацы 33–35», never by its key or a link. */
         DrawingButtonRequest: {
             /** @enum {string} */
             kind: "hero" | "portrait" | "scene" | "chapter";
@@ -4233,6 +5240,8 @@ export interface components {
             images?: number[];
             /** @description «Описать самому»: the description is the idea as one piece of the author. */
             selfDescribed?: boolean;
+            /** @description Draw this drawing without the style of the saga. */
+            withoutStyle?: boolean;
         };
         /** @description Exactly one change: the idea, the brief at expectedRevision (another revision is 409 drawing.brief_changed; a piece the author wrote or changed is author) or current — «Выбрать этот» of a ready version of the drawing that waits for no choice. */
         UpdateDrawingRequest: {
@@ -4245,6 +5254,12 @@ export interface components {
             /** @description 1 — one version, the current one when the drawing has none; 2–4 — a group of variants by as many stagings of the brief, waiting for the choice, paid once. */
             variants: number;
             expectedRevision: number;
+            /** @description «Нарисовать, когда освободится» (specs/2026-11-12-ux10-drawing-ops.md DO2.1): the last picture of the drawing ended at the image limit of the service with retryAt ahead, and the Jobs start a little after that time, which the server takes from that picture. Without such a time it is 400 illustrations.not_busy. Absent or false — at once. */
+            whenFree?: boolean;
+        };
+        RedrawSagaImageVariantRequest: {
+            /** @description «Нарисовать, когда освободится» (DO2.1): the variant ended at the image limit of the service with retryAt ahead, and its Job starts a little after that time; without such a time it is 400 illustrations.not_busy. Absent or false — at once. */
+            whenFree?: boolean;
         };
         SubmitDrawingTurnRequest: {
             /** @description What the author writes to the helper. */
@@ -4254,7 +5269,7 @@ export interface components {
             /** @description «Нарисовать» sent the message: the turn that ends with a description starts the drawing by it, as many variants as it has stagings, fewer than two — one version (specs/2026-11-05-drawing-one-screen.md D3.7). A stopped or failed turn draws nothing; a refused start leaves the button to the author. */
             draw?: boolean;
         };
-        /** @description specs/2026-11-03-voice-assistant.md V1.1, V1.9, V2.1: the voice of a project for the current user. */
+        /** @description specs/2026-11-03-voice-assistant.md V1.1, V1.9, V2.1: the voice of a project for the current user. allowance: what the tier of the user lets him talk (specs/2026-11-08-subscription-tiers.md TR8.5). */
         VoiceStatus: {
             /** @description Voice is configured on the server and the current user is an editor or above of the project (V2.1). */
             talk: boolean;
@@ -4267,6 +5282,32 @@ export interface components {
             voice: "breeze" | "vale" | "spruce" | "arbor" | "ember";
             /** @description The voices of GPT-Live he may choose, in the order of the choice (V4.6). */
             voices: ("breeze" | "vale" | "spruce" | "arbor" | "ember")[];
+            allowance: components["schemas"]["VoiceAllowance"];
+        };
+        /** @description specs/2026-11-08-subscription-tiers.md TR8.1, TR8.5: what the user's tier lets him talk. daily — the minutes of a Moscow day, secondsLeft of them left (0 — the day is spent, a call ends before it begins as minutes); trial — a trial call of callSeconds, trialCallsLeft of them left for the life of the account; none — neither (a call ends before it begins as plan). */
+        VoiceAllowance: {
+            /** @enum {string} */
+            kind: "daily" | "trial" | "none";
+            /** @description daily: the seconds left of the Moscow day; 0 otherwise. */
+            secondsLeft: number;
+            /** @description The trial calls left of the tier in force. */
+            trialCallsLeft: number;
+            /** @description The length of a trial call of the tier in force, in seconds. */
+            callSeconds: number;
+        };
+        /** @description specs/2026-11-09-first-session.md FS3, specs/2026-11-10-service-letters.md M4.5: the letters of the site the current user chose to get. */
+        AccountLetters: {
+            /** @description The letter «Сага готова»: one letter after books are loaded, when the saga can be asked. */
+            sagaReady: boolean;
+            /** @description «Письма о сроке тарифа»: three days before the end of a paid tier and on the day it ends; the receipt of a tier goes always. */
+            tierLetters: boolean;
+        };
+        /** @description specs/2026-11-10-service-letters.md M4.5: the letters the author changes; a letter he does not name stays as it is. */
+        AccountLettersChange: {
+            /** @description The letter «Сага готова». */
+            sagaReady?: boolean;
+            /** @description «Письма о сроке тарифа». */
+            tierLetters?: boolean;
         };
         /** @description specs/2026-11-03-voice-assistant.md V1.9: the voice of the co-author the current user chose. */
         VoiceChoice: {
@@ -4276,11 +5317,14 @@ export interface components {
         /** @description specs/2026-11-03-voice-assistant.md V0, V2, V3, V5; specs/2026-11-05-voice-full-access.md A2: one server frame of the control channel of a call; changed — the assistant changed what the pages show and the page reads its data again (V5.4). */
         VoiceCallEvent: {
             /** @enum {string} */
-            type: "answer" | "state" | "subtitle" | "draft" | "recall" | "mode" | "link" | "action" | "drawing" | "changed" | "page" | "end";
+            type: "answer" | "state" | "subtitle" | "draft" | "recall" | "mode" | "link" | "action" | "drawing" | "changed" | "page" | "summary" | "end";
             /** @description answer: the gateway's SDP answer. */
             sdp?: string;
-            /** @enum {string} */
-            state?: "listening" | "thinking" | "speaking";
+            /**
+             * @description state: what the strip says; paused — the author asked the conversation to wait (specs/2026-11-10-ux5-voice.md VO3.2).
+             * @enum {string}
+             */
+            state?: "listening" | "thinking" | "speaking" | "paused";
             /** @description subtitle: the line of the agent. */
             id?: string;
             /** @description subtitle: what the agent said of the line so far; the author's words are not sent — the screen shows what the agent wrote of them in the draft. recall (V1.10): the summary of the last conversation about the draft, empty once the author erased the summaries. action new_drawing (V3.3): the author's idea of the new drawing. */
@@ -4308,6 +5352,8 @@ export interface components {
             chapter?: string;
             /** @description link, open_chapter: the paragraph of the chapter, from 1; absent — the whole chapter. */
             paragraph?: number;
+            /** @description link: the place of the chapter as the author reads it, «Книга 2, гл. 12 „Белый порт“» — the screen shows it, never the key; absent for a chapter the saga has not. */
+            place?: string;
             /**
              * Format: uuid
              * @description link: the chat of the saga the agent asked (V2.2).
@@ -4328,10 +5374,38 @@ export interface components {
             /** @description choose: the variant or the edit candidate in the order of the screen; make_current: the number of the version. */
             number?: number;
             /**
-             * @description end: why the call ended.
+             * @description end: why the call ended. minutes — the time of the call by the tier is over, or the minutes of the day were spent before it began; plan — the tier has no minutes and the trial calls are spent (specs/2026-11-08-subscription-tiers.md TR8.6).
              * @enum {string}
              */
-            reason?: "ended" | "agent" | "idle" | "replaced" | "authorization" | "unavailable" | "invalid" | "forbidden";
+            reason?: "ended" | "agent" | "idle" | "replaced" | "authorization" | "unavailable" | "invalid" | "forbidden" | "minutes" | "plan";
+            /** @description answer: how long the call may last by the author's tier, in seconds from the answer (specs/2026-11-08-subscription-tiers.md TR8.3, TR8.5). */
+            seconds?: number;
+            summary?: components["schemas"]["VoiceCallSummary"];
+            /** @description end: the trial conversation the call took is given back — nothing came of it (specs/2026-11-10-ux5-voice.md VO4.1). */
+            trialReturned?: boolean;
+        };
+        /** @description specs/2026-11-10-ux5-voice.md VO1.2: what a conversation did, in numbers — no word of the author: each draft it changed against its version before the conversation (before_voice), the questions it asked the chat of the saga (the last chat), the drawings it began or asked the helper about (the last drawing), the notes it made, what it remembered and other changes of the product it made for the author. */
+        VoiceCallSummary: {
+            drafts: components["schemas"]["VoiceCallDraftSummary"][];
+            questions?: number;
+            /** Format: uuid */
+            chatId?: string;
+            drawings?: number;
+            /** Format: uuid */
+            drawingId?: string;
+            notes?: number;
+            remembered?: number;
+            other?: number;
+        };
+        /** @description specs/2026-11-10-ux5-voice.md VO1.2: a draft the conversation changed — the sentences its idea gained, the paragraphs of its text added or changed and taken out, counted against the version before the conversation that gives it back. */
+        VoiceCallDraftSummary: {
+            /** Format: uuid */
+            draftId: string;
+            /** @description The version before the conversation (before_voice). */
+            version: number;
+            ideaSentences: number;
+            textParagraphs: number;
+            textRemoved: number;
         };
         /** @description specs/2026-11-03-voice-assistant.md V0.8, V2.4: where the author is, by ids and keys only; the server reads the objects itself. */
         VoiceCallPlace: {
@@ -4375,6 +5449,8 @@ export interface components {
             brushMask?: string;
             /** @description Numbers of ready images of the project's gallery (the author's uploads or drawings) the edit takes from, not the edited drawing itself. The place in the list is what the instruction calls «фото N». A number that is not a ready image of this project is 404. */
             images?: number[];
+            /** @description «Нарисовать, когда освободится» of the edit (specs/2026-11-12-ux12-drawings.md DW5.1): the last edit of the version ended at the image limit of the service with retryAt ahead, and this one starts a little after that time; without such a time it is 400 illustrations.not_busy. Absent or false — at once. */
+            whenFree?: boolean;
             /** @description The images the author chose for this edit. Present, also empty, the edit takes exactly these with the images attached and the crop: no reference of the drawing's subjects joins them. Without the field the references of the subjects go. Not the edited drawing itself; with the images attached at most nine (400). A number that is not a ready image of this project is 404. */
             references?: number[];
         };
@@ -4433,7 +5509,7 @@ export interface components {
             emailVerified: boolean;
             documentsAccepted: boolean;
             blocked: boolean;
-            /** @description One of the writer's limits is not the default. */
+            /** @description One of the writer's limits is his own (a personal limit above the tier). */
             quotaChanged: boolean;
             /** @description Live projects the writer owns. */
             projects: number;
@@ -4448,9 +5524,19 @@ export interface components {
             unanswered: number;
             lastQuestionDay: string | null;
             lastLoginAt: string | null;
+            lastSeenAt: string | null;
             stage: components["schemas"]["AdminWriterStage"];
             /** @description The account is the configured platform administrator. */
             platformAdmin: boolean;
+            tier: components["schemas"]["AdminWriterTier"];
+        };
+        /** @description The tier in force of the writer and its end, by the rules of his plan (specs/2026-11-08-admin-redesign.md AR3.1). */
+        AdminWriterTier: {
+            /** @enum {string} */
+            code: "free" | "artist" | "writer" | "pro";
+            title: string;
+            /** @description The end of the tier in force with the adjoining periods of the same tier; null — without term or «Бесплатно». */
+            until: string | null;
         };
         /** @description Writers newest first, the accounts left out and the count per stage in the order of the stages. */
         AdminWriterList: {
@@ -4476,8 +5562,11 @@ export interface components {
         AdminQuotaLimit: {
             key: components["schemas"]["AdminQuotaKey"];
             limit: number;
-            /** @description The owner changed this limit; otherwise it is the default. */
-            overridden: boolean;
+            /**
+             * @description Where the limit in force comes from: the owner set it for this writer, his plan sets it, or it is the default — the platform's or the original one.
+             * @enum {string}
+             */
+            source: "own" | "plan" | "default";
             used: number | null;
         };
         /** @description Live books, chapters and draft characters of one owned project. */
@@ -4507,12 +5596,17 @@ export interface components {
             revokedBy: ("account_blocked" | "account_deleted") | null;
             administratorEmail: string | null;
         };
-        /** @description One writer, the limits, the impersonation journal of the last 30 days, newest first, and the right to illustrations. */
+        /** @description One writer, the limits, the impersonation journal of the last 30 days, newest first, the state of the right to draw and the tier of the writer. */
         AdminWriterCard: {
             writer: components["schemas"]["AdminWriter"];
             quota: components["schemas"]["AdminWriterQuota"];
             impersonations: components["schemas"]["AdminImpersonation"][];
-            illustrations: components["schemas"]["IllustrationAccess"];
+            illustrations: components["schemas"]["AdminWriterDrawing"];
+            plan: components["schemas"]["AccountPlan"];
+        };
+        /** @description The state of the writer's right to draw (specs/2026-11-08-admin-redesign.md AR4.8): the trials are in the plan, the drawings of a day in the limits. */
+        AdminWriterDrawing: {
+            state: components["schemas"]["IllustrationAccessState"];
         };
         /** @description A limit: a number ≥ 0, or default to return it to the default. */
         AdminQuotaValue: number | "default";
@@ -4544,10 +5638,10 @@ export interface components {
             }[];
         };
         /**
-         * @description One limit by default: a writer limit (AdminQuotaKey) or trial_drawings, the trial drawings of an account without its right row; the order of the tab is the order of this list.
+         * @description One general limit by default: a writer limit (AdminQuotaKey) a tier does not set. Every other key a tier sets and has no platform default (specs/2026-11-08-admin-redesign.md AR7.1; specs/2026-11-11-tier-limits.md TL2.2): image_uploads_per_day alone stays, it spends no model.
          * @enum {string}
          */
-        AdminQuotaDefaultKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "trial_drawings";
+        AdminQuotaDefaultKey: "image_uploads_per_day";
         /** @description One limit by default. */
         AdminQuotaDefault: {
             key: components["schemas"]["AdminQuotaDefaultKey"];
@@ -4567,25 +5661,9 @@ export interface components {
              */
             updatedAt: string | null;
         };
-        /** @description Limits by default to change, each key at most once: a number ≥ 0, or default to return it to the original value. */
+        /** @description General limits by default to change, each key at most once: a number ≥ 0, or default to return it to the original value. A key a tier sets is refused (400 validation). */
         SetAdminQuotaDefaultsRequest: {
-            chat_turns_per_day?: components["schemas"]["AdminQuotaValue"];
-            active_turns?: components["schemas"]["AdminQuotaValue"];
-            imports_per_day?: components["schemas"]["AdminQuotaValue"];
-            projects?: components["schemas"]["AdminQuotaValue"];
-            project_books?: components["schemas"]["AdminQuotaValue"];
-            project_chapters?: components["schemas"]["AdminQuotaValue"];
-            project_characters?: components["schemas"]["AdminQuotaValue"];
-            account_books?: components["schemas"]["AdminQuotaValue"];
-            account_chapters?: components["schemas"]["AdminQuotaValue"];
-            account_characters?: components["schemas"]["AdminQuotaValue"];
-            images_per_day?: components["schemas"]["AdminQuotaValue"];
             image_uploads_per_day?: components["schemas"]["AdminQuotaValue"];
-            chapter_drafts_per_day?: components["schemas"]["AdminQuotaValue"];
-            drawing_turns_per_day?: components["schemas"]["AdminQuotaValue"];
-            draft_turns_per_day?: components["schemas"]["AdminQuotaValue"];
-            draft_rewrites_per_day?: components["schemas"]["AdminQuotaValue"];
-            trial_drawings?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every limit by default whose value changed, with the platform's value before and after; null is the original value of the code. */
         AdminQuotaDefaultChanges: {
@@ -4674,6 +5752,11 @@ export interface components {
                 projects: {
                     /** Format: uuid */
                     projectId: string;
+                    /**
+                     * Format: uuid
+                     * @description The owner of the saga; the page names him by the list of writers.
+                     */
+                    ownerId: string;
                     /** @description Current chapter texts. */
                     texts: number;
                     /** @description Texts with a card of the current instructions. */
@@ -4691,81 +5774,26 @@ export interface components {
             };
         };
         /**
-         * @description The right to illustrations: none, trial while trial drawings are left, active through its last day, blocked by the administrator.
+         * @description The right to draw: active — by the day (images_per_day in force above zero), trial — trial drawings of the tier left, none — neither, blocked — blocked by the administrator.
          * @enum {string}
          */
         IllustrationAccessState: "none" | "trial" | "active" | "blocked";
-        /** @description A request of an author for access to illustrations. */
-        IllustrationAccessRequest: {
-            id: components["schemas"]["Id"];
-            /** @enum {string} */
-            status: "pending" | "granted" | "declined";
-            /** @description What the author wants illustrations for. */
-            message: string | null;
-            createdAt: components["schemas"]["DateTime"];
-            /** @description When support got the request last; a repeat is possible a day later. */
-            sentAt: components["schemas"]["DateTime"];
-            decidedAt: components["schemas"]["DateTime"] | null;
-        };
-        /** @description The right of an account to illustrations, the drawings of the current Moscow day and the pending request. */
+        /** @description The right of an account to draw and the drawings of the current Moscow day (TR6.5). */
         IllustrationAccess: {
             state: components["schemas"]["IllustrationAccessState"];
-            /** @description Trial drawings not spent; an account without its right row has the trial of a new account (trial_drawings of getAdminQuotaDefaults, 5 by default). */
+            /** @description Trial drawings left: the trial_images of the tier in force less those the account used in its life, never below 0. */
             trialLeft: number;
-            /**
-             * Format: date
-             * @description The last Moscow day of active access, inclusive; null — without end or not active.
-             */
-            activeUntil: string | null;
-            /** @description Drawings of the current Moscow day against images_per_day. */
+            /** @description Drawings of the current Moscow day against images_per_day in force (own, tier, platform, code); trial drawings are counted too. */
             images: components["schemas"]["QuotaCounter"];
             /** @description When the drawings of the day reset: 00:00 Moscow time. */
             resetsAt: components["schemas"]["DateTime"];
-            /** @description The pending request for access. */
-            request: components["schemas"]["IllustrationAccessRequest"] | null;
             /** @description Present while the author's own images are switched on; the web shows the paper clip only then. */
             uploads?: components["schemas"]["IllustrationUploads"];
         };
-        CreateIllustrationAccessRequestInput: {
-            /** @description Optional: what the author wants illustrations for. */
-            message?: string | null;
-        };
-        /** @description The right to leave: none, active (until a day or without end) or blocked; the trial given back; the writer's images_per_day. */
+        /** @description The block of drawing: blocked turns it off, none turns it back on. */
         SetAdminWriterIllustrationsRequest: {
             /** @enum {string} */
-            state: "none" | "active" | "blocked";
-            /**
-             * Format: date
-             * @description The last Moscow day of active access, from today on; absent or null — without end. Only with active.
-             */
-            until?: string | null;
-            imagesPerDay?: components["schemas"]["AdminQuotaValue"];
-            /** @description true gives back the trial drawings of a new account (trial_drawings of getAdminQuotaDefaults). */
-            resetTrial?: boolean;
-        };
-        /** @description A request for access with the writer's address and right now. */
-        AdminIllustrationRequest: {
-            id: components["schemas"]["Id"];
-            /** @enum {string} */
-            status: "pending" | "granted" | "declined";
-            message: string | null;
-            createdAt: components["schemas"]["DateTime"];
-            sentAt: components["schemas"]["DateTime"];
-            decidedAt: components["schemas"]["DateTime"] | null;
-            /** Format: uuid */
-            userId: string;
-            email: string;
-            accessState: components["schemas"]["IllustrationAccessState"];
-            writer: components["schemas"]["AdminIllustrationRequestWriter"] | null;
-        };
-        /** @description Requests pending first, newest first, and the number of pending ones. */
-        AdminIllustrationRequestList: {
-            requests: components["schemas"]["AdminIllustrationRequest"][];
-            pending: number;
-        };
-        DeclineAdminIllustrationRequestInput: {
-            /** @description Optional words for the writer in the letter. */
-            message?: string | null;
+            state: "none" | "blocked";
         };
         /** @description The signed-in writer's own limits and use. Daily counters are Moscow calendar days and reset at resetsAt. */
         AccountQuota: {
@@ -4783,6 +5811,16 @@ export interface components {
             activeTurns: components["schemas"]["QuotaCounter"];
             imports: components["schemas"]["QuotaCounter"];
             images: components["schemas"]["QuotaCounter"];
+            /** @description The author's own images uploaded today against image_uploads_per_day (refusal 429 quota.image_uploads_daily). */
+            imageUploads: components["schemas"]["QuotaCounter"];
+            /** @description Scenes, checks and proofreadings of «Письмо» started today against chapter_drafts_per_day (429 quota.chapter_drafts_daily). */
+            chapterDrafts: components["schemas"]["QuotaCounter"];
+            /** @description Messages to the helper of «Рисование» today against drawing_turns_per_day (429 quota.drawing_turns_daily). */
+            drawingTurns: components["schemas"]["QuotaCounter"];
+            /** @description Messages to the helper of «Письмо» today against draft_turns_per_day (429 quota.draft_turns_daily). */
+            draftTurns: components["schemas"]["QuotaCounter"];
+            /** @description Rewrites of a place and seams of «Письмо» today against draft_rewrites_per_day (429 quota.draft_rewrites_daily). */
+            draftRewrites: components["schemas"]["QuotaCounter"];
             projects: components["schemas"]["QuotaCounter"];
             account: components["schemas"]["QuotaSources"];
             ownedProjects: components["schemas"]["ProjectQuota"][];
@@ -4848,6 +5886,7 @@ export interface components {
         PersonalNote: {
             /** Format: uuid */
             id: string;
+            /** @description The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2). */
             body: string;
             revision: number;
             createdAt: components["schemas"]["DateTime"];
@@ -4857,12 +5896,14 @@ export interface components {
             title: string;
         };
         CreatePersonalNoteInput: {
+            /** @description The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2). */
             body: string;
             source?: components["schemas"]["PersonalNoteSource"] | null;
             /** @description Optional title; omitted PATCH preserves the stored title; empty text clears it. */
             title?: string;
         };
         UpdatePersonalNoteInput: {
+            /** @description The thought of the author. It may be empty only beside a source: the quote of a place is kept in source.quote (specs/2026-11-11-ux7-notes.md NT1.2). */
             body?: string;
             expectedRevision: number;
             /** @description Optional title; omitted PATCH preserves the stored title; empty text clears it. */
@@ -4874,8 +5915,16 @@ export interface components {
             /** @enum {string} */
             sourceKind: "free" | "chat" | "chapter";
             title: string;
+            /** @description The beginning of the thought; empty for a note saved without one. */
             preview: string;
+            /** @description The beginning of the quote of a note of a place. */
+            quote?: string;
+            /** @description The chapter of a note of the book while it lives, as the author reads it everywhere: «Книга 2, гл. 12 „Белый порт“» (specs/2026-11-11-ux7-notes.md NT1.3). */
+            place?: string;
+            /** @description The chat of a note of an answer while it lives. */
+            chatTitle?: string;
             updatedAt: components["schemas"]["DateTime"];
+            /** @description The saga the note belongs to while the account is in it, also when the place is gone (NT3.2). */
             projectTitle?: string;
             bookTitle?: string;
             chapterTitle?: string;
@@ -4900,13 +5949,18 @@ export interface components {
         ResolvePersonalNoteSourceResponse: {
             /** @enum {string} */
             state: "current" | "changed" | "unavailable";
+            /** @description The chapter of a note of the book while it lives: «Книга 2, гл. 12 „Белый порт“» (NT1.1, NT2.4). */
+            place?: string;
             source?: components["schemas"]["PersonalNoteResolvedChatSource"] | components["schemas"]["PersonalNoteChapterSource"];
         };
         NotesQueryRequest: {
             query?: string;
             /** @enum {string} */
             source?: "free" | "chat" | "chapter";
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The notes of a saga and the own thoughts, which belong to no saga (specs/2026-11-11-ux7-notes.md NT3.2).
+             */
             projectId?: string;
             /** Format: uuid */
             bookId?: string;
@@ -4932,6 +5986,15 @@ export interface components {
             code: string;
             requestId: string;
             errors?: components["schemas"]["ValidationIssue"][];
+            /** @description auth.invalid_credentials of loginUser (specs/2026-11-10-ux3-auth.md AU3.3): how many more sign-ins the smaller window of this email takes — from this client address and from all of them; the same for an existing and an unknown email. */
+            attemptsLeft?: number;
+            /** @description auth.invalid_credentials of loginUser: how many minutes a full window keeps the sign-in closed (429 with Retry-After). */
+            lockMinutes?: number;
+            /**
+             * Format: uuid
+             * @description author_materials.name_taken of createAuthorMaterial and updateAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.3): the record of the materials that has the name.
+             */
+            materialId?: string;
         };
         /** @description Bounded content-free support aggregates for one authorized project. The response intentionally omits project identifiers, content, prompts, paths and timestamps. */
         ProjectSupportSnapshot: {
@@ -5037,8 +6100,27 @@ export interface components {
             /** @constant */
             status: "verified";
         };
+        ChangeEmailRequest: {
+            /** Format: email */
+            email: string;
+        };
+        AccountNameChange: {
+            /** @description The name as the author typed it; the server trims it. */
+            displayName: string;
+        };
+        /** @description How many live sessions of the author — signed in, or ended by logoutOtherSessions. */
+        AccountSessions: {
+            count: number;
+        };
         PasswordResetRequest: {
             /** Format: email */
+            email: string;
+        };
+        PasswordResetLink: {
+            /**
+             * Format: email
+             * @description The address the reset letter went to.
+             */
             email: string;
         };
         PasswordResetConfirmRequest: {
@@ -5063,6 +6145,11 @@ export interface components {
             id: components["schemas"]["Id"];
             title: string;
             description?: string | null;
+            /**
+             * @description Present and true only for the demo saga of the site (specs/2026-11-09-demo-saga.md DS4.1): it stands out of the limits of its owner and takes no text of the author. No request sets it.
+             * @constant
+             */
+            demo?: true;
             bookCount: number;
             chapterCount: number;
             wordCount: number;
@@ -5120,8 +6207,10 @@ export interface components {
             projectId: components["schemas"]["Id"];
             title: string;
             subtitle: string | null;
-            /** @description One-based book order inside the project. */
+            /** @description One-based stored order inside the project: it orders the shelf and keeps the place a deleted book comes back to, so it may hold gaps. */
             order: number;
+            /** @description The number of «Книга N» the author reads: the rank of the book among the living books of the saga in the order of the shelf, 1…n without gaps (specs/2026-11-11-ux7-reorder.md RK1.6). */
+            place: number;
             /** @description Stable volume ordinal such as `I`, `II`, `III`, or `IV`; clients may derive local presentation labels. */
             displayNumber: string;
             coverColor?: string | null;
@@ -5131,6 +6220,42 @@ export interface components {
             wordCount: number;
             createdAt: components["schemas"]["DateTime"];
             updatedAt: components["schemas"]["DateTime"];
+            /** @description How the book begins, on the listing of the books of a saga only: the first paragraphs with text of its first live chapter, at most 300 letters (specs/2026-11-11-ux9-shelf-chat.md SC1.3). The page asks about a file that begins so as about this book; absent for a book without text. */
+            opening?: string;
+            update?: components["schemas"]["BookUpdate"];
+        };
+        /** @description The last update of the book from a file, for the 7 days its previous version can be returned (specs/2026-11-12-ux10-book-revert.md BR1.3); absent before an update, after the return and after revertUntil. changed counts the chapters whose text, title, place or italic and bold it changed, added and removed the chapters the file added and removed. jobId names the import Job of the update, whose result tells what changed chapter by chapter; null once that Job is gone. */
+        BookUpdate: {
+            at: components["schemas"]["DateTime"];
+            revertUntil: components["schemas"]["DateTime"];
+            /** Format: uuid */
+            jobId: string | null;
+            changed: number;
+            added: number;
+            removed: number;
+        };
+        /** @description A chapter a return names: its title now, the title it gets back (previousTitle, when another) and, for a chapter that stays as it is, why: edited — changed after the update, deleted — deleted after it, returned — returned by hand already. */
+        BookRevertChapter: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            previousTitle?: string;
+            /** @enum {string} */
+            stay?: "edited" | "deleted" | "returned";
+        };
+        /** @description What a return of the book to the version before its last update from a file would do (specs/2026-11-12-ux10-book-revert.md BR2.1), the chapters in the order of the book after it. */
+        BookRevertPreview: {
+            /** Format: uuid */
+            bookId: string;
+            bookTitle: string;
+            updatedAt: components["schemas"]["DateTime"];
+            revertUntil: components["schemas"]["DateTime"];
+            fingerprint: string;
+            text: components["schemas"]["BookRevertChapter"][];
+            place: components["schemas"]["BookRevertChapter"][];
+            returned: components["schemas"]["BookRevertChapter"][];
+            removed: components["schemas"]["BookRevertChapter"][];
+            kept: components["schemas"]["BookRevertChapter"][];
         };
         BookCoverUploadRequest: {
             /** Format: binary */
@@ -5164,7 +6289,6 @@ export interface components {
             status: "uploading" | "draft" | "running" | "succeeded" | "failed" | "canceled" | "expired";
             version: number;
             intendedItemCount: number;
-            nextBookOrder: number;
             currentItemId: components["schemas"]["Id"] | null;
             items: components["schemas"]["ImportQueueItem"][];
             createdAt: components["schemas"]["DateTime"];
@@ -5184,13 +6308,14 @@ export interface components {
             sourceFileName: string;
             mimeType: string | null;
             sizeBytes: number | null;
-            detectedBookOrder: number | null;
-            confirmedBookOrder: number | null;
             /** @enum {string} */
             preflightStatus: "uploading" | "ready" | "invalid";
             preflightError: components["schemas"]["ImportQueueItemError"] | null;
-            /** @enum {string} */
-            processingStatus: "uploading" | "ready" | "queued" | "importing" | "indexing" | "canceling" | "retrying" | "succeeded" | "failed" | "canceled";
+            /**
+             * @description A failed volume waits for the author at its place (specs/2026-11-11-ux7-upload.md UP3.2): its import Job did not read the file (failedStep import), or its file did not pass the check (failedStep preflight, the reason in preflightError) — such a file does not hold the queue back, its start runs the files that passed. A skipped volume left the upload.
+             * @enum {string}
+             */
+            processingStatus: "uploading" | "ready" | "queued" | "importing" | "indexing" | "canceling" | "retrying" | "succeeded" | "failed" | "canceled" | "skipped";
             /** @enum {string|null} */
             failureClass: "infrastructure" | "unexpected_deterministic_failure" | null;
             failedStep: string | null;
@@ -5211,23 +6336,14 @@ export interface components {
         };
         CreateImportQueueItemRequest: {
             clientItemId: string;
+            /** @description The row of the volume: the order of the rows is the order of the volumes after the books of the shelf (UP2.3). */
             position: number;
             sourceFileName: string;
-            detectedBookOrder: number | null;
         };
         UploadImportQueueItemRequest: {
             itemId: components["schemas"]["Id"];
             /** Format: binary */
             file: string;
-        };
-        UpdateImportQueueRequest: {
-            expectedVersion: number;
-            items: components["schemas"]["UpdateImportQueueItemRequest"][];
-        };
-        UpdateImportQueueItemRequest: {
-            id: components["schemas"]["Id"];
-            position: number;
-            confirmedBookOrder: number;
         };
         StartImportQueueRequest: {
             expectedVersion: number;
@@ -5237,27 +6353,38 @@ export interface components {
              * @default [
              *       ".fb2",
              *       ".epub",
-             *       ".docx"
+             *       ".docx",
+             *       ".txt",
+             *       ".md",
+             *       ".rtf",
+             *       ".odt",
+             *       ".fb2.zip"
              *     ]
              */
-            allowedExtensions: (".fb2" | ".epub" | ".docx")[];
+            allowedExtensions: (".fb2" | ".epub" | ".docx" | ".txt" | ".md" | ".rtf" | ".odt" | ".fb2.zip")[];
             /**
              * @default [
-             *       "application/epub+zip",
              *       "application/x-fictionbook+xml",
              *       "text/xml",
              *       "application/xml",
-             *       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+             *       "application/epub+zip",
+             *       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             *       "text/plain",
+             *       "text/markdown",
+             *       "text/x-markdown",
+             *       "application/rtf",
+             *       "text/rtf",
+             *       "application/vnd.oasis.opendocument.text",
+             *       "application/zip",
+             *       "application/x-zip-compressed"
              *     ]
              */
-            allowedMimeTypes: ("application/epub+zip" | "application/x-fictionbook+xml" | "text/xml" | "application/xml" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document")[];
+            allowedMimeTypes: ("application/x-fictionbook+xml" | "text/xml" | "application/xml" | "application/epub+zip" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "text/plain" | "text/markdown" | "text/x-markdown" | "application/rtf" | "text/rtf" | "application/vnd.oasis.opendocument.text" | "application/zip" | "application/x-zip-compressed")[];
             /**
              * @description Maximum accepted upload size in bytes.
              * @constant
              */
             maxFileSizeBytes: 52428800;
-            /** @description Authoritative next active volume order for this project. */
-            nextBookOrder: number;
         };
         ImportBookRequest: {
             /** Format: binary */
@@ -5610,6 +6737,8 @@ export interface components {
             latestTurnJobId?: components["schemas"]["Id"];
             /** @description Status of the latest turn's Job, present with latestTurnJobId. The chat list marks chats whose turn is queued, running or canceling and refreshes while one works. */
             latestTurnStatus?: components["schemas"]["JobStatus"];
+            /** @description When the latest turn was asked, present with latestTurnId. The list of chats groups the chats by it and /chat without a chat opens the one asked last (specs/2026-11-11-ux4-after-answer.md AA2.1, AA3.1). */
+            latestTurnAt?: components["schemas"]["DateTime"];
             savedAssignment: components["schemas"]["ChatSavedAssignment"] | null;
             createdAt: components["schemas"]["DateTime"];
             updatedAt: components["schemas"]["DateTime"];
@@ -5728,8 +6857,11 @@ export interface components {
             /** @description steerId of the steerChatTurn answer that sent this correction (kind steer). */
             steerId?: string;
             attachment?: components["schemas"]["ChatAttachmentSummary"];
+            /** @description specs/2026-11-11-ux9-writing-b.md WB3.3: a button of the page sent the question (kind user), not the author typing it; the feed of a helper shows it as a line of the press. */
+            button?: boolean;
             phase?: string;
             tool?: components["schemas"]["AgentTimelineToolCall"];
+            places?: components["schemas"]["ChapterPlaces"];
             /** @enum {string} */
             outcome?: "in_progress" | "completed" | "failed" | "interrupted";
         };
@@ -5842,6 +6974,30 @@ export interface components {
             /** @description Scenes or steps to do. */
             total: number;
             errorCode?: string;
+            /** @description specs/2026-11-11-ux9-writing-a.md WA2.4: with errorCode chapter_draft.keep_missing — the scene of the plan the writing kept losing the author's lines in, and which of them by their numbers from 0 among the lines of the scene to keep: its keepVerbatim, then the authorLine of its beats. */
+            missing?: {
+                scene: number;
+                lines: number[];
+            };
+            /** @description specs/2026-11-12-ux10-scene-stream.md ST1.4: the scene the writing writes now, as its answer comes — a draft that may still change, never the text of the chapter. getChapterDraft answers it to an editor of the saga while the Job runs; a reader of the saga, the list of drafts and a Job stopping, waiting or ended have none. */
+            writing?: {
+                /** @description The number of the scene in the plan. */
+                scene: number;
+                /** @description The call of the scene that goes on, from 1. */
+                attempt: number;
+                /**
+                 * @description writing — its answer comes; checking — the answer came whole and the passes over it go; again — it is written again, its text empty and growing anew.
+                 * @enum {string}
+                 */
+                step: "writing" | "checking" | "again";
+                /**
+                 * @description With again: lost — the answer before lost a line of the author to keep word for word; short — it held no scene or too few of its words; absent — the answer before broke off.
+                 * @enum {string}
+                 */
+                reason?: "lost" | "short";
+                /** @description The text of the scene so far, cleaned as the scene will be: paragraphs parted by a blank line, no marks. */
+                text: string;
+            };
         };
         /**
          * @description specs/2026-11-06-writing-agent.md WA1: the case of the chapter — from scratch, continuing the author's beginning, or nearly done.
@@ -5856,6 +7012,11 @@ export interface components {
             approved: boolean;
             /** @description The idea changed since this version was made for it. */
             stale: boolean;
+            /**
+             * @description Why this version was made (WA4): reverse — the scenes of the author's own text (specs/2026-11-11-ux5-writing-path.md WP1.2, the step a page names).
+             * @enum {string}
+             */
+            reason: "first" | "answers" | "author_words" | "from_here" | "new_idea" | "reverse" | "author_edit";
         };
         /** @description What a chapter or a scene does with a thread of the saga. */
         ChapterDraftThreadUse: {
@@ -5884,6 +7045,8 @@ export interface components {
         };
         /** @description WA3.4 «как я понял». */
         ChapterDraftUnderstanding: {
+            /** @description specs/2026-11-11-ux9-writing-a.md WA3.5: the title the helper proposed for a chapter without one; it went into the draft, which the author renames as any. */
+            title?: string;
             /** @description What happens, 5–8 lines. */
             lines: string[];
             /** @description Whose eyes. */
@@ -6070,7 +7233,7 @@ export interface components {
             /** @description All versions, the latest first. */
             versions: components["schemas"]["ChapterDraftPlanVersion"][];
         };
-        /** @description specs/2026-11-06-writing-agent.md WA2, WA12: the pack of the chapter on its moment, as the writing would read it now, built anew. */
+        /** @description specs/2026-11-06-writing-agent.md WA2, WA12: the pack of the chapter on its moment, as the writing would read it now, built anew, in the words of the author (specs/2026-11-12-ux12-writing.md WR1): the places of the book named as on the screen, nothing said to the model, no log of the builder. */
         ChapterDraftMoment: {
             /** @description Who is in frame and why. */
             inFrame: {
@@ -6081,11 +7244,11 @@ export interface components {
                 /** @description Why in frame. */
                 why: string;
             }[];
-            /** @description The sections, in the order of the writing. */
+            /** @description The sections the author can read in his words, in the order of the writing; a section that has nothing to say so is absent. */
             sections: {
-                /** @description The section of the pack. */
+                /** @description The name of the section in the words of the author: one table of the server, chaptermoment.ViewSections. */
                 name: string;
-                /** @description Its text as the writing reads it. */
+                /** @description What the writing reads there, in the words of the author: a chapter is its place «Книга 2, гл. 12 „Белый порт“, абзац 4», never its key. */
                 text: string;
             }[];
             /** @description What the pack could not find. */
@@ -6097,11 +7260,9 @@ export interface components {
                 kind: "unknown_name" | "no_state" | "shared_name";
                 /** @description The name. */
                 name: string;
-                /** @description The hint. */
+                /** @description The hint, in the words of the author. */
                 text: string;
             }[];
-            /** @description What was taken, what a limit or the author left out, and why. */
-            log: string[];
             /** @description The usual chapter of the author in words. */
             typicalWords: number;
             /** @description The author's choices about the pack. */
@@ -6155,13 +7316,17 @@ export interface components {
              * @description Why it was kept: written by the writing, or the action that followed it.
              * @enum {string}
              */
-            reason: "written" | "before_write" | "before_apply" | "before_take" | "before_restore" | "before_delete" | "switch" | "before_upload" | "before_proofread";
+            reason: "written" | "before_write" | "before_apply" | "before_take" | "before_restore" | "before_delete" | "switch" | "before_upload" | "before_proofread" | "before_voice" | "author_variant";
             /** @description Its words. */
             words: number;
             /** @description Its words of the author, by the rule of «Ваших слов». */
             authorWords: number;
             /** @description The version of the plan it was written by. */
             plan?: number;
+            /** @description specs/2026-11-11-ux9-writing-b.md WB3.1: the first words of what the action after the version changed in the text — the version is named by it; absent when the action took nothing away and on older versions. */
+            place?: string;
+            /** @description WB3.1: of a version written by the writing, the scenes it wrote. */
+            scenes?: number;
             /**
              * Format: date-time
              * @description When it was kept.
@@ -6181,13 +7346,17 @@ export interface components {
              * @description Why it was kept: written by the writing, or the action that followed it.
              * @enum {string}
              */
-            reason: "written" | "before_write" | "before_apply" | "before_take" | "before_restore" | "before_delete" | "switch" | "before_upload" | "before_proofread";
+            reason: "written" | "before_write" | "before_apply" | "before_take" | "before_restore" | "before_delete" | "switch" | "before_upload" | "before_proofread" | "before_voice" | "author_variant";
             /** @description Its words. */
             words: number;
             /** @description Its words of the author, by the rule of «Ваших слов». */
             authorWords: number;
             /** @description The version of the plan it was written by. */
             plan?: number;
+            /** @description specs/2026-11-11-ux9-writing-b.md WB3.1: the first words of what the action after the version changed in the text — the version is named by it; absent when the action took nothing away and on older versions. */
+            place?: string;
+            /** @description WB3.1: of a version written by the writing, the scenes it wrote. */
+            scenes?: number;
             /**
              * Format: date-time
              * @description When it was kept.
@@ -6195,6 +7364,8 @@ export interface components {
             createdAt: string;
             /** @description The working text as it stood, ⟦…⟧ marking what the author did not write. */
             text: string;
+            /** @description specs/2026-11-10-ux5-voice.md VO1.1: the idea as it stood — kept by the version before a conversation with the voice (before_voice), by the version kept before it was given back and by the author's variant of the idea (author_variant, specs/2026-11-11-ux5-writing-path.md WP5.4); «Вернуть эту версию» gives it back too. */
+            idea?: string;
             /**
              * Format: uuid
              * @description The pack on the moment it was written by.
@@ -6237,6 +7408,8 @@ export interface components {
         ChapterDraft: {
             id: components["schemas"]["Id"];
             title: string;
+            /** @description specs/2026-11-11-ux9-writing-a.md WA1.1: the first words of the idea, else of the plain text — what names a chapter without a title in the list and in its head («Кира ждёт у ворот…»). Absent when the draft has neither. */
+            opening?: string;
             kind: components["schemas"]["ChapterDraftKind"];
             stage: components["schemas"]["ChapterDraftStage"];
             /** @description What the author says should happen, as he wrote it: the helper plans the chapter from it. */
@@ -6270,22 +7443,45 @@ export interface components {
             caseChoice?: components["schemas"]["ChapterDraftCase"];
             plan?: components["schemas"]["ChapterDraftPlanState"];
             original?: components["schemas"]["ChapterDraftOriginal"];
+            /** @description specs/2026-11-10-ux1-writing.md UW1.1: true — the first Job of scenes of this draft would count as a new chapter of the writer's tier (specs/2026-11-08-subscription-tiers.md TR7.1: it edits no chapter of the book, is not nearly done by the author's own words, and no new chapter of it counts yet, TR7.3); false — its scenes are not charged. Absent in a build without tiers and once the chapter is in the book. A page names the price of the chapter by it before the author presses; whether the tier allows a new chapter now is getAccountPlan, and only startChapterDraftJob decides. */
+            newChapter?: boolean;
         };
+        /** @description A draft in the list without its text. The fields after the dates are what names its step in the words of the strip over the chapter (specs/2026-11-11-ux5-writing-path.md WP1.2): the page counts nothing by a guess. */
         ChapterDraftSummary: {
             id: components["schemas"]["Id"];
             title: string;
             kind: components["schemas"]["ChapterDraftKind"];
             stage: components["schemas"]["ChapterDraftStage"];
-            /** @description The words of the working text: tokens between spaces, a dash of a line is no word. */
+            /** @description The words of the working text as the head of the chapter counts them (specs/2026-11-12-ux12-writing.md WR2.1; sagadraft.WordsOf): runs of letters, marks and digits — «по-русски» is two words, a dash of a line none. */
             words: number;
-            jobStatus?: components["schemas"]["JobStatus"];
+            /** @description The draft has an idea: words, not spaces. */
+            idea: boolean;
+            plan?: components["schemas"]["ChapterDraftPlanState"];
+            job?: components["schemas"]["ChapterDraftJob"];
+            /** @description Its open findings of «Сверка»: canon, new, style, craft, seam, plan_follow and the earlier meaning, repeat, machine. */
+            findings: number;
+            /** @description Its open corrections of the proofreading (proofread). */
+            corrections: number;
             revision: number;
-            /** @description The draft edits a chapter of the book (A8.7): the list names it «Правка». */
+            /** @description The draft edits a chapter of the book (A8.7): the list keeps it in the group «Правки глав книги». */
             edits?: boolean;
+            /**
+             * @description specs/2026-11-11-ux9-writing-a.md WA1.3: where an edit stands against its chapter — same: the book holds its text and title; edited: the author changed them; changed: the chapter changed in the book since; gone: the chapter is deleted. Absent for a draft that edits no chapter.
+             * @enum {string}
+             */
+            editState?: "same" | "edited" | "changed" | "gone";
+            /** @description WA1.1: the first words of the idea, else of the text, naming a draft without a title. Absent when it has neither. */
+            opening?: string;
+            attachment?: components["schemas"]["ChapterDraftAttachment"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        /** @description specs/2026-11-11-ux5-proofread-mode.md PM3.3: the chapter attached in the chat the proofreading of a draft began from — the chat and the number of the attachment in it. Kept with the original of the draft; it goes when the chat is deleted or another file is loaded into the draft. */
+        ChapterDraftAttachment: {
+            chatId: components["schemas"]["Id"];
+            number: number;
         };
         ChapterDraftPage: {
             data: components["schemas"]["ChapterDraftSummary"][];
@@ -6314,6 +7510,11 @@ export interface components {
             caseChoice?: components["schemas"]["ChapterDraftCase"] | null;
             /** @description WA7.7: with text, the working text goes into a version before the edit: the author takes a piece out with the menu of a selection. */
             keepVersion?: boolean;
+            /** @description specs/2026-11-11-ux5-writing-path.md WP5.4: alone — with expectedRevision and nothing else — the author's text the draft could not take (the chapter changed in another place where he typed) goes into a version author_variant «Ваш вариант»: text, the whole working text he typed, else the draft's; idea, the idea he typed. The draft and its revision stay as they are; the answer is the draft. */
+            variant?: {
+                text?: string;
+                idea?: string;
+            };
         };
         StartChapterDraftJobRequest: {
             expectedRevision: number;
@@ -6335,6 +7536,8 @@ export interface components {
             place?: components["schemas"]["ChapterDraftTextPlace"];
             /** @description With selection: what the author asked to change; empty, just another variant. */
             instruction?: string;
+            /** @description specs/2026-11-11-ux9-writing-a.md WA2.4: with scenes, lines of the author the scenes need not keep word for word — «Писать сцену без этой фразы» after a writing that kept losing them (job.missing). */
+            release?: string[];
         };
         /** @description A note on a chapter in writing at its exact place of the working text (specs/2026-11-02-writer-workshop.md, W6, W7.1; specs/2026-11-06-writing-agent.md). Of the helper: canon, a discrepancy with the canon at a quote; question, a question card with 2–4 options; replaced, what it replaced on the author's direct request. Of the Job of the writing agent: variant, a variant of a place, replacement its text, quote the place; new, style, canon, craft, seam, plan_follow, what it invented and what its check found. Notes the earlier writing left stay the author's until he closes them: meaning (a sentence the check of meaning fixed or could not check), repeat (a sentence that repeats the book), machine (a place the working judge quoted), brief (an item of the brief of the helper by its section). */
         ChapterDraftNote: {
@@ -6367,7 +7570,7 @@ export interface components {
             status: "open" | "answered" | "applied" | "dismissed";
             /**
              * Format: uuid
-             * @description The variants of one place: «Оставить этот» one dismisses the others.
+             * @description The variants of one place: «Взять этот вариант» at one dismisses the others.
              */
             variantGroup?: string;
             /** @description specs/2026-11-06-writing-agent.md WA3.5: of a question card, what it holds — «план» or «сцена N». */
@@ -6393,6 +7596,8 @@ export interface components {
             level?: "blocking" | "warning" | "info";
             /** @description Of a finding of the check of style: its category. */
             category?: string;
+            /** @description specs/2026-11-11-ux9-writing-b.md WB2.1: of a finding of style, its category in the author's words by the one table of the check (sagadraft.StyleLabel); absent for any other note. */
+            label?: string;
             /** @description Of a finding of the canon: the quote of the book it disagrees with. */
             bookQuote?: string;
             /** @description The scene of the plan the note is about. */
@@ -6407,10 +7612,13 @@ export interface components {
         ApplyChapterDraftNoteRequest: {
             expectedRevision: number;
         };
-        /** @description Either the note is dismissed or a question is answered. */
+        /** @description Either the note is dismissed, a finding the author applied is open again, or a question is answered. */
         UpdateChapterDraftNoteRequest: {
-            /** @enum {string} */
-            status?: "dismissed";
+            /**
+             * @description dismissed — «Отклонить»; open — «Отменить» of a replacement (specs/2026-11-10-ux1-writing.md UW4.2): the author put the text back, and the finding he applied stands in «Сверка» again.
+             * @enum {string}
+             */
+            status?: "dismissed" | "open";
             /** @description A letter of the options of the question or the author's own words. */
             answer?: string;
         };
@@ -6452,9 +7660,32 @@ export interface components {
             words: number;
             /** Format: date-time */
             uploadedAt: string;
+            /** @description specs/2026-11-07-writing-proofread.md PR9.3: the original keeps the look of its Word file; without it «Сохранить оформление исходного файла» is offered. */
+            look: boolean;
+            /** @description specs/2026-11-11-ux5-proofread-mode.md PM1.4: the revisions of Word the file of getChapterDraftExport has for the draft now, counted by the writer of that file as Word lists them — a stretch of one kind (inserted, deleted, of formatting) is one revision, so a word replaced is two. «Скачать Word с исправлениями (K)» names it. */
+            revisions: number;
         };
-        /** @description specs/2026-11-07-writing-proofread.md PR2.1: exactly one of file and text, then the title and the place of the chapter if they are known. */
+        /** @description specs/2026-11-11-ux9-writing-b.md WB1.2: the latest version of the plan the author saw. */
+        WithdrawChapterDraftPlanRequest: {
+            expectedNumber: number;
+        };
+        /** @description specs/2026-11-07-writing-proofread.md PR9.1: the Word file of the same text as the original of the draft. */
+        TakeChapterDraftOriginalLookRequest: {
+            /**
+             * Format: binary
+             * @description A .docx up to 10 MiB.
+             */
+            file: string;
+        };
+        /** @description specs/2026-11-07-writing-proofread.md PR2.1: exactly one of file, text, or chatId with attachment, then the title and the place of the chapter if they are known. */
         StartChapterProofreadRequest: {
+            /**
+             * Format: uuid
+             * @description specs/2026-11-07-chat-attach-chapter.md CA5.5: the chat whose attached chapter is proofread, with its parse whole and the look of its Word file; read with the rights of a reader of that chat, in the project of the draft; the draft remembers it (PM3.3).
+             */
+            chatId?: string;
+            /** @description The number of the chapter attached in that chat. */
+            attachment?: number;
             /**
              * Format: binary
              * @description A .docx, .txt or .md up to 10 MiB, read by the extension of its name.
@@ -6500,6 +7731,8 @@ export interface components {
             changed: boolean;
             gone: boolean;
             canRevert: boolean;
+            /** @description specs/2026-11-11-ux9-writing-a.md WA4.1: the book holds the text and the title of the draft — «Заменить главу в книге» has nothing to put there. */
+            same: boolean;
         };
         AddChapterDraftToBookRequest: {
             expectedRevision: number;
@@ -6511,8 +7744,11 @@ export interface components {
         AuthorMemoryKind: "plan" | "correction" | "style_rule" | "rejected";
         /** @enum {string} */
         AuthorMaterialKind: "skill" | "place" | "character" | "item" | "faction" | "other";
-        /** @enum {string} */
-        AuthorMaterialSourceKind: "xlsx" | "docx" | "text";
+        /**
+         * @description What a record came from: a workbook, a document, a table of a .csv, a pasted text or a .txt/.md, or the page by hand (manual).
+         * @enum {string}
+         */
+        AuthorMaterialSourceKind: "xlsx" | "docx" | "csv" | "text" | "manual";
         AuthorMaterialProperty: {
             key: string;
             value: string;
@@ -6539,6 +7775,14 @@ export interface components {
             data: components["schemas"]["AuthorMaterial"][];
             meta: components["schemas"]["NotesPageMeta"];
         };
+        /** @description specs/2026-11-10-ux8-memory-records.md MR2.1: a record by hand, as a change says it. */
+        CreateAuthorMaterialRequest: {
+            name: string;
+            kind: components["schemas"]["AuthorMaterialKind"];
+            description: string;
+            properties: components["schemas"]["AuthorMaterialProperty"][];
+            section?: string;
+        };
         UpdateAuthorMaterialRequest: {
             name: string;
             kind: components["schemas"]["AuthorMaterialKind"];
@@ -6551,7 +7795,7 @@ export interface components {
         StartAuthorMaterialsImportRequest: {
             /**
              * Format: binary
-             * @description An XLSX or a DOCX up to 10 MiB.
+             * @description An XLSX, a DOCX, a CSV (a table of one sheet: comma, semicolon or tab; UTF-8 or Windows-1251), a TXT or an MD (a text with paragraphs) up to 10 MiB (specs/2026-11-10-ux8-memory-records.md MR2.4).
              */
             file?: string;
             /** @description A pasted text: each line with something on it is a paragraph. */
@@ -6604,16 +7848,28 @@ export interface components {
             kind: components["schemas"]["AuthorMemoryKind"];
             text: string;
             chapter?: components["schemas"]["SagaChapterRef"];
+            /** @description specs/2026-11-10-ux8-memory-records.md MR1.2: the record names a chapter the saga no longer has; chapter is then absent and the page says «глава удалена». */
+            chapterGone?: boolean;
             name?: string;
             revision: number;
             /** @description The display name of who wrote the record. */
             author: string;
+            origin: components["schemas"]["AuthorMemoryOrigin"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description specs/2026-11-10-ux8-memory-records.md MR1.5: where a record came from, by the Job it keeps. manual — written on the page; chat — a turn of a chat, with chatId and title while the chat lives and the reader sees it in the list of chats; draft — the helper of a chapter draft, title is the draft's while it lives; drawing — the helper of a drawing. Neither the question nor the answer. */
+        AuthorMemoryOrigin: {
+            /** @enum {string} */
+            kind: "manual" | "chat" | "draft" | "drawing";
+            chatId?: components["schemas"]["Id"];
+            title?: string;
+        };
         AuthorMemoryPage: {
+            /** @description MR1.5: the saga has members besides one, so the page signs each record with its author. */
+            shared: boolean;
             data: components["schemas"]["AuthorMemoryRecord"][];
             meta: components["schemas"]["NotesPageMeta"];
         };
@@ -6634,10 +7890,16 @@ export interface components {
             name?: string;
             expectedRevision: number;
         };
+        /** @description The places of chapters by their keys, as the author reads them: «Книга 2, гл. 12 „Белый порт“». The page shows a place instead of the key, which is the address of the model; a key the text of the saga has no chapter for is absent. */
+        ChapterPlaces: {
+            [key: string]: string;
+        };
         /** @description A chapter of the text version as the saga reference names it. */
         SagaChapterRef: {
-            /** @description Stable chapter key: the global chapter number or b<book>c<chapter>. */
+            /** @description Stable chapter key: the global chapter number or b<book>c<chapter>. The address of the model: the page sends it back and never shows it. */
             key: string;
+            /** @description The place of the chapter as the author reads it, «Книга 2, гл. 12 „Белый порт“»: the order of its book, the number its title writes or its place in the book, and the title without that number. */
+            label: string;
             chapterId: components["schemas"]["Id"];
             bookId: components["schemas"]["Id"];
             bookOrder: number;
@@ -6692,6 +7954,19 @@ export interface components {
             chapterCount: number;
             /** @description The keys of the book's chapters in reading order: a chapter number or bNcM, both may stand in one book. */
             keys: string[];
+        };
+        SagaFirstQuestions: {
+            /** @description The text version has chapters and no prepared map yet — its cards are being written, or written and the map not yet built (FQ1.9): the page asks again. False for a saga without a chapter, with a map, behind or not, and with a map without a hero. */
+            pending: boolean;
+            questions: {
+                /**
+                 * @description hero: of the hero of the map; pair: of the hero and his strongest neighbor of the characters; place: of the place of most chapters or, without places, of an item or a faction.
+                 * @enum {string}
+                 */
+                kind: "hero" | "pair" | "place";
+                /** @description The whole question; a name stands as the map has it. */
+                text: string;
+            }[];
         };
         /** @description Entries of the saga found by a search of the map. */
         SagaMapSearch: {
@@ -6866,12 +8141,64 @@ export interface components {
             books: components["schemas"]["SagaBook"][];
             bookId?: components["schemas"]["Id"];
             chapters: components["schemas"]["SagaContentsChapter"][];
+            /** @description The chapter the key of the `chapter` parameter names, under its key of now; absent when the text has no such chapter. */
+            chapter?: components["schemas"]["SagaChapterRef"];
         };
         IndexingStatusResponse: {
             published: components["schemas"]["IndexingViewEnvelope"];
             /** @description Omitted for viewers; present for editor/admin/owner access. */
             draft?: components["schemas"]["IndexingViewEnvelope"];
             steps: components["schemas"]["IndexingStep"][];
+            /** @description Present while the saga is read: its published text is processing, or a new book of an open wave is still to be imported (specs/2026-11-10-ux3-saga-state.md SS1.1, specs/2026-11-09-first-session.md FS5.1); omitted otherwise. */
+            preparation?: components["schemas"]["IndexingPreparation"];
+            /** @description Present for seven days after the saga became ready, while its published text is ready (FS4.1); omitted otherwise. */
+            sagaReady?: components["schemas"]["IndexingSagaReady"];
+        };
+        /** @description How far the reading of the saga is (specs/2026-11-10-ux3-saga-state.md SS1.1; specs/2026-11-09-first-session.md FS5): the chapters and books of the published text the helper has read, by the same counters the wave «Сага готова» closes on, with the estimate and the promise of the letter of an open wave. The page says what the server counts and never counts or estimates on its own. */
+        IndexingPreparation: {
+            /** @description Seconds the chapters without cards will take by the pace of the latest cards; null without an open wave, without a pace (fewer than three cards over the last five minutes of the preparation) or while a new book is still to be imported. */
+            remainingSeconds: number | null;
+            /** @description True when the caller will get the letter «Сага готова»: the preparation lasts longer than two minutes, the letter of this saga goes to him, his address is confirmed and he has not turned such letters off. */
+            letterPromised: boolean;
+            /** @description Chapters of the published text whose current text has its retelling (the card of the chapter). */
+            chaptersRead: number;
+            /** @description Live chapters of the published text. */
+            chaptersTotal: number;
+            /** @description Books with chapters whose every chapter is read. */
+            booksRead: number;
+            /** @description Books with chapters in the published text. */
+            booksTotal: number;
+            /** @description The first book in the order of the saga that is not read yet; null while every book there is is read and the file of a new book is still parsed. */
+            currentBookId: components["schemas"]["Id"] | null;
+            /** @description True once the search finds at least one chapter of the published text: a question may be asked already. */
+            askable: boolean;
+            /** @description The reading of each book with chapters, in the order of the saga. */
+            books: components["schemas"]["IndexingPreparationBook"][];
+            /**
+             * @description What the reading waits for (specs/2026-11-12-desk-window.md WN3.1): helper — the helper of the build is not connected, nobody reads the books, and the counts are of what was read before; remainingSeconds is null and letterPromised false. Absent while the helper reads: the site never sends it.
+             * @enum {string}
+             */
+            waiting?: "helper";
+        };
+        /** @description How far one book of the saga is read (specs/2026-11-10-ux3-saga-state.md SS2.6). */
+        IndexingPreparationBook: {
+            bookId: components["schemas"]["Id"];
+            /** @description Its chapters with their retelling. */
+            chaptersRead: number;
+            /** @description Its live chapters. */
+            chaptersTotal: number;
+        };
+        /** @description The saga became ready to be asked (specs/2026-11-09-first-session.md FS4.1): when, and what is read of it now. */
+        IndexingSagaReady: {
+            /**
+             * Format: date-time
+             * @description When the preparation ended; the page tells of one readiness once by it.
+             */
+            at: string;
+            /** @description Books with chapters in the published text. */
+            books: number;
+            /** @description Their chapters. */
+            chapters: number;
         };
         /** @enum {string} */
         IndexingStepKind: "import" | "text_index" | "cards" | "ready";
@@ -7152,7 +8479,7 @@ export interface components {
             preview?: components["schemas"]["ImportPreview"];
             sourceFileName: string;
         };
-        /** @description What update_book with the same file would change, present on update_preview only (specs/2026-10-27-update-book-from-file.md, UC6). Only the creator of the Job reads the places of its chapters. */
+        /** @description What update_book with the same file would change, on update_preview (specs/2026-10-27-update-book-from-file.md, UC6), and what it changed, on update_book since 2026-11-11 (specs/2026-11-11-ux7-trash.md TB4.1: «Что изменилось»). Only the creator of the Job reads the places of its chapters. */
         ImportPreview: {
             /** @description Chapters that would get a new card: with other words, and new ones. */
             newCards: number;
@@ -7172,6 +8499,11 @@ export interface components {
             change: "words" | "punctuation" | "renamed" | "added" | "removed";
             /** @description Up to two places of a chapter with other words or signs; only its creator reads them. */
             places?: components["schemas"]["ImportPreviewPlace"][];
+            /**
+             * @description Present and true on a chapter with other words or signs, or removed, whose text in the book now was written on the site — added from «Письмо» and not rewritten by a file since, or replaced by its edit: the file replaces or removes it (specs/2026-11-11-ux9-shelf-chat.md SC1.4).
+             * @constant
+             */
+            editedOnSite?: true;
         };
         ImportPreviewPlace: {
             before: string;
@@ -7415,6 +8747,8 @@ export interface components {
         ProjectId: string;
         /** @description Durable import queue identifier. */
         ImportQueueId: components["schemas"]["Id"];
+        /** @description Volume of an import queue. */
+        ImportQueueItemId: components["schemas"]["Id"];
         /** @description Book identifier. */
         BookId: string;
         /** @description Chapter identifier. */
@@ -7837,6 +9171,408 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminFeedbackThread"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listSubscriptionTiers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tiers. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionTierList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAccountPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The writer's tier. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPlan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listAdminSubscriptionTiers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tiers. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionTierList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    setAdminSubscriptionTier: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description The code of the tier. */
+                tier: components["schemas"]["SubscriptionTierCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAdminSubscriptionTierRequest"];
+            };
+        };
+        responses: {
+            /** @description The tier as stored. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionTier"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    grantAdminWriterTier: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Account id from listAdminWriters. */
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantAdminWriterTierRequest"];
+            };
+        };
+        responses: {
+            /** @description The new period. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPeriod"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    endAdminWriterPeriod: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Account id from listAdminWriters. */
+                userId: string;
+                /** @description A period from getAdminWriter. */
+                periodId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The period after the end. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPeriod"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    checkSubscriptionKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description What the key will do. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionKeyCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    redeemSubscriptionKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description The plan of the account after the key and the period it gave. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionKeyRedemption"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    openDemoSaga: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The demo saga of the author. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listAdminKeyBatches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The batches. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminKeyBatchList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createAdminKeyBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminKeyBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description The keys of the new batch, one a line, as an attachment named canonkeeper-<tier>-<YYYY-MM-DD>-<count>.txt. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    "Content-Disposition"?: string;
+                    /** @description The id of the new batch. */
+                    "X-Key-Batch-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    revokeAdminKeyBatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description A batch from listAdminKeyBatches. */
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The batch after the revocation. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminKeyBatch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    resetAdminWriterTrials: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Account id from listAdminWriters. */
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetAdminWriterTrialsRequest"];
+            };
+        };
+        responses: {
+            /** @description The writer’s plan after the reset. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPlan"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -8518,6 +10254,30 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    listRecentlyDeleted: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What waits in «Недавно удалённые». */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentlyDeleted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     setAccountVoice: {
         parameters: {
             query?: never;
@@ -8547,6 +10307,62 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getAccountLetters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The author's choice. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountLetters"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    setAccountLetters: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountLettersChange"];
+            };
+        };
+        responses: {
+            /** @description The choice kept. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountLetters"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listAdminWriters: {
@@ -8763,7 +10579,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The right, the drawings of the day and the pending request. */
+            /** @description The right and the drawings of the day. */
             200: {
                 headers: {
                     "Cache-Control"?: "no-store";
@@ -8775,39 +10591,6 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
-    createIllustrationAccessRequest: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
-                "X-CSRF-Token": components["parameters"]["CsrfToken"];
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateIllustrationAccessRequestInput"];
-            };
-        };
-        responses: {
-            /** @description The pending request. */
-            201: {
-                headers: {
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IllustrationAccessRequest"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -8830,82 +10613,20 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The writer's right after the change. */
+            /** @description The state of the writer's right after the change. */
             200: {
                 headers: {
                     "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IllustrationAccess"];
+                    "application/json": components["schemas"]["AdminWriterDrawing"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["AdminForbidden"];
             404: components["responses"]["NotFound"];
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
-    listAdminIllustrationRequests: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Requests and the pending counter. */
-            200: {
-                headers: {
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminIllustrationRequestList"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["AdminForbidden"];
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
-    declineAdminIllustrationRequest: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
-                "X-CSRF-Token": components["parameters"]["CsrfToken"];
-            };
-            path: {
-                /** @description Request id from listAdminIllustrationRequests. */
-                requestId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeclineAdminIllustrationRequestInput"];
-            };
-        };
-        responses: {
-            /** @description The declined request. */
-            200: {
-                headers: {
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IllustrationAccessRequest"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["AdminForbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -9125,6 +10846,123 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    changeUnverifiedEmail: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The session with the new address; its letter is queued. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAccountSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The number of live sessions of the author. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSessions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    logoutOtherSessions: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The other sessions ended; this one stays. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSessions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    setAccountName: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountNameChange"];
+            };
+        };
+        responses: {
+            /** @description The session with the new name. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     requestPasswordReset: {
         parameters: {
             query?: never;
@@ -9180,6 +11018,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    checkPasswordResetLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The link is live; the address it went to. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetLink"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -9849,6 +11719,8 @@ export interface operations {
         parameters: {
             query: {
                 format: "docx" | "epub" | "fb2";
+                /** @description true puts the drawings of the book in the file; without it the file has none. */
+                drawings?: boolean;
             };
             header?: never;
             path: {
@@ -9881,6 +11753,35 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    getBookDrawingCounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The books with drawings, in the order of the shelf. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookDrawingCounts"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     restoreBook: {
         parameters: {
             query?: never;
@@ -9897,6 +11798,76 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Restored book. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Book"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    previewBookUpdateRevert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Book identifier. */
+                bookId: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the return would do. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookRevertPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    revertBookUpdate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Book identifier. */
+                bookId: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The fingerprint of the preview the author agreed to. */
+                    fingerprint: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The book after the return. */
             200: {
                 headers: {
                     "Cache-Control"?: "no-store";
@@ -10080,46 +12051,6 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
-    updateImportQueue: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
-                "X-CSRF-Token": components["parameters"]["CsrfToken"];
-            };
-            path: {
-                /** @description Project tenant identifier. */
-                projectId: components["parameters"]["ProjectId"];
-                /** @description Durable import queue identifier. */
-                queueId: components["parameters"]["ImportQueueId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateImportQueueRequest"];
-            };
-        };
-        responses: {
-            /** @description Saved import queue draft. */
-            200: {
-                headers: {
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportQueue"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["UnprocessableEntity"];
-            429: components["responses"]["TooManyRequests"];
-        };
-    };
     uploadImportQueueItem: {
         parameters: {
             query?: never;
@@ -10161,6 +12092,43 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    skipImportQueueItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Durable import queue identifier. */
+                queueId: components["parameters"]["ImportQueueId"];
+                /** @description Volume of an import queue. */
+                itemId: components["parameters"]["ImportQueueItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queue projection with the volume skipped. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportQueue"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -11135,6 +13103,38 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    getSagaFirstQuestions: {
+        parameters: {
+            query: {
+                /** @description Text version to read. */
+                sourceView: components["schemas"]["SourceView"];
+            };
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Zero to three questions, in order. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaFirstQuestions"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getSagaContents: {
         parameters: {
             query: {
@@ -11144,6 +13144,8 @@ export interface operations {
                 bookId?: string;
                 /** @description Word starts a chapter title or summary contains; searches the whole saga. */
                 q?: string;
+                /** @description A chapter key as a kept place holds it (a link of an answer, the place of a drawing): the server reads it by the one rule of the keys — a bare number that turned ambiguous still names its first chapter — shows its book and names it in `chapter` under its key of now (specs/2026-11-11-ux7-reorder.md RK1.5). */
+                chapter?: string;
             };
             header?: never;
             path: {
@@ -11178,6 +13180,8 @@ export interface operations {
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Optional page size. Default 30, maximum 100. */
                 limit?: number;
+                /** @description specs/2026-11-11-ux5-proofread-mode.md PM3.3: only the drafts whose proofreading began from a chapter attached in this chat — the card of the chat reads its proofreading by them. A chat without such drafts gives an empty page. */
+                chat?: string;
             };
             header?: never;
             path: {
@@ -11305,6 +13309,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChapterDraftPlan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    withdrawChapterDraftPlan: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The draft. */
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawChapterDraftPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description The draft, its latest version of the plan the one before the tail. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDraft"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -11948,6 +13991,46 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    takeChapterDraftOriginalLook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The draft. */
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TakeChapterDraftOriginalLookRequest"];
+            };
+        };
+        responses: {
+            /** @description The draft with its original. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDraft"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     loadChapterDraftFile: {
         parameters: {
             query?: never;
@@ -12184,6 +14267,45 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createAuthorMaterial: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAuthorMaterialRequest"];
+            };
+        };
+        responses: {
+            /** @description The record. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorMaterial"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -13084,6 +15206,47 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    changeProjectImageAngle: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Short number K of the drawing in the project gallery. */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeSagaImageAngleRequest"];
+            };
+        };
+        responses: {
+            /** @description The new version, queued. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaImage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["DrawingForbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     createProjectImageVariant: {
         parameters: {
             query?: never;
@@ -13161,9 +15324,62 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    redrawProjectImageVariant: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Short number K of the variant in the project gallery. */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RedrawSagaImageVariantRequest"];
+            };
+        };
+        responses: {
+            /** @description The variant at work again. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaImage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["DrawingForbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     listDrawings: {
         parameters: {
             query?: {
+                /** @description Words of the search, 1–100 characters after trimming: every word is found, whatever its case and ё/е, as a part of the caption of the drawing, its idea, a name of who is in the frame or the place of its chapter. %, _ and \ are plain characters. */
+                q?: string;
+                /** @description A name of who or what is in the frame, as subjects of the list and DrawingsFacets.subjects write it, whatever its case and ё/е. */
+                subject?: string;
+                /** @description The key of the chapter of the drawings, as DrawingsFacets.chapters gives it. */
+                chapter?: string;
+                /** @description true keeps the drawings a version of which is the look of a character, a place or a thing (lookOf is not empty). */
+                look?: boolean;
+                /** @description waiting — a group of variants or edit candidates waits for the author's choice; failed — its latest picture did not come out and it has nothing to show; working — a picture, an edit or a turn of its helper is at work. A drawing at work and waiting is found by both. */
+                state?: "waiting" | "failed" | "working";
+                /** @description recent — the last action first; chapters — in the order of the chapters of the saga, the last action first within a chapter, the drawings without a chapter or with one the saga no longer has at the end. Without the text of the saga chapters goes as recent. */
+                sort?: "recent" | "chapters";
                 /** @description Opaque cursor returned as PageMeta.nextCursor; invalid or mismatched cursors return 400 Problem. */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Optional page size. Default 30, maximum 100. */
@@ -13232,6 +15448,42 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    getDrawingsFacets: {
+        parameters: {
+            query?: {
+                /** @description Words of the search, 1–100 characters after trimming: every word is found, whatever its case and ё/е, as a part of the caption of the drawing, its idea, a name of who is in the frame or the place of its chapter. %, _ and \ are plain characters. */
+                q?: string;
+                /** @description A name of who or what is in the frame, as subjects of the list and DrawingsFacets.subjects write it, whatever its case and ё/е. */
+                subject?: string;
+                /** @description The key of the chapter of the drawings, as DrawingsFacets.chapters gives it. */
+                chapter?: string;
+                /** @description true keeps the drawings a version of which is the look of a character, a place or a thing (lookOf is not empty). */
+                look?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts and the lists. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrawingsFacets"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getDrawing: {
         parameters: {
             query?: never;
@@ -13277,7 +15529,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted. */
+            /** @description In «Недавно удалённые». */
             204: {
                 headers: {
                     "Cache-Control"?: "no-store";
@@ -13369,6 +15621,72 @@ export interface operations {
             409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    restoreDrawing: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The drawing of the workshop. */
+                drawingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The drawing back in its place. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Drawing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    cancelDeferredDrawing: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The drawing of the workshop. */
+                drawingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The drawing without what was put off. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Drawing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     submitDrawingTurn: {

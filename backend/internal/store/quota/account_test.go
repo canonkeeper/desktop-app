@@ -96,7 +96,7 @@ func TestAccountQuotaCountsOwnLiveDraftText(t *testing.T) {
 	seed.book(quotaProjectB, false, 9000)
 	seed.exec(`INSERT INTO writer_usage_days (user_id, day, chat_turns, imports) VALUES ($1,'2026-10-28',4,1), ($1,'2026-10-27',9,9)`, quotaWriterA)
 
-	account, err := New(db).AccountQuota(context.Background(), quotaWriterA, time.Date(2026, 10, 28, 20, 0, 0, 0, time.UTC))
+	account, err := New(db, Fence{}).AccountQuota(context.Background(), quotaWriterA, time.Date(2026, 10, 28, 20, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}

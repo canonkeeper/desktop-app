@@ -50,16 +50,22 @@ const (
 	FormatPasted Format = "text"
 )
 
-// Run is a piece of a paragraph in one face.
+// Run is a piece of a paragraph in one face. Props are the properties of its run in a Word file as they stood — the
+// inside of w:rPr without revisions (PR1.7) — which the file with revisions writes back.
 type Run struct {
 	Text   string `json:"t"`
 	Italic bool   `json:"i,omitempty"`
 	Bold   bool   `json:"b,omitempty"`
+	Props  string `json:"p,omitempty"`
 }
 
-// Paragraph is one paragraph of a chapter: its runs, its edges trimmed. An empty one keeps its place in the file.
+// Paragraph is one paragraph of a chapter: its runs, its edges trimmed. An empty one keeps its place in the file. In a
+// Word file Props are the inside of its w:pPr without the properties of its mark, a list, a section and revisions, and
+// Mark the properties of its mark (PR1.7).
 type Paragraph struct {
-	Runs []Run `json:"r,omitempty"`
+	Runs  []Run  `json:"r,omitempty"`
+	Props string `json:"p,omitempty"`
+	Mark  string `json:"m,omitempty"`
 }
 
 // Text is the words of a paragraph without its faces.
@@ -77,6 +83,8 @@ type Document struct {
 	Format     Format      `json:"format"`
 	Title      *Paragraph  `json:"title,omitempty"`
 	Paragraphs []Paragraph `json:"paragraphs"`
+	// Layout is the look of a Word file (PR1.7); nil for a text, Markdown, a pasted text and a Word file in Strict Open XML.
+	Layout *Layout `json:"layout,omitempty"`
 }
 
 // TitleText is the title of the chapter the file names, or empty.
@@ -184,6 +192,9 @@ func finish(document Document) (Document, error) {
 		document.Paragraphs = append([]Paragraph{*document.Title}, document.Paragraphs...)
 		document.Title = nil
 	}
+	if lookBytes(document) > maxLookBytes {
+		document = withoutLook(document)
+	}
 	if document.Words() == 0 {
 		return Document{}, ErrEmpty
 	}
@@ -194,7 +205,8 @@ func finish(document Document) (Document, error) {
 }
 
 // clean trims the edges of a paragraph, makes every space one sign of its kind and joins the runs of one face. The
-// marks ⟦ and ⟧ belong to the model's text of a draft: in the author's file they are brackets.
+// marks ⟦ and ⟧ belong to the model's text of a draft, ⟨ ⟩ and ⟪ ⟫ to the faces of a draft
+// (specs/2026-11-08-italic-bold-in-text.md TF1.5): in the author's file they are the brackets they look like.
 func clean(paragraph Paragraph) Paragraph {
 	var runs []Run
 	for _, run := range paragraph.Runs {
@@ -204,6 +216,14 @@ func clean(paragraph Paragraph) Paragraph {
 				return '['
 			case r == '⟧':
 				return ']'
+			case r == '⟨':
+				return '‹'
+			case r == '⟩':
+				return '›'
+			case r == '⟪':
+				return '«'
+			case r == '⟫':
+				return '»'
 			case r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f':
 				return ' '
 			case r == utf8.RuneError || unicode.IsControl(r):
@@ -214,7 +234,7 @@ func clean(paragraph Paragraph) Paragraph {
 		if run.Text == "" {
 			continue
 		}
-		if last := len(runs) - 1; last >= 0 && runs[last].Italic == run.Italic && runs[last].Bold == run.Bold {
+		if last := len(runs) - 1; last >= 0 && runs[last].Italic == run.Italic && runs[last].Bold == run.Bold && runs[last].Props == run.Props {
 			runs[last].Text += run.Text
 			continue
 		}
@@ -235,5 +255,5 @@ func clean(paragraph Paragraph) Paragraph {
 		}
 		runs = runs[:last]
 	}
-	return Paragraph{Runs: runs}
+	return Paragraph{Runs: runs, Props: paragraph.Props, Mark: paragraph.Mark}
 }

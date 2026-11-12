@@ -301,20 +301,24 @@ func TestQueueClaimWaitsForPredecessorBookReady(t *testing.T) {
 		t.Fatalf("second queue item while predecessor runs error = %v, want ErrNotFound", err)
 	}
 
-	for _, status := range []jobs.Status{jobs.StatusFailed, jobs.StatusSucceeded} {
-		if _, err := db.Pool.Exec(ctx, `UPDATE jobs SET status = $2 WHERE id = $1`, firstJobID, status); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := claimImport(); !errors.Is(err, jobs.ErrNotFound) {
-			t.Fatalf("second claim after predecessor %s error = %v, want ErrNotFound", status, err)
-		}
+	// An imported predecessor holds the next volume back until its book is read (R2.4).
+	if _, err := db.Pool.Exec(ctx, `UPDATE jobs SET status = 'succeeded' WHERE id = $1`, firstJobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimImport(); !errors.Is(err, jobs.ErrNotFound) {
+		t.Fatalf("second claim after predecessor succeeded error = %v, want ErrNotFound", err)
 	}
 	if _, err := db.Pool.Exec(ctx, `UPDATE books SET status = 'ready' WHERE id = $1`, firstBookID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Pool.Exec(ctx, `UPDATE jobs SET status = 'failed' WHERE id = $1`, firstJobID); err != nil {
+		t.Fatal(err)
+	}
+	// A predecessor that did not read waits for the author at its place and holds nothing back
+	// (specs/2026-11-11-ux7-upload.md UP3.2).
 	second, err := claimImport()
 	if err != nil || second.JobID != secondJobID {
-		t.Fatalf("second claim after predecessor ready = %#v, err = %v", second, err)
+		t.Fatalf("second claim after predecessor did not read = %#v, err = %v", second, err)
 	}
 }
 

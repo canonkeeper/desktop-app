@@ -7,6 +7,7 @@ import { createIdempotencyKey, type AgentTimelineEvent, type SourceView } from '
 import { createAppRoute, toHref } from '../../shared/navigation/app-route';
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { ChatPage } from './ChatPage';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => { FakeWebSocket.reset(); vi.stubGlobal('WebSocket', FakeWebSocket); });
 afterEach(() => vi.unstubAllGlobals());
@@ -18,7 +19,9 @@ async function renderAnswer(text: string, sourceView: SourceView = 'published', 
   }, { idempotencyKey: createIdempotencyKey('createChatSession') });
   const turn = await api.createChatTurn(session.id, { body: 'Найти источник' }, { idempotencyKey: createIdempotencyKey('createChatTurn') });
   const events: AgentTimelineEvent[] = [
-    { id: 'assistant-cited', cursor: 'tl_1', kind: 'assistant', role: 'main', logicalSection: 0, jobId: turn.jobId, providerTurnId: 'turn-1', phase: 'final_answer', text },
+    // The server names the chapters the answer cites beside their keys (specs/2026-11-10-ux1-names.md N2.1).
+    { id: 'assistant-cited', cursor: 'tl_1', kind: 'assistant', role: 'main', logicalSection: 0, jobId: turn.jobId, providerTurnId: 'turn-1', phase: 'final_answer', text,
+      ...(text.includes('source:b2c12') ? { places: { b2c12: 'Книга 2, гл. 12 „Белый порт“' } } : {}) },
   ];
   vi.spyOn(api, 'getAgentTimeline').mockResolvedValue({ events, eof: true, needsReconcile: false });
   if (outdated) {
@@ -26,17 +29,17 @@ async function renderAnswer(text: string, sourceView: SourceView = 'published', 
     vi.spyOn(api, 'getChatSession').mockImplementation(async (chatId) => ({ ...(await getChatSession(chatId)), outdated: true }));
   }
   const navigate = vi.fn();
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <ChatPage api={api} navigate={navigate} onLogout={vi.fn()} userName="Редактор"
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastsProvider>
+    <ChatPage api={api} navigate={navigate}
       route={createAppRoute('/chat', { projectId, chatId: session.id, sourceView })} />
-  </QueryClientProvider>);
+  </ToastsProvider></QueryClientProvider>);
   return { navigate, chatId: session.id };
 }
 
 describe('Research Chat citations', () => {
   it.each(['draft', 'published'] as const)('opens a cited %s fragment beside the chat', async (sourceView) => {
     const { navigate, chatId } = await renderAnswer('Мара заметила дым первой [«Белый порт», ¶3](source:b2c12/3).', sourceView);
-    const link = await screen.findByRole('button', { name: '«Белый порт», ¶3' });
+    const link = await screen.findByRole('button', { name: 'Книга 2, гл. 12 „Белый порт“, абзац 3' });
     fireEvent.click(link);
     expect(navigate).toHaveBeenLastCalledWith(
       '/chat',
@@ -47,7 +50,7 @@ describe('Research Chat citations', () => {
 
   it('shows a citation of the previous assistant format as an unavailable source', async () => {
     const { navigate } = await renderAnswer('Старый ответ [Гл. 12](source:s7/p8-p10).');
-    expect(await screen.findByTitle('Источник недоступен')).toBeTruthy();
+    expect(await screen.findByTitle('Место недоступно')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Гл. 12' })).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });

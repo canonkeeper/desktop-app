@@ -11,3 +11,4 @@
 .modeRow > button { flex-shrink: 0; }
 .body { min-width: 0; min-height: 0; flex: 1; overflow: auto; padding: 16px; scrollbar-width: thin; }
 .body > [role='alert'] { margin-bottom: 16px; }
+.askWhere { margin-top: 12px; }

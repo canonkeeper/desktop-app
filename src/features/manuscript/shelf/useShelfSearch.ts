@@ -78,9 +78,39 @@ export function useShelfSearch({ api, book, navigate, project, sourceView }: She
     } catch { /* React Query keeps the typed error for presentation. */ }
   }
 
+  /** An emptied field clears what the last search found («Очистить поиск»). */
+  function updateSearchTerm(value: string) {
+    setSearchTerm(value);
+    if (!value.trim()) resetSearch();
+  }
+
   function selectSearchScope(nextScope: SearchScope) {
     setSearchScope(nextScope);
     if (searchTerm.trim()) void runSearch(nextScope);
+  }
+
+  /** Opens the search with the scope of the place: the book read in the reader, the whole saga elsewhere. */
+  function openSearch(scope: SearchScope) {
+    setSearchScope(scope === 'book' && !book ? 'project' : scope);
+    setSearchOpen(true);
+  }
+
+  /** «Найти в книге» of a selection in the reader: the words in the field, the book open as the scope, the search run. */
+  async function searchFor(value: string) {
+    const scope: SearchScope = book ? 'book' : 'project';
+    setSearchTerm(value);
+    setSearchScope(scope);
+    setSearchOpen(true);
+    if (!project || !value.trim()) return;
+    try {
+      await searchProjectMutation.mutateAsync({
+        projectId: project.id,
+        query: value.trim(),
+        scope: 'all',
+        filters: scope === 'book' && book ? { bookId: book.id } : undefined,
+        sourceView,
+      });
+    } catch { /* React Query keeps the typed error for presentation. */ }
   }
 
   function openSearchResult(result: SearchResult) {
@@ -92,7 +122,9 @@ export function useShelfSearch({ api, book, navigate, project, sourceView }: She
   return {
     openSearchResult,
     resetForProject,
+    openSearch,
     runSearch,
+    searchFor,
     searchCoverage,
     searchError,
     searchRequestId,
@@ -103,7 +135,7 @@ export function useShelfSearch({ api, book, navigate, project, sourceView }: She
     searchTerm,
     searchTriggerRef,
     setSearchOpen,
-    setSearchTerm,
+    setSearchTerm: updateSearchTerm,
     selectSearchScope,
   };
 }

@@ -170,7 +170,7 @@ func ParseXLSX(data []byte) (Parsed, error) {
 	values := valueReader{shared: strings_, styles: styles, date1904: workbook.Props.Date1904 == "1" || workbook.Props.Date1904 == "true"}
 	var parsed Parsed
 	rows := 0
-	for _, sheet := range workbook.Sheets {
+	for place, sheet := range workbook.Sheets {
 		target, ok := targets[sheet.RID]
 		if !ok || sheet.State == "hidden" || sheet.State == "veryHidden" {
 			continue
@@ -180,7 +180,7 @@ func ParseXLSX(data []byte) (Parsed, error) {
 			return Parsed{}, err
 		}
 		rows += len(read)
-		parsed.Sections = append(parsed.Sections, sheetSections(sheet.Name, read)...)
+		parsed.Sections = append(parsed.Sections, sheetSections(sheetTitle(sheet.Name, place), read)...)
 	}
 	if len(parsed.Sections) == 0 {
 		return Parsed{}, ErrEmpty

@@ -24,6 +24,7 @@ type Summary struct {
 	DeletionTargetsReconciled         int64
 	DeletionTargetRetriesScheduled    int64
 	TerminalImportQueueJobsReconciled int64
+	ExpiredBookUpdatesRemoved         int64
 }
 
 func (summary *Summary) add(other Summary) {
@@ -34,6 +35,7 @@ func (summary *Summary) add(other Summary) {
 	summary.DeletionTargetsReconciled += other.DeletionTargetsReconciled
 	summary.DeletionTargetRetriesScheduled += other.DeletionTargetRetriesScheduled
 	summary.TerminalImportQueueJobsReconciled += other.TerminalImportQueueJobsReconciled
+	summary.ExpiredBookUpdatesRemoved += other.ExpiredBookUpdatesRemoved
 }
 
 type SourceHardPurgeClaim struct {
@@ -69,6 +71,9 @@ func (claim DeletionAuditGCClaim) Validate() error {
 type BoundedGlobalStore interface {
 	RevokeExpiredSessions(context.Context) (int64, error)
 	MarkRetentionDeadlineBreaches(context.Context) (int64, error)
+	// RemoveExpiredBookUpdates removes the snapshots of updates of books from a file whose 7 days are over
+	// (specs/2026-11-12-ux10-book-revert.md BR1.2).
+	RemoveExpiredBookUpdates(context.Context) (int64, error)
 	ReconcileImportUploads(context.Context) error
 }
 
@@ -152,6 +157,11 @@ func (service *Service) runCycle(ctx context.Context, periodic bool) (Summary, b
 			errs = append(errs, err)
 		} else {
 			summary.RetentionDeadlineBreachesRecorded = count
+		}
+		if count, err := service.store.RemoveExpiredBookUpdates(ctx); err != nil {
+			errs = append(errs, err)
+		} else {
+			summary.ExpiredBookUpdatesRemoved = count
 		}
 		if _, err := service.importQueues.ExpireStaleImportQueues(ctx); err != nil {
 			errs = append(errs, err)

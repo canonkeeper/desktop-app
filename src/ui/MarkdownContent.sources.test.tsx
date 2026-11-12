@@ -4,27 +4,42 @@ import { MarkdownContent } from './MarkdownContent';
 import { SourceLink } from './controls/SourceLink';
 
 describe('Markdown source links', () => {
-  it('renders a complete source link as a shared control and no other link', () => {
+  // specs/2026-11-10-ux1-names.md N2.3: a citation reads as the place the server named, with the paragraphs in words.
+  it('renders a complete source link as a shared control named by its place and no other link', () => {
     const open = vi.fn();
-    const { container } = render(<MarkdownContent renderSourceLink={(source, label) => <SourceLink onClick={() => open(source)}>{label}</SourceLink>}>
-      {'Ответ. [гл. 12 ¶9–10](source:12/9-10) [Сайт](https://example.org) [Опасно](javascript:alert%281%29)'}
+    const { container } = render(<MarkdownContent places={{ 12: 'Книга 1, гл. 12 „Брод“', b2c12: 'Книга 2, гл. 12 „Белый порт“' }}
+      renderSourceLink={(source, label) => <SourceLink onClick={() => open(source)}>{label}</SourceLink>}>
+      {'Ответ. [гл. 12 ¶9–10](source:12/9-10) [т. 2, «Белый порт» ¶3](source:b2c12/3) [Сайт](https://example.org) [Опасно](javascript:alert%281%29)'}
     </MarkdownContent>);
-    fireEvent.click(screen.getByRole('button', { name: 'гл. 12 ¶9–10' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Книга 1, гл. 12 „Брод“, абзацы 9–10' }));
     expect(open).toHaveBeenCalledWith({ chapterKey: '12', from: 9, to: 10 });
+    expect(screen.getByRole('button', { name: 'Книга 2, гл. 12 „Белый порт“, абзац 3' })).toBeTruthy();
     // Any other link of the model is text (SEC-16, MarkdownContent.links.test.tsx).
     expect(screen.queryByRole('link')).toBeNull();
-    expect(container.textContent).toBe('Ответ. гл. 12 ¶9–10 Сайт (https://example.org) Опасно');
+    expect(container.textContent).toBe('Ответ. Книга 1, гл. 12 „Брод“, абзацы 9–10 Книга 2, гл. 12 „Белый порт“, абзац 3 Сайт (https://example.org) Опасно');
+  });
+
+  // Until the server names the place (a remark being written, a chapter the text lost) the words of the model stand,
+  // without «¶» and without a key.
+  it('says the words of the model without «¶» and keys while the place is not named', () => {
+    const { container } = render(<MarkdownContent renderSourceLink={(_source, label) => <SourceLink>{label}</SourceLink>}>
+      {'[т. 2, «Белый порт» [b2c12] ¶3–5](source:b2c12/3-5) и [b9c99 ¶1](source:b9c99/1) и [b9c99](source:b9c99).'}
+    </MarkdownContent>);
+    expect([...container.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'т. 2, «Белый порт» абзацы 3–5', 'абзац 1', 'глава, которой нет в книге',
+    ]);
+    expect(container.textContent).not.toMatch(/b\d+c\d+|¶/u);
   });
 
   it('keeps a citation together with the punctuation that touches it', () => {
-    const text = 'Мара гл. 1 ¶23, а Сава (гл. 2 ¶4). Конец гл. 3 ¶1 и дальше.';
+    const text = 'Мара гл. 1 абзац 23, а Сава (гл. 2 абзац 4). Конец гл. 3 абзац 1 и дальше.';
     const { container } = render(<MarkdownContent renderSourceLink={(_source, label) => <SourceLink>{label}</SourceLink>}>
       {'Мара [гл. 1 ¶23](source:1/23), а Сава ([гл. 2 ¶4](source:2/4)). Конец [гл. 3 ¶1](source:3/1) и дальше.'}
     </MarkdownContent>);
     // A citation is a button, and a line may break on either side of a button.
     expect([...container.querySelectorAll('button')].map((button) => [button.parentElement!.tagName, button.parentElement!.textContent])).toEqual([
-      ['SPAN', 'гл. 1 ¶23,'],
-      ['SPAN', '(гл. 2 ¶4).'],
+      ['SPAN', 'гл. 1 абзац 23,'],
+      ['SPAN', '(гл. 2 абзац 4).'],
       ['P', text],
     ]);
     expect(container.textContent).toBe(text);
@@ -33,9 +48,9 @@ describe('Markdown source links', () => {
   it('does not activate invalid, partial or code-block links', () => {
     const renderSource = vi.fn();
     const { rerender } = render(<MarkdownContent renderSourceLink={renderSource}>{'[Глава](source:12/2-1)'}</MarkdownContent>);
-    expect(screen.getByText('Глава').getAttribute('title')).toBe('Источник недоступен');
+    expect(screen.getByText('Глава').getAttribute('title')).toBe('Место недоступно');
     rerender(<MarkdownContent renderSourceLink={renderSource}>{'[Старая глава](source:s1/p1-p2)'}</MarkdownContent>);
-    expect(screen.getByText('Старая глава').getAttribute('title')).toBe('Источник недоступен');
+    expect(screen.getByText('Старая глава').getAttribute('title')).toBe('Место недоступно');
     for (const body of ['[Глава](source:12/1-', '`[Глава](source:12)`', '```text\n[Глава](source:12)\n```']) {
       rerender(<MarkdownContent renderSourceLink={renderSource}>{body}</MarkdownContent>);
     }
@@ -69,9 +84,9 @@ describe('Markdown drawings', () => {
     const { container } = render(<MarkdownContent renderSourceLink={(source, label) => <SourceLink onClick={() => open(source)}>{label}</SourceLink>}>
       {'Расходится: [прил. ¶12–14](attachment:1/12-14), сломанная [прил.](attachment:x).'}
     </MarkdownContent>);
-    fireEvent.click(screen.getByRole('button', { name: 'прил. ¶12–14' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ваша глава, абзацы 12–14' }));
     expect(open).toHaveBeenCalledWith({ chapterKey: 'a1', from: 12, to: 14 });
-    expect(screen.getByText('прил.').getAttribute('title')).toBe('Источник недоступен');
-    expect(container.querySelectorAll('button')[0]!.parentElement!.textContent).toBe('прил. ¶12–14,');
+    expect(screen.getByText('прил.').getAttribute('title')).toBe('Место недоступно');
+    expect(container.querySelectorAll('button')[0]!.parentElement!.textContent).toBe('ваша глава, абзацы 12–14,');
   });
 });

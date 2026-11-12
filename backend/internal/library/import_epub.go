@@ -2,14 +2,14 @@ package library
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"path"
-	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"canonkeeper/backend/internal/domain/chapterfile"
 )
 
 const (
@@ -56,22 +56,44 @@ func ParseEPUB(readerAt io.ReaderAt, size int64) (BookImport, error) {
 		}
 	}
 
+	// What the file says of itself: the names of its chapters and which of its documents are pages of the publisher
+	// (specs/2026-11-10-ux1-names.md N7.1, N7.3).
+	contents := readEPUBContents(files, opfPath, opf, &readBudget)
+	// The documents of the spine up to the first that cannot be read: its error waits until the documents before it
+	// are chapters, so a book over its limits still stops at the limit (R2.2).
+	var documents []epubDocument
+	var unread error
 	for _, itemref := range opf.Spine.ItemRefs {
 		item, ok := manifest[itemref.IDRef]
 		if !ok {
-			return BookImport{}, fmt.Errorf("library: epub spine item %q missing from manifest", itemref.IDRef)
+			unread = fmt.Errorf("library: epub spine item %q missing from manifest", itemref.IDRef)
+			break
 		}
-		chapterPath, err := resolveEPUBHref(opfPath, item.Href)
+		documentPath, err := resolveEPUBHref(opfPath, item.Href)
+		if err != nil {
+			unread = err
+			break
+		}
+		if contents.service[documentPath] {
+			continue
+		}
+		data, err := readEPUBFile(files, documentPath, &readBudget)
+		if err != nil {
+			unread = err
+			break
+		}
+		documents = append(documents, epubDocument{path: documentPath, data: data})
+	}
+	// The footnotes of the book stand in its text, each where its mark was (N7.2).
+	notes := collectEPUBNotes(documents)
+	for _, document := range documents {
+		chapters, err := parseEPUBXHTML(document.data, notes.of(document.path), &limits)
 		if err != nil {
 			return BookImport{}, err
 		}
-		chapterData, err := readEPUBFile(files, chapterPath, &readBudget)
-		if err != nil {
-			return BookImport{}, err
-		}
-		chapters, err := parseEPUBXHTML(chapterData, &limits)
-		if err != nil {
-			return BookImport{}, err
+		// A document without a heading of its own is one chapter, named by the contents of the file.
+		if len(chapters) == 1 && chapters[0].Title == "" {
+			chapters[0].Title = contents.labels[document.path]
 		}
 		for _, chapter := range chapters {
 			if chapter.Title == "" {
@@ -79,6 +101,9 @@ func ParseEPUB(readerAt io.ReaderAt, size int64) (BookImport, error) {
 			}
 			book.Chapters = append(book.Chapters, chapter)
 		}
+	}
+	if unread != nil {
+		return BookImport{}, unread
 	}
 
 	if len(book.Chapters) == 0 {
@@ -96,9 +121,22 @@ type epubRootfile struct {
 }
 
 type epubOPF struct {
-	Metadata epubMetadata `xml:"metadata"`
-	Manifest epubManifest `xml:"manifest"`
-	Spine    epubSpine    `xml:"spine"`
+	Metadata epubMetadata         `xml:"metadata"`
+	Manifest epubManifest         `xml:"manifest"`
+	Spine    epubSpine            `xml:"spine"`
+	Guide    []epubGuideReference `xml:"guide>reference"`
+}
+
+// epubGuideReference is what EPUB 2 says a document of the book is: its cover, its title page, its text.
+type epubGuideReference struct {
+	Type string `xml:"type,attr"`
+	Href string `xml:"href,attr"`
+}
+
+// epubDocument is a document of the spine with its place in the archive.
+type epubDocument struct {
+	path string
+	data []byte
 }
 
 type epubMetadata struct {
@@ -110,11 +148,15 @@ type epubManifest struct {
 }
 
 type epubManifestItem struct {
-	ID   string `xml:"id,attr"`
-	Href string `xml:"href,attr"`
+	ID         string `xml:"id,attr"`
+	Href       string `xml:"href,attr"`
+	MediaType  string `xml:"media-type,attr"`
+	Properties string `xml:"properties,attr"`
 }
 
 type epubSpine struct {
+	// Toc is the id of the NCX of EPUB 2.
+	Toc      string             `xml:"toc,attr"`
 	ItemRefs []epubSpineItemRef `xml:"itemref"`
 }
 
@@ -184,6 +226,8 @@ func parseEPUBOPF(data []byte) (epubOPF, error) {
 type epubBlock struct {
 	text  string
 	level int
+	// runs are the text in its italic and bold (specs/2026-11-08-italic-bold-in-text.md TF4.1).
+	runs []chapterfile.Run
 }
 
 // parseEPUBXHTML splits one spine document into chapters. Chapter headings are those of the
@@ -192,10 +236,10 @@ type epubBlock struct {
 // Глава I"), text before the first heading belongs to the first chapter, and deeper headings
 // stay paragraphs of their chapter. A whole volume exported as one document keeps its chapters.
 // The document is read twice — for the chapter level, then for the chapters — so that chapters
-// are assembled only up to the book limits.
-func parseEPUBXHTML(data []byte, limits *importLimits) ([]ChapterImport, error) {
+// are assembled only up to the book limits. Its footnotes stand in the text where their marks were.
+func parseEPUBXHTML(data []byte, notes *epubDocumentNotes, limits *importLimits) ([]ChapterImport, error) {
 	chapterLevel, previousLevel := 0, 0
-	err := scanEPUBBlocks(data, func(block epubBlock) error {
+	err := scanEPUBDocument(data, notes, func(block epubBlock) error {
 		if block.level == 0 && previousLevel > 0 && (chapterLevel == 0 || previousLevel < chapterLevel) {
 			chapterLevel = previousLevel
 		}
@@ -212,7 +256,7 @@ func parseEPUBXHTML(data []byte, limits *importLimits) ([]ChapterImport, error) 
 	var current ChapterImport
 	// titledText reports text after the title of the current chapter.
 	titledText := false
-	err = scanEPUBBlocks(data, func(block epubBlock) error {
+	err = scanEPUBDocument(data, notes, func(block epubBlock) error {
 		switch {
 		case block.level == 0 || block.level > chapterLevel:
 			if len(current.Paragraphs) == 0 {
@@ -223,7 +267,7 @@ func parseEPUBXHTML(data []byte, limits *importLimits) ([]ChapterImport, error) 
 			if err := limits.addParagraph(block.text); err != nil {
 				return err
 			}
-			current.Paragraphs = append(current.Paragraphs, block.text)
+			current.Paragraphs = append(current.Paragraphs, chapterfile.Paragraph{Runs: block.runs})
 			titledText = current.Title != ""
 		case titledText:
 			chapters = append(chapters, current)
@@ -241,53 +285,6 @@ func parseEPUBXHTML(data []byte, limits *importLimits) ([]ChapterImport, error) 
 		chapters = append(chapters, current)
 	}
 	return chapters, nil
-}
-
-// scanEPUBBlocks passes the non-empty paragraphs and headings of a spine document to visit in order.
-func scanEPUBBlocks(data []byte, visit func(epubBlock) error) error {
-	reader := newImportXMLReader(bytes.NewReader(data))
-	captureLevel := -1
-	var builder strings.Builder
-	depth := 0
-
-	for {
-		token, err := reader.Token()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		switch token := token.(type) {
-		case xml.StartElement:
-			if depth > 0 {
-				depth++
-				continue
-			}
-			if level, ok := epubBlockLevel(strings.ToLower(token.Name.Local), token.Attr); ok {
-				captureLevel = level
-				builder.Reset()
-				depth = 1
-			}
-		case xml.CharData:
-			if depth > 0 {
-				builder.Write(token)
-			}
-		case xml.EndElement:
-			if depth == 0 {
-				continue
-			}
-			depth--
-			if depth > 0 {
-				continue
-			}
-			if text := normalizeImportText(builder.String()); text != "" {
-				if err := visit(epubBlock{text: text, level: captureLevel}); err != nil {
-					return err
-				}
-			}
-		}
-	}
 }
 
 // joinEPUBHeadings appends a heading to the title; when the joined title would exceed the
@@ -424,27 +421,4 @@ func readElementText(decoder *xml.Decoder) (string, error) {
 		}
 	}
 	return builder.String(), nil
-}
-
-// epubBlockLevel recognizes paragraphs (0), h1–h6 and ARIA headings (`role="heading"`
-// with `aria-level`, which Wikisource exports use for chapter numbers).
-func epubBlockLevel(name string, attributes []xml.Attr) (int, bool) {
-	switch name {
-	case "p":
-		return 0, true
-	case "h1", "h2", "h3", "h4", "h5", "h6":
-		return int(name[1] - '0'), true
-	}
-	heading, level := false, 7
-	for _, attribute := range attributes {
-		switch attribute.Name.Local {
-		case "role":
-			heading = strings.EqualFold(strings.TrimSpace(attribute.Value), "heading")
-		case "aria-level":
-			if value, err := strconv.Atoi(strings.TrimSpace(attribute.Value)); err == nil && value >= 1 && value <= 6 {
-				level = value
-			}
-		}
-	}
-	return level, heading
 }

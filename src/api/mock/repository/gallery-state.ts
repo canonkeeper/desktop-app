@@ -19,6 +19,15 @@ export type MockDrawing = {
   drawAfterReads?: number;
 };
 
+/** A drawing in «Недавно удалённые»: what deleteDrawing took out of the gallery and restoreDrawing puts back. */
+export type MockDeletedDrawing = {
+  drawing: MockDrawing;
+  images: MockSagaImage[];
+  references: MockImageReference[];
+  deletedAt: string;
+  restoreUntil: string;
+};
+
 type SagaImage = Schema<'SagaImage'>;
 type SagaImageLayer = Schema<'SagaImageLayer'>;
 type SagaImageCheck = Schema<'SagaImageCheck'>;
@@ -51,11 +60,48 @@ export type MockSagaImage = Omit<SagaImage, 'references' | 'canDelete' | 'layers
   enlargedSize?: { width: number; height: number };
   /** A variant after the first of its group: the group is paid for once, by the first (R21.4). */
   variantPaid?: boolean;
+  /** A sketch of the first free set of a saga (R8.6): it spends no drawing of the day. */
+  freeSketch?: boolean;
+  /** The place the author gave it in the book (specs/2026-11-11-ux6-drawing-flow.md DF4.2): 0 — out of it, N — after paragraph N. */
+  bookAfter?: number;
 };
 
+/**
+ * A choice of another main variant carries the place the author gave the main one in the book, as the backend's
+ * `carryBookPlaceInTx` (DF4.2); a main one without a place given changes nothing.
+ */
+export function carryBookPlace(from: MockSagaImage | undefined, to: MockSagaImage) {
+  if (!from || from === to || from.bookAfter === undefined) return;
+  to.chapter = from.chapter;
+  to.bookAfter = from.bookAfter;
+}
+
+/** The angles the backend picks for the variants the brief gave none for (specs/2026-11-11-ux6-drawing-flow.md DF3.3). */
+const defaultStagings = [
+  'общий план: место и герои целиком',
+  'средний план: герои по пояс, лица видны',
+  'крупный план: лицо и руки главного героя',
+  'низкий ракурс снизу вверх, контровой свет',
+  'вид сверху и чуть сбоку, мягкий рассеянный свет',
+];
+
+/** The stagings n variants are drawn by, as the backend's `imageworkshop.VariantStagings`: the brief's first, then picked ones. */
+export function variantStagings(brief: readonly string[], n: number) {
+  if (n < 2) return [];
+  const key = (line: string) => line.split(/\s+/u).filter(Boolean).join(' ').toLowerCase().replace(/[ .,;:!…]+$/u, '');
+  const seen = new Set<string>();
+  const picked: string[] = [];
+  for (const line of [...brief, ...defaultStagings]) {
+    if (!key(line) || seen.has(key(line)) || picked.length === n) continue;
+    seen.add(key(line));
+    picked.push(line);
+  }
+  return picked;
+}
+
 /** A drawing or a layer that ended draw_limited or draw_failed gave its place in images_per_day back (R13.6). */
-export function spendsImage(item: Pick<MockSagaImage | MockImageLayer, 'errorCode'> & Pick<Partial<MockSagaImage>, 'variantPaid'>) {
-  return item.errorCode !== 'draw_limited' && item.errorCode !== 'draw_failed' && !item.variantPaid;
+export function spendsImage(item: Pick<MockSagaImage | MockImageLayer, 'errorCode'> & Pick<Partial<MockSagaImage>, 'variantPaid' | 'freeSketch'>) {
+  return item.errorCode !== 'draw_limited' && item.errorCode !== 'draw_failed' && !item.variantPaid && !item.freeSketch;
 }
 
 /** The check the mock Job starts on a ready render: the facts without verdicts (R12.2). */
@@ -80,22 +126,11 @@ export type MockImageReference = Schema<'SagaImageReference'> & {
   number: number;
 };
 
-/** The right of a mock account as the administrator left it and the trial drawings left. */
-export type MockIllustrationRight = {
-  granted: 'none' | 'active' | 'blocked';
-  trialLeft: number;
-  /** The last Moscow day of active access, inclusive; null — without end. */
-  activeUntil: string | null;
-};
-
-export type MockAccessRequest = Schema<'IllustrationAccessRequest'> & { userId: string };
-
+/** The administrator's blocks of drawing (specs/2026-11-08-subscription-tiers.md TR6.4) and the free style sketches. */
 export type MockIllustrationAccessState = {
-  rights: Record<string, MockIllustrationRight>;
-  requests: MockAccessRequest[];
+  blocked: Record<string, true>;
   /** Projects whose free first style sketches were taken (R11.2, decision 29.10). */
   freeSketches: Record<string, true>;
-  nextRequest: number;
 };
 
 export type MockGalleryState = {
@@ -103,6 +138,11 @@ export type MockGalleryState = {
   /** The drawings of the workshop, one per branch with a drawing (specs/2026-11-02-image-workshop.md IW5). */
   drawings: MockDrawing[];
   references: MockImageReference[];
+  /**
+   * The drawings of «Недавно удалённые» with their versions and looks, out of every read until «Вернуть»
+   * (specs/2026-11-11-ux7-trash.md TB3.1).
+   */
+  deletedDrawings: MockDeletedDrawing[];
   styles: Record<string, string | null>;
   /** The style sample of each project, a number of its gallery (R19.1). */
   styleImages: Record<string, number | null>;
@@ -121,7 +161,7 @@ export type MockGalleryState = {
    */
   uploads: { enabled: boolean; consents: Record<string, string> };
   /** The images attached to the question of each chat turn, for its question in the timeline (R15.9). */
-  turnQuestions: Record<string, { text: string; images: number[]; attachment?: { number: number; title: string; words: number } }>;
+  turnQuestions: Record<string, { text: string; images: number[]; attachment?: { number: number; title: string; words: number }; button?: boolean }>;
   /** The corrections of each chat turn, for the timeline (specs/2026-10-30-chat-steering.md). */
   turnSteers: Record<string, { steerId: string; text: string; images: number[]; firstPhoto?: number }[]>;
   /** The revision of the description each turn of a drawing's helper wrote, for its `drawing.describe` in the timeline (D6.7). */
@@ -192,19 +232,11 @@ export function createInitialGallery(authorId: string): MockGalleryState {
     styleImages: {},
     lastNumber: { [whitePortProjectId]: 2 },
     nextLayer: 1,
-    access: {
-      rights: {},
-      // A pending request of the new author of the admin panel's writers, for the tab «Запросы».
-      requests: [{
-        id: 'illustration-request-1', userId: '11111111-0000-4000-8000-000000000002', status: 'pending',
-        message: 'Хочу иллюстрировать главы для читателей', createdAt: now, sentAt: now, decidedAt: null,
-      }],
-      freeSketches: {},
-      nextRequest: 2,
-    },
+    access: { blocked: {}, freeSketches: {} },
     uploads: { enabled: true, consents: {} },
     turnQuestions: {},
     drawingRequests: {},
+    deletedDrawings: [],
     turnSteers: {},
     turnDescribes: {},
   };

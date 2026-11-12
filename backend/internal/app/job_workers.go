@@ -185,6 +185,15 @@ func logMapFailure(logger *log.Logger, projectID, stage string, err error) {
 	logger.Print(string(line))
 }
 
+// logReadyFailure says that the wave of «Сага готова» was not closed or its letter was not queued
+// (specs/2026-11-09-first-session.md, FS2.5).
+func logReadyFailure(logger *log.Logger, projectID, stage string, err error) {
+	entry := namesFailureLogEntry{Event: "saga_ready_failed", ProjectID: projectID, Stage: stage}
+	entry.ErrorClass, entry.ErrorCause = observability.ClassifyError(err)
+	line, _ := json.Marshal(entry)
+	logger.Print(string(line))
+}
+
 // logLayerFailure says that a step of the thread layer went on without an answer or that its Job was not
 // queued, with the safe class of the failure, not its text: a model answer may quote the book.
 func logLayerFailure(logger *log.Logger, projectID, stage string, err error) {

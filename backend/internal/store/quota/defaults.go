@@ -27,7 +27,7 @@ func (store *Store) PlatformDefaults(ctx context.Context) (quota.PlatformDefault
 // the quota checks read on. Only a key whose value changes is written and returned, with the
 // moment and the administrator; a repeat of the same change writes nothing.
 func (store *Store) SetPlatformDefaults(ctx context.Context, adminID string, changes []quota.OverrideChange, at time.Time) ([]quota.OverrideChanged, error) {
-	if err := quota.CheckDefaults(changes); err != nil {
+	if err := quota.CheckOverrides(changes); err != nil {
 		return nil, err
 	}
 	admin, err := storedb.ParseUUID(adminID)
@@ -56,7 +56,7 @@ func (store *Store) SetPlatformDefaults(ctx context.Context, adminID string, cha
 				item.Before = &before
 			}
 			changed = append(changed, item)
-			// The key is one of quota.DefaultKeys, so it is a column name and safe to splice.
+			// The key is one of quota.Keys, so it is a column name and safe to splice.
 			columns = append(columns, string(change.Key))
 			args = append(args, change.Value)
 		}
@@ -81,8 +81,8 @@ func (store *Store) SetPlatformDefaults(ctx context.Context, adminID string, cha
 	return changed, nil
 }
 
-func readPlatformDefaults(ctx context.Context, db querier) (quota.PlatformDefaults, error) {
-	keys := quota.DefaultKeys()
+func readPlatformDefaults(ctx context.Context, db Querier) (quota.PlatformDefaults, error) {
+	keys := quota.Keys()
 	values := make([]*int64, len(keys))
 	var updatedAt pgtype.Timestamptz
 	var updatedBy pgtype.UUID

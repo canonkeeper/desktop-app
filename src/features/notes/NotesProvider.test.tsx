@@ -7,8 +7,9 @@ import { noteQueryKeys } from '../../entities/notes/api';
 import { createAppRoute } from '../../shared/navigation/app-route';
 import { useNotes } from '../../shared/notes/notes-context';
 import { NotesProvider } from './NotesProvider';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
-vi.mock('@tanstack/react-router', () => ({ useBlocker: vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({ useBlocker: vi.fn(() => ({ status: 'idle' })) }));
 
 function Controls() {
   const notes = useNotes()!;
@@ -17,7 +18,7 @@ function Controls() {
 function setup(api = createMockApiClient()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const navigate = vi.fn();
-  render(<QueryClientProvider client={client}><NotesProvider accountId="user-mira" api={api} navigate={navigate} route={createAppRoute('/chat')}><Controls /></NotesProvider></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><ToastsProvider><NotesProvider accountId="user-mira" api={api} navigate={navigate} route={createAppRoute('/chat')}><Controls /></NotesProvider></ToastsProvider></QueryClientProvider>);
   return { api, navigate, client };
 }
 
@@ -29,7 +30,7 @@ describe('unified Notes', () => {
     const { client } = setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: (name) => name.includes(entry.preview) }));
-    const input = await screen.findByLabelText('Текст заметки') as HTMLTextAreaElement;
+    const input = await screen.findByLabelText('Ваша мысль') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: 'Мой незавершённый текст' } });
     await act(async () => { client.setQueryData(noteQueryKeys.note('user-mira', entry.id), { ...original, body: 'Новый серверный текст' }); });
     expect(input.value).toBe('Мой незавершённый текст');
@@ -55,18 +56,21 @@ describe('unified Notes', () => {
     setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: (name) => name.includes(entry.preview) }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Удалить заметку' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Ещё' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Удалить заметку…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Удалить заметку?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
-    const retry = await within(dialog).findByRole('button', { name: 'Повторить' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить заметку' }));
+    // The refusal stays in the window; its action tries again (specs/2026-11-10-ux2-patterns-actions.md PA2.1).
+    await within(dialog).findByRole('alert');
+    const retry = within(dialog).getByRole('button', { name: 'Удалить заметку' });
     expect(screen.queryByText('Заметка удалена')).toBeNull();
     let finish!: () => void;
     remove.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
     fireEvent.click(retry);
-    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Удаляем…' }) as HTMLButtonElement).disabled).toBe(true));
+    await waitFor(() => expect((within(dialog).getByRole('button', { name: 'Удалить заметку' }) as HTMLButtonElement).disabled).toBe(true));
     fireEvent.keyDown(dialog, { key: 'Escape' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Назад' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Удаляем…' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить заметку' }));
     expect(screen.getByRole('dialog', { name: 'Удалить заметку?' })).toBeTruthy();
     expect(remove).toHaveBeenCalledTimes(2);
     await act(async () => finish());
@@ -79,12 +83,12 @@ describe('unified Notes', () => {
     const { navigate } = setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: (name) => name.includes(entry.preview) }));
-    fireEvent.change(await screen.findByLabelText('Текст заметки'), { target: { value: 'Несохранённая правка' } });
-    fireEvent.click(screen.getByRole('button', { name: 'К фрагменту главы' }));
+    fireEvent.change(await screen.findByLabelText('Ваша мысль'), { target: { value: 'Несохранённая правка' } });
+    fireEvent.click(screen.getByRole('button', { name: /^К месту в книге/ }));
     const confirm = await screen.findByRole('dialog', { name: 'Не сохранять?' });
     expect(navigate).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Назад' }));
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Несохранённая правка');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Отмена' }));
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Несохранённая правка');
   });
 
   it('keeps a failed update in the form and deletes only after confirmation', async () => {
@@ -95,15 +99,17 @@ describe('unified Notes', () => {
     setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: (name) => name.includes(entry.preview) }));
-    fireEvent.change(await screen.findByLabelText('Текст заметки'), { target: { value: 'Не потерять эту правку' } });
+    fireEvent.change(await screen.findByLabelText('Ваша мысль'), { target: { value: 'Не потерять эту правку' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByRole('button', { name: 'Повторить' });
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Не потерять эту правку');
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Не потерять эту правку');
     expect(screen.queryByText('Заметка сохранена')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Удалить заметку'));
+    fireEvent.click(screen.getByRole('button', { name: 'Ещё' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Удалить заметку…' }));
     const confirm = await screen.findByRole('dialog', { name: 'Удалить заметку?' });
+    expect(confirm.textContent).toContain('Вернуть будет нельзя.');
     expect(remove).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить' }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Удалить заметку' }));
     await screen.findByText('Заметка удалена');
     expect(remove).toHaveBeenCalledWith(entry.id, 1);
     expect((await api.listNotes()).data.some((item) => item.id === entry.id)).toBe(false);
@@ -112,11 +118,11 @@ describe('unified Notes', () => {
   it('does not dismiss a captured draft when the source navigation menu closes', () => {
     const api = createMockApiClient();
     const client = new QueryClient();
-    const view = (menu?: string) => <QueryClientProvider client={client}><NotesProvider accountId="user-mira" api={api} navigate={vi.fn()} route={createAppRoute('/manuscript/books', { sourceView: 'draft', menu })}><Controls /></NotesProvider></QueryClientProvider>;
+    const view = (menu?: string) => <QueryClientProvider client={client}><ToastsProvider><NotesProvider accountId="user-mira" api={api} navigate={vi.fn()} route={createAppRoute('/manuscript/books', { sourceView: 'draft', menu })}><Controls /></NotesProvider></ToastsProvider></QueryClientProvider>;
     const { rerender } = render(view('open'));
     fireEvent.click(screen.getByText('Сохранить фрагмент'));
     rerender(view());
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
     expect(screen.getByRole('dialog', { name: 'Заметки' })).toBeTruthy();
   });
 
@@ -130,11 +136,12 @@ describe('unified Notes', () => {
     const { navigate } = setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     expect(await screen.findByRole('option', { name: /Произвольная запись/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('option', { name: new RegExp(chapterNote.chapterTitle!) }));
+    fireEvent.click(screen.getByRole('option', { name: (name) => name.includes(chapterNote.place!) }));
     expect(navigate).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole('button', { name: 'К фрагменту главы' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^К месту в книге/ }));
+    // The reader opens at the paragraph with this note beside the text (specs/2026-11-11-ux7-notes.md NT2.2).
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/manuscript/books', expect.objectContaining({
-      chapterId: locator.chapterId, paragraphId: locator.paragraphId,
+      chapterId: locator.chapterId, paragraphId: locator.paragraphId, contents: 'notes', note: chapterNote.id,
     })));
   });
 
@@ -144,7 +151,7 @@ describe('unified Notes', () => {
     const spy = vi.spyOn(api, 'createPersonalNote').mockImplementationOnce(async (...args) => { await create(...args); throw new NetworkApiError(new Error('lost response')); });
     setup(api);
     fireEvent.click(screen.getByText('Сохранить фрагмент'));
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
     screen.getByRole('button', { name: 'Сохранить' }).focus();
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Повторить' }));
@@ -163,8 +170,8 @@ describe('unified Notes', () => {
     fireEvent.click(screen.getByText('Сохранить фрагмент'));
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'Заметки' }), { key: 'Escape' });
     const confirm = await screen.findByRole('dialog', { name: 'Не сохранять?' });
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Назад' }));
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Отмена' }));
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Фрагмент ответа');
     fireEvent.click(screen.getByLabelText('Закрыть заметку'));
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'Не сохранять?' })).getByRole('button', { name: 'Не сохранять' }));
     expect(screen.queryByRole('dialog', { name: 'Заметки' })).toBeNull();
@@ -176,11 +183,11 @@ describe('unified Notes', () => {
     setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: /Исходная запись/ }));
-    fireEvent.change(await screen.findByLabelText('Текст заметки'), { target: { value: 'Мои изменения' } });
+    fireEvent.change(await screen.findByLabelText('Ваша мысль'), { target: { value: 'Мои изменения' } });
     await api.updatePersonalNote(note.id, { body: 'Другое окно', expectedRevision: 1 });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByText('Заметка изменена в другом окне. Ваш текст остался в поле.');
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Мои изменения');
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Мои изменения');
     expect((await api.getPersonalNote(note.id)).body).toBe('Другое окно');
   });
 
@@ -192,14 +199,14 @@ describe('unified Notes', () => {
     setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
     fireEvent.click(await screen.findByRole('option', { name: /Сохранённая запись/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'К сообщению' }));
-    await screen.findByText('Не удалось открыть источник. Заметка сохранена.');
-    fireEvent.change(screen.getByLabelText('Текст заметки'), { target: { value: 'Несохранённая правка' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'К ответу в чате' }));
+    await screen.findByText('Не удалось открыть место. Заметка сохранена.');
+    fireEvent.change(screen.getByLabelText('Ваша мысль'), { target: { value: 'Несохранённая правка' } });
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
     const confirm = await screen.findByRole('dialog', { name: 'Не сохранять?' });
     expect(resolve).toHaveBeenCalledTimes(1);
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Назад' }));
-    expect((screen.getByLabelText('Текст заметки') as HTMLTextAreaElement).value).toBe('Несохранённая правка');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Отмена' }));
+    expect((screen.getByLabelText('Ваша мысль') as HTMLTextAreaElement).value).toBe('Несохранённая правка');
   });
 
   it('distinguishes list failure from empty and keeps create available without a project', async () => {
@@ -208,11 +215,11 @@ describe('unified Notes', () => {
     vi.spyOn(api, 'listNotes').mockRejectedValue(new NetworkApiError(new Error('offline')));
     setup(api);
     fireEvent.click(screen.getByText('Открыть заметки'));
-    await screen.findByText('Не удалось загрузить заметки.');
+    await screen.findByRole('alert', { name: 'Не открылись заметки' });
     expect(screen.queryByText('Пока нет заметок')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Новая заметка' }));
     expect((screen.getByRole('button', { name: 'Сохранить' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Текст заметки'), { target: { value: 'Без саги' } });
+    fireEvent.change(screen.getByLabelText('Ваша мысль'), { target: { value: 'Без саги' } });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await screen.findByText('Заметка сохранена');
     expect(create).toHaveBeenCalledWith({ title: '', body: 'Без саги', source: null }, expect.objectContaining({ idempotencyKey: expect.any(String) }));

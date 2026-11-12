@@ -18,6 +18,6 @@ describe('manuscriptQueryKeys', () => {
       ...manuscriptQueryKeys.importQueues('project-1'), 'queue-1',
     ]);
     expect(manuscriptQueryKeys.job('job-1')).not.toEqual(manuscriptQueryKeys.sourceChapter('job-1'));
-    expect(manuscriptQueryKeys.deletedBooks('project-1')).not.toEqual(manuscriptQueryKeys.deletedChapters('project-1'));
+    expect(manuscriptQueryKeys.recentlyDeleted()).not.toEqual(manuscriptQueryKeys.shelf({ projectId: undefined }));
   });
 });

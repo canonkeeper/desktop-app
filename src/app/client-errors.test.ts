@@ -55,20 +55,13 @@ describe('client error reports', () => {
     expect(reportClientError.mock.calls[0]![0]).toMatchObject({ surface: 'home' });
   });
 
-  it('names the page «Иллюстрации саги» as its own surface', () => {
-    const reportClientError = vi.fn().mockResolvedValue(undefined);
-    const reporter = createClientErrorReporter({ reportClientError }, () => ({ ...environment, pathname: '/illustrations' }));
-    reporter.report('error', new TypeError('illustrations'));
-
-    expect(reportClientError.mock.calls[0]![0]).toMatchObject({ surface: 'illustrations' });
-  });
-
-  it('names «Галерея» as its own surface', () => {
-    const reportClientError = vi.fn().mockResolvedValue(undefined);
-    const reporter = createClientErrorReporter({ reportClientError }, () => ({ ...environment, pathname: '/gallery' }));
-    reporter.report('error', new TypeError('gallery'));
-
-    expect(reportClientError.mock.calls[0]![0]).toMatchObject({ surface: 'gallery' });
+  // specs/2026-11-10-ux6-drawings-section.md DS2.2: «Галерея» and «Иллюстрации» left for «Рисунки»; their addresses only lead there.
+  it('names «Рисунки» as their surface and the former addresses as no page', () => {
+    for (const [pathname, surface] of [['/drawing', 'drawing'], ['/gallery', 'unknown'], ['/illustrations', 'unknown']] as const) {
+      const reportClientError = vi.fn().mockResolvedValue(undefined);
+      createClientErrorReporter({ reportClientError }, () => ({ ...environment, pathname })).report('error', new TypeError(pathname));
+      expect(reportClientError.mock.calls[0]![0]).toMatchObject({ surface });
+    }
   });
 
   it('names the pages of promotion permissions as their own surfaces', () => {

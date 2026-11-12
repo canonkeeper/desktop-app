@@ -5,6 +5,7 @@ import { mockNewAuthorWriterId, mockPlatformAdminWriterId } from './admin-writer
 import type { MockRepositoryContext } from './context';
 import { createIllustrationAccess } from './illustration-access';
 import { mockCodeDefaults, mockDefault } from './quota';
+import { mockAccountPlan, mockPlanSettings, mockWriterTier } from './tiers';
 
 type AdminWriter = Schema<'AdminWriter'>;
 type AdminQuotaKey = Schema<'AdminQuotaKey'>;
@@ -13,13 +14,17 @@ type AdminWriterStage = Schema<'AdminWriterStage'>;
 
 const stages: AdminWriterStage[] = ['unverified', 'no_documents', 'no_book', 'no_question', 'asking', 'quiet', 'blocked'];
 
-/** The limits by default in the order of the tab (backend domain/quota.DefaultKeys); the writer card has all but the trial. */
-const defaultKeys = Object.keys(mockCodeDefaults) as AdminQuotaDefaultKey[];
-const quotaKeys = defaultKeys.filter((key): key is AdminQuotaKey => key !== 'trial_drawings');
+/** Every writer limit in the order of the card (backend domain/quota.Keys). */
+const quotaKeys = Object.keys(mockCodeDefaults) as AdminQuotaKey[];
+/**
+ * The general limits by default in the order of «Настройки»: the key no tier sets (specs/2026-11-08-admin-redesign.md
+ * AR7.1, specs/2026-11-11-tier-limits.md TL2.2); every other key is the tier's and has no platform default.
+ */
+const defaultKeys: AdminQuotaDefaultKey[] = ['image_uploads_per_day'];
 /** The largest value a limit keeps (backend domain/quota.Key.Max): bigint for the characters, integer otherwise. */
 const maxInteger = 2_147_483_647;
 
-function validLimit(key: AdminQuotaDefaultKey, value: number | 'default') {
+function validLimit(key: AdminQuotaKey, value: number | 'default') {
   if (value === 'default') return true;
   const max = key === 'project_characters' || key === 'account_characters' ? Number.MAX_SAFE_INTEGER : maxInteger;
   return Number.isInteger(value) && value >= 0 && value <= max;
@@ -29,7 +34,8 @@ function writerFixture(id: string, email: string, fields: Partial<AdminWriter>):
   return {
     id, email, registeredAt: now, emailVerified: true, documentsAccepted: true, blocked: false, quotaChanged: false,
     projects: 0, books: 0, chapters: 0, imports: 0, questions: 0, questionsWeek: 0, unanswered: 0,
-    lastQuestionDay: null, lastLoginAt: null, stage: 'no_book', platformAdmin: false, ...fields,
+    lastQuestionDay: null, lastLoginAt: null, lastSeenAt: null, stage: 'no_book', platformAdmin: false,
+    tier: { code: 'free', title: 'Бесплатно', until: null }, ...fields,
   };
 }
 
@@ -44,32 +50,26 @@ function stageOf(writer: AdminWriter): AdminWriterStage {
   return 'no_question';
 }
 
-/** The names of the synthetic writers: the list of writers has no names, the requests do. */
-const writerNames: Record<string, string> = {
-  [mockNewAuthorWriterId]: 'Новый Автор',
-  [mockPlatformAdminWriterId]: 'Мира Волкова',
-};
-
 /** The admin pages of the platform administrator (specs/2026-10-29-admin-panel.md) over synthetic writers. */
 export function createAdminOperations(context: MockRepositoryContext) {
   const writers: AdminWriter[] = [
     writerFixture(mockNewAuthorWriterId, 'new-author@example.test', { emailVerified: false }),
     writerFixture(mockPlatformAdminWriterId, 'mira@example.com', {
       platformAdmin: true, projects: 1, books: 4, chapters: 186, imports: 4, questions: 12, questionsWeek: 3,
-      lastQuestionDay: now.slice(0, 10), lastLoginAt: now,
+      lastQuestionDay: now.slice(0, 10), lastLoginAt: now, lastSeenAt: now,
     }),
   ];
   const overrides = new Map<string, Partial<Record<AdminQuotaKey, number>>>();
   const access = createIllustrationAccess(context);
 
-  /** A writer's limit in force: his own, else the platform's, else the code's (admin-panel R7.2). */
+  /** A writer's limit in force: his own, else his tier's, else the platform's, else the code's (admin-panel R7.2, TR2.2). */
   function limitOf(userId: string, key: AdminQuotaKey) {
-    return overrides.get(userId)?.[key] ?? mockDefault(context.state.quotaDefaults, key);
+    return overrides.get(userId)?.[key] ?? mockPlanSettings(context.state, userId)[key] ?? mockDefault(context.state.quotaDefaults, key);
   }
 
-  /** The block «Иллюстрации» of a writer card with the writer's images_per_day in force. */
-  function illustrationsOf(userId: string) {
-    return access.viewOf(userId, limitOf(userId, 'images_per_day'), false);
+  /** The state of the writer's right to draw (admin-redesign AR4.8). */
+  function illustrationsOf(userId: string): Schema<'AdminWriterDrawing'> {
+    return { state: access.viewOf(userId, limitOf(userId, 'images_per_day'), false).state };
   }
 
   function adminOperation(operationId: OperationId) {
@@ -80,7 +80,10 @@ export function createAdminOperations(context: MockRepositoryContext) {
   }
 
   function staged(writer: AdminWriter): AdminWriter {
-    return { ...writer, quotaChanged: Object.keys(overrides.get(writer.id) ?? {}).length > 0, stage: stageOf(writer) };
+    return {
+      ...writer, quotaChanged: Object.keys(overrides.get(writer.id) ?? {}).length > 0, stage: stageOf(writer),
+      tier: mockWriterTier(context.state, writer.id),
+    };
   }
 
   function findWriter(userId: string, operationId: OperationId) {
@@ -103,6 +106,7 @@ export function createAdminOperations(context: MockRepositoryContext) {
     adminOperation('getAdminWriter');
     const writer = staged(findWriter(userId, 'getAdminWriter'));
     const own = overrides.get(userId) ?? {};
+    const plan = mockPlanSettings(context.state, userId);
     const used: Partial<Record<AdminQuotaKey, number>> = {
       chat_turns_per_day: 0, active_turns: 0, imports_per_day: 0, projects: writer.projects,
       account_books: writer.books, account_chapters: writer.chapters, account_characters: 0, images_per_day: 0, image_uploads_per_day: 0, chapter_drafts_per_day: 0,
@@ -114,12 +118,14 @@ export function createAdminOperations(context: MockRepositoryContext) {
         day: now.slice(0, 10),
         resetsAt: new Date(Date.parse(`${now.slice(0, 10)}T00:00:00+03:00`) + 24 * 60 * 60 * 1000).toISOString(),
         limits: quotaKeys.map((key) => ({
-          key, limit: limitOf(userId, key), overridden: own[key] !== undefined, used: used[key] ?? null,
+          key, limit: limitOf(userId, key), source: own[key] !== undefined ? 'own' as const : plan[key] !== undefined ? 'plan' as const : 'default' as const,
+          used: used[key] ?? null,
         })),
         ownedProjects: [],
       },
       impersonations: [],
       illustrations: illustrationsOf(userId),
+      plan: mockAccountPlan(context.state, userId),
     });
   }
 
@@ -193,59 +199,21 @@ export function createAdminOperations(context: MockRepositoryContext) {
     };
   }
 
-  /** «Включить», «Выключить», «Вернуть пробные» (specs/2026-10-29-saga-illustrations.md R11.6). */
+  /** «Выключить рисунки» and «Включить обратно» (specs/2026-11-08-subscription-tiers.md TR6.4). */
   async function setAdminWriterIllustrations(
     userId: string,
     body: OperationRequest<'setAdminWriterIllustrations'>,
   ): Promise<OperationResponse<'setAdminWriterIllustrations', '200'>> {
     adminOperation('setAdminWriterIllustrations');
     findWriter(userId, 'setAdminWriterIllustrations');
-    const images = body.imagesPerDay;
-    if (images !== undefined && images !== 'default' && (!Number.isInteger(images) || images < 0)) {
+    if (Object.keys(body ?? {}).some((key) => key !== 'state')) {
       throw new MockApiError(400, 'validation failed', 'setAdminWriterIllustrations', 'request.validation');
     }
-    access.setRight('setAdminWriterIllustrations', userId, body);
-    if (images !== undefined) {
-      const own = { ...(overrides.get(userId) ?? {}) };
-      if (images === 'default') delete own.images_per_day;
-      else own.images_per_day = images;
-      overrides.set(userId, own);
-    }
+    access.setBlock('setAdminWriterIllustrations', userId, body);
     return clone(illustrationsOf(userId));
   }
 
-  /** The tab «Запросы»: pending first, newest first, with the counter. */
-  async function listAdminIllustrationRequests(): Promise<OperationResponse<'listAdminIllustrationRequests', '200'>> {
-    adminOperation('listAdminIllustrationRequests');
-    const requests = access.requests().map((request) => {
-      const writer = writers.find((candidate) => candidate.id === request.userId);
-      return {
-        ...access.publicRequest(request), userId: request.userId,
-        email: writer?.email ?? context.state.session?.user.email ?? '',
-        accessState: access.stateOf(access.rightOf(request.userId)),
-        // Who the writer is, as his card tells it (specs/2026-11-07-contacts.md R1.3).
-        writer: {
-          name: writer ? writerNames[writer.id] ?? writer.email : context.state.session?.user.displayName ?? '',
-          registeredAt: writer?.registeredAt ?? now, projects: writer?.projects ?? 0, books: writer?.books ?? 0,
-          lastLoginAt: writer?.lastLoginAt ?? null, lastQuestionDay: writer?.lastQuestionDay ?? null,
-        },
-      };
-    });
-    return clone({ requests, pending: requests.filter((request) => request.status === 'pending').length });
-  }
-
-  async function declineAdminIllustrationRequest(
-    requestId: string,
-    body: OperationRequest<'declineAdminIllustrationRequest'>,
-  ): Promise<OperationResponse<'declineAdminIllustrationRequest', '200'>> {
-    adminOperation('declineAdminIllustrationRequest');
-    if (body?.message && [...body.message].length > 1000) {
-      throw new MockApiError(400, 'validation failed', 'declineAdminIllustrationRequest', 'request.validation');
-    }
-    return access.publicRequest(access.declineRequest('declineAdminIllustrationRequest', requestId));
-  }
-
-  /** The tab «Лимиты» (specs/2026-10-29-admin-panel.md R7.4). */
+  /** «Общие ограничения для всех тарифов» of «Настройки» (admin-panel R7.4, admin-redesign AR7.1). */
   async function getAdminQuotaDefaults(): Promise<OperationResponse<'getAdminQuotaDefaults', '200'>> {
     adminOperation('getAdminQuotaDefaults');
     const platform = context.state.quotaDefaults;
@@ -263,7 +231,7 @@ export function createAdminOperations(context: MockRepositoryContext) {
   ): Promise<OperationResponse<'setAdminQuotaDefaults', '200'>> {
     adminOperation('setAdminQuotaDefaults');
     const entries = Object.entries(body ?? {}) as [string, number | 'default'][];
-    if (entries.length === 0 || entries.some(([key, value]) => !defaultKeys.includes(key as AdminQuotaDefaultKey) || !validLimit(key as AdminQuotaDefaultKey, value))) {
+    if (entries.length === 0 || entries.some(([key, value]) => !defaultKeys.includes(key as AdminQuotaDefaultKey) || !validLimit(key as AdminQuotaKey, value))) {
       throw new MockApiError(400, 'validation failed', 'setAdminQuotaDefaults', 'request.validation');
     }
     const platform = context.state.quotaDefaults;
@@ -283,6 +251,6 @@ export function createAdminOperations(context: MockRepositoryContext) {
 
   return {
     listAdminWriters, getAdminWriter, setAdminWriterQuota, blockAdminWriter, unblockAdminWriter, listAdminDays, getAdminServiceStatus,
-    setAdminWriterIllustrations, listAdminIllustrationRequests, declineAdminIllustrationRequest, getAdminQuotaDefaults, setAdminQuotaDefaults,
+    setAdminWriterIllustrations, getAdminQuotaDefaults, setAdminQuotaDefaults,
   };
 }

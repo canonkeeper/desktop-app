@@ -25,6 +25,7 @@ type IndexingStep = OperationResponse<'getIndexingStatus', '200'>['steps'][numbe
 type IndexingViewEnvelope = Schema<'IndexingViewEnvelope'>;
 type IndexingJobKind = Extract<Job['kind'], 'canon_text_index' | 'chapter_cards'>;
 type BookIndexState = { id: string; chapters: number; indexed: number; carded: number };
+type Preparation = NonNullable<OperationResponse<'getIndexingStatus', '200'>['preparation']>;
 
 function viewChapterIds(state: MockState, bookId: string, sourceView: SourceView) {
   return state.chapters
@@ -225,7 +226,7 @@ export function queueImportTextIndexes(state: MockState, projectId: string) {
   queueIndexingJob(state, 'canon_text_index', projectId, 'published');
 }
 
-function completeTextIndex(state: MockState, job: Job, projectId: string, sourceView: SourceView, chapterIds: string[]) {
+function completeTextIndex(state: MockState, job: Job, projectId: string, sourceView: SourceView, chapterIds: string[], helperMissing: boolean) {
   const indexed = state.indexedChapterIds[sourceView];
   indexed.push(...chapterIds.filter((id) => !indexed.includes(id)));
   Object.assign(job, { status: 'succeeded', progress: 1, canCancel: false, updatedAt: now });
@@ -240,20 +241,106 @@ function completeTextIndex(state: MockState, job: Job, projectId: string, source
     }
     settleImportQueueBooks(state, projectId);
   }
-  queueIndexingJob(state, 'chapter_cards', projectId, sourceView);
+  // Without the helper nobody reads the chapters: no cards Job is queued (specs/2026-11-12-desk-window.md WN3.4).
+  if (!helperMissing) queueIndexingJob(state, 'chapter_cards', projectId, sourceView);
 }
 
 function completeChapterCards(state: MockState, job: Job, sourceView: SourceView, chapterIds: string[]) {
   const indexed = new Set(state.indexedChapterIds[sourceView]);
   const carded = state.cardedChapterIds[sourceView];
   const built = chapterIds.filter((id) => indexed.has(id) && !carded.includes(id));
+  // The first cards of a version leave its map to be built after them (specs/2026-11-10-first-questions.md FQ1.9).
+  if (built.length > 0 && !chapterIds.some((id) => carded.includes(id))) state.sagaMapsPending.push(`${job.subject.projectId}:${sourceView}`);
   carded.push(...built);
   Object.assign(job, { status: 'succeeded', progress: 1, canCancel: false, updatedAt: now });
   job.result = { type: 'chapter_cards', sourceView, chapters: chapterIds.length, built: built.length };
+  closeSagaWave(state, job.subject.projectId);
 }
 
-/** Имитация фоновых работников: каждое чтение Job индекса или карточек продвигает его на один шаг. */
-export function advanceIndexingJob(state: MockState, job: Job) {
+/** The import Job of a book that is not in the saga yet: its chapters are in no counter. */
+function newBookImporting(state: MockState, projectId: string) {
+  return state.jobs.some((job) => job.kind === 'import' && job.subject.projectId === projectId && !isTerminalJobStatus(job.status)
+    && job.result?.type === 'import' && !state.books.some((book) => book.id === (job.result as { bookId: string }).bookId));
+}
+
+/** A new book opens the wave of «Сага готова» of its saga, or joins the open one (FS1.2). */
+export function openSagaWave(state: MockState, projectId: string, startedBy: string | null) {
+  const wave = state.sagaWaves[projectId];
+  if (!wave || wave.readyAt !== null) state.sagaWaves[projectId] = { startedBy, readyAt: null };
+}
+
+/** The cards that leave the published text ready, with no new book still to import, close the wave once (FS1.3). */
+function closeSagaWave(state: MockState, projectId: string) {
+  const wave = state.sagaWaves[projectId];
+  if (!wave || wave.readyAt !== null || newBookImporting(state, projectId)) return;
+  const books = viewBooks(state, projectId, 'published');
+  if (books.length > 0 && books.every(bookReady)) wave.readyAt = new Date().toISOString();
+}
+
+/**
+ * The reading of the published text as the server counts it (specs/2026-11-10-ux3-saga-state.md SS1.1): the chapters
+ * with their cards, the books read through, the first book not read and whether the search finds a chapter.
+ */
+function readingOf(books: BookIndexState[]): Preparation {
+  const current = books.find((book) => !bookReady(book));
+  return {
+    remainingSeconds: null,
+    letterPromised: false,
+    chaptersRead: books.reduce((sum, book) => sum + book.carded, 0),
+    chaptersTotal: books.reduce((sum, book) => sum + book.chapters, 0),
+    booksRead: books.filter(bookReady).length,
+    booksTotal: books.length,
+    currentBookId: current?.id ?? null,
+    askable: books.some((book) => book.indexed > 0),
+    books: books.map((book) => ({ bookId: book.id, chaptersRead: book.carded, chaptersTotal: book.chapters })),
+  };
+}
+
+/**
+ * What the status says of the reading of the published text (FS4.1, FS5, SS1.1): a closed wave is told while the text
+ * is ready; a text in work, or an open wave whose new book is still to be imported, is counted; an open wave adds the
+ * estimate and the promise of the letter once the cards are written — the mock has no clock, so a running cards Job
+ * stands for a pace and for a preparation of two minutes.
+ */
+function waveStatus(
+  context: MockRepositoryContext, projectId: string, published: IndexingViewEnvelope,
+): Pick<OperationResponse<'getIndexingStatus', '200'>, 'preparation' | 'sagaReady'> {
+  const wave = context.state.sagaWaves[projectId];
+  const books = viewBooks(context.state, projectId, 'published');
+  const reading = readingOf(books);
+  if (wave && wave.readyAt !== null) {
+    return published.context?.state === 'ready' && reading.chaptersTotal > 0
+      ? { sagaReady: { at: wave.readyAt, books: books.length, chapters: reading.chaptersTotal } }
+      : published.context?.state === 'processing' ? { preparation: reading } : {};
+  }
+  const importing = Boolean(wave) && newBookImporting(context.state, projectId);
+  if (context.scenario.helperMissing) {
+    // The reading waits for the helper (specs/2026-11-12-desk-window.md WN3.1): what is read, with no time and no letter.
+    return published.context && (reading.chaptersRead < reading.chaptersTotal || importing) ? { preparation: { ...reading, waiting: 'helper' } } : {};
+  }
+  if (published.context?.state !== 'processing' && !importing) return {};
+  if (!wave) return { preparation: reading };
+  const jobs = context.state.jobs.filter((job) => job.subject.projectId === projectId);
+  const paced = latestCardsJob(jobs, 'published')?.status === 'running' && !importing;
+  const missing = reading.chaptersTotal - reading.chaptersRead;
+  const reader = context.currentPrincipalId();
+  // The letter goes to who loaded the book while he works on the saga; of a wave nobody is named in — to its owner.
+  const recipient = wave.startedBy === null ? context.actorRole(projectId) === 'owner' : wave.startedBy === reader && canMutate(context, projectId);
+  const written = context.state.session?.user.emailVerified === true && !context.state.lettersOff.includes(reader);
+  return {
+    preparation: {
+      ...reading,
+      remainingSeconds: paced && missing > 0 ? Math.max(60, missing * 20) : null,
+      letterPromised: paced && written && recipient,
+    },
+  };
+}
+
+/**
+ * Имитация фоновых работников: каждое чтение Job индекса или карточек продвигает его на один шаг; без помощника индекс
+ * текста не ставит Job карточек (WN3.4).
+ */
+export function advanceIndexingJob(state: MockState, job: Job, helperMissing = false) {
   const { subject } = job;
   if (subject.type !== 'canon_text_index' && subject.type !== 'chapter_cards') return;
   if (job.status === 'queued') {
@@ -266,7 +353,7 @@ export function advanceIndexingJob(state: MockState, job: Job) {
     .filter((book) => book.projectId === subject.projectId)
     .flatMap((book) => viewChapterIds(state, book.id, subject.sourceView));
   if (subject.type === 'canon_text_index') {
-    completeTextIndex(state, job, subject.projectId, subject.sourceView, chapterIds);
+    completeTextIndex(state, job, subject.projectId, subject.sourceView, chapterIds, helperMissing);
   } else {
     completeChapterCards(state, job, subject.sourceView, chapterIds);
   }
@@ -283,10 +370,8 @@ export function createIndexingOperations(context: MockRepositoryContext) {
     if (Boolean(bookId) !== Boolean(sourceView)) {
       throw new MockApiError(400, 'Indexing status scope is incomplete.', 'getIndexingStatus', 'validation_failed');
     }
-    const response: OperationResponse<'getIndexingStatus', '200'> = {
-      published: viewEnvelope(context, id, 'published'),
-      steps: [],
-    };
+    const published = viewEnvelope(context, id, 'published');
+    const response: OperationResponse<'getIndexingStatus', '200'> = { published, steps: [], ...waveStatus(context, id, published) };
     if (canMutate(context, id)) {
       response.draft = viewEnvelope(context, id, 'draft');
     }

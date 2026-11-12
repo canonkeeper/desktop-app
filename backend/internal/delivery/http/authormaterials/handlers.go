@@ -41,6 +41,7 @@ type CurrentUser interface {
 // UseCases are the operations of the materials.
 type UseCases struct {
 	List      service.List
+	Create    service.Create
 	Update    service.Update
 	Delete    service.Delete
 	Start     service.Start
@@ -66,6 +67,7 @@ func (handlers Handlers) Mount(router chi.Router) {
 	router.Group(func(router chi.Router) {
 		router.Use(httpapi.StrictOriginMiddleware(handlers.allowedOrigins...))
 		router.Get("/projects/{projectId}/author-materials", handlers.list)
+		router.Post("/projects/{projectId}/author-materials", handlers.create)
 		router.Put("/projects/{projectId}/author-materials/{materialId}", handlers.update)
 		router.Delete("/projects/{projectId}/author-materials/{materialId}", handlers.delete)
 		router.Post("/projects/{projectId}/author-material-imports", handlers.start)
@@ -146,6 +148,40 @@ type updateBody struct {
 	Properties       []domain.Property `json:"properties"`
 	Section          string            `json:"section"`
 	ExpectedRevision int64             `json:"expectedRevision"`
+}
+
+// createBody is a record the author writes on the page: what a change says, without the revision
+// (specs/2026-11-10-ux8-memory-records.md MR2.1).
+type createBody struct {
+	Name        string            `json:"name"`
+	Kind        string            `json:"kind"`
+	Description string            `json:"description"`
+	Properties  []domain.Property `json:"properties"`
+	Section     string            `json:"section"`
+}
+
+func (handlers Handlers) create(w http.ResponseWriter, r *http.Request) {
+	actor, ok := handlers.writer(w, r)
+	if !ok {
+		return
+	}
+	var body createBody
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, r.Context(), err)
+		return
+	}
+	request, ok := requestPath(w, r)
+	if !ok {
+		return
+	}
+	created, err := handlers.useCases.Create.Execute(r.Context(), actor, domain.Draft{
+		Name: body.Name, Kind: domain.Kind(body.Kind), Description: body.Description, Properties: body.Properties, Section: body.Section,
+	}, request)
+	if err != nil {
+		writeError(w, r.Context(), err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, recordDTO(created))
 }
 
 func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
@@ -456,11 +492,16 @@ func writeError(w http.ResponseWriter, ctx context.Context, err error) {
 	if httpapi.WriteQuotaProblem(w, err, time.Now()) {
 		return
 	}
+	var taken domain.NameTaken
 	switch {
+	case errors.As(err, &taken):
+		writeNameTaken(w, taken.RecordID)
 	case errors.Is(err, auth.ErrUnauthenticated), errors.Is(err, auth.ErrSessionNotFound):
 		httpapi.WriteProblem(w, "", http.StatusUnauthorized, "Unauthorized", "authentication required", "auth.session_required")
 	case errors.Is(err, auth.ErrInvalidCSRF):
 		httpapi.WriteProblem(w, "", http.StatusForbidden, "Forbidden", "invalid CSRF token", "csrf.invalid")
+	case errors.Is(err, auth.ErrEmailNotVerified):
+		httpapi.WriteProblem(w, "", http.StatusForbidden, "Forbidden", "email address is not verified", "auth.email_unverified")
 	case errors.Is(err, domain.ErrForbidden):
 		httpapi.WriteProblem(w, "", http.StatusForbidden, "Forbidden", "the materials are changed by an editor", "forbidden")
 	case errors.Is(err, domain.ErrNotFound):
@@ -472,7 +513,7 @@ func writeError(w http.ResponseWriter, ctx context.Context, err error) {
 	case errors.Is(err, domain.ErrTooLarge):
 		httpapi.WriteProblem(w, "", http.StatusRequestEntityTooLarge, "Payload Too Large", "the file is over the limits of an import", "author_materials.too_large")
 	case errors.Is(err, domain.ErrUnreadable):
-		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file is not a readable XLSX or DOCX", "author_materials.unreadable")
+		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file is not a readable workbook, document, table or text", "author_materials.unreadable")
 	case errors.Is(err, domain.ErrEmpty):
 		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file holds nothing to read", "author_materials.empty")
 	case errors.Is(err, domain.ErrProtected):
@@ -485,12 +526,29 @@ func writeError(w http.ResponseWriter, ctx context.Context, err error) {
 		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file is a PDF", "author_materials.pdf")
 	case errors.Is(err, domain.ErrPicture):
 		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file is a picture", "author_materials.picture")
-	case errors.Is(err, domain.ErrPlainText):
-		httpapi.WriteProblem(w, "", http.StatusUnprocessableEntity, "Unprocessable Entity", "the file is plain text: CSV or TXT", "author_materials.plain_text")
 	case errors.Is(err, domain.ErrInvalid):
 		httpapi.WriteProblem(w, "", http.StatusBadRequest, "Bad Request", "validation failed", "request.validation")
 	default:
 		observability.ReportUnexpectedError(ctx, err)
 		httpapi.WriteProblem(w, "", http.StatusInternalServerError, "Internal Server Error", "unexpected server error", "server.error")
 	}
+}
+
+// nameTakenProblem is the refusal of a name another record has, with that record, so the page offers to open it
+// (specs/2026-11-10-ux8-memory-records.md MR2.3).
+type nameTakenProblem struct {
+	httpapi.Problem
+	MaterialID string `json:"materialId"`
+}
+
+func writeNameTaken(w http.ResponseWriter, recordID string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(nameTakenProblem{
+		Problem: httpapi.Problem{
+			Type: "about:blank", Title: "Conflict", Status: http.StatusConflict, Detail: "another record has the name",
+			Code: "author_materials.name_taken", RequestID: w.Header().Get(observability.RequestIDHeader),
+		},
+		MaterialID: recordID,
+	})
 }

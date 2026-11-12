@@ -33,7 +33,7 @@ func TestPersonalNoteChatCaptureAllowsStreamingAndRetainsBodyAfterDeletion(t *te
 		t.Fatal(err)
 	}
 	chatPage, err := (notesservice.List{Repository: repo}).Execute(ctx, actor.UserID, notesservice.ListInput{ProjectID: authorityProjectID, Source: "chat"})
-	if err != nil || chatPage.Meta.TotalCount != 1 || chatPage.Data[0].ProjectTitle == "" {
+	if err != nil || chatPage.Meta.TotalCount != 1 || chatPage.Data[0].ProjectTitle == "" || chatPage.Data[0].ChatTitle == "" || chatPage.Data[0].Quote != "Visible partial copy" {
 		t.Fatalf("chat summary metadata=%#v,%v", chatPage, err)
 	}
 	resolved, err := repo.ReadSource(ctx, actor.UserID, note.ID)
@@ -54,8 +54,9 @@ func TestPersonalNoteChatCaptureAllowsStreamingAndRetainsBodyAfterDeletion(t *te
 	if err != nil || resolved.Resolution.State != "unavailable" || resolved.Resolution.Source != nil {
 		t.Fatalf("deleted origin=%#v, %v", resolved, err)
 	}
-	chatPage, err = (notesservice.List{Repository: repo}).Execute(ctx, actor.UserID, notesservice.ListInput{})
-	if err != nil || chatPage.Meta.TotalCount != 1 || chatPage.Data[0].ProjectTitle != "" {
+	// The note of a deleted chat stays in its saga, without the chat (specs/2026-11-11-ux7-notes.md NT3.2).
+	chatPage, err = (notesservice.List{Repository: repo}).Execute(ctx, actor.UserID, notesservice.ListInput{ProjectID: authorityProjectID})
+	if err != nil || chatPage.Meta.TotalCount != 1 || chatPage.Data[0].ProjectTitle == "" || chatPage.Data[0].ChatTitle != "" {
 		t.Fatalf("deleted chat metadata=%#v,%v", chatPage, err)
 	}
 	retained, err := repo.Get(ctx, actor.UserID, note.ID)
@@ -164,3 +165,81 @@ func publishChapterDraftForTest(t *testing.T, manuscripts *librarystore.Store, r
 		t.Fatal(err)
 	}
 }
+
+// A note from a selection of the book keeps the quote apart and is saved without a thought; the catalog names its place
+// by the words of the server and its saga, finds it by the quote and keeps the own thoughts under a saga; when the
+// chapter is gone the note stays in its saga, without a place (specs/2026-11-11-ux7-notes.md NT1.2, NT1.3, NT2.4, NT3.2).
+func TestPersonalNoteOfAPlaceKeepsTheQuoteApartAndNamesItsPlace(t *testing.T) {
+	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_note_place_parts")
+	proof := seedSubmitTurnCanonicalBaseline(t, db, time.Now().UTC().Truncate(time.Microsecond))
+	ctx := context.Background()
+	repo := notesrepo.New(db)
+	manuscripts := librarystore.New(db)
+	publishChapterDraftForTest(t, manuscripts, 1)
+	actor := notesservice.Write{UserID: submitTurnActorID, Proof: proof}
+	paragraphID := submitTurnParagraphID
+	source := notesdomain.Source{Kind: "chapter", Quote: "canonical text", Locator: &librarydomain.ReaderLocator{
+		ProjectID: submitTurnProjectID, BookID: submitTurnBookID, ChapterID: submitTurnChapterID, TargetView: "published", Revision: 1, ParagraphID: &paragraphID,
+	}}
+	create := notesservice.Create{Repository: repo}
+	update := notesservice.Update{Repository: repo}
+	list := notesservice.List{Repository: repo}
+	note, err := create.Execute(ctx, actor, notesservice.CreateInput{Body: "", Source: &source}, "quote-only-key", "POST", "/personal-notes")
+	if err != nil || note.Body != "" || note.Source == nil || note.Source.Quote != "canonical text" {
+		t.Fatalf("quote without a thought=%#v,%v", note, err)
+	}
+	if _, err = create.Execute(ctx, actor, notesservice.CreateInput{Body: " "}, "own-blank-key", "POST", "/personal-notes"); !errors.Is(err, notesdomain.ErrValidation) {
+		t.Fatalf("own note without a thought=%v", err)
+	}
+	own, err := create.Execute(ctx, actor, notesservice.CreateInput{Body: "Своя мысль"}, "own-thought-key", "POST", "/personal-notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = update.Execute(ctx, actor, own.ID, notesservice.UpdateInput{Body: notesText(""), ExpectedRevision: 1}); !errors.Is(err, notesdomain.ErrValidation) {
+		t.Fatalf("own thought emptied=%v", err)
+	}
+	thought, err := update.Execute(ctx, actor, note.ID, notesservice.UpdateInput{Body: notesText("Сверить с судом"), ExpectedRevision: 1})
+	if err != nil || thought.Body != "Сверить с судом" {
+		t.Fatalf("thought written=%#v,%v", thought, err)
+	}
+	if thought, err = update.Execute(ctx, actor, note.ID, notesservice.UpdateInput{Body: notesText(""), ExpectedRevision: 2}); err != nil || thought.Body != "" {
+		t.Fatalf("thought emptied beside the quote=%#v,%v", thought, err)
+	}
+	saga, err := list.Execute(ctx, actor.UserID, notesservice.ListInput{ProjectID: submitTurnProjectID})
+	if err != nil || saga.Meta.TotalCount != 2 {
+		t.Fatalf("saga with own thoughts=%#v,%v", saga, err)
+	}
+	var placed notesdomain.Entry
+	for _, entry := range saga.Data {
+		if entry.ID == note.ID {
+			placed = entry
+		}
+	}
+	if placed.Quote != "canonical text" || placed.Preview != "" || placed.ProjectTitle != "RCH Submit" || !strings.Contains(placed.Place, "„RCH Chapter“") ||
+		!strings.HasPrefix(placed.Place, "Книга 1, гл. ") {
+		t.Fatalf("entry of a place=%#v", placed)
+	}
+	found, err := list.Execute(ctx, actor.UserID, notesservice.ListInput{Query: "CANONICAL"})
+	if err != nil || found.Meta.TotalCount != 1 || found.Data[0].ID != note.ID {
+		t.Fatalf("search by the quote=%#v,%v", found, err)
+	}
+	resolved, err := repo.ReadSource(ctx, actor.UserID, note.ID)
+	if err != nil || resolved.Resolution.State != "current" || resolved.Resolution.Place != placed.Place {
+		t.Fatalf("resolved place=%#v,%v", resolved, err)
+	}
+	if _, err = manuscripts.FenceChapterDeletion(ctx, library.FenceChapterDeletionInput{ActorUserID: submitTurnActorID, ProjectID: submitTurnProjectID,
+		BookID: submitTurnBookID, ChapterID: submitTurnChapterID, TombstoneID: "00000000-0000-4000-8000-0000000000f1", DeletedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	saga, err = list.Execute(ctx, actor.UserID, notesservice.ListInput{ProjectID: submitTurnProjectID, Source: "chapter"})
+	if err != nil || saga.Meta.TotalCount != 1 || saga.Data[0].Place != "" || saga.Data[0].ChapterTitle != "" ||
+		saga.Data[0].ProjectTitle != "RCH Submit" || saga.Data[0].Quote != "canonical text" {
+		t.Fatalf("gone place stays in its saga=%#v,%v", saga, err)
+	}
+	resolved, err = repo.ReadSource(ctx, actor.UserID, note.ID)
+	if err != nil || resolved.Resolution.State != "unavailable" || resolved.Resolution.Place != "" {
+		t.Fatalf("gone place resolved=%#v,%v", resolved, err)
+	}
+}
+
+func notesText(value string) *string { return &value }

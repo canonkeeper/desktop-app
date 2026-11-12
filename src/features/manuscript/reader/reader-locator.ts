@@ -16,9 +16,8 @@ export function readerSourceLanding(route: AppRoute, chapter: ReaderChapter | nu
     || (expectedRevision !== null && Number(expectedRevision) !== chapter.revision))) problem = 'version';
   else if (chapter && paragraphId && !chapter.paragraphs.some((paragraph) => paragraph.id === paragraphId)) problem = 'paragraph';
 
-  const paragraph = problem ? null : paragraphId
-    ? chapter?.paragraphs.find((item) => item.id === paragraphId) ?? null
-    : expectedRevision !== null ? null : chapter?.paragraphs.find((item) => item.kind !== 'heading') ?? null;
+  // Only a link lights a paragraph: an open chapter without one starts from its top, nothing lit (RD1.2).
+  const paragraph = problem || !paragraphId ? null : chapter?.paragraphs.find((item) => item.id === paragraphId) ?? null;
   return { problem, paragraph };
 }
 

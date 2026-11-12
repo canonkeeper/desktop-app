@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"canonkeeper/backend/internal/domain/agent"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
@@ -99,15 +100,18 @@ func (repository *Repository) SubmitTurn(ctx context.Context, command service.Su
 }
 
 // readyImagesInTx checks that the images attached to a question are ready images of the project's
-// gallery (R15.9), not variants waiting for the choice (R21.8); another number is not found.
+// gallery (R15.9), not variants waiting for the choice (R21.8) nor versions of a drawing in «Недавно удалённые»
+// (specs/2026-11-11-ux7-trash.md TB3.1); another number is not found.
 func readyImagesInTx(ctx context.Context, tx pgx.Tx, projectID string, numbers []int) error {
 	if len(numbers) == 0 {
 		return nil
 	}
 	var ready int
 	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM saga_images
-		WHERE project_id = $1::uuid AND number = ANY($2::integer[]) AND status = 'ready' AND variant_group IS NULL
+		SELECT count(*) FROM saga_images AS image
+		WHERE image.project_id = $1::uuid AND image.number = ANY($2::integer[]) AND image.status = 'ready' AND image.variant_group IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM saga_drawings AS gone
+		                  WHERE gone.project_id = image.project_id AND gone.branch = image.branch AND gone.deleted_at IS NOT NULL)
 	`, projectID, numbers).Scan(&ready); err != nil {
 		return err
 	}
@@ -260,7 +264,7 @@ func (repository *Repository) LoadRun(ctx context.Context, claim researchdomain.
 		ActorUserID: job.CreatorUserID, ClaimIncarnation: claim.ClaimIncarnation,
 		SourceView: string(subject.SourceView), Scope: researchdomain.Scope(subject.Scope), BookID: bookID,
 		Question: input.Question, WorkshopLines: append([]string(nil), input.WorkshopLines...), SelectedContext: append([]researchdomain.ContextSelection(nil), input.SelectedContext...),
-		Images: append([]int(nil), input.Images...), ImageTitles: titles, DrawAfter: input.DrawAfter,
+		Images: append([]int(nil), input.Images...), ImageTitles: titles, DrawAfter: input.DrawAfter, Button: input.Button,
 		RootThreadID: current.ThreadID, ProviderTurnID: providerTurnID, Kind: current.Kind, DrawingID: drawingID,
 		Attachment: attachment,
 	}, nil
@@ -477,8 +481,9 @@ func (repository *Repository) FinishFailure(ctx context.Context, input researchd
 	}
 	err := repository.db.WithTx(ctx, func(tx pgx.Tx) error {
 		var rootThreadID, providerTurnID string
+		var spent turnSpend
 		if err := tx.QueryRow(ctx, `
-			SELECT chat.thread_id, turn_row.provider_turn_id
+			SELECT chat.thread_id, turn_row.provider_turn_id, job.creator_user_id::text, job.created_at, chat.kind
 			FROM jobs AS job
 			JOIN chat_turns AS turn_row ON turn_row.job_id=job.id AND turn_row.project_id=job.project_id
 			JOIN chat_sessions AS chat ON chat.id=turn_row.chat_id AND chat.project_id=turn_row.project_id
@@ -489,7 +494,7 @@ func (repository *Repository) FinishFailure(ctx context.Context, input researchd
 			  AND chat.thread_id IS NOT NULL AND turn_row.provider_turn_id IS NOT NULL
 			FOR UPDATE OF job, turn_row, chat
 		`, input.ProjectID, input.JobID, input.ClaimIncarnation, input.TurnID, input.ChatID).
-			Scan(&rootThreadID, &providerTurnID); err != nil {
+			Scan(&rootThreadID, &providerTurnID, &spent.userID, &spent.at, &spent.kind); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return researchdomain.ErrConflict
 			}
@@ -505,7 +510,22 @@ func (repository *Repository) FinishFailure(ctx context.Context, input researchd
 		}); err != nil {
 			return err
 		}
-		return nil
+		return repository.giveBackTurnInTx(ctx, tx, spent)
 	})
 	return mapError(err)
+}
+
+// turnSpend is who a turn charged, on which Moscow day, and the kind of its session.
+type turnSpend struct {
+	userID string
+	at     time.Time
+	kind   string
+}
+
+// giveBackTurnInTx gives the unit of a turn back to its author in the transaction that ends the turn failed: the
+// turn did not answer him through no fault of his — the model, the connection or the worker failed
+// (specs/2026-11-09-quota-accounting.md Q1.4, Q2.4). A turn the author stopped keeps its unit, and so do the
+// corrections the turn took.
+func (repository *Repository) giveBackTurnInTx(ctx context.Context, tx pgx.Tx, spent turnSpend) error {
+	return repository.quota.ReleaseDailyInTx(ctx, tx, spent.userID, turnQuotaKey(spent.kind), 1, spent.at)
 }

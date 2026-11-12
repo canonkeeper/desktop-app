@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Book, ManuscriptApiClient } from '../../../entities/manuscript/api';
 import { BookCover } from './BookCover';
 import { BookCoverEditor } from './BookCoverEditor';
+import { ShelfSlotProvider } from './shelf-slot';
+import { ToastsProvider } from '../../../ui/feedback/Toast';
 
 function book(overrides: Partial<Book> = {}): Book {
   return {
@@ -13,6 +15,7 @@ function book(overrides: Partial<Book> = {}): Book {
     title: 'Книга I. Белый порт',
     subtitle: 'Черновая редакция',
     order: 1,
+    place: 1,
     displayNumber: 'I',
     coverColor: '#285f58',
     coverUrl: null,
@@ -28,13 +31,11 @@ function book(overrides: Partial<Book> = {}): Book {
 function renderEditor(api: ManuscriptApiClient, source = book()) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const wrapper = ({ children }: PropsWithChildren) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}><ToastsProvider>{children}</ToastsProvider></QueryClientProvider>
   );
   const onClose = vi.fn();
-  const onNotice = vi.fn();
-  const onUpdated = vi.fn();
-  render(<BookCoverEditor api={api} book={source} onClose={onClose} onNotice={onNotice} onUpdated={onUpdated} />, { wrapper });
-  return { onClose, onNotice, onUpdated, queryClient };
+  render(<BookCoverEditor api={api} book={source} onClose={onClose} />, { wrapper });
+  return { onClose, queryClient };
 }
 
 function imageFile(name = 'cover.png', type = 'image/png') {
@@ -42,8 +43,7 @@ function imageFile(name = 'cover.png', type = 'image/png') {
 }
 
 function selectImage(file: File) {
-  fireEvent.click(screen.getByRole('tab', { name: 'Изображение' }));
-  fireEvent.change(screen.getByLabelText('Изображение обложки'), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText('Картинка обложки'), { target: { files: [file] } });
 }
 
 afterEach(() => {
@@ -62,7 +62,7 @@ describe('BookCover', () => {
     expect(document.querySelectorAll(`img[src="${source.coverUrl}"]`)).toHaveLength(2);
     fireEvent.error(image);
     expect(screen.queryByRole('img', { name: /Обложка/ })).toBeNull();
-    expect(screen.getByText('Белый порт').parentElement?.getAttribute('data-has-image')).toBe('false');
+    expect(screen.getByText('Белый порт').closest('[data-has-image]')?.getAttribute('data-has-image')).toBe('false');
     expect(screen.getByText('Белый порт')).toBeTruthy();
 
     view.rerender(<BookCover book={{ ...source, coverUrl: '/api/v1/books/book-1/cover/2' }} />);
@@ -73,11 +73,44 @@ describe('BookCover', () => {
   it('keeps a solid cover when the authoritative book has no image', () => {
     render(<BookCover book={book()} />);
     expect(screen.queryByRole('img')).toBeNull();
-    expect(screen.getByText('Белый порт').parentElement?.getAttribute('data-has-image')).toBe('false');
+    expect(screen.getByText('Белый порт').closest('[data-has-image]')?.getAttribute('data-has-image')).toBe('false');
   });
 });
 
 describe('BookCoverEditor', () => {
+  // specs/2026-11-11-ux7-shelf.md SF4.1: the cover of the book shows the colour chosen before anything is saved.
+  it('shows the chosen colour on the cover of the book at once and names the colours in words', async () => {
+    const updateBook = vi.fn(async (_bookId: string, body: { coverColor?: string }) => book({ coverColor: body.coverColor ?? null }));
+    const api = { updateBook } as unknown as ManuscriptApiClient;
+    const { onClose } = renderEditor(api);
+    const dialog = screen.getByRole('dialog', { name: 'Обложка «Книга I. Белый порт»' });
+    const sample = dialog.querySelector<HTMLElement>('[data-cover-sample] [data-has-image]')!;
+    expect(sample.style.backgroundColor).toBe('rgb(40, 95, 88)');
+    const colours = within(dialog).getByRole('group', { name: 'Цвет' });
+    expect(within(colours).getAllByRole('button').map((swatch) => swatch.getAttribute('aria-label')))
+      .toEqual(['Синий', 'Сине-зелёный', 'Сливовый', 'Тёмно-зелёный', 'Охра']);
+    expect(dialog.textContent).not.toMatch(/#[0-9a-f]{6}/iu);
+    expect(within(colours).getByText('Сине-зелёный')).toBeTruthy();
+
+    fireEvent.click(within(colours).getByRole('button', { name: 'Охра' }));
+    expect(sample.style.backgroundColor).toBe('rgb(138, 101, 0)');
+    expect(within(colours).getByRole('button', { name: 'Охра' }).getAttribute('aria-pressed')).toBe('true');
+    expect(updateBook).not.toHaveBeenCalled();
+
+    expect(within(dialog).getAllByRole('button', { name: /Сохранить/u })).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(updateBook).toHaveBeenCalledWith('book-1', { coverColor: '#8a6500' }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(await screen.findByText('Обложка «Книга I. Белый порт» сохранена')).toBeTruthy();
+  });
+
+  it('says a picture stands over the colour and offers to take it away', () => {
+    renderEditor({} as ManuscriptApiClient, book({ coverUrl: '/api/v1/books/book-1/cover/1' }));
+    expect(screen.getByText('Картинка стоит поверх цвета.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Убрать картинку' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Заменить картинку' })).toBeTruthy();
+  });
+
   it('rejects explicit unsupported MIME and oversized files before decoding or upload', async () => {
     const createImageBitmap = vi.fn();
     vi.stubGlobal('createImageBitmap', createImageBitmap);
@@ -86,12 +119,12 @@ describe('BookCoverEditor', () => {
     renderEditor(api);
 
     selectImage(imageFile('cover.gif', 'image/gif'));
-    expect(await screen.findByText('Поддерживаются только JPG, PNG и WEBP.')).toBeTruthy();
+    expect(await screen.findByText('Подходят картинки JPG, PNG и WEBP.')).toBeTruthy();
 
     const oversized = imageFile();
     Object.defineProperty(oversized, 'size', { value: 5 * 1024 * 1024 + 1 });
-    fireEvent.change(screen.getByLabelText('Изображение обложки'), { target: { files: [oversized] } });
-    expect(await screen.findByText('Файл больше 5 МБ.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Картинка обложки'), { target: { files: [oversized] } });
+    expect(await screen.findByText('Картинка больше 5 МБ.')).toBeTruthy();
     expect(createImageBitmap).not.toHaveBeenCalled();
     expect(uploadBookCover).not.toHaveBeenCalled();
   });
@@ -105,7 +138,7 @@ describe('BookCoverEditor', () => {
 
     selectImage(imageFile());
 
-    expect(await screen.findByText('Изображение должно быть не меньше 600×900.')).toBeTruthy();
+    expect(await screen.findByText('Картинка должна быть не меньше 600×900.')).toBeTruthy();
     expect(close).toHaveBeenCalledTimes(1);
     expect(uploadBookCover).not.toHaveBeenCalled();
   });
@@ -124,7 +157,7 @@ describe('BookCoverEditor', () => {
       return updated;
     });
     const api = { uploadBookCover } as unknown as ManuscriptApiClient;
-    const { onClose, onNotice, onUpdated } = renderEditor(api);
+    const { onClose } = renderEditor(api);
 
     selectImage(selected);
     expect(await screen.findByText(/cover\.bin ·/)).toBeTruthy();
@@ -136,8 +169,7 @@ describe('BookCoverEditor', () => {
       expect.objectContaining({ onUploadProgress: expect.any(Function) }),
     ));
     expect(close).toHaveBeenCalledTimes(1);
-    expect(onUpdated).toHaveBeenCalledWith(updated);
-    expect(onNotice).toHaveBeenCalledWith('Обложка книги обновлена');
+    expect(await screen.findByText('Обложка «Книга I. Белый порт» сохранена')).toBeTruthy();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -154,9 +186,9 @@ describe('BookCoverEditor', () => {
     await screen.findByText(/cover\.png ·/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
-    expect(await screen.findByRole('button', { name: 'Повторить' })).toBeTruthy();
+    expect(await screen.findByText('Не удалось загрузить картинку.')).toBeTruthy();
     expect(screen.getByText(/cover\.png ·/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
 
     await waitFor(() => expect(uploadBookCover).toHaveBeenCalledTimes(2));
     expect(uploadBookCover.mock.calls[1]?.[1]).toBe(selected);
@@ -167,16 +199,45 @@ describe('BookCoverEditor', () => {
     const updated = { ...source, coverUrl: null };
     const deleteBookCover = vi.fn(async () => updated);
     const api = { deleteBookCover } as unknown as ManuscriptApiClient;
-    const { onUpdated } = renderEditor(api, source);
-    fireEvent.click(screen.getByRole('tab', { name: 'Изображение' }));
+    renderEditor(api, source);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Убрать' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать картинку' }));
 
-    expect(screen.getByText('Изображение будет удалено без возможности восстановления.')).toBeTruthy();
+    const confirm = screen.getByRole('dialog', { name: 'Убрать картинку обложки?' });
+    expect(confirm.textContent).toContain('Вернуть будет нельзя.');
     expect(deleteBookCover).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить изображение' }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Убрать картинку' }));
 
     await waitFor(() => expect(deleteBookCover).toHaveBeenCalledWith('book-1'));
-    expect(onUpdated).toHaveBeenCalledWith(updated);
+    expect(await screen.findByText('Картинка обложки «Книга I. Белый порт» убрана')).toBeTruthy();
+  });
+});
+
+// specs/2026-11-11-ux9-shelf-chat.md SC1.6 (L-11): the cover from a drawing of the saga is chosen in the window of the cover.
+describe('«Выбрать из рисунков саги»', () => {
+  it('shows the drawing chosen on the cover and saves it by «Сохранить»', async () => {
+    const setBookCoverFromImage = vi.fn(async () => book({ coverUrl: '/covers/book-1?v=2' }));
+    const api = { setBookCoverFromImage } as unknown as ManuscriptApiClient;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ToastsProvider>
+      <ShelfSlotProvider value={{
+        CoverDrawings: ({ onChoose }) => (
+          <button onClick={() => onChoose({ number: 12, title: 'Мара у пристани', picture: '/drawings/12/screen' })} type="button">Мара у пристани</button>
+        ),
+      }}>
+        <BookCoverEditor api={api} book={book()} onClose={vi.fn()} />
+      </ShelfSlotProvider>
+    </ToastsProvider></QueryClientProvider>);
+    const dialog = screen.getByRole('dialog', { name: 'Обложка «Книга I. Белый порт»' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Выбрать из рисунков саги' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Мара у пристани' }));
+    expect(within(dialog).getByText('Рисунок «Мара у пристани» станет обложкой таким, какой он сейчас.')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(setBookCoverFromImage).toHaveBeenCalledWith('book-1', 12));
+  });
+
+  it('is not offered by a build without drawings', () => {
+    renderEditor({} as ManuscriptApiClient);
+    expect(screen.queryByRole('button', { name: 'Выбрать из рисунков саги' })).toBeNull();
   });
 });

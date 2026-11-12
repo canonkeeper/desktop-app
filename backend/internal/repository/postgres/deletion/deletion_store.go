@@ -279,6 +279,9 @@ func (store *Store) CompleteDeletionTargetForClaim(
 			}
 			return err
 		}
+		if err := fenceChatsEmptiedBySagaDeletionInTx(ctx, tx, tombstone, projectID); err != nil {
+			return err
+		}
 		if err := queries.PinContainedDerivedProofRetentionForSourceHardPurge(ctx, sqlc.PinContainedDerivedProofRetentionForSourceHardPurgeParams{
 			TombstoneID: tombstoneID,
 			ProjectID:   projectID,

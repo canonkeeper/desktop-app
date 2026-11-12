@@ -13,6 +13,7 @@ import (
 	"canonkeeper/backend/internal/governance"
 	authormemoryrepo "canonkeeper/backend/internal/repository/postgres/authormemory"
 	sagamemoryrepo "canonkeeper/backend/internal/repository/postgres/sagamemory"
+	authormemoryservice "canonkeeper/backend/internal/services/authormemory"
 	service "canonkeeper/backend/internal/services/researchchat"
 	sagamemoryservice "canonkeeper/backend/internal/services/sagamemory"
 	canonstore "canonkeeper/backend/internal/store/canon"
@@ -82,6 +83,11 @@ func TestWhatIsRememberedIsKnownInANewChatAndOutlivesItsChapterPostgres(t *testi
 	if ofTurn(authority.JobID) != 1 || ofTurn("ab000000-0000-4000-8000-0000000000ff") != 0 {
 		t.Fatal("the record does not keep the turn that wrote it")
 	}
+	// specs/2026-11-10-ux8-memory-records.md MR1.5: the page says the record came from this chat, by its title.
+	page := listOnThePage(t, db)
+	if len(page.Records) != 1 || page.Records[0].Origin != (authormemory.Origin{Kind: authormemory.OriginChat, ChatID: submitTurnChatID, Title: "Research"}) {
+		t.Fatalf("the origin of a record of a chat: %+v", page.Records)
+	}
 
 	another := startTurnInChat(t, db, turn.proof, turn.now, turn.chapterID, "ab000000-0000-4000-8000-0000000000a1", researchdomain.ScopeProject, "Что дальше?")
 	read, err := memoryTools(db, repository).Memory(ctx, another.call, service.MemoryInput{})
@@ -107,6 +113,28 @@ func TestWhatIsRememberedIsKnownInANewChatAndOutlivesItsChapterPostgres(t *testi
 	if !strings.Contains(read, "Кира узнает правду") || !strings.Contains(read, "глава удалена") {
 		t.Fatalf("after the chapter went: %s", read)
 	}
+	// MR1.2: the page says the chapter is gone, and names none.
+	if page := listOnThePage(t, db); len(page.Records) != 1 || !page.Records[0].ChapterGone || page.Records[0].Chapter != nil {
+		t.Fatalf("the record of a gone chapter on the page: %+v", page.Records)
+	}
+	// MR1.5: a deleted chat is still the origin of the record, but it is not named or opened.
+	if _, err := repository.MarkDeleted(ctx, researchdomain.Actor{UserID: submitTurnActorID}, submitTurnChatID, agent.SessionResearch); err != nil {
+		t.Fatal(err)
+	}
+	if page := listOnThePage(t, db); len(page.Records) != 1 || page.Records[0].Origin != (authormemory.Origin{Kind: authormemory.OriginChat}) {
+		t.Fatalf("the origin of a record of a deleted chat: %+v", page.Records)
+	}
+}
+
+// listOnThePage is the list of «Что помнит помощник» for the author of the turns.
+func listOnThePage(t *testing.T, db *storedb.DB) authormemoryservice.PageView {
+	t.Helper()
+	list := authormemoryservice.List{Store: authormemoryrepo.New(db), Chapters: sagamemoryservice.NewSaga(sagamemoryrepo.New(db), sagamemoryrepo.New(db))}
+	page, err := list.Execute(context.Background(), authormemoryservice.Actor{UserID: submitTurnActorID, ProjectID: submitTurnProjectID}, authormemoryservice.ListInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page
 }
 
 // R4.5: a member who has become a reader writes nothing: his turn has lost its authority over the saga.

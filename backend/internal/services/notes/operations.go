@@ -35,7 +35,7 @@ type Create struct{ Repository CreateRepository }
 
 func (useCase Create) Execute(ctx context.Context, actor Write, input CreateInput, key, method, path string) (domain.Note, error) {
 	input.Title = strings.TrimSpace(input.Title)
-	if !domain.ValidID(actor.UserID) || !actor.Proof.Valid() || domain.ValidateBody(input.Body) != nil ||
+	if !domain.ValidID(actor.UserID) || !actor.Proof.Valid() || domain.ValidateThought(input.Body, input.Source != nil) != nil ||
 		domain.ValidateTitle(input.Title) != nil ||
 		utf8.RuneCountInString(key) < 8 || utf8.RuneCountInString(key) > 128 || !utf8.ValidString(key) ||
 		(input.Source != nil && input.Source.Validate() != nil) {
@@ -80,8 +80,9 @@ func (useCase Update) Execute(ctx context.Context, actor Write, noteID string, i
 	if !domain.ValidID(actor.UserID) || !domain.ValidID(noteID) {
 		return domain.Note{}, domain.ErrNotFound
 	}
+	// A blank thought is refused by the repository when the note keeps no quote: only the stored note knows (NT1.2).
 	if !actor.Proof.Valid() || input.ExpectedRevision < 1 || (input.Body == nil && input.Title == nil) ||
-		(input.Body != nil && domain.ValidateBody(*input.Body) != nil) {
+		(input.Body != nil && domain.ValidateThought(*input.Body, true) != nil) {
 		return domain.Note{}, domain.ErrValidation
 	}
 	if input.Title != nil {

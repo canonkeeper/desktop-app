@@ -1,0 +1,6 @@
+/* The strip of a call and the line of an unverified address, one row under the top bar of any page. */
+.strips {
+  display: grid;
+  flex: none;
+  min-width: 0;
+}

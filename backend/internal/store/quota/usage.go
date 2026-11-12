@@ -20,7 +20,7 @@ var ErrUnknownWriter = errors.New("quota: the spend has no writer")
 // RecordModelUsage adds a direct model spend to the day's aggregate (UC7): cards and the thread layer
 // count for the project owner, a scan for the creator of its chat turn Job, a drawing for the creator of its
 // illustration Job (R7.2) a plan or a chapter for the creator of its chapter_draft Job and an import for the creator of its Job.
-func RecordModelUsage(ctx context.Context, db querier, record quota.UsageRecord, at time.Time) error {
+func RecordModelUsage(ctx context.Context, db Querier, record quota.UsageRecord, at time.Time) error {
 	if record.Usage.Empty() {
 		return nil
 	}
@@ -49,7 +49,7 @@ func RecordModelUsage(ctx context.Context, db querier, record quota.UsageRecord,
 // (R2.1). The writer's users row is held FOR KEY SHARE — the lock the dropped foreign key took —
 // so the spend is written either before the account deletion, which then anonymizes it, or after
 // it, under a pseudonym.
-func AddModelUsage(ctx context.Context, db querier, writer string, record quota.UsageRecord, at time.Time) error {
+func AddModelUsage(ctx context.Context, db Querier, writer string, record quota.UsageRecord, at time.Time) error {
 	usage := record.Usage
 	_, err := db.Exec(ctx, `
 		INSERT INTO model_usage_days AS spent (
@@ -123,7 +123,7 @@ const limitSampleEvery = 10 * time.Minute
 // RecordLimitSample keeps a reading of the provider's usage window when it moved by at least one
 // percentage point, its reset time changed or ten minutes passed since the last one; readings
 // older than 60 days are removed (R9.1). It reports whether the reading was written.
-func RecordLimitSample(ctx context.Context, db querier, sample quota.LimitSample) (bool, error) {
+func RecordLimitSample(ctx context.Context, db Querier, sample quota.LimitSample) (bool, error) {
 	var lastAt time.Time
 	var lastPercent float64
 	var lastResets *time.Time

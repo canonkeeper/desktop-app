@@ -104,7 +104,7 @@ func TestChapterEditOpensOneDraftPerChapterPostgres(t *testing.T) {
 	if _, err := fixture.store.OpenChapterEdit(ctx, fixture.editor, "00000000-0000-4000-8000-000000009199"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("no such chapter: %v", err)
 	}
-	page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10)
+	page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, "")
 	if err != nil || len(page.Drafts) != 2 || !page.Drafts[0].Edits || !page.Drafts[1].Edits {
 		t.Fatalf("list = %+v, %v", page.Drafts, err)
 	}
@@ -261,5 +261,209 @@ func TestChapterEditIsNotAddedAsANewChapterPostgres(t *testing.T) {
 	}
 	if _, err := fixture.store.AddChapterDraftToBook(ctx, fixture.editor, draft.ID, draft.Revision); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("add: %v", err)
+	}
+}
+
+// bookParagraphs are the paragraphs of a chapter of the book in both text versions as they lie: markdown, plain text and
+// count of words, a line each.
+func bookParagraphs(t *testing.T, fixture draftProject, chapterID string) []string {
+	t.Helper()
+	rows, err := fixture.db.Pool.Query(context.Background(), `
+		SELECT paragraph.variant || '|' || paragraph.markdown || '|' || paragraph.plain_text || '|' || paragraph.word_count
+		FROM chapter_paragraphs AS paragraph
+		JOIN chapters AS chapter ON chapter.id = paragraph.chapter_id AND chapter.revision = paragraph.revision
+		WHERE paragraph.chapter_id = $1::uuid
+		ORDER BY paragraph.variant, paragraph."order"
+	`, chapterID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lines
+}
+
+// specs/2026-11-08-italic-bold-in-text.md TF3.2: «Добавить в книгу» writes the italic and bold of the working text into
+// markdown in the Markdown subset and its plain projection into plain_text and the count of words, a face over a line
+// break cut at it; «Править главу», the replacement and «Вернуть» carry the faces between the book and the working text.
+func TestTheFacesGoIntoTheBookAndBackPostgres(t *testing.T) {
+	fixture := seedDraftProject(t, "ck_chapter_faces_book")
+	ctx := context.Background()
+	const book = "00000000-0000-4000-8000-000000009201"
+	fixture.book(t, book, "Том")
+	first := fixture.chapterIn(t, book, "", "Первая")
+	draft := fixture.create(t, domain.KindSketch, "")
+	placed, err := fixture.store.UpdateChapterDraft(ctx, fixture.editor, draft.ID, draft.Revision, domain.Change{Place: &domain.Place{BookID: book, AfterChapterID: first}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "Кир ⟨пришёл⟩ в порт.\n\n⟦⟪Туман⟫ стоял⟧ * * *\n⟨над\nводой⟩."
+	written, err := fixture.store.UpdateChapterDraft(ctx, fixture.editor, draft.ID, placed.Revision, domain.Change{Text: &body})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, err := fixture.store.AddChapterDraftToBook(ctx, fixture.editor, draft.ID, written.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"draft|Кир *пришёл* в порт.|Кир пришёл в порт.|4", `draft|**Туман** стоял \* \* \*|Туман стоял * * *|5`, "draft|*над*|над|1", "draft|*водой*.|водой.|1",
+		"published|Кир *пришёл* в порт.|Кир пришёл в порт.|4", `published|**Туман** стоял \* \* \*|Туман стоял * * *|5`, "published|*над*|над|1", "published|*водой*.|водой.|1",
+	}
+	if got := bookParagraphs(t, fixture, added.AddedChapterID); !reflect.DeepEqual(got, want) {
+		t.Fatalf("the paragraphs of the book:\n%q\nwant\n%q", got, want)
+	}
+
+	edit, err := fixture.store.OpenChapterEdit(ctx, fixture.editor, added.AddedChapterID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// specs/2026-11-11-ux5-writing-path.md WP4.3: the chapter a draft added is edited in that draft, its own text kept — the
+	// book holds the same words; the text of the book comes back by «Вернуть» and «Открыть главу заново» below.
+	if edit.ID != draft.ID || edit.Text != body {
+		t.Fatalf("«Править главу» opens %s %q", edit.ID, edit.Text)
+	}
+	changed := "Кир ⟨пришёл⟩ в ⟪порт⟫.\n\nТуман стоял."
+	if edit, err = fixture.store.UpdateChapterDraft(ctx, fixture.editor, edit.ID, edit.Revision, domain.Change{Text: &changed}); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := fixture.store.ReplaceChapterFromDraft(ctx, fixture.editor, edit.ID, edit.Revision, "Глава")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Text != changed || bookChapter(t, fixture, added.AddedChapterID).Paragraphs[0] != "Кир *пришёл* в **порт**." {
+		t.Fatalf("the replacement: draft %q, book %q", replaced.Text, bookChapter(t, fixture, added.AddedChapterID).Paragraphs)
+	}
+	reverted, err := fixture.store.RevertChapterFromDraft(ctx, fixture.editor, replaced.ID, replaced.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverted.Text != "Кир ⟨пришёл⟩ в порт.\n\n⟪Туман⟫ стоял * * *\n\n⟨над⟩\n\n⟨водой⟩." {
+		t.Fatalf("«Вернуть» gives %q", reverted.Text)
+	}
+	reopened, err := fixture.store.ReopenChapterFromBook(ctx, fixture.editor, reverted.ID, reverted.Revision)
+	if err != nil || reopened.Text != reverted.Text {
+		t.Fatalf("«Открыть главу заново» = %q, %v", reopened.Text, err)
+	}
+}
+
+// specs/2026-11-11-ux5-writing-path.md WP4.3: one draft a chapter of the book. «Править главу» of a chapter a draft added
+// opens that draft as the edit of its chapter — its text, its versions and its helper — not a second draft; a chapter the
+// book changed since the draft put it there says so, and «Открыть главу заново» takes the text of the book as for any edit.
+func TestTheChapterADraftAddedIsEditedInThatDraftPostgres(t *testing.T) {
+	fixture := seedDraftProject(t, "ck_chapter_edit_added")
+	ctx := context.Background()
+	chapters := editSaga(t, fixture)
+	add := func(text string) (domain.Draft, string) {
+		t.Helper()
+		draft := fixture.create(t, domain.KindSketch, text)
+		placed, err := fixture.store.UpdateChapterDraft(ctx, fixture.editor, draft.ID, draft.Revision, domain.Change{Place: &domain.Place{BookID: editBook, AfterChapterID: chapters[2]}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		added, err := fixture.store.AddChapterDraftToBook(ctx, fixture.editor, draft.ID, placed.Revision)
+		if err != nil || added.AddedChapterID == "" {
+			t.Fatalf("add = %+v, %v", added, err)
+		}
+		return added, added.AddedChapterID
+	}
+	added, chapter := add("Кира ⟦ждала у⟧ ворот.\n\nТарен не пришёл.")
+
+	opened, err := fixture.store.OpenChapterEdit(ctx, fixture.editor, chapter)
+	if err != nil || opened.ID != added.ID {
+		t.Fatalf("«Править главу» of the chapter a draft added = %s, %v (the draft %s)", opened.ID, err, added.ID)
+	}
+	if opened.AddedChapterID != "" || opened.Edits == nil || opened.Edits.ChapterID != chapter || opened.Edits.Changed() || opened.Edits.Gone {
+		t.Fatalf("the draft is not the edit of its chapter: added %q, edit %+v", opened.AddedChapterID, opened.Edits)
+	}
+	// What the helper wrote stays lit: the draft keeps its own working text while the book holds the same words.
+	if opened.Text != added.Text || opened.Revision <= added.Revision {
+		t.Fatalf("the working text = %q at %d", opened.Text, opened.Revision)
+	}
+	if again, err := fixture.store.OpenChapterEdit(ctx, fixture.owner, chapter); err != nil || again.ID != added.ID {
+		t.Fatalf("a second press = %s, %v", again.ID, err)
+	}
+	page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, "")
+	if err != nil || len(page.Drafts) != 1 || !page.Drafts[0].Edits || page.Drafts[0].Stage != domain.StageText {
+		t.Fatalf("one draft a chapter: %+v, %v", page.Drafts, err)
+	}
+
+	// The book changed the chapter after the draft put it there: the draft knows, and the text of the book comes back
+	// only by «Открыть главу заново».
+	other, otherChapter := add("Ольм молчал.")
+	if err := fixture.db.WithTx(ctx, func(tx pgx.Tx) error {
+		_, err := fixture.library.ReplaceChapterTextInTx(ctx, tx, library.ReplaceChapterTextInput{
+			ProjectID: fixture.project, BookID: editBook, ChapterID: otherChapter, ExpectedRevision: bookChapter(t, fixture, otherChapter).Revision,
+			Title: "Глава", Paragraphs: []string{"Текст из файла."},
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := fixture.store.OpenChapterEdit(ctx, fixture.editor, otherChapter)
+	if err != nil || changed.ID != other.ID || !changed.Edits.Changed() || changed.Text != other.Text {
+		t.Fatalf("a chapter the book changed = %+v %q, %v", changed.Edits, changed.Text, err)
+	}
+	if _, err := fixture.store.ReplaceChapterFromDraft(ctx, fixture.editor, changed.ID, changed.Revision, "Глава"); !errors.Is(err, domain.ErrChapterChanged) {
+		t.Fatalf("the book's text is not replaced unasked: %v", err)
+	}
+	reopened, err := fixture.store.ReopenChapterFromBook(ctx, fixture.editor, changed.ID, changed.Revision)
+	if err != nil || reopened.Text != "Текст из файла." || reopened.Edits.Changed() {
+		t.Fatalf("«Открыть главу заново» = %q %+v, %v", reopened.Text, reopened.Edits, err)
+	}
+}
+
+// specs/2026-11-11-ux9-writing-a.md WA1.3, WA4.1: the draft of an edit and its row in the list say whether the book holds
+// it — opened, it is the book's text; changed by the author, it is not; replaced, it is again — and the edit is nearly
+// done whatever its length.
+func TestAnEditSaysWhetherTheBookHoldsItPostgres(t *testing.T) {
+	fixture := seedDraftProject(t, "ck_chapter_edit_held")
+	ctx := context.Background()
+	chapters := editSaga(t, fixture)
+	state := func(draftID string) domain.EditState {
+		t.Helper()
+		page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range page.Drafts {
+			if row.ID == draftID {
+				return row.EditState
+			}
+		}
+		t.Fatalf("no row of %s", draftID)
+		return ""
+	}
+	draft, err := fixture.store.OpenChapterEdit(ctx, fixture.editor, chapters[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Edits.State() != domain.EditSame || state(draft.ID) != domain.EditSame || draft.Case("") != domain.CaseNearlyDone {
+		t.Fatalf("opened: %q, row %q, case %q", draft.Edits.State(), state(draft.ID), draft.Case(""))
+	}
+	text := draft.Text + "\n\nМила ждала у причала."
+	draft, err = fixture.store.UpdateChapterDraft(ctx, fixture.editor, draft.ID, draft.Revision, domain.Change{Text: &text})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.Edits.State() != domain.EditEdited || state(draft.ID) != domain.EditEdited {
+		t.Fatalf("changed by the author: %q, row %q", draft.Edits.State(), state(draft.ID))
+	}
+	replaced, err := fixture.store.ReplaceChapterFromDraft(ctx, fixture.editor, draft.ID, draft.Revision, draft.Title)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Edits.State() != domain.EditSame || state(replaced.ID) != domain.EditSame {
+		t.Fatalf("replaced: %q, row %q", replaced.Edits.State(), state(replaced.ID))
+	}
+	title := "Другое название"
+	renamed, err := fixture.store.UpdateChapterDraft(ctx, fixture.editor, replaced.ID, replaced.Revision, domain.Change{Title: &title})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Edits.State() != domain.EditEdited {
+		t.Fatalf("renamed: %q", renamed.Edits.State())
 	}
 }

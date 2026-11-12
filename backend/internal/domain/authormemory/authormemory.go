@@ -117,15 +117,85 @@ type Record struct {
 	Revision   int64
 	AuthorID   string
 	AuthorName string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// JobID is the Job of the turn that wrote the record, empty when the author wrote it on the page.
+	JobID     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	// Origin is where the record came from, as the page says it (specs/2026-11-10-ux8-memory-records.md MR1.5).
+	Origin Origin
+}
+
+// OriginKind is where a record came from: written on the page, or in a conversation with the chat or a helper.
+type OriginKind string
+
+const (
+	OriginManual  OriginKind = "manual"
+	OriginChat    OriginKind = "chat"
+	OriginDraft   OriginKind = "draft"
+	OriginDrawing OriginKind = "drawing"
+)
+
+// Origin names where a record came from; ChatID and Title name a chat the reader may open, Title also the draft whose helper
+// wrote it. Neither the question nor the answer of the turn: they live in the thread of the model.
+type Origin struct {
+	Kind   OriginKind
+	ChatID string
+	Title  string
+}
+
+// Conversation is what is left of the session of the turn that wrote a record: its kind (research, drawing, draft), whether
+// it is alive, whether the reader may see it in the list of chats, and the title of the draft its helper writes.
+type Conversation struct {
+	SessionKind string
+	ChatID      string
+	ChatTitle   string
+	DraftTitle  string
+	Alive       bool
+	Visible     bool
+}
+
+// OriginOf says where a record came from by the Job it keeps and what is left of its session. A record without a Job was
+// written on the page; a session purged after its deletion leaves nothing to tell a chat from a helper, and the record is
+// said to come from a chat, as most do.
+func OriginOf(jobID string, conversation *Conversation) Origin {
+	switch {
+	case jobID == "":
+		return Origin{Kind: OriginManual}
+	case conversation == nil:
+		return Origin{Kind: OriginChat}
+	case conversation.SessionKind == "draft":
+		return Origin{Kind: OriginDraft, Title: conversation.DraftTitle}
+	case conversation.SessionKind == "drawing":
+		return Origin{Kind: OriginDrawing}
+	case conversation.Alive && conversation.Visible:
+		return Origin{Kind: OriginChat, ChatID: conversation.ChatID, Title: conversation.ChatTitle}
+	default:
+		return Origin{Kind: OriginChat}
+	}
 }
 
 // Signature is what a model reads a record under: its kind, the key of its chapter and the name. It names
 // no chapter title: nothing of the chapter reaches the model. A chapter chapterKeys does not know is gone.
 func (record Record) Signature(chapterKeys map[string]string) string {
+	return record.signed(record.Kind.Label(), chapterKeys)
+}
+
+// AboutSignature is the signature of a record that comes with the answer of a saga tool about what it names
+// (specs/2026-11-11-chat-corrections.md CR1.3): what the model does with a correction the text of the book contradicts.
+func (record Record) AboutSignature(chapterKeys map[string]string) string {
+	label := record.Kind.Label()
+	switch record.Kind {
+	case KindCorrection:
+		label = "поправка автора: важнее карточек и пересказов; если текст книги говорит иначе — назови оба варианта"
+	case KindPlan:
+		label = "план автора: в книге этого ещё нет"
+	}
+	return record.signed(label, chapterKeys)
+}
+
+func (record Record) signed(label string, chapterKeys map[string]string) string {
 	var out strings.Builder
-	out.WriteString(record.Kind.Label())
+	out.WriteString(label)
 	if record.ChapterID != "" {
 		key, known := chapterKeys[record.ChapterID]
 		if !known {
@@ -155,9 +225,11 @@ type Cursor struct {
 	ID        string
 }
 
-// Page is the records of a filter; Total counts them all, HasMore says the next page has more.
+// Page is the records of a filter; Total counts them all, HasMore says the next page has more. Shared says the saga has
+// members besides one: the page then signs a record with its author (MR1.5).
 type Page struct {
 	Records []Record
 	Total   int64
 	HasMore bool
+	Shared  bool
 }

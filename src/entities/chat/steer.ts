@@ -1,15 +1,16 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { createIdempotencyKey, type CanonKeeperApiClient } from '../../shared/api';
+import { invalidateAccountQuota } from '../account-quota/api';
 
 /** What a correction needs of the API: the one operation of every running turn, of the chat or of a helper. */
 export type SteerApiClient = Pick<CanonKeeperApiClient, 'steerChatTurn'>;
 
 /** Why a correction was refused, in the words of the field that keeps the text (chat-steering R4.3). */
 export const steerFailures: Record<string, string> = {
-  'chat.turn_ended': 'Ход уже завершился. Текст остался в поле — отправьте его новым сообщением.',
+  'chat.turn_ended': 'Помощник уже ответил. Текст остался в поле — отправьте его новым сообщением.',
   'chat.steer_retry': 'Сейчас уточнение не принимается. Текст остался в поле — повторите через несколько секунд.',
-  'chat.steer_limit': 'В этот ход отправлено слишком много уточнений. Дождитесь ответа — текст останется в поле.',
+  'chat.steer_limit': 'Пока помощник отвечает, уточнений уже слишком много. Дождитесь ответа — текст останется в поле.',
 };
 
 /** A correction the server took, not yet in the timeline. */
@@ -62,8 +63,13 @@ function photosThrough({ firstPhoto, images }: { firstPhoto?: number; images?: r
   return images?.length ? (firstPhoto ?? 1) + images.length - 1 : 0;
 }
 
-/** Sends a correction into the running turn (specs/2026-10-30-chat-steering.md): no Job, no quota. */
+/**
+ * Sends a correction into the running turn (specs/2026-10-30-chat-steering.md): no Job, but a message of the day — a
+ * question of the chat or a turn of the helper, as a new message is (specs/2026-11-09-quota-accounting.md Q2.1), so the
+ * account quota is read again once the server answered.
+ */
 export function useSteerChatTurnMutation(api: SteerApiClient) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: {
       chatId: string; turnId: string; body: string; idempotencyKey: string; images: readonly number[]; firstPhoto?: number;
@@ -76,6 +82,7 @@ export function useSteerChatTurnMutation(api: SteerApiClient) {
       },
       { idempotencyKey: input.idempotencyKey },
     ),
+    onSettled: () => { void invalidateAccountQuota(queryClient); },
   });
 }
 

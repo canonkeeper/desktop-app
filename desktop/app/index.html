@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- The page the shell carries (specs/2026-11-12-desk-shell.md SH1.5, SH2.1): what the window shows while the backend
+     starts and when it cannot. It loads nothing but its own two files. -->
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CanonKeeper</title>
+    <link rel="stylesheet" href="start.css" />
+    <script src="start.js" defer></script>
+  </head>
+  <body>
+    <main id="starting" class="sheet" aria-live="polite">
+      <p class="title">CanonKeeper запускается…</p>
+      <p id="hint" class="hint" hidden>Первый запуск может занять до полуминуты.</p>
+    </main>
+    <main id="failure" class="sheet" hidden>
+      <p id="words" class="words" role="alert"></p>
+      <div class="actions">
+        <button type="button" id="folder">Открыть папку с данными</button>
+        <button type="button" id="contact">Написать нам</button>
+        <button type="button" id="close" class="quiet">Закрыть</button>
+      </div>
+    </main>
+  </body>
+</html>

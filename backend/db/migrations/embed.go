@@ -92,6 +92,8 @@ var destructiveCleanupMigrations = map[string]bool{
 	"0045_remove_audited_import_queues.sql":       true,
 	"0046_remove_export_and_audit.sql":            true,
 	"0047_remove_reader_annotations.sql":          true,
+	// The requests for access to illustrations, replaced by the tiers (specs/2026-11-08-subscription-tiers.md TR6.4).
+	"0119_tier_drawings.sql": true,
 }
 
 // ValidateSQL rejects destructive statements from normal forward migrations.

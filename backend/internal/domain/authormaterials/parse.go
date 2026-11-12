@@ -211,23 +211,3 @@ func resolve(base, target string) string {
 	}
 	return path.Join(path.Dir(base), target)
 }
-
-// ParseText reads a pasted text: each line with something on it is a paragraph.
-func ParseText(text string) (Parsed, error) {
-	if utf8.RuneCountInString(text) > MaxTextRunes {
-		return Parsed{}, ErrTooLarge
-	}
-	var section Section
-	for _, line := range strings.Split(strings.ToValidUTF8(text, ""), "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			section.Paragraphs = append(section.Paragraphs, Paragraph{Text: line})
-		}
-	}
-	if len(section.Paragraphs) == 0 {
-		return Parsed{}, ErrEmpty
-	}
-	if len(section.Paragraphs) > maxParagraphs {
-		return Parsed{}, ErrTooLarge
-	}
-	return Parsed{Sections: []Section{section}}, nil
-}

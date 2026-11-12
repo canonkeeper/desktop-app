@@ -18,8 +18,10 @@ import {
   type ProjectMembership,
   type User,
 } from './common';
+import { mockPlatformAdminWriterId } from './admin-writers';
 import { createInitialGallery, type MockGalleryState } from './gallery-state';
 import { createInitialPromoPermissions, type MockPromoPermission } from './promo-state';
+import { createInitialTiers } from './tier-state';
 import {
   bookId,
   chapterId,
@@ -34,7 +36,8 @@ import {
 } from './fixtures';
 type AuthSession = Schema<'AuthSession'>;
 /** The values the administrator set (specs/2026-10-29-admin-panel.md UC7); a key without one keeps the code's. */
-export type MockQuotaDefaults = Partial<Record<Schema<'AdminQuotaDefaultKey'>, number>>;
+/** The platform row of the limits by default: a column per writer limit, as the backend keeps it. */
+export type MockQuotaDefaults = Partial<Record<Schema<'AdminQuotaKey'>, number>>;
 type ImportQueue = Schema<'ImportQueue'>;
 export type MockBookCoverState = {
   version: number;
@@ -48,6 +51,10 @@ export type MockReadingTestVote = { number: number; voterId: string; chosen: str
 export type MockState = {
   user: User;
   session: AuthSession | null;
+  /** Failed sign-ins per email in the window of the server: five, then the sign-in closes (specs/2026-11-10-ux3-auth.md AU3.3). */
+  loginFailures: Record<string, number>;
+  /** The other devices the author is signed in on (specs/2026-11-10-ux2-tariff-account.md TA5.2). */
+  otherSessions: number;
   projects: Project[];
   deletedProjects: DeletedSource<Project>[];
   invitations: ProjectInvitation[];
@@ -57,12 +64,17 @@ export type MockState = {
   deletedBooks: DeletedBookSource[];
   chapters: Chapter[];
   deletedChapters: DeletedChapterSource[];
-  personalNotes: Array<Schema<'PersonalNote'> & { ownerUserId: string }>;
+  /** `chatProjectId` is the saga of a note of an answer, as the server keeps the chat it was bound to. */
+  personalNotes: Array<Schema<'PersonalNote'> & { ownerUserId: string; chatProjectId?: string }>;
   /** Главы каждой версии текста с актуальным текстовым индексом и с готовой карточкой. */
   indexedChapterIds: Record<SourceView, string[]>;
   cardedChapterIds: Record<SourceView, string[]>;
   jobs: Job[];
   importQueues: ImportQueue[];
+  /** The place each volume of a queue was given at its start, after the books of the shelf (specs/2026-11-11-ux7-upload.md UP2.3). */
+  importQueueOrders: Record<string, number>;
+  /** How many times «Заменить файл» gave a volume a new file (UP3.2): its Jobs and books are named apart. */
+  importQueueReplacements: Record<string, number>;
   chats: ChatSession[];
   /** Главы автора, приложенные к вопросам чатов (specs/2026-11-07-chat-attach-chapter.md CA6.1): по номеру в чате. */
   chatAttachments: Record<string, ChatAttachment[]>;
@@ -86,6 +98,46 @@ export type MockState = {
   contacts: MockContacts;
   feedbackThreads: MockFeedbackThread[];
   feedbackImages: MockFeedbackImage[];
+  /** Тарифы сайта и периоды тарифа писателей (specs/2026-11-08-subscription-tiers.md). */
+  tiers: Array<Schema<'SubscriptionTier'>>;
+  tierPeriods: MockTierPeriod[];
+  /** Партии ключей с их ключами и отказы ключей за московские сутки по аккаунтам (TR4, TR5.4). */
+  keyBatches: MockKeyBatch[];
+  keyFailures: Record<string, { date: string; count: number }>;
+  /** The trial drawings each account used in its life (TR6.1). */
+  trialImagesUsed: Record<string, number>;
+  /** The new chapters of «Письмо» charged against the tiers (TR7.2). */
+  chapterCharges: MockChapterCharge[];
+  /** The trial calls of the voice each account used in its life (TR8.1); the mock runs no call, so its minutes stay whole. */
+  trialVoiceCallsUsed: Record<string, number>;
+  /**
+   * The wave of «Сага готова» of each saga (FS1 of the spec «Сага готова», specs/2026-11-09): a new book opens it, the
+   * cards that leave the published text ready close it; startedBy is who loaded the book.
+   */
+  sagaWaves: Record<string, { startedBy: string | null; readyAt: string | null }>;
+  /**
+   * The text versions (`projectId:sourceView`) whose first cards are written and whose map is still being built
+   * (specs/2026-11-10-first-questions.md FQ1.9): the map comes right after the cards, as the last step of their Job.
+   */
+  sagaMapsPending: string[];
+  /** The accounts that turned the letter «Сага готова» off (FS3). */
+  lettersOff: string[];
+  /** The accounts that turned «Письма о сроке тарифа» off (specs/2026-11-10-service-letters.md M4.5). */
+  tierLettersOff: string[];
+};
+
+/**
+ * A new chapter charged against a writer's tier (TR7.2, TR7.3): its Job works, wrote a scene, or ended without one —
+ * then it does not count; returned — given back by the administrator.
+ */
+export type MockChapterCharge = {
+  userId: string; draftId: string; jobId: string; kind: 'window' | 'trial'; chargedAt: string; job: 'working' | 'scene' | 'none'; returned: boolean;
+};
+/** A period of a writer's tier with the account it belongs to. */
+export type MockTierPeriod = Schema<'SubscriptionPeriod'> & { userId: string };
+/** A batch of keys with its keys: the mock is no base, so it keeps the 25 characters the backend keeps only hashed. */
+export type MockKeyBatch = Schema<'AdminKeyBatch'> & {
+  keyRows: Array<{ key: string; redeemedBy: string | null; periodId: string | null; revoked: boolean }>;
 };
 
 export type MockContacts = Schema<'AdminContacts'>;
@@ -153,6 +205,7 @@ function createInitialState(): MockState {
     title: 'Книга II. Карта приливов',
     subtitle: 'Черновая редакция',
     order: 2,
+    place: 2,
     displayNumber: 'II',
     coverColor: '#4F46E5',
     coverUrl: null,
@@ -168,6 +221,7 @@ function createInitialState(): MockState {
     title: 'Книга I. Туманный берег',
     subtitle: 'Первая редакция',
     order: 1,
+    place: 1,
     displayNumber: 'I',
     coverColor: '#285f58',
     coverUrl: null,
@@ -183,6 +237,7 @@ function createInitialState(): MockState {
     title: 'Книга III. Северный суд',
     subtitle: 'Черновая редакция',
     order: 3,
+    place: 3,
     displayNumber: 'III',
     coverColor: '#4c3a5d',
     coverUrl: null,
@@ -198,6 +253,7 @@ function createInitialState(): MockState {
     title: 'Книга IV. Последний свет',
     subtitle: 'Черновая редакция',
     order: 4,
+    place: 4,
     displayNumber: 'IV',
     coverColor: '#30472b',
     coverUrl: null,
@@ -241,7 +297,8 @@ function createInitialState(): MockState {
         order: 4,
         kind: 'paragraph',
         text: 'Позже на допросе Лютов записал все коротко, будто боялся оставить в протоколе слишком много воздуха.',
-        markdown: 'Позже на допросе Лютов записал все коротко, будто боялся оставить в протоколе слишком много воздуха.',
+        // The italic and bold of the book (specs/2026-11-08-italic-bold-in-text.md TF1.2, TF5).
+        markdown: 'Позже на допросе Лютов записал *все коротко*, будто боялся оставить в протоколе **слишком много воздуха**.',
       },
       {
         id: 'p-12-05',
@@ -433,6 +490,8 @@ function createInitialState(): MockState {
   return {
     user,
     session: { user },
+    loginFailures: {},
+    otherSessions: 2,
     projects: [project],
     deletedProjects: [],
     invitations: [
@@ -482,6 +541,8 @@ function createInitialState(): MockState {
       }),
     ],
     importQueues: [],
+    importQueueOrders: {},
+    importQueueReplacements: {},
     chats: [],
     chatAttachments: {},
     draftHelperChatIds: [],
@@ -495,6 +556,20 @@ function createInitialState(): MockState {
     contacts: { telegram: null, email: null, note: null, updatedAt: null },
     feedbackThreads: [],
     feedbackImages: [],
+    tiers: createInitialTiers(),
+    // The synthetic author is the pilot of the site: «Профи» without term, given by the administrator (TR3.5).
+    tierPeriods: [user.id, mockPlatformAdminWriterId].map((userId, index) => ({
+      userId, id: `6a1f0c52-0000-4000-8000-00000000000${index + 1}`, tier: 'pro' as const, startsAt: now, endsAt: null, source: 'admin' as const,
+    })),
+    keyBatches: [],
+    keyFailures: {},
+    trialImagesUsed: {},
+    chapterCharges: [],
+    trialVoiceCallsUsed: {},
+    sagaWaves: {},
+    sagaMapsPending: [],
+    lettersOff: [],
+    tierLettersOff: [],
   };
 }
 export { createInitialState };

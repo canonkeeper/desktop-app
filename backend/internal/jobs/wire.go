@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -97,6 +98,15 @@ func DecodeResult(kind Kind, raw []byte) (Result, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// EncodeChapterDraftWriting is the scene in writing as its own key of the result keeps it
+// (specs/2026-11-12-ux10-scene-stream.md ST1.2).
+func EncodeChapterDraftWriting(writing ChapterDraftWriting) ([]byte, error) {
+	if !writing.valid() {
+		return nil, ErrValidation
+	}
+	return json.Marshal(writing)
 }
 
 func EncodeError(jobError Error) ([]byte, error) {
@@ -281,7 +291,8 @@ func validateResult(kind Kind, result Result) error {
 			return ErrValidation
 		}
 	case ChapterDraftResult:
-		if r.Type != KindChapterDraft || !validChapterDraftMode(r.Mode) || r.Total < 0 || r.Done < 0 || !validChapterDraftFindings(r) {
+		if r.Type != KindChapterDraft || !validChapterDraftMode(r.Mode) || r.Total < 0 || r.Done < 0 || !validChapterDraftFindings(r) || !validChapterDraftCheck(r.Check) ||
+			r.Writing != nil && !r.Writing.valid() {
 			return ErrValidation
 		}
 	case ResearchChatTurnResult:
@@ -464,7 +475,10 @@ func validChapterDraftSubject(s ChapterDraftSubject) bool {
 	}
 	if s.Erased || s.Mode == ChapterDraftWrite {
 		return s.Erased && s.Revision == 0 && s.PlanNumber == 0 && len(s.Scenes) == 0 && s.From == nil && s.Tail == "" &&
-			s.Place == nil && s.Instruction == "" && len(s.Seams) == 0
+			s.Place == nil && s.Instruction == "" && len(s.Seams) == 0 && len(s.Release) == 0
+	}
+	if s.Mode != ChapterDraftScenes && len(s.Release) > 0 || !validRelease(s.Release) {
+		return false
 	}
 	if s.Revision < 1 || utf8.RuneCountInString(s.Instruction) > 2000 || !validPlace(s.From) || !validPlace(s.Place) {
 		return false
@@ -480,6 +494,19 @@ func validChapterDraftSubject(s ChapterDraftSubject) bool {
 		return s.Place == nil && s.From == nil && len(s.Scenes) == 0 && s.PlanNumber == 0 && s.Tail == "" && s.Instruction == "" && len(s.Seams) == 0
 	}
 	return false
+}
+
+// validRelease holds the lines a run of scenes need not keep: a few lines of the author, each within a line to keep.
+func validRelease(lines []string) bool {
+	if len(lines) > 30 {
+		return false
+	}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" || utf8.RuneCountInString(line) > 1000 {
+			return false
+		}
+	}
+	return true
 }
 
 // validChapterDraftFindings holds the corrections a proofreading keeps while it runs (specs/2026-11-07-writing-proofread.md,
@@ -500,6 +527,24 @@ func validChapterDraftFindings(r ChapterDraftResult) bool {
 	}
 	return true
 }
+
+// validChapterDraftCheck bounds what a check counted and measured: counts, a measure named and finite.
+func validChapterDraftCheck(check *ChapterDraftCheckTally) bool {
+	if check == nil {
+		return true
+	}
+	if check.Asked < 0 || check.Answered < 0 || check.Weak < 0 || check.Weak > check.Answered || check.Words < 0 || len(check.Measures) > 20 {
+		return false
+	}
+	for _, measure := range check.Measures {
+		if measure.Feature == "" || utf8.RuneCountInString(measure.Feature) > 40 || !finite(measure.Value) || !finite(measure.Mean) || !finite(measure.SD) {
+			return false
+		}
+	}
+	return true
+}
+
+func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
 func validChapterDraftMode(mode string) bool {
 	switch mode {

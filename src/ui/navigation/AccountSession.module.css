@@ -40,6 +40,18 @@
   white-space: nowrap;
 }
 
+/* «Тариф · «Писатель» до 8 декабря 2026 года» wraps instead of running out of the menu; amber at its end (TR9.9). */
+.itemText {
+  overflow-wrap: anywhere;
+  text-align: start;
+  white-space: normal;
+}
+
+.item[data-ending] {
+  background: var(--ck-color-warning);
+  color: var(--ck-color-warning-foreground);
+}
+
 /* Sits on the lower right of the avatar; the account button is its positioned parent. */
 .mark {
   position: absolute;
@@ -76,24 +88,18 @@
 }
 
 .count {
-  display: inline-grid;
-  min-width: 20px;
-  height: 20px;
-  margin-left: auto;
-  place-items: center;
-  border-radius: 10px;
-  padding: 0 6px;
-  background: var(--ck-primary);
-  color: var(--ck-primary-foreground, #fff);
-  font-size: 12px;
+  margin-left: 4px;
+  color: var(--ck-primary);
+  font-size: 13px;
   font-weight: 600;
 }
 
-.hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+/* The mark of the line of a request that waits, as on the account button (specs/2026-11-11-ux9-account.md AC3.7). */
+.itemMark {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--ck-primary);
 }

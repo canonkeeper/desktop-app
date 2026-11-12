@@ -113,7 +113,7 @@ type cardsQueue struct {
 	queued []TextVersion
 }
 
-func (queue *cardsQueue) QueueCards(_ context.Context, version TextVersion) error {
+func (queue *cardsQueue) QueueCards(_ context.Context, version TextVersion) (bool, error) {
 	queue.queued = append(queue.queued, version)
-	return nil
+	return true, nil
 }

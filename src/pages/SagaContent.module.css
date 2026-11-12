@@ -1,0 +1,13 @@
+/* The saga being read, no saga and a failure: under the heading of the section, away from the edges (R2.1.3). */
+.state {
+  display: grid;
+  align-content: start;
+  gap: var(--ck-space-4);
+  margin: 24px;
+}
+
+@media (max-width: 767px) {
+  .state {
+    margin: 16px;
+  }
+}

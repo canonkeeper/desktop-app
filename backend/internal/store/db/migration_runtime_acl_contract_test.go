@@ -33,20 +33,35 @@ var productRuntimeTableContract = roleTableContract{
 				"import_queue_items", "import_queues", "import_uploads", "job_model_bindings", "jobs",
 				"personal_notes", "project_invitations", "project_memberships", "project_source_views", "projects",
 				"model_limit_samples", "model_usage_days", "writer_quota_overrides", "writer_usage_days",
-				"project_illustration_settings", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
+				"project_illustration_settings", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
 				"chapter_draft_packs", "chapter_draft_plans", "chapter_draft_versions", "chapter_draft_originals",
-				"illustration_access", "illustration_access_requests", "platform_quota_defaults", "image_upload_consents",
+				"illustration_access", "platform_quota_defaults", "image_upload_consents",
 				"promo_permissions", "reading_tests", "reading_test_votes",
 				"platform_contacts", "feedback_threads", "feedback_images",
 				// The consent to cards and the Obsidian vault of a saga in the desktop build (0114).
 				"card_build_permissions", "obsidian_vaults",
+				// The periods of a writer's tier (0117) and the counters of the tiers of an account — refused keys (0118) and
+				// what he used of the trials of his tiers (0119), specs/2026-11-08-subscription-tiers.md TR10.3.
+				"subscription_periods", "subscription_usage",
+				// The new chapters charged against a writer's tier (0120, TR7.2, TR10.3).
+				"subscription_chapter_charges",
+				// 0121 adds the trial calls of the voice co-author to the counters of the tiers of an account and the seconds
+				// of its calls to the writer's day (writer_usage_days): columns of the same rows, the same privileges.
 			},
+		},
+		{
+			// The subscription tiers (0117): the migration sets them, the administrator changes their values (TR1.1).
+			privileges: []string{"SELECT", "UPDATE"},
+			tables:     []string{"subscription_tiers"},
 		},
 		{
 			privileges: []string{"INSERT", "SELECT", "UPDATE"},
 			tables: []string{
 				"deletion_completion_receipts", "deletion_target_step_progress", "deletion_target_tasks",
 				"idempotency_records", "sessions", "users",
+				// The batches and the keys of a tier (0118, specs/2026-11-08-subscription-tiers.md TR10.3): a key is
+				// redeemed or revoked, never deleted.
+				"subscription_key_batches", "subscription_keys",
 			},
 		},
 		{
@@ -89,7 +104,7 @@ var governanceOwnerTableContract = roleTableContract{
 				"chapter_cards", "chapter_search_texts", "chapter_search_words", "chapter_source_members",
 				"chapter_text_index_state", "chapter_text_search_rows", "deletion_completion_receipts",
 				"deletion_hard_purge_predecessors", "import_job_requests", "import_queue_items", "import_queues",
-				"project_illustration_settings", "project_memberships", "promo_permissions", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
+				"project_illustration_settings", "project_memberships", "promo_permissions", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
 				"chapter_draft_scenes", "chapter_draft_talks", "reading_tests", "reading_test_votes",
 				"chapter_draft_packs", "chapter_draft_plans", "chapter_draft_versions", "chapter_draft_originals",
 				"chat_turn_attachments",

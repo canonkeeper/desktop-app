@@ -5,27 +5,29 @@ import { createMockApiClient } from '../../api/mock';
 import { projectId } from '../../api/mock/repository/fixtures';
 import { chatQueryKeys, createIdempotencyKey } from '../../entities/chat/api';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => { vi.stubGlobal('innerWidth', 1440); vi.stubGlobal('innerHeight', 900); });
 afterEach(() => vi.unstubAllGlobals());
 
 function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId = '', canCreate = true,
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
-  return render(<QueryClientProvider client={queryClient}>
+  return render(<QueryClientProvider client={queryClient}><ToastsProvider>
     <ResearchChatPanel api={api} canCreate={canCreate} onOpenSource={vi.fn()} onSelectChatId={vi.fn()}
       projectId={projectId} selectedChatId={selectedChatId} sourceView="published" />
-  </QueryClientProvider>);
+  </ToastsProvider></QueryClientProvider>);
 }
 
 describe('Research Chat saved assignment', () => {
+  // specs/2026-11-10-ux1-chat.md CH2.1: the field is the first column of its row — nothing stands before it.
   it('keeps the new-chat field in the flexible column without a delete button', async () => {
     renderPanel(createMockApiClient());
     const textarea = await screen.findByRole('textbox', { name: 'Вопрос' });
     const field = textarea.parentElement!.parentElement!;
     const actions = field.nextElementSibling!;
     expect(screen.queryByRole('button', { name: 'Удалить чат' })).toBeNull();
-    expect(getComputedStyle(field).gridColumn).toBe('2');
-    expect(getComputedStyle(actions).gridColumn).toBe('3');
+    expect(getComputedStyle(field).gridColumn).toBe('1');
+    expect(getComputedStyle(actions).gridColumn).toBe('2');
   });
   it('shows pending sessions without blocking New chat for list loading alone', async () => {
     const api = createMockApiClient();
@@ -50,9 +52,9 @@ describe('Research Chat saved assignment', () => {
     const queryKey = chatQueryKeys.sessions({ projectId, sourceView: 'published' });
     act(() => { void queryClient.invalidateQueries({ queryKey, exact: true }); });
 
-    expect(await screen.findByText('Не удалось загрузить чаты.')).toBeTruthy();
+    expect(await screen.findByRole('alert', { name: 'Не открылся список чатов' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: session.title })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку чатов' }));
+    fireEvent.click(within(screen.getByRole('alert', { name: 'Не открылся список чатов' })).getByRole('button', { name: 'Повторить' }));
     expect(await screen.findByRole('button', { name: session.title })).toBeTruthy();
   });
 
@@ -75,8 +77,10 @@ describe('Research Chat saved assignment', () => {
     expect(readTimeline).not.toHaveBeenCalled();
 
     await act(async () => resolveSession(session));
-    const saved = await screen.findByRole('region', { name: 'Сохранённый вопрос' });
-    expect(within(saved).getByText('Поручение выбранного чата')).toBeTruthy();
+    // specs/2026-11-11-ux4-after-answer.md AA2.8 (Ч-33): the question not sent stands once — in the field.
+    const saved = await screen.findByText('Вопрос ещё не отправлен — он стоит в поле.');
+    expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', 'Поручение выбранного чата');
+    expect(screen.queryByRole('region', { name: 'Сохранённый вопрос' })).toBeNull();
     expect(screen.queryByRole('status', { name: 'Загрузка чата' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('disabled', false);
 
@@ -84,7 +88,7 @@ describe('Research Chat saved assignment', () => {
     const queryKey = chatQueryKeys.session({ projectId, sourceView: 'published' }, session.id);
     act(() => { void queryClient.invalidateQueries({ queryKey, exact: true }); });
     await waitFor(() => expect(queryClient.isFetching({ queryKey, exact: true })).toBe(1));
-    expect(screen.getByRole('region', { name: 'Сохранённый вопрос' })).toBe(saved);
+    expect(screen.getByText('Вопрос ещё не отправлен — он стоит в поле.')).toBe(saved);
     expect(screen.queryByRole('status', { name: 'Загрузка чата' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('disabled', false);
   });
@@ -104,7 +108,7 @@ describe('Research Chat saved assignment', () => {
     expect(composer).toHaveProperty('value', 'Поручение до создания Job');
     expect(submit).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Новый чат' })).toHaveProperty('disabled', true);
-    expect(screen.queryByLabelText(/Агент Canon Keeper:/u)).toBeNull();
+    expect(screen.queryByLabelText(/Агент CanonKeeper:/u)).toBeNull();
     expect(container.querySelector('footer[data-ephemeral]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Остановить' })).toBeNull();
   });
@@ -162,7 +166,7 @@ describe('Research Chat saved assignment', () => {
     vi.spyOn(api, 'getChatSession').mockResolvedValue({ ...session, savedAssignment: { body: 'Ожидающее поручение', availableActions: [] } });
     const createTurn = vi.spyOn(api, 'createChatTurn');
     renderPanel(api, session.id);
-    await screen.findByRole('region', { name: 'Сохранённый вопрос' });
+    await screen.findByText('Вопрос ещё не отправлен — он стоит в поле.');
     const composer = screen.getByRole('textbox', { name: 'Вопрос' });
 
     expect(composer).toHaveProperty('disabled', true);
@@ -191,7 +195,7 @@ describe('Research Chat saved assignment', () => {
     expect((await api.getChatSession(session.id)).savedAssignment?.body).toBe('Сохранить это поручение');
   });
 
-  it('restores the assignment from the session and starts exactly one turn without a new session', async () => {
+  it('restores the assignment from the session into the field and starts exactly one turn without a new session', async () => {
     const api = createMockApiClient();
     const session = await api.createChatSession(projectId, {
       scope: 'project', sourceView: 'published', savedAssignment: 'Восстановленное поручение',
@@ -199,21 +203,13 @@ describe('Research Chat saved assignment', () => {
     const createSession = vi.spyOn(api, 'createChatSession');
     const createTurn = vi.spyOn(api, 'createChatTurn');
     renderPanel(api, session.id);
-    const saved = await screen.findByRole('region', { name: 'Сохранённый вопрос' });
-
-    expect(within(saved).getByText('Восстановленное поручение')).toBeTruthy();
-    const kicker = within(saved).getByText('ВОПРОС СОХРАНЁН · ЕЩЁ НЕ ОТПРАВЛЕН');
-    expect(getComputedStyle(kicker).fontFamily).toBe('var(--ck-font-mono)');
-    expect(getComputedStyle(kicker).fontSize).toBe('11px');
-    expect(getComputedStyle(kicker).fontWeight).toBe('500');
-    expect(getComputedStyle(kicker).letterSpacing).toBe('1.2px');
-    expect(getComputedStyle(kicker).color).toBe('var(--ck-link)');
-    expect(getComputedStyle(within(saved).getByText(/^Чат создан/u)).fontFamily).toBe('var(--ck-font-mono)');
-    expect(within(saved).getByRole('button', { name: 'Новый чат' }).getAttribute('data-variant')).toBe('outline');
+    await screen.findByText('Вопрос ещё не отправлен — он стоит в поле.');
     expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', 'Восстановленное поручение');
-    expect(screen.queryByText('Задача запущена')).toBeNull();
-    expect(within(saved).getByRole('button', { name: 'Отправить' }).querySelector('svg')?.classList.contains('lucide-play')).toBe(true);
-    fireEvent.click(within(saved).getByRole('button', { name: 'Отправить' }));
+    // One way to send it: «Спросить» of the field, no «Отправить» beside it (Ч-33).
+    expect(screen.queryByRole('button', { name: 'Отправить' })).toBeNull();
+    const ask = screen.getByRole('button', { name: 'Спросить' });
+    await waitFor(() => expect(ask).toHaveProperty('disabled', false));
+    fireEvent.click(ask);
     await waitFor(() => expect(createTurn).toHaveBeenCalledTimes(1));
     expect(createTurn).toHaveBeenCalledWith(session.id, { body: 'Восстановленное поручение' }, expect.anything());
     expect(createSession).not.toHaveBeenCalled();
@@ -225,7 +221,8 @@ describe('Research Chat saved assignment', () => {
     const session = await api.createChatSession(projectId, {
       scope: 'project', sourceView: 'published', savedAssignment: body,
     }, { idempotencyKey: createIdempotencyKey('createChatSession') });
-    renderPanel(api, session.id);
+    // The reader of the saga reads the question here: he has no field.
+    renderPanel(api, session.id, false);
     const saved = await screen.findByRole('region', { name: 'Сохранённый вопрос' });
     const style = getComputedStyle(saved);
     expect(style.boxSizing).toBe('border-box');

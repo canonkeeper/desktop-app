@@ -126,7 +126,7 @@ func (repository *Repository) ReadSource(ctx context.Context, userID, noteID str
 			locator.Revision = int64(current.SourceRevision)
 			locator.ParagraphID, locator.Range = nil, nil
 		}
-		result.Resolution = domain.Resolution{State: state, Source: &domain.ResolvedSource{Source: saved.Source}}
+		result.Resolution = domain.Resolution{State: state, Source: &domain.ResolvedSource{Source: saved.Source}, Place: current.Place}
 		return nil
 	})
 	return result, mapError(err)

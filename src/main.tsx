@@ -5,6 +5,7 @@ import { createCanonKeeperApiClient } from './shared/api';
 import { AppProviders, createCanonKeeperQueryClient } from './app/AppProviders';
 import { createClientErrorReporter, installClientErrorReporting, setClientErrorReporter } from './app/client-errors';
 import { CanonKeeperRouterProvider, createCanonKeeperRouter } from './routing/router';
+import { installSiteTheme } from './shared/theme/site-theme';
 import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/reading-themes.css';
@@ -15,6 +16,9 @@ const root = document.getElementById('root');
 if (!root) {
   throw new Error('Root element #root was not found.');
 }
+
+// The theme of the site: public/site-theme.js put it on <html> before the first paint, the app keeps it there (TH1.1).
+installSiteTheme();
 
 const api = createCanonKeeperApiClient();
 const clientErrors = createClientErrorReporter(api);

@@ -203,43 +203,66 @@ func TestListProjectJobsParsesActiveFilter(t *testing.T) {
 	}
 }
 
-func TestListProjectJobsLogsCanceledRequestWithoutChangingGenericResponse(t *testing.T) {
+// specs/2026-10-28-production-monitoring.md R5: a read that failed because its client left is the client's 499 in the
+// journal, whatever error the cancelled read gave; the same failure met while the client waits is the server's 500.
+func TestListProjectJobsLogsAReadItsClientDroppedAs499WithoutChangingGenericResponse(t *testing.T) {
 	const secret = "SHOULD_NOT_LEAK"
-	service := &fakeJobHandlerService{listErr: errors.Join(context.Canceled, errors.New(secret))}
-	var output bytes.Buffer
-	handler := httpapi.RequestLogger(&output)(newJobTestRouter(service, "user-1"))
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, "/projects/"+testProjectID+"/jobs", nil),
-	)
+	for _, tc := range []struct {
+		name       string
+		clientLeft bool
+		listErr    error
+		wantStatus int
+		wantClass  string
+		wantCause  string
+	}{
+		{name: "the client left, the read names the cancellation", clientLeft: true, listErr: errors.Join(context.Canceled, errors.New(secret)), wantStatus: 499, wantClass: "context", wantCause: "canceled"},
+		{name: "the client left, the read names another error", clientLeft: true, listErr: errors.New(secret), wantStatus: 499, wantClass: "context", wantCause: "canceled"},
+		{name: "the client waits, the read was cancelled", listErr: errors.Join(context.Canceled, errors.New(secret)), wantStatus: 500, wantClass: "context", wantCause: "canceled"},
+		{name: "the client waits, the read failed", listErr: errors.New(secret), wantStatus: 500, wantClass: "internal", wantCause: "unclassified"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &fakeJobHandlerService{listErr: tc.listErr}
+			var output bytes.Buffer
+			handler := httpapi.RequestLogger(&output)(newJobTestRouter(service, "user-1"))
+			ctx, leave := context.WithCancel(context.Background())
+			defer leave()
+			if tc.clientLeft {
+				leave()
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(
+				recorder,
+				httptest.NewRequest(http.MethodGet, "/projects/"+testProjectID+"/jobs", nil).WithContext(ctx),
+			)
 
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500; body: %s", recorder.Code, recorder.Body.String())
-	}
-	var problem struct {
-		Code   string `json:"code"`
-		Detail string `json:"detail"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
-		t.Fatal(err)
-	}
-	if problem.Code != "server.error" || problem.Detail != "unexpected server error" {
-		t.Fatalf("problem = %#v, want generic server error", problem)
-	}
-	var entry struct {
-		Status     int    `json:"status"`
-		ErrorClass string `json:"errorClass"`
-		ErrorCause string `json:"errorCause"`
-	}
-	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
-		t.Fatal(err)
-	}
-	if entry.Status != 499 || entry.ErrorClass != "context" || entry.ErrorCause != "canceled" {
-		t.Fatalf("request log error fields = %#v", entry)
-	}
-	if strings.Contains(output.String(), secret) || strings.Contains(recorder.Body.String(), secret) {
-		t.Fatalf("canceled request leaked secret canary")
+			if recorder.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body: %s", recorder.Code, recorder.Body.String())
+			}
+			var problem struct {
+				Code   string `json:"code"`
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
+				t.Fatal(err)
+			}
+			if problem.Code != "server.error" || problem.Detail != "unexpected server error" {
+				t.Fatalf("problem = %#v, want generic server error", problem)
+			}
+			var entry struct {
+				Status     int    `json:"status"`
+				ErrorClass string `json:"errorClass"`
+				ErrorCause string `json:"errorCause"`
+			}
+			if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
+				t.Fatal(err)
+			}
+			if entry.Status != tc.wantStatus || entry.ErrorClass != tc.wantClass || entry.ErrorCause != tc.wantCause {
+				t.Fatalf("request log error fields = %#v, want %d %s/%s", entry, tc.wantStatus, tc.wantClass, tc.wantCause)
+			}
+			if strings.Contains(output.String(), secret) || strings.Contains(recorder.Body.String(), secret) {
+				t.Fatalf("the failed read leaked secret canary")
+			}
+		})
 	}
 }
 

@@ -203,6 +203,46 @@ func TestImportCountsUploadForActorAndTextForOwner(t *testing.T) {
 	}
 }
 
+// R3.2 (amend 08.11): a queue whose books would not fit is refused when it is created, before any
+// file is sent: no queue and no items are left to reopen as a draft that never starts. One that
+// fits is created.
+func TestCreateImportQueueRefusedOverAccountBooks(t *testing.T) {
+	db, projectID, actorID := newImportQueueStoreFixture(t, "a78")
+	store := New(db)
+	value := int64(1)
+	if err := db.WithTx(context.Background(), func(tx pgx.Tx) error {
+		_, err := quotastore.SetOverridesInTx(context.Background(), tx, actorID,
+			[]quota.OverrideChange{{Key: quota.KeyAccountBooks, Value: &value}}, time.Now())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	create := func(key string, orders ...int) (library.ImportQueue, error) {
+		items := make([]library.CreateImportQueueItemStoreInput, len(orders))
+		for index, order := range orders {
+			items[index] = library.CreateImportQueueItemStoreInput{
+				ClientItemID: key + "-item-" + string(rune('a'+index)), Position: index + 1,
+				SourceFileName: "book-" + string(rune('0'+order)) + ".fb2",
+			}
+		}
+		return store.CreateImportQueueDraftForActor(context.Background(), library.CreateImportQueueDraftStoreInput{
+			ProjectID: projectID, ActorUserID: actorID, IdempotencyKey: key,
+			RequestFingerprint: key + "-fingerprint", Items: items,
+		})
+	}
+	_, err := create("queue-books-over", 1, 2)
+	wantQuotaKey(t, err, quota.KeyAccountBooks)
+	queues, err := store.ListImportQueuesForActor(context.Background(), library.ListImportQueuesStoreInput{
+		ProjectID: projectID, ActorUserID: actorID, Limit: 10,
+	})
+	if err != nil || len(queues) != 0 {
+		t.Fatalf("queues after the refusal = %+v, %v; want none", queues, err)
+	}
+	if queue, err := create("queue-books-within", 1); err != nil || queue.Status != library.ImportQueueUploading {
+		t.Fatalf("a queue within the limit = %+v, %v", queue.Status, err)
+	}
+}
+
 // R3.1: a queue of 5 volumes with 3 uploads left today is refused and stays a draft.
 func TestStartImportQueueRefusedOverDailyUploads(t *testing.T) {
 	db, projectID, actorID, proof := newImportQueueStartFixture(t, "a77")

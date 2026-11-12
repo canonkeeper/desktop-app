@@ -15,7 +15,7 @@ import {
   useCreateImportQueueMutation,
   useRestartIndexingMutation,
   useSearchProjectMutation,
-  useSaveImportQueueMutation,
+  useSkipImportQueueItemMutation,
   useStartImportQueueMutation,
   useUploadImportQueueItemMutation,
 } from './index';
@@ -126,7 +126,8 @@ describe('manuscript indexing API', () => {
     expect(queryClient.getQueryData<ManuscriptShelfWorkspace>(shelfKey)?.books).toEqual([created]);
   });
 
-  it('removes a deleted book and its jobs from the exact shelf cache', async () => {
+  // specs/2026-11-08-deletion-stops-processing.md R3.4: the Jobs are the server's; a stopped one shows as stopping.
+  it('removes only the deleted book from the exact shelf cache and leaves its Jobs to the server', async () => {
     const queryClient = new QueryClient();
     const shelfKey = manuscriptQueryKeys.shelf({ projectId: 'project-1' });
     const keptBook = { id: 'book-kept', projectId: 'project-1', title: 'Книга' };
@@ -190,7 +191,7 @@ describe('manuscript indexing API', () => {
 
     const shelf = queryClient.getQueryData<ManuscriptShelfWorkspace>(shelfKey);
     expect(shelf?.books).toEqual([keptBook]);
-    expect(shelf?.jobs).toEqual([keptJob, keptTerminalTextIndexJob]);
+    expect(shelf?.jobs).toEqual([keptJob, deletedJob, deletedTextIndexJob, keptPublishedTextIndexJob, keptTerminalTextIndexJob]);
     expect(queryClient.getQueryState(shelfKey)?.isInvalidated).toBe(true);
   });
 
@@ -238,6 +239,41 @@ describe('manuscript indexing API', () => {
 
       await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
       expect(getIndexingStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // specs/2026-11-12-desk-window.md WN3.2: a followed status is read again while the helper reads the saga, and not while
+  // the reading waits for the helper — nobody reads, and nothing comes until the helper does.
+  it.each([
+    ['is read', undefined, true],
+    ['waits for the helper', 'helper' as const, false],
+  ])('follows a reading of the saga that %s only while someone reads', async (_what, waiting, follows) => {
+    vi.useFakeTimers();
+    try {
+      const getIndexingStatus = vi.fn(async () => ({
+        published: { exists: true, context: { state: 'ready', currentBook: null, retryableFailedBook: null } },
+        steps: [],
+        preparation: {
+          remainingSeconds: waiting ? null : 300, letterPromised: false, chaptersRead: 0, chaptersTotal: 2, booksRead: 0,
+          booksTotal: 1, currentBookId: 'book-1', askable: true, books: [{ bookId: 'book-1', chaptersRead: 0, chaptersTotal: 2 }],
+          ...(waiting ? { waiting } : {}),
+        },
+      }) as never);
+      const api = { getIndexingStatus } as unknown as ManuscriptApiClient;
+      const queryClient = new QueryClient();
+      const wrapper = ({ children }: PropsWithChildren) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      renderHook(() => useIndexingStatusQuery(api, 'project-waiting', { follow: true }), { wrapper });
+
+      await act(async () => { await Promise.resolve(); });
+      expect(getIndexingStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+      if (follows) expect(getIndexingStatus.mock.calls.length).toBeGreaterThan(1);
+      else expect(getIndexingStatus).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -369,7 +405,6 @@ describe('durable import queue API', () => {
     status: 'running',
     version: 2,
     intendedItemCount: 1,
-    nextBookOrder: 1,
     currentItemId: null,
     items: [],
     createdAt: '2026-08-20T10:00:00.000Z',
@@ -390,8 +425,6 @@ describe('durable import queue API', () => {
       sourceFileName: 'book.fb2',
       mimeType: 'application/x-fictionbook+xml',
       sizeBytes: 1024,
-      detectedBookOrder: 1,
-      confirmedBookOrder: 1,
       preflightStatus: 'ready',
       preflightError: null,
       processingStatus: 'canceling',
@@ -406,11 +439,15 @@ describe('durable import queue API', () => {
     completedAt: '2026-08-20T10:00:02.000Z',
   };
   const createBody = {
-    items: [{ clientItemId: 'client-item-1', position: 1, sourceFileName: 'book.fb2', detectedBookOrder: 1 }],
+    items: [{ clientItemId: 'client-item-1', position: 1, sourceFileName: 'book.fb2' }],
   };
-  const saveBody = {
-    expectedVersion: 2,
-    items: [{ id: 'item-1', position: 1, confirmedBookOrder: 1 }],
+  const volume = stoppingQueue.items[0]!;
+  const workingQueue: ImportQueue = { ...queue, items: [{ ...volume, processingStatus: 'importing' }] };
+  // specs/2026-11-11-ux7-upload.md UP3.2: a running queue whose one volume left waits for the author changes by nothing
+  // but the author.
+  const waitingQueue: ImportQueue = {
+    ...queue,
+    items: [{ ...volume, processingStatus: 'failed' }, { ...volume, id: 'item-2', processingStatus: 'succeeded' }],
   };
 
   function createWrapper(queryClient: QueryClient) {
@@ -443,10 +480,13 @@ describe('durable import queue API', () => {
       refetchInterval?: (query: { state: { data?: { data: ImportQueue[] } } }) => unknown;
     }).refetchInterval;
     expect(listInterval?.({
-      state: { data: { data: [queue] } },
+      state: { data: { data: [workingQueue] } },
     })).toBe(2_000);
     expect(listInterval?.({
       state: { data: { data: [stoppingQueue] } },
+    })).toBe(false);
+    expect(listInterval?.({
+      state: { data: { data: [waitingQueue] } },
     })).toBe(false);
     expect((detailQuery?.options as unknown as { refetchInterval?: unknown }).refetchInterval).toBeUndefined();
   });
@@ -471,8 +511,8 @@ describe('durable import queue API', () => {
         }));
       },
       async (api, queryClient) => {
-        const { result } = renderHook(() => useSaveImportQueueMutation(api), { wrapper: createWrapper(queryClient) });
-        await act(() => result.current.mutateAsync({ projectId: 'project-1', queueId: 'queue-1', body: saveBody }));
+        const { result } = renderHook(() => useSkipImportQueueItemMutation(api), { wrapper: createWrapper(queryClient) });
+        await act(() => result.current.mutateAsync({ projectId: 'project-1', queueId: 'queue-1', itemId: 'item-1' }));
       },
       async (api, queryClient) => {
         const { result } = renderHook(() => useStartImportQueueMutation(api), { wrapper: createWrapper(queryClient) });
@@ -493,7 +533,7 @@ describe('durable import queue API', () => {
         cancelImportQueue: vi.fn(async () => queue),
         createImportQueue: vi.fn(async () => queue),
         startImportQueue: vi.fn(async () => queue),
-        updateImportQueue: vi.fn(async () => queue),
+        skipImportQueueItem: vi.fn(async () => queue),
         uploadImportQueueItem: vi.fn(async () => queue),
       } as unknown as ManuscriptApiClient;
       await mutate(api, queryClient);

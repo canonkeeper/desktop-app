@@ -55,6 +55,8 @@ var clientLoggedOperations = map[string]bool{
 	"registerUser":         true,
 	"requestPasswordReset": true,
 	"resetPassword":        true,
+	// The check of a reset link guesses at links as much as their use (specs/2026-11-10-ux3-auth.md AU4.1).
+	"checkPasswordResetLink": true,
 }
 
 func RateLimitMiddleware(limiter ratelimit.Limiter, keyFunc RateLimitKeyFunc) func(http.Handler) http.Handler {

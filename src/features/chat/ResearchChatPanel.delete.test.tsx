@@ -5,6 +5,7 @@ import { createMockApiClient } from '../../api/mock';
 import { projectId } from '../../api/mock/repository/fixtures';
 import { ApiStatusError } from '../../shared/api';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => { vi.stubGlobal('innerWidth', 1440); vi.stubGlobal('innerHeight', 900); });
@@ -20,7 +21,7 @@ function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId
   render(
     <QueryClientProvider client={new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-    })}>
+    })}><ToastsProvider>
       <ResearchChatPanel
         api={api}
         canCreate
@@ -30,7 +31,7 @@ function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId
         selectedChatId={selectedChatId}
         sourceView="published"
       />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   return onSelectChatId;
 }
@@ -38,8 +39,8 @@ function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId
 async function openDelete(title: string) {
   fireEvent.click(await screen.findByRole('button', { name: `Действия чата «${title}»` }));
   const menu = await screen.findByRole('menu', { name: `Действия чата «${title}»` });
-  fireEvent.click(within(menu).getByRole('menuitem', { name: 'Удалить чат' }));
-  return screen.findByRole('dialog', { name: 'Удалить чат' });
+  fireEvent.click(within(menu).getByRole('menuitem', { name: 'Удалить чат…' }));
+  return screen.findByRole('dialog', { name: `Удалить чат «${title}»?` });
 }
 
 function problem(status: number) {
@@ -65,10 +66,10 @@ describe('Research Chat delete', () => {
     const deletion = vi.spyOn(api, 'deleteChatSession').mockImplementation(async (id) => { await gate; await remove(id); });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onSelect = vi.fn();
-    const panel = (chatId: string) => <QueryClientProvider client={client}>
+    const panel = (chatId: string) => <QueryClientProvider client={client}><ToastsProvider>
       <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={onSelect}
         projectId={projectId} selectedChatId={chatId} sourceView="published" />
-    </QueryClientProvider>;
+    </ToastsProvider></QueryClientProvider>;
     const view = render(panel(first.id));
     const dialog = await openDelete(first.title);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
@@ -88,18 +89,20 @@ describe('Research Chat delete', () => {
     const dialog = await openDelete(selected.title);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Удалить чат' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Удалить чат/u })).toBeNull());
     // The notice keeps its code in the letter it offers (R4.2.1).
     const notice = await screen.findByRole('alert');
     expect(notice.textContent).not.toContain('Код для поддержки');
-    expect(decodeURIComponent(within(notice).getByRole('link', { name: 'Написать в поддержку' }).getAttribute('href') ?? ''))
-      .toContain('Canon Keeper: ошибка delete-403');
+    expect(decodeURIComponent(within(notice).getByRole('link', { name: 'Написать нам' }).getAttribute('href') ?? ''))
+      .toContain('CanonKeeper: ошибка delete-403');
     expect(screen.queryByRole('textbox', { name: 'Вопрос' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Новый чат' })).toBeNull();
     expect(screen.getByRole('button', { name: selected.title })).toBeTruthy();
   });
 
-  it('uses a mobile sheet and blocks dismissal while deletion is pending', async () => {
+  // specs/2026-11-10-ux1-chat.md CH2: deleting a chat is an action of the chat, never of the question field.
+  it('reaches the deletion of the open chat on a phone from «⋯» over the feed, not from the field', async () => {
+    vi.stubGlobal('innerWidth', 390);
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
       matches: query.includes('max-width') || query.includes('pointer: coarse'),
       media: query,
@@ -110,35 +113,79 @@ describe('Research Chat delete', () => {
     const selected = await createChat(api, 'Мобильный чат');
     vi.spyOn(api, 'deleteChatSession').mockImplementation(() => new Promise(() => {}));
     renderPanel(api, selected.id);
-    const deleteButton = await screen.findByRole('button', { name: 'Удалить чат' });
-    const composer = screen.getByRole('textbox', { name: 'Вопрос' });
-    expect(deleteButton.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(getComputedStyle(deleteButton).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(getComputedStyle(deleteButton).color).toBe('var(--ck-destructive-text)');
-    fireEvent.click(deleteButton);
-    const sheet = await screen.findByRole('dialog', { name: 'Удалить чат' });
+    await screen.findByRole('textbox', { name: 'Вопрос' });
+    expect(screen.queryByRole('button', { name: 'Удалить чат' })).toBeNull();
+    // The chat list is hidden behind «Чаты»: the actions of the open chat stand beside it.
+    expect(screen.queryByRole('complementary', { name: 'Сохранённые чаты' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Действия чата «Мобильный чат»' }));
+    const actions = await screen.findByRole('dialog', { name: 'Действия чата «Мобильный чат»' });
+    expect(within(actions).getByRole('button', { name: 'Переименовать' })).toBeTruthy();
+    fireEvent.click(within(actions).getByRole('button', { name: 'Удалить чат…' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Удалить чат «Мобильный чат»?' });
 
     expect(sheet.getAttribute('data-kind')).toBe('sheet');
+    expect(sheet.textContent).toContain('Вернуть будет нельзя.');
+    expect(sheet.textContent).not.toMatch(/диалог/iu);
     fireEvent.click(within(sheet).getByRole('button', { name: 'Удалить чат' }));
     await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Отмена' })).toHaveProperty('disabled', true));
     fireEvent.keyDown(sheet, { key: 'Escape' });
     fireEvent.pointerDown(sheet.parentElement!);
-    expect(screen.getByRole('dialog', { name: 'Удалить чат' })).toBe(sheet);
+    expect(screen.getByRole('dialog', { name: 'Удалить чат «Мобильный чат»?' })).toBe(sheet);
     expect(api.deleteChatSession).toHaveBeenCalledTimes(1);
   });
 
-  it('names the selected chat and opens the next session after success', async () => {
+  it('opens the name of the open chat for a change from «⋯» over the feed', async () => {
+    vi.stubGlobal('innerWidth', 1024);
+    const api = createMockApiClient();
+    const selected = await createChat(api, 'Чат для названия');
+    renderPanel(api, selected.id);
+    fireEvent.click(await screen.findByRole('button', { name: 'Действия чата «Чат для названия»' }));
+    const menu = await screen.findByRole('menu', { name: 'Действия чата «Чат для названия»' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Переименовать' }));
+    const chats = await screen.findByRole('dialog', { name: 'Чаты' });
+    expect(await within(chats).findByRole('textbox', { name: 'Название чата' })).toHaveProperty('value', 'Чат для названия');
+  });
+
+  it('has no «Удалить чат» at the question field on a wide screen: it is in the actions of the chat row', async () => {
+    const api = createMockApiClient();
+    const selected = await createChat(api, 'Широкий экран');
+    renderPanel(api, selected.id);
+    await screen.findByRole('textbox', { name: 'Вопрос' });
+    expect(screen.queryByRole('button', { name: 'Удалить чат' })).toBeNull();
+    // The list is on the screen: one way to the actions, at the row of the chat.
+    expect(await screen.findAllByRole('button', { name: 'Действия чата «Широкий экран»' })).toHaveLength(1);
+    const dialog = await openDelete(selected.title);
+    expect(dialog.getAttribute('data-kind')).not.toBe('sheet');
+    expect(dialog.textContent).toContain('Вернуть будет нельзя.');
+  });
+
+  // CH2.3: the confirmation belongs to the panel, so a chat that has no question field is deleted too.
+  it('deletes a chat of a previous assistant, which has no question field', async () => {
+    const api = createMockApiClient();
+    const selected = await createChat(api, 'Чат прежнего помощника');
+    const getChatSession = api.getChatSession.bind(api);
+    vi.spyOn(api, 'getChatSession').mockImplementation(async (chatId) => ({ ...(await getChatSession(chatId)), outdated: true }));
+    const onSelectChatId = renderPanel(api, selected.id);
+    expect(await screen.findByRole('alert', { name: 'Чат прежнего помощника' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Вопрос' })).toBeNull();
+    const dialog = await openDelete(selected.title);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
+    await waitFor(() => expect(onSelectChatId).toHaveBeenCalledWith(''));
+  });
+
+  // specs/2026-11-10-ux2-patterns-actions.md PA3.3: after the deletion — a new chat and the line that names the chat gone.
+  it('names the selected chat and opens a new chat after success', async () => {
     const api = createMockApiClient();
     const selected = await createChat(api, 'Удаляемый чат');
-    const next = await createChat(api, 'Следующий чат');
+    await createChat(api, 'Следующий чат');
     const onSelectChatId = renderPanel(api, selected.id);
     const dialog = await openDelete(selected.title);
 
     expect(within(dialog).getByRole('heading').textContent).toContain('Удаляемый чат');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
 
-    await waitFor(() => expect(onSelectChatId).toHaveBeenCalledWith(next.id));
-    expect(await screen.findByText(/Чат удалён/u)).toBeTruthy();
+    await waitFor(() => expect(onSelectChatId).toHaveBeenCalledWith(''));
+    expect(await screen.findByText('Чат «Удаляемый чат» удалён.')).toBeTruthy();
   });
 
   it('keeps a recoverable failure in the dialog with Retry', async () => {
@@ -151,11 +198,11 @@ describe('Research Chat delete', () => {
 
     expect(await within(dialog).findByText(/Не удалось удалить чат/u)).toBeTruthy();
     expect(within(dialog).getByText('delete-503').closest('span')?.textContent).toBe('Код для поддержки: delete-503');
-    expect(decodeURIComponent(within(dialog).getByRole('link', { name: 'Написать в поддержку' }).getAttribute('href') ?? ''))
-      .toContain('Canon Keeper: ошибка delete-503');
-    expect(within(dialog).getByRole('button', { name: 'Повторить' })).toBeTruthy();
+    expect(decodeURIComponent(within(dialog).getByRole('link', { name: 'Написать нам' }).getAttribute('href') ?? ''))
+      .toContain('CanonKeeper: ошибка delete-503');
+    // The action of the window tries again (PA2.1).
     expect(await screen.findByRole('button', { name: selected.title })).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Повторить' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
     await waitFor(() => expect(onSelectChatId).toHaveBeenCalledWith(''));
   });
 
@@ -172,7 +219,7 @@ describe('Research Chat delete', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить чат' }));
 
     await waitFor(() => expect(onSelectChatId).toHaveBeenCalledWith(''));
-    expect(await screen.findByText(/Чат уже удалён/u)).toBeTruthy();
+    expect(await screen.findByText('Чат «Уже удалённый чат» уже удалён.')).toBeTruthy();
     expect(screen.queryByText(/Не удалось удалить чат/u)).toBeNull();
   });
 });

@@ -81,7 +81,9 @@ func exactSourceDeletionSelection(
 // chapter cards, the project's name registry and its thread layer with the checkpoint, which may hold
 // names and threads of the deleted source — so none of it outlives the fence, and a restored source is
 // indexed and carded again. The next cards Job builds the registry and queues the layer again: a book
-// or chapter deletion queues a text index, whose success queues that Job.
+// or chapter deletion queues a text index, whose success queues that Job. A deleted book or saga takes the
+// snapshot of the last update of its books from a file with it (specs/2026-11-12-ux10-book-revert.md BR1.2); a
+// deleted chapter leaves it, and the return names the chapter «удалена после обновления».
 func (db *Store) ScrubCanonicalDerivedSourceInTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -123,6 +125,10 @@ func (db *Store) ScrubCanonicalDerivedSourceInTx(
 		), scrubbed_map_hidden AS (
 		  DELETE FROM saga_map_hidden hidden
 		  WHERE hidden.project_id = $1::uuid
+		), scrubbed_book_updates AS (
+		  DELETE FROM book_update_snapshots snapshot
+		  WHERE snapshot.project_id = $1::uuid
+		    AND ($2::text = 'project' OR ($2::text = 'book' AND snapshot.book_id = $3::uuid))
 		)
 		DELETE FROM chapter_cards card
 		USING selected

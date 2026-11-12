@@ -1,0 +1,56 @@
+.rejected {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.body {
+  min-width: 0;
+  flex: 1;
+}
+
+.body h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.body ul {
+  display: flex;
+  margin: 6px 0 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.body strong {
+  overflow-wrap: anywhere;
+}
+
+.choose {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ck-link);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  padding: 0;
+}
+
+.choose:focus-visible {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.dismiss {
+  flex: 0 0 auto;
+  margin: -6px -6px 0 0;
+}

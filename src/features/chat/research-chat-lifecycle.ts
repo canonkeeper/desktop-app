@@ -72,10 +72,13 @@ export async function createPendingTurn(
 
 export function emptyChatMessage(selectedChatId: string, canCreate: boolean, sessionCount: number) {
   if (selectedChatId) return undefined;
-  if (canCreate) return 'Задайте первый вопрос — чат появится в списке чатов.';
+  // An empty chat says what to ask and what comes back, not how the list of chats works (specs/2026-11-10-ux2-patterns-states.md PS2.4).
+  if (canCreate) return 'Спросите о героях, местах и событиях книги — отвечу со ссылками на главы';
+  // The reader of the saga asks nothing and the list may be behind «Чаты» (AA2.6, Ч-75).
   return sessionCount > 0
-    ? 'Выберите чат слева, чтобы продолжить.'
-    : 'Пока нет доступных чатов.';
+    ? 'Вы читаете эту сагу: вопросы задаёт её автор. Откройте чат в списке «Чаты», чтобы прочитать ответы.'
+    // The reader is told why the list is empty, not only that it is (specs/2026-11-11-ux9-shelf-chat.md SC1.2, W-82).
+    : 'В этой саге вы читатель: чаты ведёт автор.';
 }
 
 export function retryAfterSeconds(error: unknown): number | null {

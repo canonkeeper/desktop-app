@@ -21,17 +21,26 @@ type versionSummaryView struct {
 	AuthorWords int       `json:"authorWords"`
 	Plan        *int      `json:"plan,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// Place and Scenes name the version by what it holds (specs/2026-11-11-ux9-writing-b.md WB3.1).
+	Place  string `json:"place,omitempty"`
+	Scenes int    `json:"scenes,omitempty"`
 }
 
 type versionView struct {
 	versionSummaryView
-	Text    string                `json:"text"`
+	Text string `json:"text"`
+	// Idea is the idea the version kept: a version before a conversation with the voice (specs/2026-11-10-ux5-voice.md VO1.1).
+	Idea    *string               `json:"idea,omitempty"`
 	Pack    string                `json:"pack,omitempty"`
 	Support []domain.SceneSupport `json:"support"`
 }
 
 func versionSummaryDTO(version domain.Version) versionSummaryView {
-	view := versionSummaryView{Number: version.Number, Reason: string(version.Reason), Words: version.Words, AuthorWords: version.AuthorWords, CreatedAt: version.CreatedAt}
+	view := versionSummaryView{Number: version.Number, Reason: string(version.Reason), Words: version.Words, AuthorWords: version.AuthorWords, CreatedAt: version.CreatedAt,
+		Place: version.Place, Scenes: version.Scenes}
+	if view.Scenes == 0 {
+		view.Scenes = len(version.Support)
+	}
 	if version.PlanNumber > 0 {
 		plan := version.PlanNumber
 		view.Plan = &plan
@@ -78,7 +87,7 @@ func (handlers Handlers) getVersion(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r.Context(), err)
 		return
 	}
-	view := versionView{versionSummaryView: versionSummaryDTO(version), Text: version.Text, Pack: version.PackID, Support: version.Support}
+	view := versionView{versionSummaryView: versionSummaryDTO(version), Text: version.Text, Idea: version.Idea, Pack: version.PackID, Support: version.Support}
 	if view.Support == nil {
 		view.Support = []domain.SceneSupport{}
 	}
@@ -114,5 +123,5 @@ func (handlers Handlers) takeVersion(w http.ResponseWriter, r *http.Request) {
 		take.Place = &domain.Scene{Place: body.Place.Quote, From: body.Place.From, To: body.Place.To}
 	}
 	draft, err := handlers.useCases.TakeVersion.Execute(r.Context(), actor, DraftID(r), number, body.ExpectedRevision, take)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }

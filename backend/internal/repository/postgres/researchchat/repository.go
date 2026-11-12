@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
@@ -28,6 +29,7 @@ type Repository struct {
 	canon   *canonstore.Store
 	jobs    *jobstore.Store
 	sources *governancestore.Store
+	quota   quotastore.Fence
 }
 
 var (
@@ -51,6 +53,13 @@ func New(db *storedb.DB) *Repository {
 		db: db, canon: canonstore.New(db), jobs: jobstore.New(db),
 		sources: governancestore.New(db),
 	}
+}
+
+// WithQuota gives the repository the quota fence of the build (specs/2026-11-08-subscription-tiers.md TR2.4); without
+// it the fence has no plan, as the open core and its tests run.
+func (repository *Repository) WithQuota(fence quotastore.Fence) *Repository {
+	repository.quota = fence
+	return repository
 }
 
 func mapError(err error) error {
@@ -130,17 +139,8 @@ func (repository *Repository) createTurnProductInTx(
 	if err != nil {
 		return jobstore.UserModelCreated{}, researchdomain.ErrValidation
 	}
-	// Only a new idempotency key reaches this callback, so a replay never counts (R1.3). A turn of the helper of a
-	// drawing counts drawing_turns_per_day, not the questions of the chat (specs/2026-11-02-image-workshop.md IW8.2);
-	// a turn of the helper of a chapter draft counts draft_turns_per_day (specs/2026-11-02-writer-workshop.md W1.5).
-	reserve := quotastore.ReserveChatTurnInTx
-	switch session.Kind {
-	case agent.SessionDrawing:
-		reserve = quotastore.ReserveDrawingTurnInTx
-	case agent.SessionDraft:
-		reserve = quotastore.ReserveDraftTurnInTx
-	}
-	if err := reserve(ctx, tx, actorUserID, createdAt); err != nil {
+	// Only a new idempotency key reaches this callback, so a replay never counts (R1.3).
+	if err := repository.quota.ReserveTurnInTx(ctx, tx, actorUserID, turnQuotaKey(session.Kind), createdAt); err != nil {
 		return jobstore.UserModelCreated{}, err
 	}
 	refs, err := repository.normalizeChatRefsInTx(ctx, tx, session, target.Source.Refs)
@@ -193,6 +193,21 @@ func (repository *Repository) createTurnProductInTx(
 		Type: jobs.KindResearchChatTurn, ProjectID: session.ProjectID, ChatID: session.ID,
 		TurnID: ids.TargetID, SourceView: session.SourceView, Scope: string(session.Scope), BookID: bookID,
 	}, Target: target}, nil
+}
+
+// turnQuotaKey is the daily limit a message of the author to the model of a session spends — a new turn and a
+// correction of the running one alike (specs/2026-11-09-quota-accounting.md Q2.1): a question of the chat, a turn of the
+// helper of a drawing (specs/2026-11-02-image-workshop.md IW8.2) or of a chapter draft
+// (specs/2026-11-02-writer-workshop.md W1.5).
+func turnQuotaKey(kind string) quota.Key {
+	switch kind {
+	case agent.SessionDrawing:
+		return quota.KeyDrawingTurnsPerDay
+	case agent.SessionDraft:
+		return quota.KeyDraftTurnsPerDay
+	default:
+		return quota.KeyChatTurnsPerDay
+	}
 }
 
 func (repository *Repository) createOwnedArtifact(

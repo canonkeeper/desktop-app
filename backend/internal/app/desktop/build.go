@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"canonkeeper/backend/internal/adapters/modelapi"
 	"canonkeeper/backend/internal/app"
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/config"
@@ -72,7 +73,7 @@ func desktopConfig(data DataDir, resources Resources, cluster *Cluster, listener
 }
 
 // build is the desktop over the open core (DA1.8, DA2, DA3): the local author's sessions, opened by the one-time codes
-// of the shell; two common workers, two for chat turns and one for cards, no thread layer; cards only with the author's
+// of the shell, and «кто автор» of the window (specs/2026-11-12-desk-window.md WN1.1); two common workers, two for chat turns and one for cards, no thread layer; cards only with the author's
 // consent; the root handler that checks Host and serves the embedded page.
 type build struct {
 	host     string
@@ -107,11 +108,12 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 	sessionHandlers := auth.NewHandlers(sessions, false)
 	open := httpdesktop.Handlers{
 		Open:           service.OpenSession{Codes: desktop.codes, Sessions: sessions, LocalAuthorID: desktop.authorID, Now: time.Now},
+		Sessions:       sessions,
 		CSRF:           sessionHandlers.CSRFMiddleware,
 		AllowedOrigins: core.Config.AllowedOrigins,
 	}
 	stopTurns := service.StopChatTurns{
-		Projects:      projects.NewService(projectstore.New(core.DB), projects.NewSecureIDGenerator(), auth.SystemClock{}),
+		Projects:      projects.NewService(projectstore.New(core.DB, projectstore.WithQuota(core.Quota)), projects.NewSecureIDGenerator(), auth.SystemClock{}),
 		Jobs:          core.JobService,
 		LocalAuthorID: desktop.authorID,
 	}.Execute
@@ -129,7 +131,9 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 		},
 		// A window opens a session a few times a day; a page that guesses codes gets thirty tries a minute.
 		RateLimits: map[string]ratelimit.Rule{"openDesktopSession": {Limit: 30, Window: time.Minute}},
-		Serve:      desktop.serve,
+		// The helper is the model of the build: none until the author connects an AI (specs/2026-11-12-desk-window.md WN3).
+		Helper: helperOf{model: core.Model},
+		Serve:  desktop.serve,
 		Start: func(context.Context) ([]<-chan struct{}, func(context.Context) error) {
 			if desktop.ready != nil {
 				desktop.ready()
@@ -137,6 +141,15 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 			return nil, func(context.Context) error { return nil }
 		},
 	}, nil
+}
+
+// helperOf says whether the helper of the app is connected: the model API of the build has an address (DA2.6). Until it
+// has, the status of a saga says the reading waits for the helper and no cards Job is queued (specs/2026-11-12-desk-window.md
+// WN3.1, WN3.4).
+type helperOf struct{ model *modelapi.Client }
+
+func (helper helperOf) Connected(context.Context) bool {
+	return helper.model != nil && helper.model.Connected()
 }
 
 // serve is the root handler (DA3.4, DA3.6): a Host other than 127.0.0.1:P gets 421, the API and the readiness checks go

@@ -3,6 +3,7 @@ package sagamemory
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -69,7 +70,7 @@ func mapLink(t *testing.T, m *Map, a, b string) *MapLink {
 }
 
 func TestBuildMapKeepsNodesOfMapCategoriesMentionedTwice(t *testing.T) {
-	m := BuildMap(mapSaga())
+	m := BuildMap(mapSaga(), nil)
 	if got, want := mapNames(m), []string{"Мирон", "Карагора", "Молли", "Ринна", "Кот"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("nodes = %v, want %v", got, want)
 	}
@@ -81,7 +82,7 @@ func TestBuildMapKeepsNodesOfMapCategoriesMentionedTwice(t *testing.T) {
 	}
 
 	small := NewCardSet(map[int]*Card{0: {Characters: []Mention{{Name: "Мила"}}}}, nil)
-	if got := mapNames(BuildMap(small)); !reflect.DeepEqual(got, []string{"Мила"}) {
+	if got := mapNames(BuildMap(small, nil)); !reflect.DeepEqual(got, []string{"Мила"}) {
 		t.Fatalf("a small saga keeps a node of one chapter: %v", got)
 	}
 }
@@ -97,9 +98,9 @@ func TestBuildMapCapsNodesByChapters(t *testing.T) {
 		}
 		cards[chapter] = card
 	}
-	m := BuildMap(NewCardSet(cards, nil))
-	if len(m.Nodes) != maxMapNodes || m.Candidates != maxMapNodes+10 {
-		t.Fatalf("nodes %d of %d", len(m.Nodes), m.Candidates)
+	m := BuildMap(NewCardSet(cards, nil), nil)
+	if len(m.Nodes) != maxMapNodes || m.Total != maxMapNodes+10 {
+		t.Fatalf("nodes %d of %d", len(m.Nodes), m.Total)
 	}
 	for i := 1; i < len(m.Nodes); i++ {
 		if len(m.Nodes[i].Entry.Chapters) > len(m.Nodes[i-1].Entry.Chapters) {
@@ -109,7 +110,7 @@ func TestBuildMapCapsNodesByChapters(t *testing.T) {
 }
 
 func TestBuildMapLinksEventsAndChaptersTogether(t *testing.T) {
-	m := BuildMap(mapSaga())
+	m := BuildMap(mapSaga(), nil)
 	molly := mapLink(t, m, "Мирон", "Молли")
 	if molly == nil || !reflect.DeepEqual(molly.Events, []int{3, 7}) || !reflect.DeepEqual(molly.Mentions, []int{11}) {
 		t.Fatalf("Мирон–Молли = %+v: «Ворон» is Мирон, one participant", molly)
@@ -146,7 +147,7 @@ func TestBuildMapKeepsTheStrongestWeakLinksOfANode(t *testing.T) {
 		}
 		cards[chapter] = card
 	}
-	m := BuildMap(NewCardSet(cards, nil))
+	m := BuildMap(NewCardSet(cards, nil), nil)
 	weak := 0
 	for _, link := range m.Links {
 		if m.Nodes[link.Source].Entry.Name == "Мирон" || m.Nodes[link.Target].Entry.Name == "Мирон" {
@@ -234,6 +235,24 @@ func TestStoredNodeCutsTheCardAtAChapter(t *testing.T) {
 }
 
 // The map document and the card hold what the node keeps, and a stored document reads back as it was written.
+// TestTheMapNamesItsChaptersForTheAuthor: every chapter of the prepared map carries its place beside its key, and the
+// cards cut from the rows name their chapters by it (specs/2026-11-10-ux1-names.md N4.1).
+func TestTheMapNamesItsChaptersForTheAuthor(t *testing.T) {
+	rows := mapRows(t)
+	if len(rows.Document.Chapters) == 0 {
+		t.Fatal("the map has no chapters")
+	}
+	for index, chapter := range rows.Document.Chapters {
+		if !strings.HasPrefix(chapter.Label, "Книга ") || strings.HasPrefix(chapter.Key, "b") && strings.Contains(chapter.Label, chapter.Key) {
+			t.Fatalf("chapter %d (%s) = %q", index, chapter.Key, chapter.Label)
+		}
+	}
+	card := rows.Nodes[0].Card(rows.Document.Chapters, -1, MapHidden{})
+	if card.First == nil || card.First.Chapter.Label == "" {
+		t.Fatalf("the first chapter of a card = %+v", card.First)
+	}
+}
+
 func TestStoredDocumentsReadBack(t *testing.T) {
 	rows := mapRows(t)
 	if rows.Document.Revision != "revision" || rows.Document.Coverage != (MapCoverage{Chapters: 20, WithCards: 20}) || rows.Document.Hero == nil || *rows.Document.Hero != "мирон" {

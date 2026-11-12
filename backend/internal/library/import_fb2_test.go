@@ -50,7 +50,7 @@ func TestParseFB2NormalizesWhitespace(t *testing.T) {
 	if book.Title != "Fixture Book" || book.Chapters[0].Title != "Chapter One" {
 		t.Fatalf("bad normalized titles %#v", book)
 	}
-	if got := book.Chapters[0].Paragraphs; len(got) != 2 || got[0] != "First paragraph." || got[1] != "Second paragraph." {
+	if got := textsOf(book.Chapters[0].Paragraphs); len(got) != 2 || got[0] != "First paragraph." || got[1] != "Second paragraph." {
 		t.Fatalf("bad normalized paragraphs %#v", got)
 	}
 }
@@ -72,7 +72,7 @@ func TestParseFB2PreservesInlineMarkupText(t *testing.T) {
 	if book.Chapters[0].Title != "Chapter One" {
 		t.Fatalf("bad inline title %#v", book.Chapters[0])
 	}
-	if got := book.Chapters[0].Paragraphs; len(got) != 1 || got[0] != "First important paragraph." {
+	if got := textsOf(book.Chapters[0].Paragraphs); len(got) != 1 || got[0] != "First important paragraph." {
 		t.Fatalf("bad inline paragraphs %#v", got)
 	}
 }
@@ -163,18 +163,18 @@ func TestParseFB2KeepsSectionOrderAndFallbackTitles(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ChapterImport{
-		{Title: "Part", Paragraphs: []string{"Intro.", "Outro."}},
-		{Title: "Глава 2", Paragraphs: []string{"Untitled."}},
-		{Title: "Child", Paragraphs: []string{"Child text."}},
-		{Title: "Глава 4", Paragraphs: []string{"Last."}},
-		{Title: "Note", Paragraphs: []string{"Note text."}},
+		{Title: "Part", Paragraphs: paragraphsOf("Intro.", "Outro.")},
+		{Title: "Глава 2", Paragraphs: paragraphsOf("Untitled.")},
+		{Title: "Child", Paragraphs: paragraphsOf("Child text.")},
+		{Title: "Глава 4", Paragraphs: paragraphsOf("Last.")},
+		{Title: "Note", Paragraphs: paragraphsOf("Note text.")},
 	}
 	if len(book.Chapters) != len(want) {
 		t.Fatalf("chapters = %#v, want %#v", book.Chapters, want)
 	}
 	for index := range want {
 		got := book.Chapters[index]
-		if got.Title != want[index].Title || strings.Join(got.Paragraphs, "|") != strings.Join(want[index].Paragraphs, "|") {
+		if got.Title != want[index].Title || strings.Join(textsOf(got.Paragraphs), "|") != strings.Join(textsOf(want[index].Paragraphs), "|") {
 			t.Fatalf("chapter %d = %#v, want %#v", index+1, got, want[index])
 		}
 	}
@@ -305,7 +305,7 @@ func TestParseFB2ReadsDeclaredSingleByteEncodings(t *testing.T) {
 			}
 			for index := range want.Chapters {
 				if got.Chapters[index].Title != want.Chapters[index].Title ||
-					strings.Join(got.Chapters[index].Paragraphs, "|") != strings.Join(want.Chapters[index].Paragraphs, "|") {
+					strings.Join(textsOf(got.Chapters[index].Paragraphs), "|") != strings.Join(textsOf(want.Chapters[index].Paragraphs), "|") {
 					t.Fatalf("chapter %d in %s = %#v, want %#v", index+1, test.label, got.Chapters[index], want.Chapters[index])
 				}
 			}

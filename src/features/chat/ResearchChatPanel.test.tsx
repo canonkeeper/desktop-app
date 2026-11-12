@@ -7,6 +7,7 @@ import { createIdempotencyKey, type AgentTimelineEvent } from '../../shared/api'
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { forgetAllTurns, useWatchedTurns } from './answer-ready';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440);
@@ -51,7 +52,7 @@ function renderPanel(
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}><ToastsProvider>
       <ResearchChatPanel
         api={api}
         canCreate
@@ -61,7 +62,7 @@ function renderPanel(
         selectedChatId={selectedChatId}
         sourceView="published"
       />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   return { queryClient, view };
 }
@@ -158,11 +159,12 @@ describe('ResearchChatPanel canonical timeline', () => {
 
     const question = await screen.findByRole('note', { name: 'Вопрос автора' });
     const remark = await screen.findByText('найденное');
-    const action = screen.getByText('Глава 1').closest('li')!;
-    expect(action.textContent).toBe('Глава 1 — глава "1" не найдена (ошибка)');
+    // specs/2026-11-10-ux1-names.md N2.4: the step the helper corrected is an ordinary line, without the message for the model.
+    const action = screen.getByText('Не нашёл такую главу — ищу иначе').closest('li')!;
+    expect(action.textContent).toBe('Не нашёл такую главу — ищу иначе (не получилось)');
     // The Job is not running, so the last remark answers the turn after its folded work.
     expect(remark.closest('[data-answer]')).not.toBeNull();
-    expect(action.closest('details')?.textContent).toContain('Ход работы');
+    expect(action.closest('details')?.textContent).toContain('Как я искал');
     expect(question.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(action.compareDocumentPosition(remark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
@@ -210,9 +212,10 @@ describe('ResearchChatPanel canonical timeline', () => {
     }));
 
     expect(listProjectJobs).not.toHaveBeenCalled();
-    expect(await screen.findByText('Не удалось получить ответ')).toBeTruthy();
-    expect(screen.getByText('Ответ не получен.')).toBeTruthy();
-    // The question returns to the field; its «Спросить снова» is the only retry (R4.2.3).
+    // specs/2026-11-10-ux4-chat-waiting.md CW2.8: one block of the end of the turn, in the word «помощник».
+    expect(await screen.findByText('Помощник не смог ответить')).toBeTruthy();
+    expect(screen.queryByText(/Ответ не получен/u)).toBeNull();
+    // The question returns to the field; its «Спросить снова» sends it (R4.2.3).
     expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: 'Спросить снова' }));
     await waitFor(() => expect(retryTurn).toHaveBeenCalledWith(
@@ -237,7 +240,7 @@ describe('ResearchChatPanel canonical timeline', () => {
     });
     renderPanel(api, chat.id);
 
-    expect(await screen.findByText('Не удалось получить ответ')).toBeTruthy();
+    expect(await screen.findByText('Помощник не смог ответить')).toBeTruthy();
     expect(screen.getByText('runtime-down-1').closest('span')?.textContent).toBe('Код для поддержки: runtime-down-1');
   });
 
@@ -273,7 +276,7 @@ describe('ResearchChatPanel canonical timeline', () => {
     await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(start);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Остановить' }));
+    await pressStop(api);
 
     expect(await screen.findByRole('button', { name: 'Спросить снова' })).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Новый чат' }) as HTMLButtonElement).disabled).toBe(false);
@@ -420,7 +423,7 @@ describe('ResearchChatPanel canonical timeline', () => {
     await waitFor(() => expect(readWaiting).toBe(true));
 
     rendered.view.rerender(
-      <QueryClientProvider client={rendered.queryClient}>
+      <QueryClientProvider client={rendered.queryClient}><ToastsProvider>
         <ResearchChatPanel
           api={api}
           canCreate
@@ -430,7 +433,7 @@ describe('ResearchChatPanel canonical timeline', () => {
           selectedChatId={second.id}
           sourceView="published"
         />
-      </QueryClientProvider>,
+      </ToastsProvider></QueryClientProvider>,
     );
     const secondTask = await screen.findByRole('textbox', { name: 'Вопрос' });
     fireEvent.change(secondTask, { target: { value: 'Задача второго чата' } });
@@ -467,7 +470,7 @@ describe('ResearchChatPanel canonical timeline', () => {
     const start = screen.getByRole('button', { name: 'Спросить' });
     await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(start);
-    fireEvent.click(await screen.findByRole('button', { name: 'Остановить' }));
+    await pressStop(api);
 
     expect(await screen.findByText('Не удалось остановить ответ. Попробуйте ещё раз.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Остановить' })).toBeTruthy();
@@ -482,7 +485,7 @@ describe('ResearchChatPanel canonical timeline', () => {
     expect(firstSocket.url).toContain(`/jobs/${first.jobId}/agent-timeline/stream`);
 
     rendered.view.rerender(
-      <QueryClientProvider client={rendered.queryClient}>
+      <QueryClientProvider client={rendered.queryClient}><ToastsProvider>
         <ResearchChatPanel
           api={api}
           canCreate
@@ -492,10 +495,22 @@ describe('ResearchChatPanel canonical timeline', () => {
           selectedChatId={second.chat.id}
           sourceView="published"
         />
-      </QueryClientProvider>,
+      </ToastsProvider></QueryClientProvider>,
     );
     const secondSocket = await currentSocket(1);
     expect(secondSocket.url).toContain(`/jobs/${second.jobId}/agent-timeline/stream`);
     expect(secondSocket.url).not.toContain(`/jobs/${first.jobId}/`);
   });
 });
+
+/**
+ * «Остановить» stands in the status of the running turn (specs/2026-11-10-ux4-chat-waiting.md CW2.4): the turn of the
+ * question just sent gives way to the turn of its first event, so the press takes the button the page shows now.
+ */
+async function pressStop(api: { cancelJob: unknown }) {
+  const cancel = api.cancelJob as { mock: { calls: unknown[] } };
+  await waitFor(() => {
+    if (!cancel.mock.calls.length) fireEvent.click(screen.getByRole('button', { name: 'Остановить' }));
+    expect(cancel.mock.calls.length).toBeGreaterThan(0);
+  });
+}

@@ -243,7 +243,7 @@ export function createChatOperations(context: MockRepositoryContext) {
     return clone(attachment);
   }
 
-  /** A correction of the running turn (specs/2026-10-30-chat-steering.md): no Job and no quota. */
+  /** A correction of the running turn (specs/2026-10-30-chat-steering.md): no Job, a question of the day (specs/2026-11-09-quota-accounting.md Q2.1). */
   async function steerChatTurn(
     chatId: string,
     turnId: string,
@@ -288,6 +288,8 @@ export function createChatOperations(context: MockRepositoryContext) {
     context.markJobCreator(job);
     chat.latestTurnId = turnId;
     chat.latestTurnJobId = jobId;
+    // When the question was asked: the list of chats stands by it (specs/2026-11-11-ux4-after-answer.md AA3.1).
+    chat.latestTurnAt = new Date().toISOString();
     chat.savedAssignment = null;
     chat.updatedAt = now;
     return startResponse(context.visibleJob(job));

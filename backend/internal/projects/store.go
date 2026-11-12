@@ -17,6 +17,8 @@ type Store interface {
 	CreateProjectWithOwnerMembership(context.Context, CreateProjectStoreInput) (ProjectRecord, error)
 	ListProjectsForActor(context.Context, ListProjectsStoreInput) ([]ProjectRecord, error)
 	GetProject(context.Context, string, string) (ProjectRecord, error)
+	// DemoProject is the live demo saga of the owner, or ErrNotFound (specs/2026-11-09-demo-saga.md DS1.4).
+	DemoProject(ctx context.Context, ownerUserID string) (ProjectRecord, error)
 	UpdateProject(context.Context, UpdateProjectStoreInput) (ProjectRecord, error)
 	DeleteProject(context.Context, DeleteProjectStoreInput) error
 	RestoreProject(context.Context, RestoreProjectStoreInput) (ProjectRecord, error)
@@ -39,6 +41,9 @@ type CreateProjectStoreInput struct {
 	Title             string
 	Description       string
 	CreatedAt         time.Time
+	// Demo makes the demo saga of the owner (specs/2026-11-09-demo-saga.md DS3.1): it is not a saga of his limit,
+	// and a second live one is ErrConflict.
+	Demo bool
 }
 
 type ListProjectsStoreInput struct {
@@ -155,6 +160,7 @@ type ProjectRecord struct {
 	ID                string
 	Title             string
 	Description       string
+	Demo              bool
 	BookCount         int
 	ChapterCount      int
 	WordCount         int

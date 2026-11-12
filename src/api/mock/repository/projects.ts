@@ -22,11 +22,16 @@ import type { MockRepositoryContext } from './context';
 import {
   createProjectInvitationFixture,
   createProjectMembershipForUser,
+  draftBookId,
 } from './fixtures';
 import { scrubAgentWorkflows } from './workflow-scrub';
 import { MockApiError } from '../scenarios';
 
 const assignableProjectMemberRoles = ['admin', 'editor', 'viewer'] as const;
+
+// The demo saga of the site as the backend makes it (specs/2026-11-09-demo-saga.md DS2.2).
+const demoSagaTitle = 'Пример: «Игрок» Достоевского';
+const demoSagaDescription = 'Роман Ф. М. Достоевского «Игрок» — сага-пример: попробуйте сервис без своей рукописи. Текст: Викитека, CC BY-SA 4.0.';
 
 function validateUpdateProjectRequest(body: OperationRequest<'updateProject'>) {
   rejectUnknownKeys('updateProject', body, ['description', 'title']);
@@ -96,6 +101,77 @@ export function createProjectOperations(context: MockRepositoryContext) {
     };
     context.state.projects.push(project);
     context.state.memberships.push(createProjectMembershipForUser(project, context.state.user, membershipId, 'owner'));
+    return context.visibleProject(project);
+  }
+
+  /**
+   * «Попробовать на примере» (specs/2026-11-09-demo-saga.md DS1): the demo saga of the signed-in author, with its book
+   * ready, made when he has none. A second call answers the same saga.
+   */
+  async function openDemoSaga(): Promise<OperationResponse<'openDemoSaga', '200'>> {
+    context.applyOperation('openDemoSaga');
+    const session = context.state.session;
+    if (!session) throw new MockApiError(401, 'Сессия истекла. Войдите снова.', 'openDemoSaga', 'auth.session_required');
+    if (!session.user.emailVerified) throw new MockApiError(403, 'email address is not verified', 'openDemoSaga', 'auth.email_unverified');
+    if (context.scenario.preset === 'failed-create') {
+      throw new MockApiError(500, 'Не удалось открыть пример.', 'openDemoSaga');
+    }
+    const existing = context.state.projects.find((project) => project.demo && project.currentMembership.role === 'owner');
+    if (existing) return context.visibleProject(existing);
+    const projectBase = {
+      id: `project-${context.state.projects.length + 1}`,
+      title: demoSagaTitle,
+      description: demoSagaDescription,
+      demo: true as const,
+      bookCount: 0,
+      chapterCount: 0,
+      wordCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const membershipId = `member-created-${projectBase.id}`;
+    const project: Project = {
+      ...projectBase,
+      currentMembership: createProjectMembershipForUser(projectBase, context.state.user, membershipId, 'owner'),
+    };
+    context.state.projects.push(project);
+    context.state.memberships.push(createProjectMembershipForUser(project, context.state.user, membershipId, 'owner'));
+    // The book of the example: one ready book, as the import of the product leaves it.
+    const bookId = `book-demo-${projectBase.id}`;
+    const templateBook = context.state.books.find((book) => book.id === draftBookId);
+    const templateChapter = context.state.chapters.find((chapter) => chapter.bookId === draftBookId);
+    if (templateBook && templateChapter) {
+      context.state.books.push({
+        ...clone(templateBook),
+        id: bookId,
+        projectId: project.id,
+        title: 'Игрок',
+        subtitle: null,
+        order: 1,
+        displayNumber: '1',
+        status: 'ready',
+        chapterCount: 1,
+        wordCount: templateChapter.wordCount,
+        createdAt: now,
+        updatedAt: now,
+      });
+      context.state.chapters.push({
+        ...clone(templateChapter),
+        id: `${bookId}-chapter-1`,
+        bookId,
+        title: 'Глава I',
+        status: 'published',
+        publishedAt: now,
+        paragraphs: templateChapter.paragraphs.map((paragraph, index) => ({ ...clone(paragraph), id: `${bookId}-paragraph-${index + 1}` })),
+        navigation: { ...clone(templateChapter.navigation), total: 1 },
+      });
+      // Its text is found and its cards are built: the example is ready at once (DS2).
+      for (const prepared of [context.state.indexedChapterIds, context.state.cardedChapterIds]) {
+        prepared.draft.push(`${bookId}-chapter-1`);
+        prepared.published.push(`${bookId}-chapter-1`);
+      }
+      Object.assign(project, { bookCount: 1, chapterCount: 1, wordCount: templateChapter.wordCount });
+    }
     return context.visibleProject(project);
   }
 
@@ -285,6 +361,7 @@ export function createProjectOperations(context: MockRepositoryContext) {
   return {
     listProjects,
     createProject,
+    openDemoSaga,
     getProject,
     getProjectSupportSnapshot,
     updateProject,

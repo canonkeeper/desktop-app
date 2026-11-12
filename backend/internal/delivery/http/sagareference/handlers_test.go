@@ -84,6 +84,7 @@ func router(current user, check access, missing ...int) http.Handler {
 	}
 	NewHandlers(
 		service.NewListGlossary(check, saga), service.NewGetMap(check, saga, maps, maps), service.NewGetMapNode(check, maps), service.NewSearchMap(check, maps),
+		service.NewGetFirstQuestions(check, saga, maps),
 		service.NewGetContents(check, saga),
 		MapHiddenUseCases{List: service.NewListMapHidden(check, maps), Hide: service.NewHideOnMap(check, maps, hiddenStore{maps}), Restore: service.NewRestoreOnMap(hiddenStore{maps})},
 		current, []string{"http://app.test"},
@@ -137,6 +138,13 @@ func TestSagaReferenceReadsAnswerTheContractShapes(t *testing.T) {
 	chapters := contents["chapters"].([]any)
 	if len(chapters) != 2 || contents["bookId"] != "b1" || chapters[1].(map[string]any)["summary"] != nil {
 		t.Fatalf("contents = %v, want the chapter without a card without a summary", contents)
+	}
+	// specs/2026-11-10-ux1-names.md N1.3: a chapter is named for the author beside its key.
+	for _, item := range append(chapters, map[string]any{"chapter": first["first"]}) {
+		chapter := item.(map[string]any)["chapter"].(map[string]any)
+		if label, _ := chapter["label"].(string); !strings.HasPrefix(label, "Книга 1, гл. ") || strings.Contains(label, chapter["key"].(string)+"c") {
+			t.Fatalf("the place of chapter %v = %q", chapter["key"], label)
+		}
 	}
 }
 
@@ -198,12 +206,40 @@ func TestSagaMapAnswersTheContractShapesAndNotModified(t *testing.T) {
 	if node["first"].(map[string]any)["chapter"].(map[string]any)["key"] != "1" || node["mentions"] != 1.0 || node["note"] != nil {
 		t.Fatalf("node = %v", node)
 	}
+	// N4.1: the chapters of the prepared card carry their places.
+	if label, _ := node["first"].(map[string]any)["chapter"].(map[string]any)["label"].(string); !strings.HasPrefix(label, "Книга 1, гл. ") {
+		t.Fatalf("the place of the first chapter of the node = %q", label)
+	}
 	event := node["events"].([]any)[0].(map[string]any)
 	if event["event"] != "Мила и Сава входят в порт" || event["key"] != true || event["paragraph"] != 1.0 || node["changes"] == nil {
 		t.Fatalf("events = %v", node["events"])
 	}
 	if link := node["links"].([]any)[0].(map[string]any); link["name"] != "Сава" || link["together"] != 2.0 || link["changes"] == nil || len(link["shared"].([]any)) != 2 {
 		t.Fatalf("links = %v", node["links"])
+	}
+}
+
+// specs/2026-11-10-first-questions.md FQ1.4: three questions of the prepared map, not kept by the browser.
+func TestSagaFirstQuestionsAnswerTheContractShape(t *testing.T) {
+	handler := router(user{}, access{})
+	response, body := get(t, handler, "/projects/project/saga/first-questions?sourceView=published")
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("ETag") != "" {
+		t.Fatalf("first questions = %d %v", response.Code, response.Header())
+	}
+	questions := body["questions"].([]any)
+	if len(questions) != 2 || body["pending"] != false {
+		t.Fatalf("questions = %v, pending %v", questions, body["pending"])
+	}
+	hero, pair := questions[0].(map[string]any), questions[1].(map[string]any)
+	if hero["kind"] != "hero" || hero["text"] != "Мила: кто это и что важного происходит с этим персонажем?" || len(hero) != 2 ||
+		pair["kind"] != "pair" || pair["text"] != "Мила и Сава: что их связывает?" {
+		t.Fatalf("questions = %v", questions)
+	}
+	if _, hidden := send(t, handler, http.MethodPost, "/projects/project/saga/map/hidden?sourceView=published", `{"nodeKey":"мила"}`, "X-CSRF-Token", "csrf"); hidden["id"] == nil {
+		t.Fatalf("hide = %v", hidden)
+	}
+	if _, none := get(t, handler, "/projects/project/saga/first-questions?sourceView=published"); none["questions"] == nil || len(none["questions"].([]any)) != 0 {
+		t.Fatalf("the hero taken off = %v, want an empty list", none)
 	}
 }
 
@@ -244,6 +280,11 @@ func TestSagaReferenceRejectsBadRequestsAndAccess(t *testing.T) {
 		{"search limit", router(user{}, access{}), "/projects/p/saga/map/search?sourceView=published&q=a&limit=99", http.StatusBadRequest},
 		{"search parameter", router(user{}, access{}), "/projects/p/saga/map/search?sourceView=published&q=a&to=1", http.StatusBadRequest},
 		{"viewer draft search", router(user{}, access{err: service.ErrDenied}), "/projects/p/saga/map/search?sourceView=draft&q=a", http.StatusForbidden},
+		{"viewer draft questions", router(user{}, access{err: service.ErrDenied}), "/projects/p/saga/first-questions?sourceView=draft", http.StatusForbidden},
+		{"stranger questions", router(user{}, access{err: service.ErrNotFound}), "/projects/p/saga/first-questions?sourceView=published", http.StatusNotFound},
+		{"questions parameter", router(user{}, access{}), "/projects/p/saga/first-questions?sourceView=published&limit=3", http.StatusBadRequest},
+		{"questions no view", router(user{}, access{}), "/projects/p/saga/first-questions", http.StatusBadRequest},
+		{"questions no session", router(user{err: auth.ErrUnauthenticated}, access{}), "/projects/p/saga/first-questions?sourceView=published", http.StatusUnauthorized},
 		{"unknown chapter", router(user{}, access{}), "/projects/project/saga/map/node?sourceView=published&key=%D0%9C%D0%B8%D0%BB%D0%B0&to=99", http.StatusBadRequest},
 	} {
 		if response, _ := get(t, check.handler, check.target); response.Code != check.want {

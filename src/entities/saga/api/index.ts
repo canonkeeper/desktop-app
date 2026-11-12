@@ -12,10 +12,11 @@ import type {
 
 export type { SourceView };
 
-export type SagaApiClient = Pick<CanonKeeperApiClient, 'getSagaMap' | 'getSagaMapNode' | 'searchSagaMap' | 'getSagaContents' | 'listSagaMapHidden' | 'hideSagaMapItem' | 'restoreSagaMapItem'>;
+export type SagaApiClient = Pick<CanonKeeperApiClient, 'getSagaMap' | 'getSagaMapNode' | 'searchSagaMap' | 'getSagaContents' | 'listSagaMapHidden' | 'hideSagaMapItem' | 'restoreSagaMapItem' | 'getSagaFirstQuestions'>;
 export type SagaContents = OperationResponse<'getSagaContents', '200'>;
 export type SagaMap = OperationResponse<'getSagaMap', '200'>;
 export type SagaMapNodeCard = OperationResponse<'getSagaMapNode', '200'>;
+export type SagaFirstQuestion = Schema<'SagaFirstQuestions'>['questions'][number];
 export type SagaMapNode = Schema<'SagaMapNode'>;
 export type SagaMapLink = Schema<'SagaMapLink'>;
 export type SagaMapHiddenItem = Schema<'SagaMapHiddenItem'>;
@@ -34,6 +35,8 @@ export const sagaQueryKeys = {
   all: ['canonkeeper', 'saga'] as const,
   projectMaps: (projectId: string) => [...sagaQueryKeys.all, 'map', projectId] as const,
   map: (projectId: string, sourceView: SourceView) => [...sagaQueryKeys.projectMaps(projectId), sourceView] as const,
+  /** Under the maps of the project: a decision of the author or a record that changes the map changes them too. */
+  firstQuestions: (projectId: string, sourceView: SourceView) => [...sagaQueryKeys.projectMaps(projectId), sourceView, 'first-questions'] as const,
   projectNodes: (projectId: string) => [...sagaQueryKeys.all, 'node', projectId] as const,
   node: (projectId: string, query: Query<GetSagaMapNodeOptions>, revision: string) => [...sagaQueryKeys.projectNodes(projectId), revision, compact(query)] as const,
   mapHidden: (projectId: string, query: Query<ListSagaMapHiddenOptions>) => [...sagaQueryKeys.all, 'map-hidden', projectId, compact(query)] as const,
@@ -70,6 +73,37 @@ export function useSagaMapQuery(api: SagaApiClient, projectId: string, sourceVie
     staleTime: 60_000,
     // A map being prepared is asked for again until it is there (R10.3).
     refetchInterval: (query) => (query.state.data?.building ? mapBuildingPoll : false),
+  });
+}
+
+/** What the chat asks of the saga: only its first questions. */
+export type FirstQuestionsApi = Pick<SagaApiClient, 'getSagaFirstQuestions'>;
+
+interface FirstQuestionsMeta extends Record<string, unknown> {
+  questionsApi: FirstQuestionsApi;
+}
+
+/**
+ * While the map of the saga is still to come, an empty chat asks again this often, at most this many times (FQ1.10): 40
+ * minutes, the time a book takes to be read; a preparation that stopped does not keep the chat asking forever.
+ */
+const firstQuestionsPoll = 15_000;
+const firstQuestionsPolls = 160;
+
+/**
+ * The questions an empty chat of the saga offers, with the names of its book (specs/2026-11-10-first-questions.md FQ1.4,
+ * FQ1.5). While the server says the map is still to come (`pending`, FQ1.9) the chat asks again, while it is visible;
+ * the repeats are counted by the query itself — its first answer and 160 more.
+ */
+export function useSagaFirstQuestionsQuery(api: FirstQuestionsApi, projectId: string, sourceView: SourceView, enabled: boolean) {
+  return useQuery({
+    queryKey: sagaQueryKeys.firstQuestions(projectId, sourceView),
+    queryFn: ({ meta, signal }) => (meta as FirstQuestionsMeta).questionsApi.getSagaFirstQuestions(projectId, { sourceView, signal }),
+    meta: { questionsApi: api } satisfies FirstQuestionsMeta,
+    enabled: projectId.length > 0 && enabled,
+    staleTime: 60_000,
+    refetchInterval: (query) => (query.state.data?.pending && query.state.dataUpdateCount <= firstQuestionsPolls ? firstQuestionsPoll : false),
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -117,13 +151,8 @@ export function useSagaContentsQuery(api: SagaApiClient, projectId: string, quer
   });
 }
 
-/** The book of the text version a chapter key belongs to: the one that lists it (numbers and `b3c50` stand in one book). */
-export function bookOfChapterKey(books: readonly SagaBook[], key: string) {
-  return books.find((book) => book.keys.includes(key));
-}
-
-function contentsQuery(api: SagaApiClient, projectId: string, sourceView: SourceView, bookId?: string) {
-  const query = { sourceView, ...(bookId ? { bookId } : {}) };
+function contentsQuery(api: SagaApiClient, projectId: string, sourceView: SourceView, chapter: string) {
+  const query = { sourceView, chapter };
   return {
     queryKey: sagaQueryKeys.contents(projectId, query),
     queryFn: ({ meta, signal }: { meta?: Record<string, unknown>; signal: AbortSignal }) =>
@@ -134,29 +163,23 @@ function contentsQuery(api: SagaApiClient, projectId: string, sourceView: Source
 }
 
 /**
- * The chapters behind chapter keys — titles and reader ids — read from the contents of the books
- * they belong to (illustrations R8.8: the chronicle names its chapters).
+ * The chapters behind kept chapter keys — titles, places and reader ids — read by the server's one rule of the keys: a
+ * bare number that turned ambiguous still names its first chapter (specs/2026-11-11-ux7-reorder.md RK1.5). The map is by
+ * the key as kept.
  */
 export function useSagaChapterRefs(api: SagaApiClient, projectId: string, sourceView: SourceView, keys: readonly string[]) {
-  const first = useQuery({ ...contentsQuery(api, projectId, sourceView), enabled: projectId.length > 0 && keys.length > 0 });
-  const books = first.data?.books ?? [];
-  const bookIds = [...new Set(keys.flatMap((key) => {
-    const book = bookOfChapterKey(books, key);
-    return book && book.id !== first.data?.bookId ? [book.id] : [];
-  }))];
-  const others = useQueries({ queries: bookIds.map((bookId) => contentsQuery(api, projectId, sourceView, bookId)) });
+  const asked = [...new Set(keys.filter((key) => key.length > 0))];
+  const results = useQueries({ queries: asked.map((key) => ({ ...contentsQuery(api, projectId, sourceView, key), enabled: projectId.length > 0 })) });
   const refs = new Map<string, SagaChapterRef>();
-  for (const contents of [first.data, ...others.map((result) => result.data)]) {
-    for (const item of contents?.chapters ?? []) refs.set(item.chapter.key, item.chapter);
-  }
+  asked.forEach((key, index) => {
+    const chapter = results[index]?.data?.chapter;
+    if (chapter) refs.set(key, chapter);
+  });
   return refs;
 }
 
-/** The chapter a key names, for opening it in the reader; null when the text has no such chapter now. */
+/** The chapter a kept key names, for opening it in the reader; null when the text has no such chapter now. */
 export async function fetchSagaChapterRef(queryClient: QueryClient, api: SagaApiClient, projectId: string, sourceView: SourceView, key: string) {
-  const first = await queryClient.fetchQuery(contentsQuery(api, projectId, sourceView));
-  const book = bookOfChapterKey(first.books, key);
-  if (!book) return null;
-  const contents = book.id === first.bookId ? first : await queryClient.fetchQuery(contentsQuery(api, projectId, sourceView, book.id));
-  return contents.chapters.find((item) => item.chapter.key === key)?.chapter ?? null;
+  const contents = await queryClient.fetchQuery(contentsQuery(api, projectId, sourceView, key));
+  return contents.chapter ?? null;
 }

@@ -16,7 +16,8 @@ import (
 )
 
 func TestLibraryStoreImplementsImportQueueStoreContract(t *testing.T) {
-	var _ library.ImportQueueStore = (*Store)(nil)
+	var _ library.ImportQueueProjectionStore = (*Store)(nil)
+	var _ library.StartImportQueueStore = (*Store)(nil)
 }
 
 func TestImportQueueDraftPersistsAcrossStoreInstances(t *testing.T) {
@@ -26,7 +27,7 @@ func TestImportQueueDraftPersistsAcrossStoreInstances(t *testing.T) {
 	created, err := first.CreateImportQueueDraftForActor(ctx, library.CreateImportQueueDraftStoreInput{
 		ProjectID: projectID, ActorUserID: actorID, IdempotencyKey: "queue-create-1", RequestFingerprint: "queue-create-1-fingerprint",
 		Items: []library.CreateImportQueueItemStoreInput{
-			{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-1.fb2", DetectedBookOrder: 1},
+			{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-1.fb2"},
 		},
 	})
 	if err != nil {
@@ -105,29 +106,9 @@ func TestImportQueueCreateReplayRejectsFingerprintMismatch(t *testing.T) {
 	}
 }
 
-func TestImportQueueSaveUsesExpectedVersion(t *testing.T) {
-	ctx := context.Background()
-	db, projectID, actorID := newImportQueueStoreFixture(t, "9a0")
-	store := New(db)
-	created := createQueueDraft(t, store, projectID, actorID, "queue-create-1")
-
-	saved, err := store.SaveImportQueueDraftForActor(ctx, library.SaveImportQueueDraftStoreInput{
-		ProjectID: projectID, QueueID: created.ID, ActorUserID: actorID, ExpectedVersion: 1,
-	})
-	if err != nil {
-		t.Fatalf("SaveImportQueueDraftForActor() error = %v", err)
-	}
-	if saved.Version != 2 {
-		t.Fatalf("saved version = %d, want 2", saved.Version)
-	}
-	if _, err := store.SaveImportQueueDraftForActor(ctx, library.SaveImportQueueDraftStoreInput{
-		ProjectID: projectID, QueueID: created.ID, ActorUserID: actorID, ExpectedVersion: 1,
-	}); !errors.Is(err, library.ErrConflict) {
-		t.Fatalf("stale SaveImportQueueDraftForActor() error = %v, want ErrConflict", err)
-	}
-}
-
-func TestImportQueueInvalidPreflightStaysUploading(t *testing.T) {
+// UP1.2: a file that did not pass the check is received like any other: the queue of its files is ready to start, and
+// the file waits at its place.
+func TestImportQueueInvalidPreflightIsReceived(t *testing.T) {
 	ctx := context.Background()
 	db, projectID, actorID := newImportQueueStoreFixture(t, "9d0")
 	store := New(db)
@@ -151,8 +132,8 @@ func TestImportQueueInvalidPreflightStaysUploading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImportQueueForActor() error = %v", err)
 	}
-	if restored.Status != library.ImportQueueUploading {
-		t.Fatalf("queue status after invalid preflight = %q, want uploading", restored.Status)
+	if restored.Status != library.ImportQueueDraft || restored.Items[0].PreflightStatus != library.ImportQueueItemInvalid {
+		t.Fatalf("queue status after invalid preflight = %q, item %q; want draft with the item invalid", restored.Status, restored.Items[0].PreflightStatus)
 	}
 }
 
@@ -271,7 +252,6 @@ func TestStartImportQueueRejectsInvalidDraftWithoutJobs(t *testing.T) {
 		want    error
 	}{
 		{name: "stale version", suffix: "a11", orders: []int{1, 2}, want: library.ErrConflict},
-		{name: "order gap", suffix: "a12", orders: []int{1, 3}, want: library.ErrImportSequenceConflict},
 		{name: "missing upload", suffix: "a13", orders: []int{1, 2}, arrange: func(t *testing.T, db *storedb.DB, _ string, queue library.ImportQueue) {
 			t.Helper()
 			if _, err := db.Pool.Exec(context.Background(), `UPDATE import_uploads SET content = NULL WHERE storage_key = $1`, queue.Items[1].StorageKey); err != nil {
@@ -288,10 +268,8 @@ func TestStartImportQueueRejectsInvalidDraftWithoutJobs(t *testing.T) {
 				t.Fatalf("misalign upload checksum: %v", err)
 			}
 		}, want: library.ErrImportContentMismatch},
-		{name: "competing book", suffix: "a15", orders: []int{1, 2}, arrange: func(t *testing.T, db *storedb.DB, projectID string, _ library.ImportQueue) {
-			t.Helper()
-			insertImportQueueBookForTest(t, db, "00000000-0000-4000-8000-000000000a15", projectID, 2)
-		}, want: library.ErrImportExpectedOrderConflict},
+		// A single import already holds the next place: the volumes of the queue would take it too.
+		{name: "competing import", suffix: "a15", orders: []int{1, 2}, want: library.ErrImportExpectedOrderConflict},
 	}
 
 	for _, tt := range tests {
@@ -302,6 +280,24 @@ func TestStartImportQueueRejectsInvalidDraftWithoutJobs(t *testing.T) {
 			queue := readyImportQueue(t, store, projectID, actorID, "queue-"+tt.suffix, tt.orders...)
 			if tt.name == "stale version" {
 				queue.Version--
+			}
+			if tt.name == "competing import" {
+				payload := []byte("<FictionBook>competing import</FictionBook>")
+				digest := sha256.Sum256(payload)
+				if _, err := store.CreateImportStagingForActor(ctx, library.CreateImportStagingForActorInput{
+					JobID: "00000000-0000-4000-8000-000000000a15", ProjectID: projectID, ActorUserID: actorID,
+					SessionWriteProof: sessionProof, IdempotencyKey: "queue-competing-a15",
+					RequestMethod: "POST", RequestPath: "/projects/" + projectID + "/imports",
+					RequestFingerprint: "queue-competing-a15-fingerprint", FileBytes: payload,
+					Metadata: library.ImportFileMetadata{
+						StorageKey: "queue-competing-a15-upload", SourceFileName: "competing.fb2", Extension: ".fb2",
+						MIMEType: "application/x-fictionbook+xml", SizeBytes: int64(len(payload)),
+						FileSHA256: hex.EncodeToString(digest[:]), IdempotencyKey: "queue-competing-a15",
+						ImportMode: library.ImportModeNewBook,
+					},
+				}); err != nil {
+					t.Fatalf("CreateImportStagingForActor() error = %v", err)
+				}
 			}
 			if tt.arrange != nil {
 				tt.arrange(t, db, projectID, queue)
@@ -419,7 +415,7 @@ func readyImportQueue(t *testing.T, store *Store, projectID, actorID, idempotenc
 	for index, order := range orders {
 		items[index] = library.CreateImportQueueItemStoreInput{
 			ClientItemID: fmt.Sprintf("%s-item-%d", idempotencyKey, index), Position: index + 1,
-			SourceFileName: fmt.Sprintf("book-%d.fb2", order), DetectedBookOrder: order,
+			SourceFileName: fmt.Sprintf("book-%d.fb2", order),
 		}
 	}
 	created, err := store.CreateImportQueueDraftForActor(context.Background(), library.CreateImportQueueDraftStoreInput{
@@ -437,7 +433,7 @@ func readyImportQueue(t *testing.T, store *Store, projectID, actorID, idempotenc
 			ExpectedVersion: created.Version + int64(index), StorageKey: fmt.Sprintf("%s-upload-%d", idempotencyKey, index),
 			SourceFileName: item.SourceFileName, MIMEType: "application/x-fictionbook+xml",
 			SizeBytes: int64(len(payload)), SHA256: hex.EncodeToString(digest[:]), FileBytes: payload,
-			PreflightStatus: library.ImportQueueItemReady, DetectedBookOrder: orders[index], ConfirmedBookOrder: orders[index],
+			PreflightStatus: library.ImportQueueItemReady,
 		}); err != nil {
 			t.Fatalf("PutImportQueueItemForActor(%d) error = %v", index, err)
 		}
@@ -449,17 +445,6 @@ func readyImportQueue(t *testing.T, store *Store, projectID, actorID, idempotenc
 		t.Fatalf("GetImportQueueForActor() error = %v", err)
 	}
 	return queue
-}
-
-func insertImportQueueBookForTest(t *testing.T, db *storedb.DB, bookID, projectID string, order int) {
-	t.Helper()
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	if _, err := db.Pool.Exec(context.Background(), `
-		INSERT INTO books (id, project_id, title, "order", display_number, created_at, updated_at)
-		VALUES ($1, $2, $3, $4::integer, $5::text, $6, $6)
-	`, bookID, projectID, "Queue Competing Book", order, fmt.Sprint(order), now); err != nil {
-		t.Fatalf("insert competing book: %v", err)
-	}
 }
 
 func newImportQueueStartFixture(t *testing.T, suffix string) (*storedb.DB, string, string, auth.SessionWriteProof) {

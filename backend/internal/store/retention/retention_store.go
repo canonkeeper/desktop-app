@@ -40,6 +40,16 @@ func (store *Store) MarkRetentionDeadlineBreaches(ctx context.Context) (int64, e
 	return store.queries.MarkRetentionDeadlineBreaches(ctx)
 }
 
+// RemoveExpiredBookUpdates removes the snapshots of the updates of books from a file whose 7 days are over
+// (specs/2026-11-12-ux10-book-revert.md BR1.2); their chapters go with them. No read gives one after its term.
+func (store *Store) RemoveExpiredBookUpdates(ctx context.Context) (int64, error) {
+	command, err := store.Pool.Exec(ctx, `DELETE FROM book_update_snapshots WHERE purge_after <= clock_timestamp()`)
+	if err != nil {
+		return 0, err
+	}
+	return command.RowsAffected(), nil
+}
+
 func (store *Store) GarbageCollectDeletionProofForClaim(
 	ctx context.Context,
 	claim retention.DeletionAuditGCClaim,

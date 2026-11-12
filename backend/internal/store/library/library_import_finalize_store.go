@@ -5,13 +5,13 @@ import (
 	"errors"
 	"strings"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/projects"
 	"canonkeeper/backend/internal/store/db"
 	jobstore "canonkeeper/backend/internal/store/jobs"
-	quotastore "canonkeeper/backend/internal/store/quota"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -100,6 +100,10 @@ func (s *Store) FinalizeImport(ctx context.Context, input library.FinalizeImport
 		case updatesBook:
 			written, err = s.updateImportedBookInTx(ctx, tx, input, projectID, targetBookID, projectGeneration, finalizedAt)
 		default:
+			// Only a new book opens the wave of «Сага готова» (FS1.2), and before its own text index Job is queued.
+			if err = openReadyWaveInTx(ctx, tx, projectID, jobID, actorUserID); err != nil {
+				return err
+			}
 			written, err = s.createImportedBookInTx(ctx, tx, input, jobID, projectID, projectGeneration, finalizedAt, initialPublication)
 		}
 		if err != nil {
@@ -107,9 +111,14 @@ func (s *Store) FinalizeImport(ctx context.Context, input library.FinalizeImport
 		}
 		// The written text is checked against the owner's quotas before anything else commits:
 		// a refusal rolls the book back and the import Job fails with the quota code (R3.3). A preview
-		// writes no text.
+		// writes no text; «Обновить из файла» grows no book (specs/2026-11-08-subscription-tiers.md TR2.5). The one
+		// import of the demo saga is its seed, admitted at staging and out of the limits (DS3.4).
 		if !previewsBook {
-			if err := quotastore.CheckOwnerSourcesInTx(ctx, tx, projectID.String()); err != nil {
+			grows := quota.MeasureBooks | quota.MeasureChapters | quota.MeasureCharacters
+			if updatesBook {
+				grows = quota.MeasureChapters | quota.MeasureCharacters
+			}
+			if err := s.quota.CheckAdmittedSourcesInTx(ctx, tx, projectID.String(), grows); err != nil {
 				return err
 			}
 		}

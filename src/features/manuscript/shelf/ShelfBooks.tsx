@@ -1,225 +1,228 @@
-import {
-  BookOpen,
-  Download,
-  FileUp,
-  Image,
-  MoreHorizontal,
-  Trash2,
-  X,
-} from 'lucide-react';
-import type { Book, BookExportFormat, ProjectJob } from '../../../entities/manuscript/api';
+import { MoreHorizontal, Play } from 'lucide-react';
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
+import type { Book } from '../../../entities/manuscript/api';
+import { finishReadingWord, type BookState, type BookStateKind } from '../../../entities/manuscript/preparation-copy';
 import { formatCount, formatWordCount } from '../../../ui/copy';
+import { Button } from '../../../ui/controls/Button';
 import { IconButton } from '../../../ui/controls/IconButton';
-import { Badge } from '../../../ui/feedback/Badge';
-import { Popover } from '../../../ui/overlays/Popover';
-import type { PresenceStatus } from '../../../ui/overlays/use-presence';
+import { LinkAction } from '../../../ui/controls/LinkAction';
+import { SearchField } from '../../../ui/controls/SearchField';
+import { Badge, type BadgeProps } from '../../../ui/feedback/Badge';
+import { EmptyFilter } from '../../../ui/feedback/EmptyState';
+import { SegmentedControl } from '../../../ui/navigation/SegmentedControl';
 import { BookCover } from './BookCover';
-import { isActiveImportJob } from './shelf-jobs';
+import { BookTitleField } from './BookTitleField';
+import { updateLine } from './book-revert-words';
+import { findBooks, keepShelfView, largeShelfFrom, readShelfView, type ShelfView } from './shelf-view';
+import { shelfEntries, type VolumeView } from './upload-files';
+import type { ImportQueue } from '../../../entities/manuscript/api';
+import { defaultCoverColour } from './cover-colours';
 import styles from './ShelfBooks.module.css';
 
-export type MenuPosition = { left: number; top: number };
+const tones: Readonly<Record<BookStateKind, NonNullable<BadgeProps['tone']>>> = {
+  updating: 'indexing', empty: 'neutral', reading: 'indexing', waiting: 'neutral', ready: 'success', unfinished: 'error',
+};
 
-interface ShelfBooksProps {
-  indexingJobFor: (bookId: string) => ProjectJob | null;
+/** «Книга 3 · 14 глав · 96 тыс. слов»: the volume by its place on the shelf (1…n, specs/2026-11-11-ux7-reorder.md RK1.6) — the same «Книга N» as the places of the saga. */
+export function bookMeta(book: Pick<Book, 'chapterCount' | 'place' | 'wordCount'>) {
+  return `Книга ${book.place} · ${formatCount(book.chapterCount, 'глава', 'главы', 'глав')} · ${formatWordCount(book.wordCount)}`;
+}
+
+export interface ShelfBooksProps {
   books: Book[];
-  onOpenMenu: (bookId: string, trigger: HTMLElement | null) => void;
-  onOpenReader: (book: Book) => void;
-  onSelectBook: (bookId: string) => void;
-  selectedBookId: string | null;
+  /** The address of the book in the reader, at the chapter the author stopped at (SF1.1). */
+  hrefOf: (book: Book) => string;
+  onFinish: () => void;
+  finishing: boolean;
+  onOpen: (book: Book) => void;
+  onOpenMenu: (book: Book, trigger: HTMLElement) => void;
+  /** The book whose title is a field now (SF3.1), with its saving. */
+  renaming: { bookId: string; saving: boolean } | null;
+  onRename: (book: Book, title: string) => Promise<string | null>;
+  onRenameEnd: () => void;
+  /** The word of a book from the server (SF2.1); null while the status of the saga is not here. */
+  stateOf: (book: Book) => BookState | null;
+  /**
+   * A card taken by the mouse and let go over a side of another moves the book (specs/2026-11-11-ux7-reorder.md RK2.1);
+   * null — nothing to move (a reader, one book, the example). `reason` — why the volumes stand still now (RK2.2): a taken
+   * card says it by `refuse` and stays.
+   */
+  move?: { onDrop: (draggedId: string, targetId: string, side: DropSide) => void; reason: string | null; refuse: (why: string) => void } | null | undefined;
+  /**
+   * The upload of books (specs/2026-11-11-ux7-upload.md UP3.1): each volume not on the shelf yet is a card at its place
+   * among the books of the upload, drawn by the page.
+   */
+  upload?: { queue: ImportQueue | null; volumes: readonly VolumeView[]; card: (volume: VolumeView, shape: 'card' | 'row') => ReactNode } | undefined;
+  /** The book a file is carried over now: its card is marked — the drop asks about it (specs/2026-11-11-ux9-shelf-chat.md SC1.3). */
+  fileOver?: string | null | undefined;
+  /**
+   * «Что изменилось» of the last update of a book from a file, on its card for the 7 days the server keeps it
+   * (specs/2026-11-12-ux10-book-revert.md BR3.1).
+   */
+  onChanges?: ((book: Book) => void) | undefined;
 }
 
-export function ShelfBooks({
-  indexingJobFor,
-  books,
-  onOpenMenu,
-  onOpenReader,
-  onSelectBook,
-  selectedBookId,
-}: ShelfBooksProps) {
-  return (
-    <div className={styles.booksGrid}>
-      {books.map((book) => (
-        <BookCard
-          indexingJob={indexingJobFor(book.id)}
-          book={book}
-          isActive={book.id === selectedBookId}
-          key={book.id}
-          onOpenMenu={(trigger) => onOpenMenu(book.id, trigger)}
-          onOpenRead={() => onOpenReader(book)}
-          onSelect={() => onSelectBook(book.id)}
-        />
-      ))}
-    </div>
-  );
-}
+export type DropSide = 'before' | 'after';
 
-export function BookCard({
-  indexingJob,
-  book,
-  isActive,
-  onOpenMenu,
-  onOpenRead,
-  onSelect,
-}: {
-  indexingJob: ProjectJob | null;
-  book: Book;
-  isActive: boolean;
-  onOpenMenu: (trigger: HTMLElement | null) => void;
-  onOpenRead: () => void;
-  onSelect: () => void;
-}) {
-  const displayedJob = indexingJob?.status === 'succeeded' ? null : indexingJob;
-  const isIndexing = Boolean(displayedJob);
-  const statusTone = displayedJob?.status === 'failed'
-    ? 'error'
-    : displayedJob?.status === 'canceled'
-      ? 'warning'
-      : isIndexing
-        ? 'indexing'
-    : book.status === 'ready'
-      ? 'success'
-      : book.status === 'error'
-        ? 'error'
-        : 'warning';
-  const statusLabel = displayedJob?.status === 'failed'
-    ? 'Подготовка не удалась'
-    : displayedJob?.status === 'canceled'
-      ? 'Подготовка отменена'
-      : isIndexing
-        ? 'Подготовка'
-    : book.status === 'ready'
-      ? 'Готова'
-      : book.status === 'error'
-        ? 'Подготовка не удалась'
-        : null;
-  return (
-    <article
-      aria-current={isActive ? 'true' : undefined}
-      aria-label={book.title}
-      className={isActive ? styles.activeBookCard : styles.bookCard}
-      onClick={onSelect}
-    >
-      <BookCover book={book} />
-      <IconButton aria-label={`Действия книги ${book.title}`} className={styles.bookMenuButton} onClick={(event) => { event.stopPropagation(); onOpenMenu(event.currentTarget); }}>
-        <MoreHorizontal aria-hidden="true" size={18} />
-      </IconButton>
-      <div className={styles.bookInfo}>
-        <button
-          aria-label={`Открыть чтение ${book.title}`}
-          className={styles.bookTitleButton}
-          onClick={(event) => { event.stopPropagation(); onOpenRead(); }}
-          type="button"
-        >
-          {book.title}
-        </button>
-        <p>{formatCount(book.chapterCount, 'глава', 'главы', 'глав')} · {formatWordCount(book.wordCount)}</p>
-        {statusLabel ? <Badge tone={statusTone}>{statusLabel}</Badge> : null}
-      </div>
-    </article>
-  );
-}
+/** The kind of data a dragged card carries: a book of this shelf, not a file for the upload. */
+const bookDragType = 'application/x-canonkeeper-book';
+/** Why a card of a filtered shelf stays: a place among the books found is not a place on the shelf. */
+export const searchMoveReason = 'Сначала сбросьте поиск: книги переставляются среди всех книг саги.';
 
-export function BookActionMenu({
-  book,
-  canEditManuscript,
-  indexingJob,
-  onChangeCover,
-  onClose,
-  onDelete,
-  onDownload,
-  onOpenRead,
-  onUpdateFromFile,
-  position,
-  state,
-  updateDisabled,
-}: BookActionsProps & { state: PresenceStatus }) {
-  // У восстановленного из URL меню нет кнопки-якоря, поэтому размещаем его по центру.
-  const style = position ? { left: `${position.left}px`, top: `${position.top}px` } : undefined;
-  const menuClassName = position ? styles.floatingMenu : `${styles.floatingMenu} ${styles.floatingMenuCentered}`;
-  return (
-    <Popover
-      className={menuClassName}
-      label="Действия книги"
-      onDismiss={() => onClose?.()}
-      open={state === 'open'}
-      role="menu"
-      style={style}
-    >
-      <div className={styles.floatingMenuHeader}>
-        <strong>{book.title}</strong>
-        <IconButton aria-label="Закрыть меню" onClick={onClose}>
-          <X aria-hidden="true" size={18} />
-        </IconButton>
-      </div>
-      <BookActionItems
-        book={book}
-        canEditManuscript={canEditManuscript}
-        indexingJob={indexingJob}
-        onChangeCover={onChangeCover}
-        onDelete={onDelete}
-        onDownload={onDownload}
-        onOpenRead={onOpenRead}
-        onUpdateFromFile={onUpdateFromFile}
-        updateDisabled={updateDisabled}
-      />
-    </Popover>
-  );
-}
+/** The props of a card or a row that can be taken by the mouse, and where the dragged one would land. */
+type DragProps = {
+  draggable?: boolean;
+  'data-dragging'?: true;
+  'data-drop'?: DropSide;
+  onDragEnd?: () => void;
+  onDragOver?: (event: DragEvent<HTMLElement>) => void;
+  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDrop?: (event: DragEvent<HTMLElement>) => void;
+};
 
-interface BookActionsProps {
-  book: Book;
-  canEditManuscript: boolean;
-  indexingJob?: ProjectJob | null;
-  onChangeCover: () => void;
-  onClose?: () => void;
-  onDelete: () => void;
-  /** Takes the whole book away as a file (specs/2026-11-05-book-export.md). */
-  onDownload: (format: BookExportFormat) => void;
-  onOpenRead: () => void;
-  /** Rewrites the book from a new file of the same volume (specs/2026-10-27-update-book-from-file.md). */
-  onUpdateFromFile?: () => void;
-  position?: MenuPosition | null;
-  updateDisabled?: boolean;
-}
-
-const bookExportFormats: readonly { format: BookExportFormat; label: string }[] = [
-  { format: 'docx', label: 'Скачать в Word' },
-  { format: 'epub', label: 'Скачать в EPUB' },
-  { format: 'fb2', label: 'Скачать в FB2' },
-];
-
-function BookActionItems({ book, canEditManuscript, indexingJob, onChangeCover, onDelete, onDownload, onOpenRead, onUpdateFromFile, updateDisabled }: BookActionsProps) {
-  const deleteDisabled = Boolean(indexingJob && isActiveImportJob(indexingJob));
+/**
+ * The books of the saga (specs/2026-11-11-ux7-shelf.md): each book is one link «Читать «…»», its word and its «⋯»; there
+ * is no chosen book. From 13 books — «Обложки / Списком» and «Найти книгу» (SF4.2).
+ */
+export function ShelfBooks(props: ShelfBooksProps) {
+  const { books, move = null } = props;
+  const [view, setView] = useState<ShelfView>(readShelfView);
+  const [words, setWords] = useState('');
+  const [drag, setDrag] = useState<{ id: string; over: { id: string; side: DropSide } | null } | null>(null);
+  const large = books.length >= largeShelfFrom;
+  const shown = large ? findBooks(books, words) : books;
+  const list = large && view === 'list';
+  // The cards of the upload stand among the books, not among the books found.
+  const entries = shelfEntries(shown, words.trim() ? null : props.upload?.queue ?? null, props.upload?.volumes ?? []);
+  const dragReason = move ? move.reason ?? (large && words.trim() ? searchMoveReason : null) : null;
+  const sideOf = (event: DragEvent<HTMLElement>): DropSide => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return list ? (event.clientY < rect.top + rect.height / 2 ? 'before' : 'after') : (event.clientX < rect.left + rect.width / 2 ? 'before' : 'after');
+  };
+  const dragOf = (book: Book): DragProps => !move ? {} : {
+    draggable: true,
+    ...(drag?.id === book.id ? { 'data-dragging': true } : {}),
+    ...(drag?.over?.id === book.id ? { 'data-drop': drag.over.side } : {}),
+    onDragStart: (event) => {
+      if (dragReason) {
+        event.preventDefault();
+        move.refuse(dragReason);
+        return;
+      }
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(bookDragType, book.id);
+      setDrag({ id: book.id, over: null });
+    },
+    onDragOver: (event) => {
+      if (!drag || drag.id === book.id) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const side = sideOf(event);
+      if (drag.over?.id !== book.id || drag.over.side !== side) setDrag({ id: drag.id, over: { id: book.id, side } });
+    },
+    onDrop: (event) => {
+      if (!drag) return;
+      event.preventDefault();
+      if (drag.id !== book.id) move.onDrop(drag.id, book.id, sideOf(event));
+      setDrag(null);
+    },
+    onDragEnd: () => setDrag(null),
+  };
   return (
     <>
-      <button className={styles.menuItem} onClick={onOpenRead} role="menuitem" type="button">
-        <BookOpen aria-hidden="true" size={17} />
-        Открыть чтение
-      </button>
-      {canEditManuscript ? (
-        <button className={styles.menuItem} onClick={onChangeCover} role="menuitem" type="button">
-          <Image aria-hidden="true" size={17} />
-          Изменить обложку
-        </button>
+      {large ? (
+        <div className={styles.toolbar}>
+          <SegmentedControl label="Вид книг" onValueChange={(next) => { setView(next); keepShelfView(next); }}
+            options={[{ label: 'Обложки', value: 'covers' }, { label: 'Списком', value: 'list' }]} value={view} />
+          <div className={styles.find}>
+            <SearchField label="Найти книгу" labelHidden onChange={(event) => setWords(event.target.value)} onClear={() => setWords('')}
+              placeholder="Найти книгу" value={words} />
+          </div>
+        </div>
       ) : null}
-      {canEditManuscript && book.chapterCount > 0 ? bookExportFormats.map(({ format, label }) => (
-        <button className={styles.menuItem} key={format} onClick={() => onDownload(format)} role="menuitem" type="button">
-          <Download aria-hidden="true" size={17} />
-          {label}
-        </button>
-      )) : null}
-      {canEditManuscript && onUpdateFromFile ? (
-        <button aria-disabled={updateDisabled || undefined} className={styles.menuItem} disabled={updateDisabled} onClick={onUpdateFromFile} role="menuitem" title={updateDisabled ? 'Обновление недоступно, пока идёт загрузка.' : undefined} type="button">
-          <FileUp aria-hidden="true" size={17} />
-          Обновить из файла
-        </button>
-      ) : null}
-      {canEditManuscript ? (
-        <button aria-disabled={deleteDisabled || undefined} className={styles.dangerMenuItem} disabled={deleteDisabled} onClick={onDelete} role="menuitem" title={deleteDisabled ? 'Удаление недоступно во время обработки.' : undefined} type="button">
-          <Trash2 aria-hidden="true" size={17} />
-          Удалить книгу
-        </button>
-      ) : null}
+      {entries.length === 0 ? (
+        <EmptyFilter onReset={() => setWords('')} reset="Сбросить поиск" words={`Ничего не нашлось по «${words.trim()}»`} />
+      ) : list ? (
+        <ul aria-label="Книги саги списком" className={styles.booksList}>
+          {entries.map((entry) => entry.kind === 'book'
+            ? <li key={entry.book.id}><BookEntry {...props} book={entry.book} drag={dragOf(entry.book)} shape="row" /></li>
+            : <li key={entry.volume.key}>{props.upload?.card(entry.volume, 'row')}</li>)}
+        </ul>
+      ) : (
+        <div className={styles.booksGrid}>
+          {entries.map((entry) => entry.kind === 'book'
+            ? <BookEntry {...props} book={entry.book} drag={dragOf(entry.book)} key={entry.book.id} shape="card" />
+            : <div className={styles.volumeSlot} key={entry.volume.key}>{props.upload?.card(entry.volume, 'card')}</div>)}
+        </div>
+      )}
     </>
+  );
+}
+
+function BookEntry({ book, drag, fileOver, finishing, hrefOf, onChanges, onFinish, onOpen, onOpenMenu, onRename, onRenameEnd, renaming, shape, stateOf }:
+  ShelfBooksProps & { book: Book; drag: DragProps; shape: 'card' | 'row' }) {
+  const state = stateOf(book);
+  const editing = renaming?.bookId === book.id;
+  const open = (event: MouseEvent<HTMLAnchorElement>) => {
+    // A new tab or window keeps the link of the browser.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onOpen(book);
+  };
+  const title: ReactNode = editing
+    ? <BookTitleField onCancel={onRenameEnd} onSave={(next) => onRename(book, next)} saving={renaming.saving} title={book.title} />
+    : (
+      <a aria-label={`Читать «${book.title}»`} className={styles.bookLink} draggable={drag.draggable ? false : undefined} href={hrefOf(book)}
+        onClick={open} title={book.title}>
+        <span className={styles.bookTitle}>{book.title}</span>
+      </a>
+    );
+  const menu = (
+    <IconButton aria-label={`Действия книги ${book.title}`} className={shape === 'card' ? styles.bookMenuButton : styles.rowMenuButton}
+      onClick={(event) => onOpenMenu(book, event.currentTarget)}>
+      <MoreHorizontal aria-hidden="true" size={18} />
+    </IconButton>
+  );
+  const word = (
+    <span className={styles.bookState}>
+      {state ? <Badge tone={tones[state.kind]}>{state.word}</Badge> : <span aria-hidden="true" className={styles.stateLoading} />}
+      {state?.finish ? (
+        <Button className={styles.stateAction} loading={finishing} onClick={onFinish} size="sm" variant="ghost">
+          <Play aria-hidden="true" size={14} />{finishReadingWord}
+        </Button>
+      ) : null}
+    </span>
+  );
+  // BR3.1: «Обновлена из файла сегодня в 14:20 · Что изменилось» for the 7 days of the last update.
+  const updated = book.update ? (
+    <p className={shape === 'card' ? styles.bookUpdate : styles.rowUpdate}>
+      <span>{updateLine(book.update)}</span>
+      {onChanges ? <> · <LinkAction className={styles.stateAction} onClick={() => onChanges(book)}>Что изменилось</LinkAction></> : null}
+    </p>
+  ) : null;
+  if (shape === 'row') {
+    return (
+      <article aria-label={book.title} className={styles.bookRow} data-book-id={book.id} data-file-over={fileOver === book.id || undefined} {...drag}>
+        <span aria-hidden="true" className={styles.rowCover} style={{ backgroundColor: book.coverColor ?? defaultCoverColour }} />
+        <span className={styles.rowVolume}>Книга {book.place}</span>
+        <span className={styles.rowTitle}>{title}</span>
+        {menu}
+        <span className={styles.rowMeta}>{formatCount(book.chapterCount, 'глава', 'главы', 'глав')} · {formatWordCount(book.wordCount)}</span>
+        {word}
+        {updated}
+      </article>
+    );
+  }
+  return (
+    <article aria-label={book.title} className={styles.bookCard} data-book-id={book.id} data-file-over={fileOver === book.id || undefined} {...drag}>
+      <BookCover book={book} decorative />
+      <div className={styles.bookInfo}>
+        {title}
+        {menu}
+        <p className={styles.bookMeta}>{bookMeta(book)}</p>
+        {word}
+        {updated}
+      </div>
+    </article>
   );
 }

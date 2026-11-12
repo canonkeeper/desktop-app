@@ -24,8 +24,26 @@ const MaxTitleLength = 200
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func ValidID(value string) bool { return uuidPattern.MatchString(value) }
-func ValidateBody(value string) error {
-	if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || strings.ContainsRune(value, 0) || utf8.RuneCountInString(value) > MaxTextLength {
+
+// ValidateText is a text of a note that must say something: the quote of a place.
+func ValidateText(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return ErrValidation
+	}
+	return validLength(value)
+}
+
+// ValidateThought is the thought of the author, the body of a note (specs/2026-11-11-ux7-notes.md NT1.2): beside a quote
+// it may be empty — a note from a selection is saved without a thought; a note of its own is its thought.
+func ValidateThought(value string, quoted bool) error {
+	if !quoted {
+		return ValidateText(value)
+	}
+	return validLength(value)
+}
+
+func validLength(value string) error {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, 0) || utf8.RuneCountInString(value) > MaxTextLength {
 		return ErrValidation
 	}
 	return nil
@@ -47,7 +65,7 @@ type Source struct {
 }
 
 func (source Source) Validate() error {
-	if ValidateBody(source.Quote) != nil {
+	if ValidateText(source.Quote) != nil {
 		return ErrValidation
 	}
 	switch source.Kind {
@@ -92,17 +110,24 @@ type ResolvedSource struct {
 type Resolution struct {
 	State  string          `json:"state"`
 	Source *ResolvedSource `json:"source,omitempty"`
+	// Place names the chapter of a note of the book while it lives (NT1.1, NT2.4): «Книга 2, гл. 12 „Белый порт“».
+	Place string `json:"place,omitempty"`
 }
 
+// Entry is a row of the catalog (specs/2026-11-11-ux7-notes.md NT1.3): the beginning of the thought and of the quote, the
+// saga the note belongs to and its place while it lives — a chapter by the place of the server, a chat by its title.
 type Entry struct {
 	ID           string    `json:"id"`
 	SourceKind   string    `json:"sourceKind"`
 	Title        string    `json:"title"`
 	Preview      string    `json:"preview"`
+	Quote        string    `json:"quote,omitempty"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 	ProjectTitle string    `json:"projectTitle,omitempty"`
 	BookTitle    string    `json:"bookTitle,omitempty"`
 	ChapterTitle string    `json:"chapterTitle,omitempty"`
+	Place        string    `json:"place,omitempty"`
+	ChatTitle    string    `json:"chatTitle,omitempty"`
 }
 type PageMeta struct {
 	HasMore    bool    `json:"hasMore"`

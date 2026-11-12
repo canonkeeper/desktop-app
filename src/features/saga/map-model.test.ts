@@ -3,7 +3,7 @@ import type { SagaMap, SagaMapCategory } from '../../entities/saga/api';
 import { countTo, formatHidden, linkAt, parseHidden, projectMap, resolveNodeKey, searchNodes, type MapFilter, type MapView } from './map-model';
 
 const chapter = (index: number) => ({
-  key: String(index + 1), chapterId: `c${index}`, bookId: 'b1', bookOrder: 1, bookTitle: 'Том 1', title: `Глава ${index + 1}`, number: index + 1,
+  key: String(index + 1), label: `Книга 1, гл. ${index + 1}`, chapterId: `c${index}`, bookId: 'b1', bookOrder: 1, bookTitle: 'Том 1', title: `Глава ${index + 1}`, number: index + 1,
 });
 
 function node(key: string, category: SagaMapCategory, chapters: number[], aliases: string[] = []) {

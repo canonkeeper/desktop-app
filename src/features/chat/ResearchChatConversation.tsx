@@ -1,5 +1,5 @@
 import { useCallback, useRef, type ReactNode, type RefObject } from 'react';
-import { Play, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { PendingSteer } from '../../entities/chat/steer';
 import { ChatFeed } from './feed/ChatFeed';
 import type { AgentJobStatus, CanonicalAgentTimelineEvent } from './feed/types';
@@ -10,19 +10,23 @@ import { formatRelativeTime } from '../../ui/copy';
 import { SourceLink } from '../../ui/controls/SourceLink';
 import { Button } from '../../ui/controls/Button';
 import { Alert } from '../../ui/feedback/Alert';
+import { ErrorBlock } from '../../ui/feedback/ErrorBlock';
 import { Card } from '../../ui/feedback/Card';
 import { Skeleton } from '../../ui/feedback/Skeleton';
 import { SupportReference } from '../../ui/feedback/SupportReference';
 import styles from './ResearchChatPanel.module.css';
-import { ChatNoteAction } from './ChatNoteAction';
-import type { ChatFailure } from './research-chat-presentation';
+import { AnswerActions, type AnswerAsk } from './AnswerActions';
+import { latestUserBody, type ChatFailure } from './research-chat-presentation';
 import type { FeedAction, FeedTurn } from './feed/feed-model';
+import type { TurnStop } from './feed/LiveStatus';
 import { RememberedUndo } from './RememberedUndo';
 import { ChatAttachmentCard } from './ChatAttachmentCard';
 import { useChatSlot } from './chat-slot';
 import type { ChatAttachmentSummary } from '../../entities/chat/api';
 
 interface ResearchChatConversationProps {
+  /** How the buttons under an answer put a question into the field (AA1.3); none for the reader of a saga. */
+  answerAsk?: AnswerAsk | undefined;
   chatId?: string;
   connection: AgentTimelineConnection;
   emptyMessage?: string;
@@ -30,6 +34,11 @@ interface ResearchChatConversationProps {
   examples?: ReactNode;
   failure?: ChatFailure | null;
   footer?: ReactNode;
+  /**
+   * «Что дальше» of the first answer of the saga (specs/2026-11-10-ux3-first-screen.md FS3.1): the panel gives it to the one
+   * chat of the saga; it stands under the buttons of the answer while the chat has that one question and no other goes.
+   */
+  firstAnswerNext?: ReactNode;
   /** What follows the last turn of the feed: the style choice of the first drawing. */
   feedFooter?: ReactNode;
   events: readonly CanonicalAgentTimelineEvent[];
@@ -41,7 +50,8 @@ interface ResearchChatConversationProps {
   onReturnToChats?: () => void;
   onOpenSource: (source: ChatSourceTarget, trigger: HTMLElement) => void;
   onStartNew?: () => void;
-  onStartSaved?: () => void;
+  /** The question of the chat not sent yet stands in the field: the page says so instead of showing it twice (AA2.8). */
+  savedInField?: boolean;
   onStartIndexing?: () => void;
   pendingQuestion?: string;
   /** Corrections the server took that the timeline does not show yet. */
@@ -54,10 +64,14 @@ interface ResearchChatConversationProps {
   savedSession?: ChatSession;
   /** When the Job of the running turn was created. */
   startedAt?: string;
-  savedBusy?: boolean;
+  /** «Остановить» of the running turn, in its status (specs/2026-11-10-ux4-chat-waiting.md CW2.4). */
+  stop?: TurnStop | undefined;
+  /** «Повторить вопрос» of a stopped or failed turn: the question goes into the field (CW2.8). */
+  onRepeatQuestion?: ((text: string) => void) | undefined;
 }
 
 export function ResearchChatConversation({
+  answerAsk,
   chatId = '',
   connection,
   emptyMessage,
@@ -65,6 +79,7 @@ export function ResearchChatConversation({
   failure,
   events,
   feedFooter,
+  firstAnswerNext,
   footer,
   jobStatus,
   loading,
@@ -72,7 +87,7 @@ export function ResearchChatConversation({
   onReturnToChats,
   onOpenSource,
   onStartNew,
-  onStartSaved,
+  savedInField = false,
   onStartIndexing,
   onAskSteer,
   pendingQuestion,
@@ -80,38 +95,50 @@ export function ResearchChatConversation({
   preparation,
   queuePosition,
   savedSession,
-  savedBusy,
   sourcePane,
   selectedSource,
   startedAt,
+  stop,
+  onRepeatQuestion,
 }: ResearchChatConversationProps) {
   // Stable renderers let unchanged remarks of a streaming turn skip re-rendering.
   const openSource = useRef(onOpenSource);
   openSource.current = onOpenSource;
   const renderSourceLink = useCallback((_event: CanonicalAgentTimelineEvent, citation: SourceCitation, label: ReactNode) => (
-    <SourceLink aria-expanded={sameChatSource(selectedSource, citation)} title="Открыть источник рядом с чатом" onClick={(click) => {
+    <SourceLink aria-expanded={sameChatSource(selectedSource, citation)} data-chat-source="" title="Открыть место рядом с чатом" onClick={(click) => {
       openSource.current({ chapterKey: citation.chapterKey, from: citation.from, to: citation.to }, click.currentTarget);
     }}>{label}</SourceLink>
   ), [selectedSource]);
-  const renderAssistantActions = useCallback((event: CanonicalAgentTimelineEvent, contentRef: RefObject<HTMLElement | null>) => (
-    <ChatNoteAction chatId={chatId} event={event} contentRef={contentRef} />
-  ), [chatId]);
+  // The count is the server's: one question in the timeline of the one chat, no other on its way (FS3.1).
+  const working = jobStatus === 'queued' || jobStatus === 'running' || jobStatus === 'canceling';
+  const next = firstAnswerNext && !working && !pendingQuestion && events.filter((event) => event.kind === 'user').length === 1 ? firstAnswerNext : null;
+  const renderAssistantActions = useCallback((event: CanonicalAgentTimelineEvent, contentRef: RefObject<HTMLElement | null>, answer: { continuations: readonly string[] }) => (
+    <AnswerActions ask={answerAsk} chatId={chatId} contentRef={contentRef} continuations={answer.continuations} event={event} next={next} />
+  ), [answerAsk, chatId, next]);
   // The drawings of the answers, of the questions and of the corrections are a block of the site (illustrations R8.1, R15.9).
   const drawings = useChatSlot()?.drawings;
   const renderActionRemembered = useCallback((action: FeedAction, turn: FeedTurn) => <RememberedUndo action={action} turn={turn} />, []);
   const renderQuestionAttachment = useCallback((attachment: ChatAttachmentSummary) => <ChatAttachmentCard attachment={attachment} />, []);
-  const notice = connection === 'reconnecting' && !failure
-    ? 'Связь прервалась — восстанавливаем. Ответ продолжает готовиться на сервере.'
-    : connection === 'connecting' && events.length === 0 && jobStatus
-      ? 'Подключаемся…'
-      : undefined;
+  // A short break of the stream: one quiet line under the status of the turn, no alarm (AA2.6, Ч-74).
+  const lostQuietly = (connection === 'reconnecting' || connection === 'closed') && !failure && working;
+  const notice = connection === 'connecting' && events.length === 0 && jobStatus ? 'Подключаемся…' : undefined;
+  // The failure of the Job of the turn is one block under its question, of the common look: what happened in the word
+  // «помощник», the count as it is, «Повторить вопрос» or «Новый чат», the code and «Написать нам» (CW2.8).
+  const latestQuestion = latestUserBody(events);
+  const turnEnd = failure?.count ? (
+    <ErrorBlock title={failure.title ?? 'Помощник не смог ответить'} cause={failure.text} kept={failure.count}
+      action={failure.action === 'ask_again' && onRepeatQuestion && latestQuestion ? { label: 'Повторить вопрос', onClick: () => onRepeatQuestion(latestQuestion) }
+        : failure.action === 'new_chat' && onStartNew ? { label: 'Новый чат', onClick: onStartNew } : undefined}>
+      <SupportReference code={failure.supportCode} />
+    </ErrorBlock>
+  ) : undefined;
   // What happened, what to do, the way out and the support code — one block (R4.2.3).
-  const error = failure ? <>
+  const error = failure && !turnEnd ? <>
     {failure.title ? <strong className={styles.failureTitle}>{failure.title}</strong> : null}
     <p className={styles.failureText}>{failure.text}</p>
     <SupportReference code={failure.supportCode} />
   </> : undefined;
-  const actions = [
+  const actions = turnEnd ? [] : [
     failure?.action === 'retry' && onRetry ? <Button key="retry" onClick={onRetry}>Повторить</Button> : null,
     failure?.action === 'new_chat' && onStartNew ? <Button key="new" onClick={onStartNew} variant="primary"><Plus aria-hidden="true" size={16} />Новый чат</Button> : null,
     failure?.action === 'books' && onStartIndexing ? <Button key="books" onClick={onStartIndexing} variant="primary">К книгам</Button> : null,
@@ -138,6 +165,7 @@ export function ResearchChatConversation({
           events={events}
           footer={feedFooter}
           jobStatus={jobStatus}
+          liveNote={lostQuietly ? 'Связь прервалась — восстанавливаю, ответ готовится' : undefined}
           notice={notice}
           onOpenSource={(source, trigger) => onOpenSource({ chapterKey: source.chapterKey, from: source.from, to: source.to }, trigger)}
           onAskSteer={onAskSteer}
@@ -154,20 +182,19 @@ export function ResearchChatConversation({
           renderSteerImages={drawings?.renderSteerImages}
           renderWorkshopLink={drawings?.renderWorkshopLink}
           startedAt={startedAt}
+          notify
+          turnEnd={turnEnd}
+          {...(stop ? { stop } : {})}
+          {...(onRepeatQuestion ? { onRepeatQuestion } : {})}
         /> : (
           <div className={styles.emptyConversation}>
             {notice ? <p role="status">{notice}</p> : null}
-            {savedSession?.savedAssignment ? (
-              <Card
-                aria-label="Сохранённый вопрос"
-                className={styles.savedAssignment}
-                role="region"
-                title="ВОПРОС СОХРАНЁН · ЕЩЁ НЕ ОТПРАВЛЕН"
-                actions={onStartSaved || onStartNew ? <>
-                  {onStartSaved ? <Button disabled={savedBusy} onClick={onStartSaved} variant="primary"><Play aria-hidden="true" size={16} />Отправить</Button> : null}
-                  {onStartNew ? <Button disabled={savedBusy} onClick={onStartNew} variant="outline"><Plus aria-hidden="true" size={16} />Новый чат</Button> : null}
-                </> : undefined}
-              >
+            {/* A question not sent stands once, in the field, with its one «Спросить» (AA2.8, Ч-33); the reader of the
+                saga, who has no field, reads it here. */}
+            {savedSession?.savedAssignment && savedInField ? (
+              <p className={styles.savedNote} role="status">Вопрос ещё не отправлен — он стоит в поле.</p>
+            ) : savedSession?.savedAssignment ? (
+              <Card aria-label="Сохранённый вопрос" className={styles.savedAssignment} role="region" title="ВОПРОС СОХРАНЁН · ЕЩЁ НЕ ОТПРАВЛЕН">
                 <p>{savedSession.savedAssignment.body}</p>
                 <small>Чат создан {formatRelativeTime(savedSession.createdAt)}</small>
               </Card>

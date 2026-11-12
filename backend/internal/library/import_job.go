@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 	"unicode/utf8"
 
+	"canonkeeper/backend/internal/domain/chapterfile"
 	"canonkeeper/backend/internal/domain/quota"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/jobworker"
 )
@@ -150,10 +153,14 @@ func importParseFailure(err error, extension string) jobs.Error {
 		return jobs.Error{Code: "import.unsupported_encoding", Message: "The file declares an encoding that is not supported."}
 	case errors.Is(err, ErrImportNoContent):
 		return jobs.Error{Code: "empty_import_content", Message: "Import file has no usable content."}
+	case errors.Is(err, errFB2ZipTooLarge):
+		return jobs.Error{Code: "import.fb2zip_too_large", Message: fmt.Sprintf("The book in the archive is larger than %d bytes.", MaxImportFileSizeBytes)}
+	case errors.Is(err, errFB2Document):
+		return jobs.Error{Code: "invalid_fb2_document", Message: "Import document is invalid."}
 	}
 	switch extension = strings.ToLower(strings.TrimSpace(extension)); extension {
-	case ".fb2", ".epub", ".docx":
-		return jobs.Error{Code: "invalid_" + strings.TrimPrefix(extension, ".") + "_document", Message: "Import document is invalid."}
+	case ".fb2", ".epub", ".docx", ".rtf", ".odt", ".fb2.zip":
+		return jobs.Error{Code: "invalid_" + strings.ReplaceAll(strings.TrimPrefix(extension, "."), ".", "") + "_document", Message: "Import document is invalid."}
 	default:
 		return jobs.Error{Code: "import.unsupported_media_type", Message: "Import file type is not supported."}
 	}
@@ -262,6 +269,16 @@ func parseImportBook(data []byte, extension string) (BookImport, error) {
 	case ".docx":
 		reader := bytes.NewReader(data)
 		return ParseDOCX(reader, int64(len(data)))
+	case ".rtf":
+		return ParseRTF(data)
+	case ".odt":
+		return ParseODT(bytes.NewReader(data), int64(len(data)))
+	case ".fb2.zip":
+		return ParseFB2Zip(bytes.NewReader(data), int64(len(data)))
+	case ".txt":
+		return ParseText(data, false)
+	case ".md":
+		return ParseText(data, true)
 	default:
 		return BookImport{}, ErrInvalidImportJob
 	}
@@ -353,7 +370,11 @@ func buildImportPlan(metadata ImportFileMetadata, parsed BookImport) (importPlan
 		if len(paragraphs) == 0 {
 			continue
 		}
-		title, err := validateImportedTitle(importChapterTitle(chapter.Title, len(plan.Chapters)+1), maxImportedChapterTitleLength)
+		chapterTitle := importChapterTitle(chapter.Title, len(plan.Chapters)+1)
+		if parsed.Unsplit {
+			chapterTitle = bookTitle
+		}
+		title, err := validateImportedTitle(chapterTitle, maxImportedChapterTitleLength)
 		if err != nil {
 			return importPlan{}, err
 		}
@@ -397,8 +418,7 @@ func importSourceFileTitle(sourceFileName string) string {
 	if base == "." || base == "/" {
 		return ""
 	}
-	title := strings.TrimSpace(strings.TrimSuffix(base, path.Ext(base)))
-	return title
+	return strings.TrimSpace(base[:len(base)-len(ImportFileKind(base))])
 }
 
 func importChapterTitle(title string, number int) string {
@@ -408,17 +428,20 @@ func importChapterTitle(title string, number int) string {
 	return chapterFallbackTitle(number)
 }
 
-func importParagraphInputs(values []string) []ParagraphInput {
+// importParagraphInputs are the paragraphs of a chapter with words as the book keeps them
+// (specs/2026-11-08-italic-bold-in-text.md TF4.1): markdown in the Markdown subset of their runs, the text their words.
+func importParagraphInputs(values []chapterfile.Paragraph) []ParagraphInput {
 	paragraphs := make([]ParagraphInput, 0, len(values))
 	for _, value := range values {
-		text := strings.TrimSpace(value)
+		runs := textface.Trimmed(value.Runs)
+		text := chapterfile.Paragraph{Runs: runs}.Text()
 		if text == "" {
 			continue
 		}
 		paragraphs = append(paragraphs, ParagraphInput{
 			Kind:     ParagraphKindParagraph,
 			Order:    len(paragraphs) + 1,
-			Markdown: text,
+			Markdown: textface.Markdown(runs),
 			Text:     &text,
 		})
 	}

@@ -1,5 +1,6 @@
 import type {
   GetSagaContentsOptions,
+  GetSagaFirstQuestionsOptions,
   GetSagaMapNodeOptions,
   SearchSagaMapOptions,
   GetSagaMapOptions,
@@ -13,6 +14,7 @@ import type {
 } from '../../../shared/api';
 import { MockApiError } from '../scenarios';
 import type { MockRepositoryContext } from './context';
+import { chapterKey, chapterPlace } from './places';
 
 type ChapterRef = Schema<'SagaChapterRef'>;
 type Mention = { name: string; aliases?: string[]; type?: string; note?: string; p: number };
@@ -118,6 +120,34 @@ const categoryOf = (type: string) => {
 const countTo = (chapters: readonly number[], to: number) => chapters.filter((chapter) => chapter <= to).length;
 type MapLink = { source: number; target: number; events: number[]; mentions: number[]; changes: number[] };
 const honestAt = (link: MapLink, to: number) => countTo(link.events, to) >= minSharedEvents || countTo(link.changes, to) > 0;
+const byName = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
+
+/**
+ * Вопросы о герое, о нём и его самом сильном соседе-персонаже и о главном месте — по правилам домена
+ * (`sagamemory.FirstQuestions`, specs/2026-11-10-first-questions.md FQ1.2, FQ1.3).
+ */
+function firstQuestions(map: OperationResponse<'getSagaMap', '200'>): OperationResponse<'getSagaFirstQuestions', '200'>['questions'] {
+  const hero = map.nodes.findIndex((node) => node.key === map.hero && node.category === 'character' && !node.material);
+  if (hero < 0) return [];
+  const name = map.nodes[hero]!.name;
+  const questions: OperationResponse<'getSagaFirstQuestions', '200'>['questions'] = [
+    { kind: 'hero', text: `${name}: кто это и что важного происходит с этим персонажем?` },
+  ];
+  const neighbor = map.links.flatMap((link) => {
+    const other = map.nodes[link.source === hero ? link.target : link.target === hero ? link.source : -1];
+    return other?.category === 'character' && !other.material ? [{ other, events: link.events.length, changes: link.changes?.length ?? 0 }] : [];
+  }).sort((left, right) => right.events - left.events || right.changes - left.changes || byName(left.other.name, right.other.name))[0];
+  if (neighbor) questions.push({ kind: 'pair', text: `${name} и ${neighbor.other.name}: что их связывает?` });
+  const mostNamed = (categories: readonly Schema<'SagaMapCategory'>[]) => map.nodes
+    .filter((node) => !node.material && categories.includes(node.category))
+    .sort((left, right) => right.chapters.length - left.chapters.length || byName(left.name, right.name))[0];
+  const place = mostNamed(['place']);
+  const thing = place ? undefined : mostNamed(['item', 'faction']);
+  if (place) questions.push({ kind: 'place', text: `Где впервые упоминается ${place.name} и что там происходит?` });
+  else if (thing) questions.push({ kind: 'place', text: `Где впервые упоминается ${thing.name}?` });
+  return questions;
+}
+
 const materialCategory: Partial<Record<Schema<'AuthorMaterial'>['kind'], Schema<'SagaMapCategory'>>> = { place: 'place', character: 'character', item: 'item', faction: 'faction' };
 
 export function createSagaOperations(context: MockRepositoryContext, materialsOf: (projectId: string) => readonly Schema<'AuthorMaterial'>[] = () => []) {
@@ -134,11 +164,13 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
     const indexed = new Set(context.state.indexedChapterIds[sourceView]);
     const carded = new Set(context.state.cardedChapterIds[sourceView]);
     const books = context.state.books.filter((book) => book.projectId === projectId).sort((left, right) => left.order - right.order);
-    const chapters = books.flatMap((book) => context.state.chapters
+    // RK1.6: the key keeps the stored order of the mock, «Книга N» is the place among the living books.
+    const chapters = books.flatMap((book, shelf) => context.state.chapters
       .filter((chapter) => chapter.bookId === book.id && indexed.has(chapter.id))
       .sort((left, right) => left.order - right.order)
       .map((chapter): ChapterRef => ({
-        key: `b${book.order}c${chapter.order}`, chapterId: chapter.id, bookId: book.id, bookOrder: book.order, bookTitle: book.title, title: chapter.title,
+        key: chapterKey(book.order, chapter.order), label: chapterPlace(shelf + 1, chapter.order, chapter.title),
+        chapterId: chapter.id, bookId: book.id, bookOrder: shelf + 1, bookTitle: book.title, title: chapter.title,
       })));
     const chapterCards = chapters.map((chapter) => (carded.has(chapter.chapterId) ? cards[chapter.chapterId] : undefined));
     const entries: Entry[] = [];
@@ -333,7 +365,28 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
   }
 
   async function getSagaMap(projectId: string, options: GetSagaMapOptions): Promise<OperationResponse<'getSagaMap', '200'>> {
-    const saga = version('getSagaMap', projectId, options.sourceView);
+    return mapOf(projectId, version('getSagaMap', projectId, options.sourceView));
+  }
+
+  /**
+   * Первые вопросы пустого чата — по готовой карте после решений автора, без модели (specs/2026-11-10-first-questions.md
+   * FQ1.4, FQ1.9). Карта первых карточек версии собирается следом за ними: как фоновые работники мока, она продвигается
+   * чтением — первое чтение застаёт её несобранной (`pending`), следующее — готовой.
+   */
+  async function getSagaFirstQuestions(projectId: string, options: GetSagaFirstQuestionsOptions): Promise<OperationResponse<'getSagaFirstQuestions', '200'>> {
+    const saga = version('getSagaFirstQuestions', projectId, options.sourceView);
+    const pending = context.state.sagaMapsPending.indexOf(`${projectId}:${options.sourceView}`);
+    if (pending >= 0) {
+      context.state.sagaMapsPending.splice(pending, 1);
+      return { questions: [], pending: true };
+    }
+    // Главы есть, а работа карточек по ним ещё не прошла — карта впереди: чат спросит снова (FQ1.9).
+    const carded = context.state.cardedChapterIds[options.sourceView];
+    if (saga.coverage.withCards === 0) return { questions: [], pending: saga.chapters.length > 0 && !saga.chapters.some((chapter) => carded.includes(chapter.chapterId)) };
+    return { questions: firstQuestions(mapOf(projectId, saga)), pending: false };
+  }
+
+  function mapOf(projectId: string, saga: ReturnType<typeof version>): OperationResponse<'getSagaMap', '200'> {
     const graph = graphOf(saga);
     const records = materialsOf(projectId);
     // specs/2026-11-04-saga-map.md R9.5: what the book does not know is a node without chapters, linked to what it names.
@@ -469,13 +522,17 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
         }),
       };
     }
-    const book = saga.bookRange('getSagaContents', options.bookId);
+    // A kept chapter key names its chapter and its book (specs/2026-11-11-ux7-reorder.md RK1.5); the mock has no
+    // ambiguous numbers, so it reads the key as it is.
+    const found = options.chapter ? saga.chapters.find((chapter) => chapter.key === options.chapter) : undefined;
+    const book = saga.bookRange('getSagaContents', found?.bookId ?? options.bookId);
     if (!book) return { coverage: saga.coverage, books: saga.bookList, chapters: [] };
     return {
       coverage: saga.coverage, books: saga.bookList, bookId: book.id,
       chapters: saga.chapters.flatMap((chapter, index) => (chapter.bookId === book.id ? [item(index)] : [])),
+      ...(found ? { chapter: found } : {}),
     };
   }
 
-  return { listSagaGlossary, getSagaMap, getSagaMapNode, searchSagaMap, getSagaContents, listSagaMapHidden, hideSagaMapItem, restoreSagaMapItem };
+  return { listSagaGlossary, getSagaMap, getSagaFirstQuestions, getSagaMapNode, searchSagaMap, getSagaContents, listSagaMapHidden, hideSagaMapItem, restoreSagaMapItem };
 }

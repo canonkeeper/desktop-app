@@ -51,7 +51,7 @@ describe('form controls', () => {
     expect(getComputedStyle(trigger).minHeight).toBe('40px');
     const coarseMinimums = [...document.styleSheets]
       .flatMap((sheet) => [...sheet.cssRules])
-      .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText === '(pointer: coarse)')
+      .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText === '(pointer: coarse), (max-width: 899px)')
       .flatMap((rule) => [...rule.cssRules])
       .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && trigger.matches(rule.selectorText))
       .map((rule) => rule.style.getPropertyValue('min-height'));
@@ -161,16 +161,16 @@ describe('form controls', () => {
   it('clears SearchField without shadow state and exposes loading and error semantics', () => {
     const onClear = vi.fn();
     const view = render(
-      <SearchField error="Поиск недоступен" label="Глобальный поиск" onChange={() => undefined} onClear={onClear} value="маяк" />,
+      <SearchField error="Поиск недоступен" label="Поиск по книгам" onChange={() => undefined} onClear={onClear} value="маяк" />,
     );
 
-    const search = screen.getByRole('searchbox', { name: 'Глобальный поиск' });
+    const search = screen.getByRole('searchbox', { name: 'Поиск по книгам' });
     expect(search.getAttribute('aria-invalid')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
     expect(onClear).toHaveBeenCalledTimes(1);
 
     view.rerender(
-      <SearchField label="Глобальный поиск" loading onChange={() => undefined} onClear={onClear} value="маяк" />,
+      <SearchField label="Поиск по книгам" loading onChange={() => undefined} onClear={onClear} value="маяк" />,
     );
     expect(search.getAttribute('aria-busy')).toBe('true');
     expect(screen.queryByRole('button', { name: 'Очистить поиск' })).toBeNull();

@@ -39,6 +39,31 @@ function baseProps() {
   };
 }
 
+// specs/2026-11-11-ux9-shelf-chat.md SC2.3 (W-5I, W-62, П-19): the search finds as the words are typed, says nothing of
+// how it is built, and names its keys only where there is a keyboard.
+describe('SearchPanel as the words are typed', () => {
+  it('searches a moment after the words change, without «Найти», and has no line of how it is built', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const props = baseProps();
+    const view = render(<SearchPanel {...props} searchTerm="" results={[]} />);
+    expect(screen.queryByText(/Область выше/u)).toBeNull();
+    view.rerender(<SearchPanel {...props} searchTerm="пор" results={[]} />);
+    view.rerender(<SearchPanel {...props} searchTerm="порт" results={[]} />);
+    expect(props.onRunSearch).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(props.onRunSearch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(props.api.searchChapters).toHaveBeenCalledWith(expect.objectContaining({ query: 'порт' }), expect.anything()));
+    vi.useRealTimers();
+  });
+
+  it.each([[true, 1], [false, 0]] as const)('names its keys where a keyboard is at hand (%s)', (keyboard, count) => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: keyboard && query === '(hover: hover) and (pointer: fine)', addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    render(<SearchPanel {...baseProps()} />);
+    expect(screen.queryAllByText(/Esc — закрыть/u)).toHaveLength(count);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('SearchPanel', () => {
   it('keeps a matching chapter from another saga visible when indexed text search fails', async () => {
     const props = baseProps();
@@ -64,8 +89,8 @@ describe('SearchPanel', () => {
 
     expect(screen.queryByRole('button', { name: 'Открыть абзац' })).toBeNull();
     expect(alert.textContent?.indexOf('Сервис не ответил.')).toBeLessThan(alert.textContent?.lastIndexOf('Код для поддержки: req_7f3a91'));
-    expect(decodeURIComponent(within(alert).getByRole('link', { name: 'Написать в поддержку' }).getAttribute('href') ?? ''))
-      .toContain('Canon Keeper: ошибка req_7f3a91');
+    expect(decodeURIComponent(within(alert).getByRole('link', { name: 'Написать нам' }).getAttribute('href') ?? ''))
+      .toContain('CanonKeeper: ошибка req_7f3a91');
     expect(within(alert).getByRole('button', { name: 'Повторить поиск' })).toBeTruthy();
   });
 

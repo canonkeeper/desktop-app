@@ -1,15 +1,22 @@
-.appShell {
-  min-height: 100vh;
-  padding: 32px;
-  background: var(--ck-background);
-  color: var(--ck-foreground);
-}
-
 /* Фон совпадает с приложением, чтобы ленивые чанки маршрутов не давали белую вспышку при загрузке. */
 .routeFallback {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--ck-background);
+}
+
+/* In the content of the one shell a loading page takes the content, not the window: the content does not scroll over a
+   place with nothing in it to reach by the keys (axe scrollable-region-focusable). */
+[data-page-content] .routeFallback {
+  min-height: 0;
+  flex: 1;
+}
+
+/* A page of the shell on its way: the form of a page in the content (PS3.1). */
+.pageFallback {
+  flex: 1;
+  min-height: 0;
+  padding: var(--ck-space-5);
 }
 
 .productSurface {
@@ -86,12 +93,32 @@
   box-shadow: var(--ck-shadow-lg);
 }
 
-.outageScrim {
-  padding: 24px;
+/* Over an open page (specs/2026-11-11-ux9-account.md AC3.3): a strip above it in the place of the notices, the page under it
+   stays readable and its text can be copied. */
+.outageStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 8px 28px;
+  background: var(--ck-color-warning);
+  color: var(--ck-foreground);
+  font-size: 14px;
 }
 
-.outageScrim .outageCard {
-  width: min(440px, calc(100vw - 32px));
+.outageIcon {
+  flex: none;
+  color: var(--ck-color-warning-foreground);
+}
+
+.outageStripText {
+  flex: 1 1 360px;
+  margin: 0;
+}
+
+.outageStripText strong {
+  font-weight: 600;
 }
 
 .outageCopy {
@@ -118,11 +145,11 @@
   line-height: 1.45;
 }
 
+/* «Проверяю… попытка 2» in the words of the page (AC3.3). */
 .outageMeta {
   margin: 0;
   color: var(--ck-muted-foreground);
-  font-family: var(--ck-font-mono);
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .outageCard > button {
@@ -144,89 +171,29 @@
   transform: translateX(-50%);
 }
 
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 32px;
+@media (max-width: 760px) {
+  .outageStrip {
+    padding: 10px 14px;
+  }
 }
 
-.header h1,
-.panel h2 {
-  margin: 0;
-  font-size: 28px;
-  line-height: 1.15;
-}
-
-.eyebrow {
-  margin: 0 0 6px;
-  color: var(--ck-muted-foreground);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.navButton,
-.activeNav {
-  min-height: 36px;
-  border: 1px solid var(--ck-border);
+/* «К содержимому» (specs/2026-11-10-ux1-shell.md SH2.3): out of sight until the focus comes to it, then over the top bar. */
+.skipLink {
+  position: fixed;
+  z-index: 1000;
+  top: 8px;
+  left: 8px;
   border-radius: var(--ck-radius-sm);
-  padding: 0 12px;
-  background: var(--ck-card);
-  color: var(--ck-foreground);
-  font: inherit;
-  cursor: pointer;
-}
-
-.activeNav {
+  padding: 10px 14px;
   background: var(--ck-ink);
   color: var(--ck-ink-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
 }
 
-.panel {
-  max-width: 760px;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-md);
-  padding: 24px;
-  background: var(--ck-card);
-}
-
-.copy {
-  max-width: 62ch;
-  margin: 0;
-  color: var(--ck-muted-foreground);
-  line-height: 1.6;
-}
-
-@media (max-width: 760px) {
-  .outageScrim {
-    align-items: end;
-    padding: 20px;
-  }
-
-  .outageScrim .outageCard {
-    width: 100%;
-  }
-
-  .appShell {
-    padding: 18px;
-  }
-
-  .header {
-    display: block;
-  }
-
-  .nav {
-    justify-content: flex-start;
-    margin-top: 18px;
-  }
-
+.skipLink:focus-visible,
+.skipLink:focus {
+  transform: none;
 }

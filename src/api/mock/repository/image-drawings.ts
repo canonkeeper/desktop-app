@@ -6,7 +6,7 @@ import type {
 } from '../../../shared/api';
 import { MockApiError } from '../scenarios';
 import type { MockRepositoryContext } from './context';
-import type { MockCharge, MockImageLayer, MockSagaImage } from './gallery-state';
+import { variantStagings, type MockCharge, type MockImageLayer, type MockSagaImage } from './gallery-state';
 import { createGalleryView, editorRoles } from './gallery-view';
 import { createIllustrationAccess } from './illustration-access';
 
@@ -15,6 +15,38 @@ type ImageOperationId = Parameters<MockRepositoryContext['projectFor']>[1];
 
 /** How the mock agent reads a change of a whole drawing and stages a new one (R21.14). */
 const mockReadings = ['сдержанная и естественная, приглушённые цвета', 'другая форма и цвет того, что меняется', 'самая выразительная: крупнее и драматичнее', 'неожиданная: другой свет и настроение'];
+/**
+ * The camera of «Сменить ракурс» as the backend holds it (specs/2026-11-11-drawing-angle.md DA2.1, DA2.2): the bounds, the
+ * capture of the point of the drawing by each axis and the words of the axes by their ranges. The page holds the same
+ * rule (src/features/drawing/camera.test.ts tests this copy by the one table of the server).
+ */
+export function mockAngle(body: { azimuth: number; elevation: number; distance: number }) {
+  const { azimuth, elevation, distance } = body;
+  if (![azimuth, elevation, distance].every(Number.isFinite) || Math.abs(azimuth) > 180 || elevation < -20 || elevation > 80 || distance < 0.5 || distance > 2) return null;
+  const held = {
+    azimuth: Math.abs(azimuth) <= 7 ? 0 : azimuth,
+    elevation: Math.abs(elevation) <= 7 ? 0 : elevation,
+    distance: Math.abs(distance - 1) <= 0.07 ? 1 : distance,
+  };
+  const words = mockAngleWords(held);
+  return words.length ? { ...held, words } : null;
+}
+
+export function mockAngleWords({ azimuth, distance, elevation }: { azimuth: number; elevation: number; distance: number }) {
+  const side = azimuth < 0 ? 'слева' : 'справа';
+  const around = Math.abs(azimuth);
+  const aside = around === 0 ? '' : around < 22.5 ? (azimuth < 0 ? 'чуть левее' : 'чуть правее') : around < 67.5 ? `${side} спереди`
+    : around < 112.5 ? side : around < 157.5 ? `${side} сзади` : 'сзади';
+  const height = elevation === 0 ? '' : elevation < 0 ? 'ниже' : elevation < 50 ? 'выше' : 'почти сверху';
+  const reach = distance === 1 ? '' : distance < 1 ? 'ближе' : 'дальше';
+  return [aside, height, reach].filter(Boolean);
+}
+
+/** What a version of an angle keeps as asked of it, as the backend writes it (illustrations.AnglePrompt). */
+function anglePromptOf(words: readonly string[]) {
+  return `Та же сцена с другой точки обзора: камера ${words.join(', ')}.`;
+}
+
 /** The instruction of «Вырезать фон», as the backend has it (R18.3, R24.2). */
 const mockCutoutInstruction = 'Вырежи главного героя или предмет этого рисунка: только он, без фона; лицо, позу и цвета не меняй.';
 
@@ -41,13 +73,11 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
   const access = createIllustrationAccess(context);
 
   /**
-   * The right to illustrations and images_per_day of the actor (R11.2, R5.1); what it spent, so a
-   * drawing stopped by the provider's image limit gives it back (R13.6).
+   * The right to draw and images_per_day of the actor (TR6.1, R5.1); what it spent, so a drawing stopped by the
+   * provider's image limit gives it back (R13.6).
    */
   function reserveImages(operationId: ImageOperationId): MockCharge {
-    const trial = access.viewOf(context.currentPrincipalId()).state === 'trial';
-    access.reserveDrawings(operationId, 1);
-    return trial ? 'trial' : 'quota';
+    return access.reserveDrawings(operationId, 1).charge ?? 'quota';
   }
 
   function readyImage(operationId: ImageOperationId, projectId: string, number: number) {
@@ -139,6 +169,28 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
   }
 
   /**
+   * «Сменить ракурс» (specs/2026-11-11-drawing-angle.md DA2.1–DA2.3): a version of the branch from the drawing that keeps
+   * its camera and the caption of the server; the artist gets the drawing alone, so no reference goes along.
+   */
+  async function changeProjectImageAngle(
+    projectId: string, number: number, body: OperationRequest<'changeProjectImageAngle'>, options: RequiredIdempotencyOptions,
+  ): Promise<OperationResponse<'changeProjectImageAngle', '201'>> {
+    context.applyOperation('changeProjectImageAngle');
+    requireEditor('changeProjectImageAngle', projectId);
+    const angle = mockAngle(body);
+    if (!angle) throw new MockApiError(400, 'The camera stands where the drawing was drawn from, or out of its bounds.', 'changeProjectImageAngle', 'validation_failed');
+    const base = readyImage('changeProjectImageAngle', projectId, number);
+    const { words, ...camera } = angle;
+    return context.idempotentCommand('changeProjectImageAngle', projectId, options, { number, ...camera }, () => {
+      const charge = reserveImages('changeProjectImageAngle');
+      return view(startDrawing(projectId, {
+        ...branchOf(base), referenceImages: [], prompt: anglePromptOf(words), baseImage: number, charge,
+        angle: { ...camera, label: `ракурс: ${words.join(', ')}` },
+      }));
+    });
+  }
+
+  /**
    * What the mock agent starts in a chat turn with saga.draw, base_image and no region (R21.1, R24.3): a version
    * of the branch or, with variants, a group to choose from. It is no operation of the API.
    */
@@ -169,15 +221,16 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
     const invalid = (note.length > 4000)
       || (original.enlarged && (note || body.aspect || references))
       || (original.transparent && original.baseImage && (body.aspect || references))
+      || (original.angle && original.baseImage && (body.aspect || references || (body.variants ?? 1) > 1))
       || (references && (references.includes(number) || new Set(references).size !== references.length || new Set([...references, ...(original.attachedImages ?? [])]).size > 9));
     if (invalid) throw new MockApiError(400, 'This regeneration cannot be drawn.', 'createProjectImageVariant', 'validation_failed');
     for (const item of references ?? []) readyImage('createProjectImageVariant', projectId, item);
-    // 2–4 variants are a group by as many stagings of the brief of the drawing, as the backend draws them (IW3.7, S3.4).
+    // 2–4 variants are a group by the stagings of the brief of the drawing and the picked ones, as the backend draws them (IW3.7, DF3.3).
     const count = body.variants ?? 1;
     const drawing = gallery().drawings.find((item) => item.projectId === projectId && item.branch === original.branch);
     if (count > 1) {
-      if (!drawing || drawing.brief.staging.length !== count || original.enlarged || (original.transparent && original.baseImage)) {
-        throw new MockApiError(400, 'As many stagings as variants.', 'createProjectImageVariant', 'validation_failed');
+      if (!drawing || original.enlarged || (original.transparent && original.baseImage)) {
+        throw new MockApiError(400, 'This group cannot be drawn.', 'createProjectImageVariant', 'validation_failed');
       }
       if (gallery().images.some((item) => item.projectId === projectId && item.branch === original.branch && item.variantGroup)) {
         throw new MockApiError(409, 'The variant is not chosen yet.', 'createProjectImageVariant', 'illustrations.variant_pending');
@@ -186,7 +239,7 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
     return context.idempotentCommand('createProjectImageVariant', projectId, options, { number, ...body }, () => {
       const charge = reserveImages('createProjectImageVariant');
       if (count > 1) {
-        const [first] = startVariants(projectId, count, drawing!.brief.staging, {
+        const [first] = startVariants(projectId, count, variantStagings(drawing!.brief.staging, count), {
           ...branchOf(original), prompt: original.prompt, style: original.style, charge,
           ...(body.aspect ? { aspect: body.aspect } : {}),
           ...(references ? { referenceImages: [...references] } : {}),
@@ -201,6 +254,7 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
         ...(note ? { regenerateNote: note } : {}),
         ...(original.attachedImages ? { attachedImages: [...original.attachedImages] } : {}),
         ...(original.enlarged ? { enlarged: true as const, enlargedSize: original.enlargedSize } : {}),
+        ...(original.angle ? { angle: { ...original.angle }, referenceImages: [] } : {}),
       }));
     });
   }
@@ -252,7 +306,11 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
       throw new MockApiError(400, 'Too many images chosen, or the drawing itself.', 'createProjectImageLayer', 'validation_failed');
     }
     for (const item of references) readyImage('createProjectImageLayer', projectId, item);
-    return context.idempotentCommand('createProjectImageLayer', projectId, options, { number, instruction, region, brush: Boolean(body.brushMask), ...attached, references: body.references }, () => {
+    return context.idempotentCommand('createProjectImageLayer', projectId, options, { number, instruction, region, brush: Boolean(body.brushMask), ...attached, references: body.references, ...(body.whenFree ? { whenFree: true } : {}) }, () => {
+      // «Нарисовать, когда освободится» of the edit (specs/2026-11-12-ux12-drawings.md DW5.1): after the last edit stopped by the service.
+      const last = image.layers.reduce<MockImageLayer | undefined>((latest, item) => (!latest || item.position > latest.position ? item : latest), undefined);
+      const reset = last?.status === 'failed' && last.errorCode === 'draw_limited' && last.retryAt ? Date.parse(last.retryAt) : Number.NaN;
+      if (body.whenFree && !(reset > Date.now())) throw new MockApiError(400, 'The service of drawings names no time ahead.', 'createProjectImageLayer', 'illustrations.not_busy');
       const charge = reserveImages('createProjectImageLayer');
       if (image.layers.length >= 30) throw new MockApiError(409, 'Flatten the layers first.', 'createProjectImageLayer', 'conflict');
       const layer: MockImageLayer = {
@@ -260,6 +318,7 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
         position: (image.layers.at(-1)?.position ?? 0) + 1, status: 'drawing', phase: 'queued', partialFrame: 0,
         instruction, region, brush: Boolean(body.brushMask), visible: true, createdBy: context.currentPrincipalId(),
         errorCode: null, errorMessage: null, retryAt: null, createdAt: new Date().toISOString(), readyAt: null, facts: currentFacts(image), charge, ...attached,
+        ...(body.whenFree ? { startsAfter: new Date(reset + 30_000).toISOString() } : {}),
       };
       image.layers.push(layer);
       return view(image);
@@ -323,11 +382,11 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
     requireEditor('createIllustrationStyleSketches', projectId);
     const name = body.subject?.trim() || 'Мара';
     return context.idempotentCommand('createIllustrationStyleSketches', projectId, options, { name }, () => {
-      const count = access.reserveSketches('createIllustrationStyleSketches', projectId, sketchStyles.length);
+      const { allowed: count, free } = access.reserveSketches('createIllustrationStyleSketches', projectId, sketchStyles.length);
       const description = `Портрет персонажа «${name}» по пояс.`;
       return {
         data: sketchStyles.slice(0, count).map((style) => view(startDrawing(projectId, {
-          kind: 'character', aspect: 'portrait', subjects: [{ key: name.toLowerCase(), name }], style, sketch: true,
+          kind: 'character', aspect: 'portrait', subjects: [{ key: name.toLowerCase(), name }], style, sketch: true, ...(free ? { freeSketch: true } : {}),
           prompt: description, title: `Эскиз: ${style.split(' — ')[0]!.toLowerCase()}`,
         }))),
       };
@@ -336,6 +395,7 @@ export function createImageDrawingOperations(context: MockRepositoryContext) {
 
   return {
     cutoutProjectImage,
+    changeProjectImageAngle,
     agentDrawVersion,
     createProjectImageVariant,
     enlargeProjectImage,

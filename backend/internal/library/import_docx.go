@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"canonkeeper/backend/internal/domain/chapterfile"
+	"canonkeeper/backend/internal/domain/textface"
 )
 
 const (
@@ -29,7 +31,8 @@ const (
 // headings: style «Heading1»/«Заголовок1», a style named «heading 1» in word/styles.xml (Russian
 // Word saves it under the id «1»), a style based on one, or outline level 0. A manuscript without
 // such headings is split at its chapter title lines («Глава 618. Колизей»). Chapters are assembled
-// while document.xml is read and only up to the book limits.
+// while document.xml is read and only up to the book limits. A run is in the italic and bold Word
+// shows by its styles (specs/2026-11-08-italic-bold-in-text.md TF4.2).
 func ParseDOCX(reader io.ReaderAt, size int64) (BookImport, error) {
 	archive, err := zip.NewReader(reader, size)
 	if err != nil {
@@ -55,16 +58,20 @@ func ParseDOCX(reader io.ReaderAt, size int64) (BookImport, error) {
 		return BookImport{}, err
 	}
 	headingStyles := map[string]bool{}
+	var styleContents []byte
 	if styles != nil {
-		styleContents, err := readDOCXPart(styles)
-		if err != nil {
+		if styleContents, err = readDOCXPart(styles); err != nil {
 			return BookImport{}, err
 		}
 		if headingStyles, err = parseDOCXHeadingStyles(styleContents); err != nil {
 			return BookImport{}, err
 		}
 	}
-	book, err := docxBook(contents, headingStyles)
+	faces, err := chapterfile.ReadStyles(styleContents)
+	if err != nil {
+		return BookImport{}, fmt.Errorf("parse docx styles: %w", err)
+	}
+	book, err := docxBook(contents, docxStyles{headings: headingStyles, faces: faces})
 	if err != nil {
 		return BookImport{}, err
 	}
@@ -106,18 +113,38 @@ func readDOCXDocument(reader io.Reader) ([]byte, error) {
 
 type docxParagraph struct {
 	text    string
+	runs    []chapterfile.Run
 	heading bool
 	title   bool
 }
 
-// scanDOCXParagraphs passes the non-empty paragraphs of document.xml to visit in order.
-func scanDOCXParagraphs(contents []byte, headingStyles map[string]bool, visit func(docxParagraph) error) error {
+// docxStyles are what the styles of a Word document tell the import: the styles of a level-1 heading and the faces.
+type docxStyles struct {
+	headings map[string]bool
+	faces    chapterfile.Styles
+}
+
+// scanDOCXParagraphs passes the non-empty paragraphs of document.xml to visit in order, in the runs of their faces; a
+// space between two faces has the face both have, so the Markdown of the book has no face that starts with a space.
+func scanDOCXParagraphs(contents []byte, styles docxStyles, visit func(docxParagraph) error) error {
 	reader := newImportXMLReader(bytes.NewReader(contents))
-	var paragraph strings.Builder
+	var runs []chapterfile.Run
+	var run strings.Builder
 	paragraphDepth := 0
 	paragraphPropertiesDepth := 0
 	textDepth := 0
 	paragraphIsHeading1, paragraphIsTitle, paragraphIsBookAuthor := false, false, false
+	// The face of the run being read: its own toggles and its character style, and the style of its paragraph.
+	runDepth, runPropertiesDepth, changeDepth := 0, 0, 0
+	var own chapterfile.Faces
+	paragraphStyle, runStyle := "", ""
+	endRun := func() {
+		if run.Len() > 0 {
+			italic, bold := styles.faces.Face(paragraphStyle, runStyle, own)
+			runs = append(runs, chapterfile.Run{Text: run.String(), Italic: italic, Bold: bold})
+		}
+		run.Reset()
+	}
 	for {
 		token, err := reader.Token()
 		if err == io.EOF {
@@ -128,34 +155,53 @@ func scanDOCXParagraphs(contents []byte, headingStyles map[string]bool, visit fu
 		}
 		switch value := token.(type) {
 		case xml.StartElement:
-			if isDOCXElement(value.Name, "p") {
+			switch {
+			case isDOCXElement(value.Name, "p"):
 				if paragraphDepth == 0 {
-					paragraph.Reset()
+					runs, paragraphStyle = nil, ""
 					paragraphPropertiesDepth = 0
 					paragraphIsHeading1, paragraphIsTitle, paragraphIsBookAuthor = false, false, false
 				}
 				paragraphDepth++
-			} else if paragraphDepth > 0 && isDOCXElement(value.Name, "pPr") {
+			case paragraphDepth > 0 && isDOCXElement(value.Name, "pPr"):
 				paragraphPropertiesDepth++
-			} else if paragraphPropertiesDepth > 0 && isDOCXElement(value.Name, "pStyle") {
+			case paragraphPropertiesDepth > 0 && runDepth == 0 && isDOCXElement(value.Name, "pStyle"):
 				style := docxAttribute(value, "val")
-				if isDOCXHeading1Style(style) || headingStyles[style] {
+				paragraphStyle = style
+				if isDOCXHeading1Style(style) || styles.headings[style] {
 					paragraphIsHeading1 = true
 				}
 				paragraphIsTitle = style == docxTitleStyle
 				paragraphIsBookAuthor = style == docxBookAuthorStyle
-			} else if paragraphPropertiesDepth > 0 && isDOCXElement(value.Name, "outlineLvl") {
+			case paragraphPropertiesDepth > 0 && isDOCXElement(value.Name, "outlineLvl"):
 				paragraphIsHeading1 = strings.TrimSpace(docxAttribute(value, "val")) == "0"
-			} else if paragraphDepth > 0 && isDOCXElement(value.Name, "t") {
+			case paragraphDepth > 0 && isDOCXElement(value.Name, "r"):
+				if runDepth == 0 {
+					endRun()
+					own, runStyle = chapterfile.Faces{}, ""
+				}
+				runDepth++
+			case runDepth > 0 && isDOCXElement(value.Name, "rPr"):
+				runPropertiesDepth++
+			case runPropertiesDepth > 0 && isDOCXElement(value.Name, "rPrChange"):
+				// The properties a revision of formatting kept are not the face of the run.
+				changeDepth++
+			case runPropertiesDepth > 0 && changeDepth == 0 && isDOCXElement(value.Name, "rStyle"):
+				runStyle = docxAttribute(value, "val")
+			case runPropertiesDepth > 0 && changeDepth == 0 && isDOCXElement(value.Name, "i"):
+				own.Italic = chapterfile.ToggleOf(value)
+			case runPropertiesDepth > 0 && changeDepth == 0 && isDOCXElement(value.Name, "b"):
+				own.Bold = chapterfile.ToggleOf(value)
+			case paragraphDepth > 0 && isDOCXElement(value.Name, "t"):
 				textDepth++
-			} else if paragraphDepth > 0 && isDOCXElement(value.Name, "tab") {
-				paragraph.WriteByte('\t')
-			} else if paragraphDepth > 0 && (isDOCXElement(value.Name, "br") || isDOCXElement(value.Name, "cr")) {
-				paragraph.WriteByte('\n')
+			case runDepth > 0 && isDOCXElement(value.Name, "tab"):
+				run.WriteByte('\t')
+			case runDepth > 0 && (isDOCXElement(value.Name, "br") || isDOCXElement(value.Name, "cr")):
+				run.WriteByte('\n')
 			}
 		case xml.CharData:
 			if paragraphDepth > 0 && textDepth > 0 {
-				paragraph.Write(value)
+				run.Write(value)
 			}
 		case xml.EndElement:
 			if textDepth > 0 && isDOCXElement(value.Name, "t") {
@@ -164,10 +210,25 @@ func scanDOCXParagraphs(contents []byte, headingStyles map[string]bool, visit fu
 			if paragraphPropertiesDepth > 0 && isDOCXElement(value.Name, "pPr") {
 				paragraphPropertiesDepth--
 			}
+			if changeDepth > 0 && isDOCXElement(value.Name, "rPrChange") {
+				changeDepth--
+			}
+			if runPropertiesDepth > 0 && isDOCXElement(value.Name, "rPr") {
+				runPropertiesDepth--
+			}
+			if runDepth > 0 && isDOCXElement(value.Name, "r") {
+				runDepth--
+				if runDepth == 0 {
+					endRun()
+				}
+			}
 			if paragraphDepth > 0 && isDOCXElement(value.Name, "p") {
 				paragraphDepth--
-				if text := strings.TrimSpace(paragraph.String()); paragraphDepth == 0 && text != "" && !paragraphIsBookAuthor {
-					if err := visit(docxParagraph{text: text, heading: paragraphIsHeading1, title: paragraphIsTitle}); err != nil {
+				endRun()
+				trimmed := textface.SpacesOutside(textface.Trimmed(runs))
+				text := chapterfile.Paragraph{Runs: trimmed}.Text()
+				if paragraphDepth == 0 && text != "" && !paragraphIsBookAuthor {
+					if err := visit(docxParagraph{text: text, runs: trimmed, heading: paragraphIsHeading1, title: paragraphIsTitle}); err != nil {
 						return err
 					}
 				}
@@ -179,8 +240,8 @@ func scanDOCXParagraphs(contents []byte, headingStyles map[string]bool, visit fu
 // docxBook splits the paragraphs at their chapter starts and stops at the book limits. A single
 // short line before the first chapter («13 том. Черновик») is the book title; longer front matter
 // stays an untitled chapter. Chapters left without paragraphs are dropped later by the import plan.
-func docxBook(contents []byte, headingStyles map[string]bool) (BookImport, error) {
-	starts, err := docxChapterStarts(contents, headingStyles)
+func docxBook(contents []byte, styles docxStyles) (BookImport, error) {
+	starts, err := docxChapterStarts(contents, styles)
 	if err != nil {
 		return BookImport{}, err
 	}
@@ -203,16 +264,16 @@ func docxBook(contents []byte, headingStyles map[string]bool) (BookImport, error
 		if err := limits.addParagraph(paragraph.text); err != nil {
 			return err
 		}
-		chapter.Paragraphs = append(chapter.Paragraphs, paragraph.text)
+		chapter.Paragraphs = append(chapter.Paragraphs, chapterfile.Paragraph{Runs: paragraph.runs})
 		return nil
 	}
 	// titleLine holds the first paragraph until the next one tells whether it is the book title.
 	var titleLine *docxParagraph
 	first := true
-	err = scanDOCXParagraphs(contents, headingStyles, func(paragraph docxParagraph) error {
+	err = scanDOCXParagraphs(contents, styles, func(paragraph docxParagraph) error {
 		if first {
 			first = false
-			if !starts(paragraph) && (paragraph.title || utf8.RuneCountInString(paragraph.text) <= maxDOCXTitleLineRunes) {
+			if !starts(paragraph) && (paragraph.title || utf8.RuneCountInString(paragraph.text) <= maxTitleLineRunes) {
 				titleLine = &paragraph
 				return nil
 			}
@@ -241,9 +302,9 @@ var errDOCXChapterStartsKnown = errors.New("library: docx chapter starts are kno
 // docxChapterStarts tells where chapters start: at level-1 headings, or at chapter title lines when
 // there are fewer than two headings but at least two title lines. It reads document.xml only until
 // a second heading settles it.
-func docxChapterStarts(contents []byte, headingStyles map[string]bool) (func(docxParagraph) bool, error) {
+func docxChapterStarts(contents []byte, styles docxStyles) (func(docxParagraph) bool, error) {
 	headings, titleLines := 0, 0
-	err := scanDOCXParagraphs(contents, headingStyles, func(paragraph docxParagraph) error {
+	err := scanDOCXParagraphs(contents, styles, func(paragraph docxParagraph) error {
 		if paragraph.heading {
 			headings++
 		}
@@ -265,16 +326,9 @@ func docxChapterStarts(contents []byte, headingStyles map[string]bool) (func(doc
 	return func(paragraph docxParagraph) bool { return paragraph.heading }, nil
 }
 
-const maxDOCXTitleLineRunes = 120
-
-// docxChapterTitleLine matches a short line that names a chapter by itself: «Глава 618. Колизей»,
-// «Глава XII», «Пролог», «Эпилог: …»; prose like «Глава гильдии кивнул.» is not a title.
-var docxChapterTitlePattern = regexp.MustCompile(`^(?:глава\s+(?:\d+|[ivxlcdm]+)|пролог|эпилог|интерлюдия)(?:$|[\s.:,)—–-])`)
-
+// docxChapterTitleLine is the line that names a chapter (chapterTitleLine) as a paragraph of Word.
 func docxChapterTitleLine(paragraph docxParagraph) bool {
-	text := strings.ToLower(paragraph.text)
-	return utf8.RuneCountInString(text) <= maxDOCXTitleLineRunes && !strings.ContainsAny(text, "\n\t") &&
-		docxChapterTitlePattern.MatchString(text)
+	return chapterTitleLine(paragraph.text)
 }
 
 // parseDOCXHeadingStyles returns the ids of the paragraph styles that are level-1 headings by

@@ -65,6 +65,12 @@ func TestUploadImportQueueItemAcceptsProductionParsers(t *testing.T) {
 		{name: "fb2", fileName: "volume.fb2", mimeType: "application/x-fictionbook+xml", content: readFileForImportQueueTest(t, "testdata/simple.fb2")},
 		{name: "epub", fileName: "volume.epub", mimeType: "application/epub+zip", content: readFileForImportQueueTest(t, "testdata/simple.epub")},
 		{name: "docx", fileName: "volume.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", content: buildDOCXForTest(t, docxEntryForTest{name: "word/document.xml", body: document})},
+		// specs/2026-11-10-book-file-kinds.md K1, K6.2: the new kinds pass the same preflight; a text named by nothing too.
+		{name: "txt", fileName: "volume.txt", mimeType: "", content: []byte(textBookForTest)},
+		{name: "md", fileName: "volume.md", mimeType: "text/markdown", content: []byte("# Глава 1\n\nКорабль *вошёл* в гавань.\n")},
+		{name: "rtf", fileName: "volume.rtf", mimeType: "text/rtf", content: []byte(`{\rtf1\ansi Imported\par}`)},
+		{name: "odt", fileName: "volume.odt", mimeType: "application/vnd.oasis.opendocument.text", content: odtForTest(t, "", `<text:p>Imported</text:p>`, "", "")},
+		{name: "fb2.zip", fileName: "volume.fb2.zip", mimeType: "application/x-zip-compressed", content: zipForTest(t, zipEntryForTest{name: "volume.fb2", body: readFileForImportQueueTest(t, "testdata/simple.fb2")})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -135,7 +141,7 @@ func TestImportQueueServiceIdempotencyAndVersion(t *testing.T) {
 		ProjectID: "project-1", ActorUserID: "user-1", IdempotencyKey: "idem-queue-create-1",
 		RequestMethod: http.MethodPost, RequestPath: "/api/v1/projects/project-1/import-queues",
 		SessionWriteProof: validImportQueueWriteProofForTest(),
-		Items:             []CreateImportQueueItemInput{{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-4.fb2", DetectedBookOrder: 1}},
+		Items:             []CreateImportQueueItemInput{{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-4.fb2"}},
 	}
 	first, err := service.CreateImportQueue(context.Background(), input)
 	if err != nil {
@@ -182,14 +188,49 @@ func TestImportQueueServiceIdempotencyAndVersion(t *testing.T) {
 	if _, err := service.UploadImportQueueItem(context.Background(), upload); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed upload idempotency error = %v, want %v", err, ErrConflict)
 	}
+}
 
-	_, err = service.SaveImportQueueDraft(context.Background(), SaveImportQueueDraftInput{
-		ProjectID: "project-1", QueueID: queue.ID, ActorUserID: "user-1", ExpectedVersion: 1,
+// specs/2026-11-11-ux7-upload.md UP3.2: in a running queue the file of a volume that did not read is «Заменить файл» —
+// the same operation, checked as any file, admitted with its request; «Пропустить» takes the volume out. A reader does
+// neither.
+func TestARunningQueueTakesANewFileOrASkipOfAVolumeThatDidNotRead(t *testing.T) {
+	service, store := newImportQueueServiceForTest("user-1", projects.RoleEditor)
+	queue := createImportQueueForTest(t, service)
+	running := store.queues[queue.ID]
+	running.Status = ImportQueueRunning
+	running.Items[0].ImportJobID, running.Items[0].ImportJobStatus = "job-1", string(jobs.StatusFailed)
+
+	replaced, err := service.UploadImportQueueItem(context.Background(), UploadImportQueueItemInput{
+		ProjectID: "project-1", QueueID: queue.ID, ItemID: queue.Items[0].ID, ActorUserID: "user-1",
+		FileName: "volume-4-fixed.fb2", MIMEType: "application/x-fictionbook+xml", Content: readFileForImportQueueTest(t, "testdata/simple.fb2"),
+		IdempotencyKey: "idem-queue-replace-1", RequestMethod: http.MethodPost,
+		RequestPath:       "/projects/project-1/import-queues/" + queue.ID + "/items",
 		SessionWriteProof: validImportQueueWriteProofForTest(),
-		Items:             []SaveImportQueueItemInput{{ItemID: queue.Items[0].ID, Position: 1, ConfirmedBookOrder: 1}},
 	})
-	if !errors.Is(err, ErrConflict) {
-		t.Fatalf("stale save error = %v, want %v", err, ErrConflict)
+	if err != nil {
+		t.Fatalf("UploadImportQueueItem(running) error = %v", err)
+	}
+	if store.lastReplaceInput == nil || store.putImportQueueItemCalls != 0 ||
+		store.lastReplaceInput.PreflightStatus != ImportQueueItemReady || store.lastReplaceInput.RequestFingerprint == "" ||
+		replaced.ImportJobStatus != string(jobs.StatusQueued) || replaced.SourceFileName != "volume-4-fixed.fb2" {
+		t.Fatalf("replacement = %#v with store input %#v", replaced, store.lastReplaceInput)
+	}
+
+	running.Items[0].ImportJobStatus = string(jobs.StatusFailed)
+	skipped, err := service.SkipImportQueueItem(context.Background(), SkipImportQueueItemInput{
+		ProjectID: "project-1", QueueID: queue.ID, ItemID: queue.Items[0].ID, ActorUserID: "user-1",
+		SessionWriteProof: validImportQueueWriteProofForTest(),
+	})
+	if err != nil || skipped.Items[0].SkippedAt == nil {
+		t.Fatalf("SkipImportQueueItem() = %#v, %v", skipped, err)
+	}
+
+	reader, _ := newImportQueueServiceForTest("reader", projects.RoleViewer)
+	if _, err := reader.SkipImportQueueItem(context.Background(), SkipImportQueueItemInput{
+		ProjectID: "project-1", QueueID: queue.ID, ItemID: queue.Items[0].ID, ActorUserID: "reader",
+		SessionWriteProof: validImportQueueWriteProofForTest(),
+	}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("skip by a reader = %v, want ErrForbidden", err)
 	}
 }
 
@@ -207,7 +248,7 @@ func TestImportQueueHTTPSurfaceRequiresAuthAndCSRF(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			service, _ := newImportQueueServiceForTest(test.user, test.role)
 			handler := newImportHandlerForTest(service, fakeImportAuthForTest(test.user))
-			req := newImportQueueJSONRequestForTest(t, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2","detectedBookOrder":1}]}`)
+			req := newImportQueueJSONRequestForTest(t, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2"}]}`)
 			req.Header.Set("Origin", importAllowedOriginForTest)
 			req.Header.Set("X-CSRF-Token", "csrf-for-test")
 			req.Header.Set("Idempotency-Key", "idem-queue-"+test.name)
@@ -223,7 +264,7 @@ func TestImportQueueHTTPSurfaceRequiresAuthAndCSRF(t *testing.T) {
 	authService := fakeImportAuthForTest("user-1")
 	authService.validateErr = auth.ErrInvalidCSRF
 	handler := newImportHandlerForTest(service, authService)
-	req := newImportQueueJSONRequestForTest(t, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2","detectedBookOrder":1}]}`)
+	req := newImportQueueJSONRequestForTest(t, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2"}]}`)
 	req.Header.Set("Origin", importAllowedOriginForTest)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -232,11 +273,11 @@ func TestImportQueueHTTPSurfaceRequiresAuthAndCSRF(t *testing.T) {
 	}
 }
 
-func TestImportQueueHTTPRoutesCreateListGetUploadSaveStartAndCancel(t *testing.T) {
+func TestImportQueueHTTPRoutesCreateListGetUploadStartSkipAndCancel(t *testing.T) {
 	service, store := newImportQueueServiceForTest("user-1", projects.RoleEditor)
 	handler := newImportHandlerForTest(service, fakeImportAuthForTest("user-1"))
 
-	createRec := serveImportQueueJSONForTest(t, handler, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2","detectedBookOrder":1}]}`, "idem-queue-http-create")
+	createRec := serveImportQueueJSONForTest(t, handler, http.MethodPost, "/projects/project-1/import-queues", `{"items":[{"clientItemId":"client-1","position":1,"sourceFileName":"volume-4.fb2"}]}`, "idem-queue-http-create")
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d; body: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
 	}
@@ -266,30 +307,36 @@ func TestImportQueueHTTPRoutesCreateListGetUploadSaveStartAndCancel(t *testing.T
 		t.Fatalf("uploaded queue = %#v", uploaded)
 	}
 
-	saveRec := serveImportQueueJSONForTest(t, handler, http.MethodPatch, "/projects/project-1/import-queues/"+queue.ID, fmt.Sprintf(`{"expectedVersion":2,"items":[{"id":"%s","position":1,"confirmedBookOrder":1}]}`, queue.Items[0].ID), "")
-	if saveRec.Code != http.StatusOK || !strings.Contains(saveRec.Body.String(), `"version":3`) {
-		t.Fatalf("save status/body = %d/%s", saveRec.Code, saveRec.Body.String())
+	// The order of the volumes is the order of the rows: there is no save of numbers before the start (UP2.3).
+	if saveRec := serveImportQueueJSONForTest(t, handler, http.MethodPatch, "/projects/project-1/import-queues/"+queue.ID, `{"expectedVersion":2,"items":[]}`, ""); saveRec.Code != http.StatusMethodNotAllowed && saveRec.Code != http.StatusNotFound {
+		t.Fatalf("save of numbers status = %d, want no such operation", saveRec.Code)
 	}
 
-	startRec := serveImportQueueJSONForTest(t, handler, http.MethodPost, "/projects/project-1/import-queues/"+queue.ID+"/start", `{"expectedVersion":3}`, "idem-queue-http-start")
+	startRec := serveImportQueueJSONForTest(t, handler, http.MethodPost, "/projects/project-1/import-queues/"+queue.ID+"/start", `{"expectedVersion":2}`, "idem-queue-http-start")
 	if startRec.Code != http.StatusAccepted {
 		t.Fatalf("start status = %d, want %d; body: %s", startRec.Code, http.StatusAccepted, startRec.Body.String())
 	}
 	started := decodeImportQueueResponseForTest(t, startRec)
-	if started.Status != "running" || started.Version != 4 {
+	if started.Status != "running" || started.Version != 3 {
 		t.Fatalf("started queue = %#v", started)
 	}
 	if store.lastStartInput == nil ||
 		store.lastStartInput.ProjectID != "project-1" ||
 		store.lastStartInput.QueueID != queue.ID ||
 		store.lastStartInput.ActorUserID != "user-1" ||
-		store.lastStartInput.ExpectedVersion != 3 ||
+		store.lastStartInput.ExpectedVersion != 2 ||
 		store.lastStartInput.IdempotencyKey != "idem-queue-http-start" ||
 		store.lastStartInput.RequestMethod != http.MethodPost ||
 		store.lastStartInput.RequestPath != "/projects/project-1/import-queues/"+queue.ID+"/start" ||
 		!store.lastStartInput.SessionWriteProof.Valid() ||
 		strings.TrimSpace(store.lastStartInput.RequestFingerprint) == "" {
 		t.Fatalf("atomic start input = %#v", store.lastStartInput)
+	}
+
+	store.queues[queue.ID].Items[0].ImportJobStatus = string(jobs.StatusFailed)
+	skipRec := serveImportQueueJSONForTest(t, handler, http.MethodDelete, "/projects/project-1/import-queues/"+queue.ID+"/items/"+queue.Items[0].ID, "", "")
+	if skipRec.Code != http.StatusOK || !strings.Contains(skipRec.Body.String(), `"processingStatus":"skipped"`) {
+		t.Fatalf("skip status/body = %d/%s", skipRec.Code, skipRec.Body.String())
 	}
 
 	cancelRec := serveImportQueueJSONForTest(t, handler, http.MethodDelete, "/projects/project-1/import-queues/"+queue.ID, "", "")
@@ -306,7 +353,7 @@ func TestImportQueueProjectionMarksOnlyCurrentUnfinishedItemImporting(t *testing
 			{ID: "item-2", Position: 2, ImportJobID: "job-2", ImportJobStatus: string(jobs.StatusQueued), PreflightStatus: ImportQueueItemReady},
 		},
 	}
-	response, err := importQueueResponseFor(queue, 1, nil)
+	response, err := importQueueResponseFor(queue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +374,7 @@ func TestImportQueueProjectionKeepsDraftBookCurrentUntilReady(t *testing.T) {
 		},
 	}
 
-	response, err := importQueueResponseFor(queue, 1, map[string]BookStatus{"book-1": BookStatusDraft})
+	response, err := importQueueResponseFor(queue, map[string]BookStatus{"book-1": BookStatusDraft})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +397,7 @@ func TestImportQueueProjectionKeepsReadyBooksSucceededAndFailedCurrentFailed(t *
 		}
 	}
 
-	ready, err := importQueueResponseFor(base(ImportQueueRunning), 3, map[string]BookStatus{
+	ready, err := importQueueResponseFor(base(ImportQueueRunning), map[string]BookStatus{
 		"book-1": BookStatusReady, "book-2": BookStatusReady,
 	})
 	if err != nil {
@@ -366,7 +413,7 @@ func TestImportQueueProjectionKeepsReadyBooksSucceededAndFailedCurrentFailed(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	failed, err := importQueueResponseFor(failedQueue, 3, map[string]BookStatus{
+	failed, err := importQueueResponseFor(failedQueue, map[string]BookStatus{
 		"book-1": BookStatusDraft, "book-2": BookStatusReady,
 	})
 	if err != nil {
@@ -375,6 +422,24 @@ func TestImportQueueProjectionKeepsReadyBooksSucceededAndFailedCurrentFailed(t *
 	if failed.CurrentItemID == nil || *failed.CurrentItemID != "item-1" ||
 		failed.Items[0].ProcessingStatus != "failed" || failed.Items[1].ProcessingStatus != "succeeded" {
 		t.Fatalf("failed projection = %#v", failed)
+	}
+}
+
+// UP1.2, UP3.2: a file that did not pass the check is a volume that waits for the author, named by its reason.
+func TestImportQueueProjectionShowsAFileThatDidNotPassAsWaiting(t *testing.T) {
+	response, err := importQueueResponseFor(ImportQueue{
+		ID: "queue-1", ProjectID: "project-1", Status: ImportQueueRunning, Items: []ImportQueueItem{{
+			ID: "item-1", PreflightStatus: ImportQueueItemInvalid,
+			PreflightErrorJSON: []byte(`{"code":"invalid_epub_container","message":"EPUB container is invalid."}`),
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := response.Items[0]
+	if item.ProcessingStatus != "failed" || item.FailedStep == nil || *item.FailedStep != "preflight" ||
+		item.PreflightError == nil || item.PreflightError.Code != "invalid_epub_container" {
+		t.Fatalf("projected item = %#v, want a waiting volume with its reason", item)
 	}
 }
 
@@ -393,7 +458,7 @@ func TestImportQueueProjectionUsesExactJobRetryCount(t *testing.T) {
 			test.item.PreflightStatus = ImportQueueItemReady
 			response, err := importQueueResponseFor(ImportQueue{
 				ID: "queue-1", ProjectID: "project-1", Status: ImportQueueRunning, Items: []ImportQueueItem{test.item},
-			}, 1, nil)
+			}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -411,7 +476,7 @@ func TestImportQueueProjectionShowsExpiredImportAsFailed(t *testing.T) {
 		ID: "queue-1", ProjectID: "project-1", Status: ImportQueueFailed, Items: []ImportQueueItem{{
 			ID: "item-1", PreflightStatus: ImportQueueItemReady, ImportJobID: "import-1", ImportJobStatus: string(jobs.StatusExpired),
 		}},
-	}, 1, nil)
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +502,7 @@ func TestImportQueueProjectionShowsIndexingUntilBookReady(t *testing.T) {
 			},
 		},
 	}
-	response, err := importQueueResponseFor(queue, 1, map[string]BookStatus{"book-1": BookStatusDraft})
+	response, err := importQueueResponseFor(queue, map[string]BookStatus{"book-1": BookStatusDraft})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +511,7 @@ func TestImportQueueProjectionShowsIndexingUntilBookReady(t *testing.T) {
 		response.Items[0].Links.Status == nil || !strings.Contains(*response.Items[0].Links.Status, "bookId=book-1") {
 		t.Fatalf("indexing projection = %#v", response)
 	}
-	ready, err := importQueueResponseFor(queue, 1, map[string]BookStatus{"book-1": BookStatusReady})
+	ready, err := importQueueResponseFor(queue, map[string]BookStatus{"book-1": BookStatusReady})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +528,7 @@ func TestImportQueueProjectionShowsCancelingUntilExactJobTerminal(t *testing.T) 
 			ImportJobID: "import-1", ImportJobStatus: string(jobs.StatusCanceling),
 		}},
 	}
-	stopping, err := importQueueResponseFor(queue, 1, nil)
+	stopping, err := importQueueResponseFor(queue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +536,7 @@ func TestImportQueueProjectionShowsCancelingUntilExactJobTerminal(t *testing.T) 
 		t.Fatalf("canceling projection = %#v", stopping)
 	}
 	queue.Items[0].ImportJobStatus = string(jobs.StatusCanceled)
-	terminal, err := importQueueResponseFor(queue, 1, nil)
+	terminal, err := importQueueResponseFor(queue, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,7 +564,7 @@ func TestImportQueueProjectionUsesExactJobFailure(t *testing.T) {
 				ImportJobID: "import-1", ImportJobStatus: string(jobs.StatusFailed), ImportJobErrorJSON: raw,
 			}},
 		}
-		response, err := importQueueResponseFor(queue, 1, nil)
+		response, err := importQueueResponseFor(queue, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -540,7 +605,7 @@ func createImportQueueForTest(t *testing.T, service *Service) ImportQueue {
 		ProjectID: "project-1", ActorUserID: "user-1", IdempotencyKey: "idem-queue-create",
 		RequestMethod: http.MethodPost, RequestPath: "/api/v1/projects/project-1/import-queues",
 		SessionWriteProof: validImportQueueWriteProofForTest(),
-		Items:             []CreateImportQueueItemInput{{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-4.fb2", DetectedBookOrder: 1}},
+		Items:             []CreateImportQueueItemInput{{ClientItemID: "client-1", Position: 1, SourceFileName: "volume-4.fb2"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateImportQueue() error = %v", err)

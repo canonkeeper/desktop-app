@@ -82,7 +82,6 @@ func DeletionTableInventory() []TableDisposition {
 		{"writer_quota_overrides", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"writer_usage_days", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"illustration_access", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
-		{"illustration_access_requests", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"image_upload_consents", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"platform_quota_defaults", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		// «Как с нами связаться» and the feedback of authors and guests (specs/2026-11-07-contacts.md): account data,
@@ -91,12 +90,26 @@ func DeletionTableInventory() []TableDisposition {
 		{"feedback_threads", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"feedback_messages", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"feedback_images", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The tiers of the site, the periods of a writer's tier and what he used of their trials
+		// (specs/2026-11-08-subscription-tiers.md TR10.3): the deletion of a project does not touch them; the periods and
+		// the trials go with the account (TR10.1).
+		{"subscription_tiers", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		{"subscription_periods", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The batches and the keys of a tier (0118): the keys outlive every account. The counters of an account — refused
+		// keys (0118) and the trials used (0119) — go with the account (TR10.1).
+		{"subscription_key_batches", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		{"subscription_keys", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The trial calls of the voice co-author (0121) are a counter of the same row of an account.
+		{"subscription_usage", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The new chapters charged against a writer's tier (0120): they outlive the draft and the project, so a deletion
+		// never resets the window (TR7.5), and go with the account (TR10.1).
+		{"subscription_chapter_charges", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_usage_days", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_limit_samples", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		// The blind comparison of texts has no link to the product: only `reading-test delete` removes it (specs/2026-11-05-reading-test.md).
 		{"reading_tests", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"reading_test_votes", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
-		{"projects",TableActionRetainSource, TableActionDeleteSelectedSubtree, TableActionRetainSource},
+		{"projects", TableActionRetainSource, TableActionDeleteSelectedSubtree, TableActionRetainSource},
 		{"project_memberships", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"project_invitations", TableActionCancelThenRetain, TableActionDeleteWithParent, TableActionRetainSource},
 		{"books", TableActionRetainSource, TableActionDeleteSelectedSubtree, TableActionRetainSource},
@@ -175,6 +188,14 @@ func DeletionTableInventory() []TableDisposition {
 		{"model_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"model_disclosures", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"obsidian_vaults", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The wave of the preparation of a saga (specs/2026-11-09-first-session.md, FS1) is a fact of the project:
+		// deleting a book keeps the row (the closing of the wave reads what is left), the project purge removes it.
+		{"saga_ready_waves", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The snapshot of the last update of a book from a file (specs/2026-11-12-ux10-book-revert.md BR1.2) is a fact of its
+		// book: the book and the saga take it in their fences, a chapter purged for good takes its row, and the purge of the
+		// book or the project removes what is left.
+		{"book_update_snapshots", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		{"book_update_snapshot_chapters", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 	}
 }
 

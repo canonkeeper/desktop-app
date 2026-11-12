@@ -2,11 +2,11 @@ package sagamemory
 
 import (
 	"context"
+	"errors"
 
 	"canonkeeper/backend/internal/governance"
 	service "canonkeeper/backend/internal/services/sagamemory"
 	storedb "canonkeeper/backend/internal/store/db"
-	indexingstore "canonkeeper/backend/internal/store/indexing"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -45,8 +45,15 @@ func (repository *Repository) IndexedVersions(ctx context.Context) ([]service.Te
 	return versions, rows.Err()
 }
 
+// errNoTextIndex refuses a cards Job to a repository given no text index store: the rule of who queues it — not in a build
+// without its helper — is the store's, and the process has one (specs/2026-11-12-desk-window.md WN3.4).
+var errNoTextIndex = errors.New("saga memory: the cards Job is queued only through the text index store of the process")
+
 // QueueCards queues the cards Job of a text version through the text index owner, which
-// queues it after every text index as well.
-func (repository *Repository) QueueCards(ctx context.Context, version service.TextVersion) error {
-	return indexingstore.New(repository.db).QueueChapterCards(ctx, version.ProjectID, governance.SourceView(version.View))
+// queues it after every text index as well, and reports whether a Job waits for the version.
+func (repository *Repository) QueueCards(ctx context.Context, version service.TextVersion) (bool, error) {
+	if repository.textIndex == nil {
+		return false, errNoTextIndex
+	}
+	return repository.textIndex.QueueChapterCards(ctx, version.ProjectID, governance.SourceView(version.View))
 }

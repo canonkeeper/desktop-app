@@ -38,3 +38,42 @@ func TestATakeKeepsWhoWroteWhat(t *testing.T) {
 		}
 	}
 }
+
+// specs/2026-11-08-italic-bold-in-text.md TF2.2, TF2.3: a piece of a version is named through its faces and keeps them
+// whole at its edges; in place of a place inside a face of the working text it takes that face, and the seams stand
+// where the piece meets the text.
+func TestATakeKeepsTheFaces(t *testing.T) {
+	version := "Утро. ⟨Кот спал на окне⟩ и ждал."
+	working := "Ночь. Он ⟨шёл домой⟩ быстро."
+	text, seams, err := TakeInto(working, version, Take{From: "спал на", To: "и ждал.", Place: &Scene{Place: "домой"}})
+	if err != nil || text != "Ночь. Он ⟨шёл спал на окне и ждал.⟩ быстро." || !ValidMarks(text) || len(seams) != 2 {
+		t.Fatalf("a piece in place of a place inside a face = %q, %v, %v", text, seams, err)
+	}
+	if before := WithoutMarks(text[:seams[0]]); before != "Ночь. Он шёл " {
+		t.Fatalf("the first seam stands after %q", before)
+	}
+	if before := WithoutMarks(text[:seams[1]]); before != "Ночь. Он шёл спал на окне и ждал." {
+		t.Fatalf("the second seam stands after %q", before)
+	}
+	text, _, err = TakeInto("Один ⟨раз\nдва⟩.", version, Take{From: "Кот спал", To: "Кот спал", Place: &Scene{Place: "Один раз"}, After: true})
+	if err != nil || text != "Один ⟨раз⟩\n\n⟨Кот спал\nдва⟩." {
+		t.Fatalf("a piece after a place = %q, %v", text, err)
+	}
+}
+
+// specs/2026-11-11-ux9-writing-b.md WB3.1: a version is named by the place its action changed — the first words of what
+// stood there, whole words, without the marks of the helper and the faces of the author; nothing when nothing went.
+func TestAVersionNamesThePlaceItsActionChanged(t *testing.T) {
+	for _, each := range []struct{ before, after, want string }{
+		{"Ольм со шрамом через губу вышел.", "Ольм со шрамом на щеке вышел.", "через губу"},
+		{"Ворота стояли тёмные.\n\n⟦Кира ушла через восточный выход.⟧\n\nКонец.", "Ворота стояли тёмные.\n\nКонец.", "Кира ушла через восточный выход."},
+		{"Один два три четыре пять шесть семь восемь.", "Девять.", "Один два три четыре пять шесть…"},
+		{"Кира ⟨шла⟩ к воротам.", "Кира бежала к воротам.", "шла"},
+		{"Кира шла.", "Кира шла. Потом бежала.", ""},
+		{"Кира шла.", "Кира шла.", ""},
+	} {
+		if got := ChangedPlace(each.before, each.after); got != each.want {
+			t.Fatalf("ChangedPlace(%q, %q) = %q, want %q", each.before, each.after, got, each.want)
+		}
+	}
+}

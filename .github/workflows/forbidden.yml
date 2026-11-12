@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The generic rules of the forbidden-content check on every push to main and every pull request: no key, no private
+# address and no closed path in the open tree. The closed deny list stays with the maintainers and runs before a push.
+name: Forbidden content
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  forbidden:
+    name: Forbidden content (generic rules)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -I scripts/check-forbidden.py --ci

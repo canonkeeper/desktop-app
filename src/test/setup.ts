@@ -1,7 +1,11 @@
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import { mswApiBaseUrl } from './msw/handlers';
 import { mswServer } from './msw/server';
+
+// A page that reads several queries stands in more than the default second when the machine also runs the e2e shards and
+// the backend tests: a found element still answers at once, only a missing one waits longer.
+configure({ asyncUtilTimeout: 4000 });
 
 beforeAll(() => {
   installBrowserBlobPolyfills();
@@ -19,6 +23,9 @@ beforeAll(() => {
 afterEach(() => {
   mswServer.resetHandlers();
   cleanup();
+  // A test leaves nothing in the storage of the browser for the next one: drafts of forms live there.
+  window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 afterAll(() => {

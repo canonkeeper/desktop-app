@@ -112,8 +112,44 @@
   gap: 6px;
 }
 
+/* The proofreading the chapter has (specs/2026-11-11-ux5-proofread-mode.md PM3.3): its state and «Открыть». */
+.cardState {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ck-foreground);
+  font-size: 13.5px;
+}
+
 .cardProblem {
   margin: 0;
   color: var(--ck-destructive-text);
   font-size: 13px;
+}
+
+/* The chapter at the field with its ready actions (specs/2026-11-11-ux4-after-answer.md AA4.1). */
+.attached {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.price,
+.notice {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.problemRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
 }

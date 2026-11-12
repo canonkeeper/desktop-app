@@ -1,7 +1,8 @@
 /*
- * Темы чтения: опубликованная проза читалки, страница слепого сравнения (specs/2026-11-05-reading-test.md RT1.9) и рабочее
- * место «Письма» в теме чтения, выбранной автором (specs/2026-11-07-writing-screen.md WS2.6).
- * Здесь только значения токенов; фон элемента с data-reading-theme задаёт его страница.
+ * «Фон текста» сепия (specs/2026-11-12-ux11-dark-core.md TH1.3): лист текста читалки, рабочее место «Письма» и страница
+ * слепого сравнения (specs/2026-11-05-reading-test.md RT1.9). Сепия — светлый набор tokens.css с этими заменами на любой
+ * теме сайта; светлый и тёмный фон текста — наборы tokens.css. Здесь только значения токенов; фон элемента с
+ * data-reading-theme задаёт его страница.
  */
 [data-reading-theme='sepia'] {
   --ck-background: #f1e7d0;
@@ -19,42 +20,4 @@
   --ck-highlight-foreground: #5a4a1d;
   --ck-muted-foreground: #6A5C45;
   --ck-subtle-foreground: #6F6450;
-}
-
-[data-reading-theme='dark'] {
-  color-scheme: dark;
-  --ck-background: #1b1b1d;
-  --ck-card: #232326;
-  --ck-input: #232326;
-  --ck-reader: #232326;
-  --ck-reader-pane: #1b1b1d;
-  --ck-foreground: #f4f4f2;
-  --ck-foreground-strong: #ffffff;
-  --ck-reader-foreground: #e7e7e4;
-  --ck-muted-foreground: #a8a8b0;
-  --ck-subtle-foreground: #9A9AA3;
-  --ck-secondary: #2e2e33;
-  --ck-secondary-foreground: #f4f4f2;
-  --ck-muted: #2e2e33;
-  --ck-disabled: #2e2e33;
-  --ck-disabled-foreground: #77777f;
-  --ck-source-active: #2c2c40;
-  --ck-border: #38383d;
-  --ck-border-strong: #4a4a51;
-  --ck-control-hover-border: #5a5a62;
-  --ck-ink: #e7e7e4;
-  --ck-ink-foreground: #1b1b1d;
-  --ck-highlight: #4a4326;
-  --ck-highlight-foreground: #fde68a;
-  --ck-link: #A5B4FC;
-  --ck-destructive-text: #F87171;
-  /* The states of findings and notes on a dark page («Письмо», specs/2026-11-07-writing-screen.md WS2.6). */
-  --ck-color-info: #25253a;
-  --ck-color-info-foreground: #A5B4FC;
-  --ck-color-success: #14322a;
-  --ck-color-success-foreground: #4cc9a0;
-  --ck-color-warning: #3a3014;
-  --ck-color-warning-foreground: #e7c35a;
-  --ck-color-error: #3a1a1a;
-  --ck-color-error-foreground: #f87171;
 }

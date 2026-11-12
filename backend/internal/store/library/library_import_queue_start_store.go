@@ -3,17 +3,16 @@ package librarystore
 import (
 	"context"
 	"errors"
-	"path"
 	"strings"
 	"time"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
 	authstore "canonkeeper/backend/internal/store/auth"
 	storedb "canonkeeper/backend/internal/store/db"
 	jobstore "canonkeeper/backend/internal/store/jobs"
-	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -66,11 +65,11 @@ func (s *Store) StartImportQueueForActor(ctx context.Context, input library.Star
 		if locked.Version != input.ExpectedVersion || locked.Status != string(library.ImportQueueDraft) {
 			return library.ErrConflict
 		}
-		nextBookOrder, err := validatedNextBookOrder(ctx, tx, projectID)
-		if err != nil {
+		if err := validateImportQueueStartItems(items); err != nil {
 			return err
 		}
-		if err := validateImportQueueStartItems(items, nextBookOrder); err != nil {
+		nextBookOrder, err := validatedNextBookOrder(ctx, tx, projectID)
+		if err != nil {
 			return err
 		}
 		reserved, err := importQueueOrderIsReserved(ctx, tx, projectID, queueID, nextBookOrder, len(items))
@@ -80,15 +79,32 @@ func (s *Store) StartImportQueueForActor(ctx context.Context, input library.Star
 		if reserved {
 			return library.ErrImportExpectedOrderConflict
 		}
-		startedAt := time.Now().UTC().Truncate(time.Microsecond)
-		// Every volume of the queue is one new book of the project owner and one upload of the
-		// actor; the queue moving to the next volume counts nothing more (R3.1, R3.2). The owner's
-		// quota lock comes before the actor's day row, as on every path (owner-tools lock order).
-		if err := quotastore.CheckNewBooksInTx(ctx, tx, projectID.String(), int64(len(items)), true); err != nil {
+		// The order of the volumes is the order of the rows (specs/2026-11-11-ux7-upload.md UP2.3): each volume takes the
+		// place after the books of the shelf by its position, and keeps it while the queue runs.
+		if err := assignImportQueueOrders(ctx, tx, projectID, queueID, nextBookOrder); err != nil {
 			return err
 		}
-		if err := quotastore.ReserveImportsInTx(ctx, tx, actorID.String(), int64(len(items)), startedAt); err != nil {
-			return err
+		for index := range items {
+			items[index].ConfirmedBookOrder = pgtype.Int4{Int32: int32(nextBookOrder + index), Valid: true}
+		}
+		startedAt := time.Now().UTC().Truncate(time.Microsecond)
+		// Every volume whose file passed the check is one new book of the project owner and one upload of the actor; the
+		// queue moving to the next volume counts nothing more (R3.1, R3.2). A file that did not pass counts nothing until
+		// «Заменить файл» gives it one that passes (UP3.2). The owner's quota lock comes before the actor's day row, as on
+		// every path (owner-tools lock order).
+		passed := 0
+		for _, item := range items {
+			if item.PreflightStatus == library.ImportQueueItemReady {
+				passed++
+			}
+		}
+		if passed > 0 {
+			if err := s.quota.CheckNewBooksInTx(ctx, tx, projectID.String(), int64(passed), true); err != nil {
+				return err
+			}
+			if err := s.quota.ReserveDailyInTx(ctx, tx, actorID.String(), quota.KeyImportsPerDay, int64(passed), startedAt); err != nil {
+				return err
+			}
 		}
 
 		var projectGeneration int64
@@ -98,60 +114,24 @@ func (s *Store) StartImportQueueForActor(ctx context.Context, input library.Star
 			return mapQueueNotFound(err)
 		}
 		for _, item := range items {
-			extension := strings.ToLower(path.Ext(item.SourceFileName))
-			initialPublication, err := library.InitialPublicationForImportExtension(extension)
-			if err != nil {
-				return err
-			}
-			progressJSON, err := jobstore.MarshalImportProgress(jobs.ImportProgress{
-				Phase: jobs.ImportPhaseQueued, BytesTransferred: item.SizeBytes.Int64,
-				BytesTotal: item.SizeBytes.Int64, QueuedAt: startedAt, TransferredAt: startedAt,
-			}, jobs.StatusQueued)
-			if err != nil {
-				return library.ErrValidation
-			}
-			var jobID, jobOwnerID, jobRefID, requestOwnerID, requestRefID pgtype.UUID
-			if err := tx.QueryRow(ctx, `
-				SELECT gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid()
-			`).Scan(&jobID, &jobOwnerID, &jobRefID, &requestOwnerID, &requestRefID); err != nil {
-				return err
-			}
-			if err := s.createImportProjectArtifact(ctx, tx, projectID, projectGeneration,
-				governance.ArtifactJob, jobID, jobOwnerID, jobRefID,
-				func(ctx context.Context, tx pgx.Tx, ownerID pgtype.UUID) error {
-					_, err := queries.CreateImportQueueJobRecord(ctx, sqlc.CreateImportQueueJobRecordParams{
-						ID: jobID, Kind: library.ImportJobKind, Status: library.ImportJobStatusQueued,
-						ProgressJson: progressJSON, ExpectedBookOrder: item.ConfirmedBookOrder.Int32,
-						ImportQueueID: queueID.String(), ImportQueueItemID: item.ID.String(),
-						CreatorUserID: actorID, CanCancel: true, CreatedAt: storedb.Timestamptz(startedAt),
-						UpdatedAt: storedb.Timestamptz(startedAt), ArtifactSourceOwnerID: ownerID, ProjectID: projectID,
-						CreatorRequestID: storedb.CreatorRequestID(ctx),
-					})
+			if item.PreflightStatus != library.ImportQueueItemReady {
+				// The file goes nowhere: it is not kept for a Job that will not come.
+				if _, err := queries.ScrubImportQueueItemUpload(ctx, sqlc.ScrubImportQueueItemUploadParams{
+					ProjectID: projectID, StorageKey: item.StorageKey.String,
+				}); err != nil {
 					return err
-				},
-			); err != nil {
-				return err
+				}
+				continue
 			}
-			if err := s.createImportProjectArtifact(ctx, tx, projectID, projectGeneration,
-				governance.ArtifactImportJobRequest, jobID, requestOwnerID, requestRefID,
-				func(ctx context.Context, tx pgx.Tx, ownerID pgtype.UUID) error {
-					return queries.CreateImportJobRequest(ctx, sqlc.CreateImportJobRequestParams{
-						JobID: jobID, ProjectID: projectID, ActorUserID: actorID, StorageKey: item.StorageKey.String,
-						IdempotencyKey: input.IdempotencyKey + ":" + item.ID.String(), RequestMethod: input.RequestMethod,
-						RequestPath: input.RequestPath, RequestFingerprint: input.RequestFingerprint,
-						SourceFileName: item.SourceFileName, Extension: extension, MimeType: item.MimeType.String,
-						SizeBytes: item.SizeBytes.Int64, FileSha256: item.Sha256.String,
-						ImportMode: string(library.ImportModeNewBook), InitialPublication: string(initialPublication),
-						CanCancel: true, CreatedAt: storedb.Timestamptz(startedAt), UpdatedAt: storedb.Timestamptz(startedAt),
-						ArtifactSourceOwnerID: ownerID,
-					})
-				},
-			); err != nil {
-				return err
-			}
-			if _, err := queries.MarkImportJobQueued(ctx, sqlc.MarkImportJobQueuedParams{
-				EnqueuedAt: storedb.Timestamptz(startedAt), JobID: jobID, ProjectID: projectID, StorageKey: item.StorageKey.String,
-			}); err != nil {
+			jobID, err := s.enqueueImportQueueVolumeInTx(ctx, tx, importQueueVolume{
+				projectID: projectID, actorID: actorID, queueID: queueID, itemID: item.ID, generation: projectGeneration,
+				sourceFileName: item.SourceFileName, storageKey: item.StorageKey.String, mimeType: item.MimeType.String,
+				sha256: item.Sha256.String, sizeBytes: item.SizeBytes.Int64, order: item.ConfirmedBookOrder.Int32,
+			}, importQueueVolumeRequest{
+				idempotencyKey: input.IdempotencyKey + ":" + item.ID.String(), method: input.RequestMethod,
+				path: input.RequestPath, fingerprint: input.RequestFingerprint,
+			}, startedAt)
+			if err != nil {
 				return err
 			}
 			linked, err := queries.LinkImportQueueItemJob(ctx, sqlc.LinkImportQueueItemJobParams{
@@ -185,4 +165,83 @@ func (s *Store) StartImportQueueForActor(ctx context.Context, input library.Star
 		return library.ImportQueue{}, mapQueueImportError(err)
 	}
 	return queue, nil
+}
+
+// importQueueVolume is a volume of a queue given its import Job: at the start of the queue, or again by «Заменить файл».
+type importQueueVolume struct {
+	projectID, actorID, queueID, itemID  pgtype.UUID
+	generation                           int64
+	sourceFileName, storageKey, mimeType string
+	sha256                               string
+	sizeBytes                            int64
+	order                                int32
+}
+
+type importQueueVolumeRequest struct {
+	idempotencyKey, method, path, fingerprint string
+}
+
+// enqueueImportQueueVolumeInTx creates the import Job of a volume at its place, with its request, and queues it; the
+// caller links the Job to its volume.
+func (s *Store) enqueueImportQueueVolumeInTx(
+	ctx context.Context, tx pgx.Tx, volume importQueueVolume, request importQueueVolumeRequest, at time.Time,
+) (pgtype.UUID, error) {
+	queries := sqlc.New(tx)
+	extension := library.ImportFileKind(volume.sourceFileName)
+	initialPublication, err := library.InitialPublicationForImportExtension(extension)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	progressJSON, err := jobstore.MarshalImportProgress(jobs.ImportProgress{
+		Phase: jobs.ImportPhaseQueued, BytesTransferred: volume.sizeBytes,
+		BytesTotal: volume.sizeBytes, QueuedAt: at, TransferredAt: at,
+	}, jobs.StatusQueued)
+	if err != nil {
+		return pgtype.UUID{}, library.ErrValidation
+	}
+	var jobID, jobOwnerID, jobRefID, requestOwnerID, requestRefID pgtype.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid()
+	`).Scan(&jobID, &jobOwnerID, &jobRefID, &requestOwnerID, &requestRefID); err != nil {
+		return pgtype.UUID{}, err
+	}
+	if err := s.createImportProjectArtifact(ctx, tx, volume.projectID, volume.generation,
+		governance.ArtifactJob, jobID, jobOwnerID, jobRefID,
+		func(ctx context.Context, tx pgx.Tx, ownerID pgtype.UUID) error {
+			_, err := queries.CreateImportQueueJobRecord(ctx, sqlc.CreateImportQueueJobRecordParams{
+				ID: jobID, Kind: library.ImportJobKind, Status: library.ImportJobStatusQueued,
+				ProgressJson: progressJSON, ExpectedBookOrder: volume.order,
+				ImportQueueID: volume.queueID.String(), ImportQueueItemID: volume.itemID.String(),
+				CreatorUserID: volume.actorID, CanCancel: true, CreatedAt: storedb.Timestamptz(at),
+				UpdatedAt: storedb.Timestamptz(at), ArtifactSourceOwnerID: ownerID, ProjectID: volume.projectID,
+				CreatorRequestID: storedb.CreatorRequestID(ctx),
+			})
+			return err
+		},
+	); err != nil {
+		return pgtype.UUID{}, err
+	}
+	if err := s.createImportProjectArtifact(ctx, tx, volume.projectID, volume.generation,
+		governance.ArtifactImportJobRequest, jobID, requestOwnerID, requestRefID,
+		func(ctx context.Context, tx pgx.Tx, ownerID pgtype.UUID) error {
+			return queries.CreateImportJobRequest(ctx, sqlc.CreateImportJobRequestParams{
+				JobID: jobID, ProjectID: volume.projectID, ActorUserID: volume.actorID, StorageKey: volume.storageKey,
+				IdempotencyKey: request.idempotencyKey, RequestMethod: request.method,
+				RequestPath: request.path, RequestFingerprint: request.fingerprint,
+				SourceFileName: volume.sourceFileName, Extension: extension, MimeType: volume.mimeType,
+				SizeBytes: volume.sizeBytes, FileSha256: volume.sha256,
+				ImportMode: string(library.ImportModeNewBook), InitialPublication: string(initialPublication),
+				CanCancel: true, CreatedAt: storedb.Timestamptz(at), UpdatedAt: storedb.Timestamptz(at),
+				ArtifactSourceOwnerID: ownerID,
+			})
+		},
+	); err != nil {
+		return pgtype.UUID{}, err
+	}
+	if _, err := queries.MarkImportJobQueued(ctx, sqlc.MarkImportJobQueuedParams{
+		EnqueuedAt: storedb.Timestamptz(at), JobID: jobID, ProjectID: volume.projectID, StorageKey: volume.storageKey,
+	}); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return jobID, nil
 }

@@ -1,26 +1,21 @@
+/* «Поиск по книгам» of the shell over any page of the saga (specs/2026-11-10-ux2-shell.md S1.5). */
 .layer {
   position: fixed;
   z-index: 100;
   inset: 0;
-  pointer-events: auto;
-}
-
-.layer[data-variant='shelf'] {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   background: var(--ck-scrim);
+  pointer-events: auto;
 }
 
 .panel {
-  position: absolute;
-  top: 44px;
-  left: 304px;
+  position: relative;
   display: flex;
-  width: 620px;
-  max-width: calc(100vw - 340px);
-  max-height: calc(100dvh - 56px);
+  width: min(720px, 100%);
+  height: min(680px, 100%);
   flex-direction: column;
   border: 1px solid var(--ck-border);
   border-radius: var(--ck-radius-sm);
@@ -29,27 +24,16 @@
   box-shadow: var(--ck-shadow-lg);
 }
 
-.layer[data-variant='shelf'] .panel {
-  position: relative;
-  top: auto;
-  left: auto;
-  width: min(720px, 100%);
-  height: min(680px, 100%);
-  max-width: none;
-  max-height: none;
-}
-
 .titleRow {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  justify-content: flex-end;
+  padding-bottom: 12px;
 }
 
 .titleRow > div {
-  display: none;
+  display: grid;
+  gap: 3px;
 }
 
 .titleRow h2,
@@ -62,20 +46,7 @@
   font-size: 11px;
 }
 
-.layer[data-variant='shelf'] .titleRow {
-  position: static;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  padding-bottom: 12px;
-}
-
-.layer[data-variant='shelf'] .titleRow > div {
-  display: grid;
-  gap: 3px;
-}
-
-.layer[data-variant='shelf'] .titleRow h2 {
+.titleRow h2 {
   font-family: var(--ck-font-serif);
   font-size: 24px;
   line-height: 1.2;
@@ -94,11 +65,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  padding-right: 40px;
-}
-
-.layer[data-variant='shelf'] .form {
-  padding-right: 0;
 }
 
 .form > :first-child,
@@ -199,15 +165,13 @@
 }
 
 @media (max-width: 760px) {
-  .layer,
-  .layer[data-variant='shelf'] {
+  .layer {
     align-items: stretch;
     justify-content: stretch;
     padding: 0;
   }
 
-  .panel,
-  .layer[data-variant='shelf'] .panel {
+  .panel {
     position: fixed;
     top: 0;
     left: 0;
@@ -223,14 +187,7 @@
   }
 
   .titleRow {
-    position: static;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
     padding-bottom: 10px;
-  }
-
-  .titleRow > div {
-    display: grid;
   }
 
   .titleRow h2 {

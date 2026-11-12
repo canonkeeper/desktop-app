@@ -7,6 +7,7 @@ import (
 	"time"
 
 	domain "canonkeeper/backend/internal/domain/notes"
+	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/governance"
 	service "canonkeeper/backend/internal/services/notes"
 	authstore "canonkeeper/backend/internal/store/auth"
@@ -27,6 +28,21 @@ type savedSource struct {
 	Source  domain.Source                               `json:"source"`
 	Chapter *governance.CanonicalChapterSourceLocatorV1 `json:"chapter,omitempty"`
 	Chat    *service.ChatBinding                        `json:"chat,omitempty"`
+}
+
+// listedNote is a row of the catalog as the query gives it: the place of the book on the shelf and the order of the
+// chapter make its place.
+type listedNote struct {
+	domain.Entry
+	ProjectID    *string `json:"projectId"`
+	BookID       *string `json:"bookId"`
+	ChapterOrder *int    `json:"chapterOrder"`
+}
+
+// chapterPlace is the place of a chapter as the author reads it everywhere (specs/2026-11-10-ux1-names.md N1.1); the
+// book is named by its place on the shelf (specs/2026-11-11-ux7-reorder.md RK1.6).
+func chapterPlace(bookPlace, chapterOrder int, title string) string {
+	return (&sagamemory.Chapter{BookOrder: bookPlace, Order: chapterOrder, Title: title}).Place()
 }
 
 func mapError(err error) error {
@@ -94,9 +110,26 @@ func (repository *Repository) List(ctx context.Context, query service.ListQuery)
 	if err != nil {
 		return service.ListResult{}, err
 	}
-	result := service.ListResult{TotalCount: row.TotalCount}
-	if err := json.Unmarshal(row.Entries, &result.Entries); err != nil {
+	var rows []listedNote
+	if err := json.Unmarshal(row.Entries, &rows); err != nil {
 		return service.ListResult{}, err
+	}
+	var projects []string
+	for _, listed := range rows {
+		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterOrder != nil {
+			projects = append(projects, *listed.ProjectID)
+		}
+	}
+	places, err := shelfPlaces(ctx, repository.db.Pool, projects)
+	if err != nil {
+		return service.ListResult{}, err
+	}
+	result := service.ListResult{TotalCount: row.TotalCount, Entries: make([]domain.Entry, len(rows))}
+	for index, listed := range rows {
+		result.Entries[index] = listed.Entry
+		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterOrder != nil {
+			result.Entries[index].Place = chapterPlace(places[*listed.ProjectID][*listed.BookID], *listed.ChapterOrder, listed.ChapterTitle)
+		}
 	}
 	return result, nil
 }
@@ -174,15 +207,19 @@ func (repository *Repository) Create(ctx context.Context, command service.Create
 
 func (repository *Repository) Update(ctx context.Context, actor service.Write, noteID string, input service.UpdateInput) (domain.Note, error) {
 	var result sqlc.PersonalNote
-	err := repository.mutate(ctx, actor, noteID, input.ExpectedRevision, func(queries *sqlc.Queries, owner, id pgtype.UUID) error {
+	err := repository.mutate(ctx, actor, noteID, input.ExpectedRevision, func(queries *sqlc.Queries, locked sqlc.PersonalNote) error {
 		body, title := pgtype.Text{}, pgtype.Text{}
+		// A thought may be empty only beside the quote the note keeps (NT1.2).
+		if input.Body != nil && domain.ValidateThought(*input.Body, len(locked.SourceJson) != 0) != nil {
+			return domain.ErrValidation
+		}
 		if input.Body != nil {
 			body = pgtype.Text{String: *input.Body, Valid: true}
 		}
 		if input.Title != nil {
 			title = pgtype.Text{String: *input.Title, Valid: true}
 		}
-		row, err := queries.UpdatePersonalNote(ctx, sqlc.UpdatePersonalNoteParams{OwnerUserID: owner, ID: id, Body: body, Title: title, ExpectedRevision: input.ExpectedRevision})
+		row, err := queries.UpdatePersonalNote(ctx, sqlc.UpdatePersonalNoteParams{OwnerUserID: locked.OwnerUserID, ID: locked.ID, Body: body, Title: title, ExpectedRevision: input.ExpectedRevision})
 		result = row
 		return err
 	})
@@ -192,12 +229,12 @@ func (repository *Repository) Update(ctx context.Context, actor service.Write, n
 	return noteValue(result)
 }
 func (repository *Repository) Delete(ctx context.Context, actor service.Write, noteID string, revision int64) error {
-	return repository.mutate(ctx, actor, noteID, revision, func(queries *sqlc.Queries, owner, id pgtype.UUID) error {
-		_, err := queries.DeletePersonalNote(ctx, sqlc.DeletePersonalNoteParams{OwnerUserID: owner, ID: id, ExpectedRevision: revision})
+	return repository.mutate(ctx, actor, noteID, revision, func(queries *sqlc.Queries, locked sqlc.PersonalNote) error {
+		_, err := queries.DeletePersonalNote(ctx, sqlc.DeletePersonalNoteParams{OwnerUserID: locked.OwnerUserID, ID: locked.ID, ExpectedRevision: revision})
 		return err
 	})
 }
-func (repository *Repository) mutate(ctx context.Context, actor service.Write, noteID string, revision int64, mutation func(*sqlc.Queries, pgtype.UUID, pgtype.UUID) error) error {
+func (repository *Repository) mutate(ctx context.Context, actor service.Write, noteID string, revision int64, mutation func(*sqlc.Queries, sqlc.PersonalNote) error) error {
 	owner, err := storedb.ParseUUID(actor.UserID)
 	if err != nil {
 		return domain.ErrNotFound
@@ -218,6 +255,6 @@ func (repository *Repository) mutate(ctx context.Context, actor service.Write, n
 		if row.Revision != revision {
 			return domain.ErrConflict
 		}
-		return mutation(queries, owner, id)
+		return mutation(queries, row)
 	}))
 }

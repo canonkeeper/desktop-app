@@ -29,8 +29,7 @@ func (h Handlers) CreateImportQueue(w http.ResponseWriter, r *http.Request) {
 	items := make([]CreateImportQueueItemInput, 0, len(request.Items))
 	for _, item := range request.Items {
 		items = append(items, CreateImportQueueItemInput{
-			ClientItemID: item.ClientItemID, Position: item.Position,
-			SourceFileName: item.SourceFileName, DetectedBookOrder: item.DetectedBookOrder,
+			ClientItemID: item.ClientItemID, Position: item.Position, SourceFileName: item.SourceFileName,
 		})
 	}
 	queue, err := h.service.CreateImportQueue(r.Context(), CreateImportQueueInput{
@@ -63,7 +62,7 @@ func (h Handlers) ListImportQueues(w http.ResponseWriter, r *http.Request) {
 		writeImportServiceError(w, r, err)
 		return
 	}
-	h.writeImportQueueListResponse(w, r, Actor{UserID: actorUserID}, chi.URLParam(r, "projectId"), queues)
+	h.writeImportQueueListResponse(w, r, Actor{UserID: actorUserID}, queues)
 }
 
 func (h Handlers) GetImportQueue(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +93,8 @@ func (h Handlers) UploadImportQueueItem(w http.ResponseWriter, r *http.Request) 
 	item, err := h.service.UploadImportQueueItem(r.Context(), UploadImportQueueItemInput{
 		ProjectID: chi.URLParam(r, "projectId"), QueueID: chi.URLParam(r, "queueId"), ItemID: upload.itemID,
 		ActorUserID: actorUserID, FileName: upload.fileName, MIMEType: upload.mimeType, Content: upload.content,
-		IdempotencyKey: r.Header.Get("Idempotency-Key"), SessionWriteProof: h.sessionWriteProof(r),
+		IdempotencyKey: r.Header.Get("Idempotency-Key"), RequestMethod: r.Method, RequestPath: r.URL.Path,
+		SessionWriteProof: h.sessionWriteProof(r),
 	})
 	if err != nil {
 		writeImportServiceError(w, r, err)
@@ -110,23 +110,15 @@ func (h Handlers) UploadImportQueueItem(w http.ResponseWriter, r *http.Request) 
 	h.writeImportQueueResponse(w, r, Actor{UserID: actorUserID}, http.StatusOK, queue)
 }
 
-func (h Handlers) UpdateImportQueue(w http.ResponseWriter, r *http.Request) {
+// SkipImportQueueItem is «Пропустить» of a volume that did not read (specs/2026-11-11-ux7-upload.md UP3.2).
+func (h Handlers) SkipImportQueueItem(w http.ResponseWriter, r *http.Request) {
 	actorUserID, ok := h.actorUserID(w, r)
 	if !ok {
 		return
 	}
-	var request updateImportQueueRequest
-	if err := decodeImportJSON(r, &request); err != nil {
-		writeImportServiceError(w, r, ErrValidation)
-		return
-	}
-	items := make([]SaveImportQueueItemInput, 0, len(request.Items))
-	for _, item := range request.Items {
-		items = append(items, SaveImportQueueItemInput{ItemID: item.ID, Position: item.Position, ConfirmedBookOrder: item.ConfirmedBookOrder})
-	}
-	queue, err := h.service.SaveImportQueueDraft(r.Context(), SaveImportQueueDraftInput{
-		ProjectID: chi.URLParam(r, "projectId"), QueueID: chi.URLParam(r, "queueId"), ActorUserID: actorUserID,
-		ExpectedVersion: request.ExpectedVersion, SessionWriteProof: h.sessionWriteProof(r), Items: items,
+	queue, err := h.service.SkipImportQueueItem(r.Context(), SkipImportQueueItemInput{
+		ProjectID: chi.URLParam(r, "projectId"), QueueID: chi.URLParam(r, "queueId"), ItemID: chi.URLParam(r, "itemId"),
+		ActorUserID: actorUserID, SessionWriteProof: h.sessionWriteProof(r),
 	})
 	if err != nil {
 		writeImportServiceError(w, r, err)
@@ -179,21 +171,9 @@ type createImportQueueRequest struct {
 }
 
 type createImportQueueItemRequest struct {
-	ClientItemID      string `json:"clientItemId"`
-	Position          int    `json:"position"`
-	SourceFileName    string `json:"sourceFileName"`
-	DetectedBookOrder int    `json:"detectedBookOrder"`
-}
-
-type updateImportQueueRequest struct {
-	ExpectedVersion int64                          `json:"expectedVersion"`
-	Items           []updateImportQueueItemRequest `json:"items"`
-}
-
-type updateImportQueueItemRequest struct {
-	ID                 string `json:"id"`
-	Position           int    `json:"position"`
-	ConfirmedBookOrder int    `json:"confirmedBookOrder"`
+	ClientItemID   string `json:"clientItemId"`
+	Position       int    `json:"position"`
+	SourceFileName string `json:"sourceFileName"`
 }
 
 type startImportQueueRequest struct {
@@ -217,7 +197,6 @@ type importQueueResponse struct {
 	Status            string                    `json:"status"`
 	Version           int64                     `json:"version"`
 	IntendedItemCount int                       `json:"intendedItemCount"`
-	NextBookOrder     int                       `json:"nextBookOrder"`
 	CurrentItemID     *string                   `json:"currentItemId"`
 	Items             []importQueueItemResponse `json:"items"`
 	CreatedAt         string                    `json:"createdAt"`
@@ -228,23 +207,21 @@ type importQueueResponse struct {
 }
 
 type importQueueItemResponse struct {
-	ID                 string                        `json:"id"`
-	ClientItemID       string                        `json:"clientItemId"`
-	Position           int                           `json:"position"`
-	SourceFileName     string                        `json:"sourceFileName"`
-	MIMEType           *string                       `json:"mimeType"`
-	SizeBytes          *int64                        `json:"sizeBytes"`
-	DetectedBookOrder  *int                          `json:"detectedBookOrder"`
-	ConfirmedBookOrder *int                          `json:"confirmedBookOrder"`
-	PreflightStatus    string                        `json:"preflightStatus"`
-	PreflightError     *importQueueItemErrorResponse `json:"preflightError"`
-	ProcessingStatus   string                        `json:"processingStatus"`
-	FailureClass       *string                       `json:"failureClass"`
-	FailedStep         *string                       `json:"failedStep"`
-	ImportJobID        *string                       `json:"importJobId"`
-	BookID             *string                       `json:"bookId"`
-	UpdatedAt          string                        `json:"updatedAt"`
-	Links              importQueueItemLinksResponse  `json:"links"`
+	ID               string                        `json:"id"`
+	ClientItemID     string                        `json:"clientItemId"`
+	Position         int                           `json:"position"`
+	SourceFileName   string                        `json:"sourceFileName"`
+	MIMEType         *string                       `json:"mimeType"`
+	SizeBytes        *int64                        `json:"sizeBytes"`
+	PreflightStatus  string                        `json:"preflightStatus"`
+	PreflightError   *importQueueItemErrorResponse `json:"preflightError"`
+	ProcessingStatus string                        `json:"processingStatus"`
+	FailureClass     *string                       `json:"failureClass"`
+	FailedStep       *string                       `json:"failedStep"`
+	ImportJobID      *string                       `json:"importJobId"`
+	BookID           *string                       `json:"bookId"`
+	UpdatedAt        string                        `json:"updatedAt"`
+	Links            importQueueItemLinksResponse  `json:"links"`
 }
 
 type importQueueItemErrorResponse struct {
@@ -261,12 +238,7 @@ type importQueueItemLinksResponse struct {
 	Status *string `json:"status"`
 }
 
-func (h Handlers) writeImportQueueListResponse(w http.ResponseWriter, r *http.Request, actor Actor, projectID string, queues []ImportQueue) {
-	constraints, err := h.service.ImportConstraints(r.Context(), actor, projectID)
-	if err != nil {
-		writeImportServiceError(w, r, err)
-		return
-	}
+func (h Handlers) writeImportQueueListResponse(w http.ResponseWriter, r *http.Request, actor Actor, queues []ImportQueue) {
 	bookStatuses, err := h.importQueueBookStatuses(r.Context(), actor, queues)
 	if err != nil {
 		writeImportServiceError(w, r, err)
@@ -274,7 +246,7 @@ func (h Handlers) writeImportQueueListResponse(w http.ResponseWriter, r *http.Re
 	}
 	data := make([]importQueueResponse, 0, len(queues))
 	for _, queue := range queues {
-		response, err := importQueueResponseFor(queue, constraints.NextBookOrder, bookStatuses)
+		response, err := importQueueResponseFor(queue, bookStatuses)
 		if err != nil {
 			writeImportServiceError(w, r, err)
 			return
@@ -286,17 +258,12 @@ func (h Handlers) writeImportQueueListResponse(w http.ResponseWriter, r *http.Re
 }
 
 func (h Handlers) writeImportQueueResponse(w http.ResponseWriter, r *http.Request, actor Actor, status int, queue ImportQueue) {
-	constraints, err := h.service.ImportConstraints(r.Context(), actor, queue.ProjectID)
-	if err != nil {
-		writeImportServiceError(w, r, err)
-		return
-	}
 	bookStatuses, err := h.importQueueBookStatuses(r.Context(), actor, []ImportQueue{queue})
 	if err != nil {
 		writeImportServiceError(w, r, err)
 		return
 	}
-	response, err := importQueueResponseFor(queue, constraints.NextBookOrder, bookStatuses)
+	response, err := importQueueResponseFor(queue, bookStatuses)
 	if err != nil {
 		writeImportServiceError(w, r, err)
 		return
@@ -329,11 +296,7 @@ func (h Handlers) importQueueBookStatuses(ctx context.Context, actor Actor, queu
 	return statuses, nil
 }
 
-func importQueueResponseFor(
-	queue ImportQueue,
-	nextBookOrder int,
-	bookStatuses map[string]BookStatus,
-) (importQueueResponse, error) {
+func importQueueResponseFor(queue ImportQueue, bookStatuses map[string]BookStatus) (importQueueResponse, error) {
 	items := make([]importQueueItemResponse, 0, len(queue.Items))
 	currentItemID := ""
 	for _, item := range queue.Items {
@@ -348,14 +311,13 @@ func importQueueResponseFor(
 		if err != nil {
 			return importQueueResponse{}, err
 		}
-		if currentItemID == "" && processingStatus != "succeeded" && item.ImportJobID != "" {
+		if currentItemID == "" && processingStatus != "succeeded" && processingStatus != "skipped" && item.ImportJobID != "" {
 			currentItemID = item.ID
 		}
 		items = append(items, importQueueItemResponse{
 			ID: item.ID, ClientItemID: item.ClientItemID, Position: item.Position,
 			SourceFileName: item.SourceFileName, MIMEType: optionalImportQueueString(item.MIMEType),
-			SizeBytes: optionalImportQueueInt64(item.SizeBytes), DetectedBookOrder: optionalImportQueueInt(item.DetectedBookOrder),
-			ConfirmedBookOrder: optionalImportQueueInt(item.ConfirmedBookOrder), PreflightStatus: item.PreflightStatus,
+			SizeBytes: optionalImportQueueInt64(item.SizeBytes), PreflightStatus: item.PreflightStatus,
 			PreflightError: preflightError, ProcessingStatus: processingStatus,
 			FailureClass: optionalImportQueueString(failureClass), FailedStep: optionalImportQueueString(failedStep),
 			ImportJobID: optionalImportQueueString(item.ImportJobID),
@@ -372,8 +334,8 @@ func importQueueResponseFor(
 	return importQueueResponse{
 		ID: queue.ID, ProjectID: queue.ProjectID, Status: string(queue.Status),
 		Version:           queue.Version,
-		IntendedItemCount: len(queue.Items), NextBookOrder: nextBookOrder,
-		CurrentItemID: optionalImportQueueString(currentItemID), Items: items,
+		IntendedItemCount: len(queue.Items),
+		CurrentItemID:     optionalImportQueueString(currentItemID), Items: items,
 		CreatedAt: formatImportTime(queue.CreatedAt), UpdatedAt: formatImportTime(queue.UpdatedAt),
 		StartedAt: optionalImportQueueTime(queue.StartedAt), CompletedAt: optionalImportQueueTime(queue.CompletedAt),
 		Links: importQueueLinksResponse{Self: self, Cancel: cancel},
@@ -381,6 +343,10 @@ func importQueueResponseFor(
 }
 
 func importQueueProcessingStatus(item ImportQueueItem, bookStatuses map[string]BookStatus) (string, string, string, error) {
+	// A volume the author took out of the upload (UP3.2): neither in work nor waiting.
+	if item.SkippedAt != nil {
+		return "skipped", "", "", nil
+	}
 	if item.ImportJobID != "" {
 		switch jobs.Status(item.ImportJobStatus) {
 		case jobs.StatusQueued:
@@ -414,6 +380,10 @@ func importQueueProcessingStatus(item ImportQueueItem, bookStatuses map[string]B
 	}
 	if item.PreflightStatus == ImportQueueItemReady {
 		return "ready", "", "", nil
+	}
+	// A file that did not pass the check waits for the author at its place with its reason (UP1.2, UP3.2).
+	if item.PreflightStatus == ImportQueueItemInvalid {
+		return "failed", "", "preflight", nil
 	}
 	return "uploading", "", "", nil
 }
@@ -452,13 +422,6 @@ func importQueueCancelAllowed(status ImportQueueStatus) bool {
 
 func optionalImportQueueString(value string) *string {
 	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-func optionalImportQueueInt(value int) *int {
-	if value == 0 {
 		return nil
 	}
 	return &value

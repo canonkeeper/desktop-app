@@ -22,7 +22,7 @@ func (timelineStub) Updates(context.Context, string, string) (<-chan domain.Upda
 }
 
 func TestSnapshotAndLiveUseByteEquivalentOrderedDTOs(t *testing.T) {
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
 		{ID: "reasoning-1:0", Kind: domain.EventReasoning, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Сначала"},
 		{ID: "assistant-1:0", Kind: domain.EventAssistant, JobID: "job-1", Role: domain.RoleCompleteness, TurnID: "turn-1", Text: "Ответ"},
 	}}}}
@@ -55,7 +55,7 @@ func TestSnapshotCursorDoesNotHideReorderedThreadEvents(t *testing.T) {
 		ID: "child-message:0", Kind: domain.EventAssistant,
 		JobID: "job-1", Role: domain.RoleCompleteness, TurnID: "turn-child", Text: "child",
 	}
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{root, child}}}}
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{root, child}}}}
 
 	initial, err := handlers.Snapshot(t.Context(), "project-1", "job-1")
 	if err != nil {
@@ -78,14 +78,14 @@ func TestSnapshotCursorDoesNotHideReorderedThreadEvents(t *testing.T) {
 }
 
 func TestSnapshotRejectsMalformedCursor(t *testing.T) {
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{}}}
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{}}}
 	if _, err := handlers.Snapshot(t.Context(), "project-1", "job-1", "1"); err == nil {
 		t.Fatal("numeric cursor was accepted")
 	}
 }
 
 func TestSnapshotShowsSagaToolSummaryWithoutRawPayload(t *testing.T) {
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
 		{ID: "assistant-1:0", Kind: domain.EventAssistant, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Ответ"},
 		{ID: "tool-1:0", Kind: domain.EventToolResult, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Tool: &domain.ToolCall{
 			Namespace: "saga", Name: "read", Arguments: json.RawMessage(`{"chapter":"312","around":15}`), Status: "completed",
@@ -139,7 +139,7 @@ func TestSnapshotToolSummaryIsHeaderOrTypedError(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			tool := testCase.tool
 			tool.Status = "completed"
-			handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
+			handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
 				{ID: "tool-1:0", Kind: domain.EventToolResult, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Tool: &tool},
 			}}}}
 			snapshot, err := handlers.Snapshot(t.Context(), "project-1", "job-1")
@@ -156,7 +156,7 @@ func TestSnapshotToolSummaryIsHeaderOrTypedError(t *testing.T) {
 
 // specs/2026-10-29-saga-illustrations.md R15.9: a question event carries its attached images.
 func TestSnapshotShowsTheImagesOfAQuestion(t *testing.T) {
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
 		{ID: "question-1", Kind: domain.EventUser, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Нарисуй", Images: []int{81, 82}},
 		{ID: "assistant-1:0", Kind: domain.EventAssistant, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Ответ"},
 	}}}}
@@ -210,7 +210,7 @@ func TestSnapshotShowsACorrectionWithoutItsNativeInput(t *testing.T) {
 
 // specs/2026-11-07-chat-attach-chapter.md CA4.1: a question event carries the card of its attached chapter.
 func TestSnapshotShowsTheChapterAttachedToAQuestion(t *testing.T) {
-	handlers := Handlers{timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
+	handlers := Handlers{places: &placesStub{}, timeline: timelineStub{snapshot: domain.Snapshot{Events: []domain.Event{
 		{ID: "question-1", Kind: domain.EventUser, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Ложится?",
 			Attachment: &domain.QuestionAttachment{Number: 2, Title: "Глава 634", Words: 3120}},
 		{ID: "assistant-1:0", Kind: domain.EventAssistant, JobID: "job-1", Role: domain.RoleMain, TurnID: "turn-1", Text: "Ответ"},

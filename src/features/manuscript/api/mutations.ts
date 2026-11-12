@@ -5,9 +5,7 @@ import { applyCoverBookResponse } from '../../../entities/manuscript/api/covers'
 import {
   createFirstProjectWorkspace,
   createIdempotencyKey,
-  jobReferencesBook,
   manuscriptQueryKeys,
-  readAllPages,
   type BookExportFormat,
   type CreateProjectInput,
   type ImportQueue,
@@ -21,7 +19,7 @@ import type { ManuscriptShelfWorkspace } from '../../../entities/manuscript/api/
 type ImportQueueListClient = Pick<ManuscriptApiClient, 'listImportQueues'>;
 type ImportQueueList = Awaited<ReturnType<ImportQueueListClient['listImportQueues']>>;
 type RestoreDeletedSourceClient = Pick<ManuscriptApiClient, 'restoreBook' | 'restoreChapter' | 'restoreProject'>;
-type OpenBookClient = Pick<ManuscriptApiClient, 'getBook' | 'listChapters'>;
+type RevertBookUpdateClient = Pick<ManuscriptApiClient, 'revertBookUpdate'>;
 type CreateBookClient = Pick<ManuscriptApiClient, 'createBook'>;
 type UpdateBookClient = Pick<ManuscriptApiClient, 'updateBook'>;
 type DeleteBookClient = Pick<ManuscriptApiClient, 'deleteBook'>;
@@ -30,7 +28,7 @@ type DeleteBookCoverClient = Pick<ManuscriptApiClient, 'deleteBookCover'>;
 type BookExportClient = Pick<ManuscriptApiClient, 'getBookExport'>;
 type CreateImportQueueClient = Pick<ManuscriptApiClient, 'createImportQueue'>;
 type UploadImportQueueItemClient = Pick<ManuscriptApiClient, 'uploadImportQueueItem'>;
-type SaveImportQueueClient = Pick<ManuscriptApiClient, 'updateImportQueue'>;
+type SkipImportQueueItemClient = Pick<ManuscriptApiClient, 'skipImportQueueItem'>;
 type StartImportQueueClient = Pick<ManuscriptApiClient, 'startImportQueue'>;
 type CancelImportQueueClient = Pick<ManuscriptApiClient, 'cancelImportQueue' | 'getImportQueue'>;
 type CancelJobClient = Pick<ManuscriptApiClient, 'cancelJob' | 'getJob'>;
@@ -108,15 +106,18 @@ export function useRestoreDeletedSourceMutation(api: RestoreDeletedSourceClient)
   });
 }
 
-export function useOpenBookMutation(api: OpenBookClient) {
+/**
+ * «Вернуть версию до обновления» (specs/2026-11-12-ux10-book-revert.md BR2.2) with the fingerprint of the preview the author
+ * read: the shelf, «Недавно удалённые», the reading of the saga and the counters of the tier are read again.
+ */
+export function useRevertBookUpdateMutation(api: RevertBookUpdateClient) {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (bookId: string) => {
-      const [book, chapters] = await Promise.all([
-        api.getBook(bookId),
-        readAllPages((cursor) => api.listChapters(bookId, { cursor })),
-      ]);
-      return { book, chapters: chapters.data };
-    },
+    mutationFn: ({ bookId, fingerprint }: { bookId: string; fingerprint: string }) => api.revertBookUpdate(bookId, { fingerprint }),
+    onSettled: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.all }),
+      invalidateAccountQuota(queryClient),
+    ]),
   });
 }
 
@@ -164,16 +165,30 @@ export function useUpdateBookMutation(api: UpdateBookClient) {
   });
 }
 
+/**
+ * A move of a volume (specs/2026-11-11-ux7-reorder.md RK2.1): updateBook with the book to stand after, null — the start.
+ * The server puts every book of the saga at its place, so the shelf, the reader and the status are read again — «Книга N»
+ * is the place on the shelf; the keys of the chapters do not change.
+ */
+export function useMoveBookMutation(api: UpdateBookClient) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookId, afterBookId }: { afterBookId: string | null; bookId: string }) => api.updateBook(bookId, { afterBookId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.all }),
+  });
+}
+
 export function useDeleteBookMutation(api: DeleteBookClient) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ bookId }: { bookId: string; projectId: string }) => api.deleteBook(bookId),
     onSuccess: (_response, input) => {
       const queryKey = manuscriptQueryKeys.shelf({ projectId: input.projectId });
+      // The Jobs stay the server's: the deletion stops the work on the book, and the refetch shows it stopping
+      // (specs/2026-11-08-deletion-stops-processing.md R3.4).
       queryClient.setQueryData<ManuscriptShelfWorkspace>(queryKey, (shelf) => shelf && {
         ...shelf,
         books: shelf.books.filter((book) => book.id !== input.bookId),
-        jobs: shelf.jobs.filter((job) => !jobReferencesBook(job, input.bookId)),
       });
       return Promise.all([queryClient.invalidateQueries({ queryKey, exact: true }), invalidateAccountQuota(queryClient)]);
     },
@@ -194,7 +209,11 @@ export function useUpdateBookFromFileMutation(api: ImportBookFileClient) {
     ),
     onSuccess: (response, input) => {
       queryClient.setQueryData(manuscriptQueryKeys.job(response.job.id), response.job);
-      return queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.shelf({ projectId: input.projectId }), exact: true });
+      // Every shelf the browser reads takes the update in work: the shell follows it to its end on any page
+      // (specs/2026-11-12-ux10-book-revert.md BR3.4), whatever saga its address names.
+      return input.preview
+        ? queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.shelf({ projectId: input.projectId }), exact: true })
+        : queryClient.invalidateQueries({ queryKey: [...manuscriptQueryKeys.all, 'shelf'] });
     },
     onSettled: () => invalidateAccountQuota(queryClient),
   });
@@ -227,10 +246,11 @@ export function useOpenChapterEditMutation(api: Pick<ManuscriptApiClient, 'openC
   });
 }
 
-/** The file of a book: not a state of the server, so nothing is kept in the cache. */
+/** The file of a book, with its drawings when asked (BP3.1): not a state of the server, so nothing is kept in the cache. */
 export function useBookExportMutation(api: BookExportClient) {
   return useMutation({
-    mutationFn: ({ bookId, format }: { bookId: string; format: BookExportFormat }) => api.getBookExport(bookId, format),
+    mutationFn: ({ bookId, format, drawings = false }: { bookId: string; format: BookExportFormat; drawings?: boolean }) =>
+      (drawings ? api.getBookExport(bookId, format, { drawings }) : api.getBookExport(bookId, format)),
   });
 }
 
@@ -247,6 +267,8 @@ export function useCreateImportQueueMutation(api: CreateImportQueueClient) {
       projectId: string;
     }) => api.createImportQueue(projectId, body, { idempotencyKey }),
     onSuccess: (queue, input) => applyImportQueueResponse(queryClient, input.projectId, queue),
+    // A queue whose books would not fit is refused here, as its start is (writer-quotas R3.2).
+    onError: () => invalidateAccountQuota(queryClient),
   });
 }
 
@@ -274,18 +296,12 @@ export function useUploadImportQueueItemMutation(api: UploadImportQueueItemClien
   });
 }
 
-export function useSaveImportQueueMutation(api: SaveImportQueueClient) {
+/** «Пропустить» of a volume that did not read: the queue of the server answers with the volume out (UP3.2). */
+export function useSkipImportQueueItemMutation(api: SkipImportQueueItemClient) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      body,
-      projectId,
-      queueId,
-    }: {
-      body: Parameters<SaveImportQueueClient['updateImportQueue']>[2];
-      projectId: string;
-      queueId: string;
-    }) => api.updateImportQueue(projectId, queueId, body),
+    mutationFn: ({ itemId, projectId, queueId }: { itemId: string; projectId: string; queueId: string }) =>
+      api.skipImportQueueItem(projectId, queueId, itemId),
     onSuccess: (queue, input) => applyImportQueueResponse(queryClient, input.projectId, queue),
   });
 }

@@ -1,6 +1,6 @@
 // Package sagareference delivers the saga map (specs/2026-11-04-saga-map.md) — getSagaMap, getSagaMapNode,
-// searchSagaMap and what the author takes off the map — and the shared saga reads listSagaGlossary and
-// getSagaContents over HTTP.
+// searchSagaMap and what the author takes off the map — the first questions of an empty chat
+// (getSagaFirstQuestions) and the shared saga reads listSagaGlossary and getSagaContents over HTTP.
 package sagareference
 
 import (
@@ -41,6 +41,7 @@ type Handlers struct {
 	sagaMap     *service.GetMap
 	node        *service.GetMapNode
 	search      *service.SearchMap
+	questions   *service.GetFirstQuestions
 	contents    *service.GetContents
 	hidden      MapHiddenUseCases
 	currentUser CurrentUser
@@ -48,11 +49,11 @@ type Handlers struct {
 }
 
 func NewHandlers(glossary *service.ListGlossary, sagaMap *service.GetMap, node *service.GetMapNode, search *service.SearchMap,
-	contents *service.GetContents, hidden MapHiddenUseCases, currentUser CurrentUser, allowedOrigins []string) Handlers {
-	if glossary == nil || sagaMap == nil || node == nil || search == nil || contents == nil || hidden.List == nil || hidden.Hide == nil || hidden.Restore == nil || currentUser == nil {
+	questions *service.GetFirstQuestions, contents *service.GetContents, hidden MapHiddenUseCases, currentUser CurrentUser, allowedOrigins []string) Handlers {
+	if glossary == nil || sagaMap == nil || node == nil || search == nil || questions == nil || contents == nil || hidden.List == nil || hidden.Hide == nil || hidden.Restore == nil || currentUser == nil {
 		panic("saga reference HTTP dependencies are required")
 	}
-	return Handlers{glossary: glossary, sagaMap: sagaMap, node: node, search: search, contents: contents, hidden: hidden, currentUser: currentUser, origins: slices.Clone(allowedOrigins)}
+	return Handlers{glossary: glossary, sagaMap: sagaMap, node: node, search: search, questions: questions, contents: contents, hidden: hidden, currentUser: currentUser, origins: slices.Clone(allowedOrigins)}
 }
 
 func (handlers Handlers) Mount(router chi.Router) {
@@ -60,6 +61,7 @@ func (handlers Handlers) Mount(router chi.Router) {
 	router.Get("/projects/{projectId}/saga/map", handlers.Map)
 	router.Get("/projects/{projectId}/saga/map/node", handlers.MapNode)
 	router.Get("/projects/{projectId}/saga/map/search", handlers.MapSearch)
+	router.Get("/projects/{projectId}/saga/first-questions", handlers.FirstQuestions)
 	router.Get("/projects/{projectId}/saga/contents", handlers.Contents)
 	router.Group(func(router chi.Router) {
 		router.Use(httpapi.StrictOriginMiddleware(handlers.origins...))
@@ -200,14 +202,30 @@ func (handlers Handlers) MapSearch(w http.ResponseWriter, request *http.Request)
 	writeJSON(w, map[string]any{"entries": entries})
 }
 
+// FirstQuestions serves getSagaFirstQuestions (specs/2026-11-10-first-questions.md FQ1.4, FQ1.9): not kept by the browser, the
+// author's decisions about the map and its build change it.
+func (handlers Handlers) FirstQuestions(w http.ResponseWriter, request *http.Request) {
+	scope, _, err := handlers.scope(request)
+	if err != nil {
+		writeError(w, request.Context(), err)
+		return
+	}
+	result, err := handlers.questions.Execute(request.Context(), scope)
+	if err != nil {
+		writeError(w, request.Context(), err)
+		return
+	}
+	writeJSON(w, map[string]any{"questions": result.Questions, "pending": result.Pending})
+}
+
 func (handlers Handlers) Contents(w http.ResponseWriter, request *http.Request) {
-	scope, query, err := handlers.scope(request, "bookId", "q")
+	scope, query, err := handlers.scope(request, "bookId", "q", "chapter")
 	if err != nil {
 		writeError(w, request.Context(), err)
 		return
 	}
 	result, err := handlers.contents.Execute(request.Context(), service.ContentsInput{
-		Scope: scope, BookID: query["bookId"], Query: query["q"],
+		Scope: scope, BookID: query["bookId"], Query: query["q"], Chapter: query["chapter"],
 	})
 	if err != nil {
 		writeError(w, request.Context(), err)

@@ -14,7 +14,7 @@ func (handlers Handlers) openChapterEdit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	draft, err := handlers.useCases.OpenEdit.Execute(r.Context(), actor, strings.TrimSpace(chi.URLParam(r, "chapterId")))
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
 // replaceChapter is «Заменить главу в книге».
@@ -32,7 +32,7 @@ func (handlers Handlers) replaceChapter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	draft, err := handlers.useCases.Replace.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision, body.Title)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
 // revertChapter is «Вернуть прежний текст».
@@ -49,7 +49,7 @@ func (handlers Handlers) revertChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.Revert.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }
 
 // reopenChapter is «Открыть главу заново».
@@ -66,5 +66,5 @@ func (handlers Handlers) reopenChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.Reopen.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision)
-	respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, draft, err)
 }

@@ -24,10 +24,12 @@ type SelectedChapter struct {
 	Revision    int64
 	ContentHash string
 	BookID      string
-	BookOrder   int
-	BookTitle   string
-	Order       int
-	Title       string
+	BookOrder   int // the place of the book on the shelf
+	// BookKeyNumber is the number of the book in the keys of its chapters (specs/2026-11-11-ux7-reorder.md RK1.1).
+	BookKeyNumber int
+	BookTitle     string
+	Order         int
+	Title         string
 }
 
 // Selection is the current chapter set of a text version and its fingerprint; the

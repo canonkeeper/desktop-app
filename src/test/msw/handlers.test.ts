@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMockApiClient } from '../../api/mock/repository';
 import { mockPromoAnswerLink, mockPromoRevokeLink } from '../../api/mock/repository/promo-permissions';
+import { mockWordChapter } from '../../api/mock/repository/chapter-draft-proofread';
 import { mockReadingTestSlug } from '../../api/mock/repository/reading-test';
 import { mockAccountToken } from '../../api/mock/repository/session';
 import { getOperationManifestEntries, type OperationId } from '../../shared/api';
@@ -12,6 +13,7 @@ const pathParams: Record<string, string> = {
   bookId: 'book-02',
   chapterId: 'chapter-16',
   invitationId: 'invitation-mira',
+  itemId: 'import-queue-1-item-1',
   jobId: 'canon-text-index-job-1',
   memberId: 'member-collaborator',
   number: '1',
@@ -19,6 +21,8 @@ const pathParams: Record<string, string> = {
   projectId: 'project-white-port',
   queueId: 'import-queue-1',
   requestId: 'illustration-request-1',
+  // The tiers of the site (specs/2026-11-08-subscription-tiers.md).
+  tier: 'writer',
   userId: '11111111-0000-4000-8000-000000000002',
 };
 
@@ -84,7 +88,7 @@ describe('MSW API handlers', () => {
       const repository = createMockApiClient();
       const operationPathParams = await prepareRepositoryForOperation(repository, operationId);
       mswServer.resetHandlers(
-        ...createAuthHandlers(operationId === 'sendEmailVerification' ? { emailVerified: false } : {}),
+        ...createAuthHandlers(operationId === 'sendEmailVerification' || operationId === 'changeUnverifiedEmail' ? { emailVerified: false } : {}),
         ...createApiHandlers({ repository }),
       );
       const path = routePathForOperation(operationId, route.path, operationPathParams);
@@ -931,7 +935,7 @@ function routePathForOperation(operationId: OperationId, path: string, operation
   if (operationId === 'searchSagaMap') {
     return `${applyPathParams(path, operationPathParams)}?sourceView=published&q=${encodeURIComponent('мара')}`;
   }
-  if (['listSagaGlossary', 'getSagaMap', 'getSagaContents', 'listSagaMapHidden', 'hideSagaMapItem'].includes(operationId)) {
+  if (['listSagaGlossary', 'getSagaMap', 'getSagaFirstQuestions', 'getSagaContents', 'listSagaMapHidden', 'hideSagaMapItem'].includes(operationId)) {
     return `${applyPathParams(path, operationPathParams)}?sourceView=published`;
   }
   if (operationId === 'removeProjectImageReference') {
@@ -1032,6 +1036,18 @@ function requestInit(operationId: OperationId, method: string): RequestInit {
     };
   }
 
+  // The look of a Word file for the original of a draft (specs/2026-11-07-writing-proofread.md, PR9): one file part.
+  if (operationId === 'takeChapterDraftOriginalLook') {
+    const boundary = 'ck-msw-look';
+    headers.set('content-type', `multipart/form-data; boundary=${boundary}`);
+    return {
+      method,
+      headers,
+      body: [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="Глава.docx"',
+        'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document', '', 'docx', `--${boundary}--`, ''].join('\r\n'),
+    };
+  }
+
   if (operationId === 'startAuthorMaterialsImport') {
     const boundary = 'ck-msw-materials';
     headers.set('content-type', `multipart/form-data; boundary=${boundary}`);
@@ -1121,7 +1137,6 @@ function bodyFor(operationId: OperationId): unknown {
           clientItemId: 'msw-import-client-1',
           position: 1,
           sourceFileName: 'white-port.epub',
-          detectedBookOrder: 5,
         }],
       };
     case 'createPersonalNote':
@@ -1154,8 +1169,16 @@ function bodyFor(operationId: OperationId): unknown {
       return { acceptedTerms: true, acceptedPersonalDataConsent: true };
     case 'setAccountVoice':
       return { voice: 'spruce' };
+    case 'setAccountLetters':
+      return { sagaReady: false };
     case 'resetPassword':
       return { token: mockAccountToken('password_reset', 'user-mira'), newPassword: 'white-port-12' };
+    case 'checkPasswordResetLink':
+      return { token: mockAccountToken('password_reset', 'user-mira') };
+    case 'changeUnverifiedEmail':
+      return { email: 'fixed-author@example.test' };
+    case 'setAccountName':
+      return { displayName: 'Мира Волкова' };
     case 'startImpersonation':
       return { email: 'target@example.test' };
     case 'searchChapters':
@@ -1165,16 +1188,11 @@ function bodyFor(operationId: OperationId): unknown {
     case 'startProjectIndexing':
       return { sourceView: 'published' };
     case 'startImportQueue':
-      return { expectedVersion: 3 };
+      return { expectedVersion: 2 };
     case 'updateBook':
       return { title: 'Обновленная книга' };
     case 'setBookCoverFromImage':
       return { imageNumber: 1 };
-    case 'updateImportQueue':
-      return {
-        expectedVersion: 2,
-        items: [{ id: 'import-queue-1-item-1', position: 1, confirmedBookOrder: 5 }],
-      };
     case 'updateProject':
       return { description: 'Обновленный проект', title: 'Обновленный проект' };
     case 'updateProjectMemberRole':
@@ -1202,6 +1220,9 @@ function bodyFor(operationId: OperationId): unknown {
       return { expectedRevision: 1, notes: ['draft-1-note-1'] };
     case 'takeChapterDraftVersion':
       return { expectedRevision: 3, whole: true };
+    // specs/2026-11-11-ux9-writing-b.md WB1.2: the plan of a tail that came is the first version of the draft.
+    case 'withdrawChapterDraftPlan':
+      return { expectedNumber: 1 };
     case 'updateChapterDraftPlan':
       return {
         expectedNumber: 1,
@@ -1223,6 +1244,8 @@ function bodyFor(operationId: OperationId): unknown {
       return { kind: 'plan', text: 'Кира узнает правду' };
     case 'updateAuthorMemory':
       return { kind: 'plan', text: 'Кира узнает правду', expectedRevision: 1 };
+    case 'createAuthorMaterial':
+      return { name: 'Ворон', kind: 'character', description: 'Наёмник', properties: [] };
     case 'updateAuthorMaterial':
       return { name: 'оживший кошмар', kind: 'skill', description: 'Сны', properties: [], expectedRevision: 1 };
     case 'confirmAuthorMaterialsImport':
@@ -1235,6 +1258,8 @@ function bodyFor(operationId: OperationId): unknown {
       return { style: 'гравюра' };
     case 'deleteProjectImages':
       return { numbers: [2] };
+    case 'changeProjectImageAngle':
+      return { azimuth: 40, elevation: 25, distance: 0.7 };
     case 'createProjectImageLayer':
       return { instruction: 'Сова вместо ворона.', region: { x: 0.5, y: 0.1, w: 0.25, h: 0.25 } };
     case 'updateProjectImageLayer':
@@ -1252,11 +1277,9 @@ function bodyFor(operationId: OperationId): unknown {
     case 'setAdminWriterQuota':
       return { chat_turns_per_day: 60, active_turns: 'default' };
     case 'setAdminWriterIllustrations':
-      return { state: 'active', imagesPerDay: 40 };
+      return { state: 'blocked' };
     case 'setAdminQuotaDefaults':
-      return { chat_turns_per_day: 40, trial_drawings: 'default' };
-    case 'createIllustrationAccessRequest':
-      return { message: 'Иллюстрации к главам' };
+      return { image_uploads_per_day: 40 };
     case 'createAdminPromoPermission':
       return {
         projectId: 'project-white-port', recipientEmail: null,
@@ -1292,16 +1315,56 @@ function bodyFor(operationId: OperationId): unknown {
       return { draftKey: 'abcdef0123456789abcdef0123456789', blocks: [{ type: 'text', text: 'Ответ' }] };
     case 'setAdminFeedbackStatus':
       return { status: 'answered' };
+    case 'setAdminSubscriptionTier':
+      return {
+        lotUrl: 'https://funpay.com/lots/offer?id=990',
+        limits: {
+          projects: 3, projectBooks: 12, books: 36, chatTurnsPerDay: 30, imagesPerDay: 15, trialImages: 0, chaptersPerWindow: 7, chapterEveryDays: 7,
+          trialChapters: 0, chapterDraftsPerDay: 30, voiceMinutesPerDay: 60, trialVoiceCalls: 0, trialVoiceCallMinutes: 5, accountCharacters: 40_000_000,
+          accountChapters: 8000, drawingTurnsPerDay: 60, draftTurnsPerDay: 80, draftRewritesPerDay: 200, importsPerDay: 30, activeTurns: 2,
+        },
+      };
+    case 'grantAdminWriterTier':
+      return { tier: 'writer', days: 30 };
+    case 'createAdminKeyBatch':
+      return { tier: 'writer', count: 2, note: 'лот FunPay' };
+    case 'checkSubscriptionKey':
+    case 'redeemSubscriptionKey':
+      return { key: preparedKey };
+    case 'revertBookUpdate':
+      return { fingerprint: preparedFingerprint };
+    case 'resetAdminWriterTrials':
+      return { images: true };
     default:
       return {};
   }
 }
+
+/** The key of a batch the preparation of checkSubscriptionKey and redeemSubscriptionKey made. */
+let preparedKey = '';
+/** The fingerprint of the preview of the return the preparation of revertBookUpdate read. */
+let preparedFingerprint = '';
 
 async function prepareRepositoryForOperation(
   repository: ReturnType<typeof createMockApiClient>,
   operationId: OperationId,
 ): Promise<Record<string, string>> {
   switch (operationId) {
+    case 'endAdminWriterPeriod': {
+      const period = await repository.grantAdminWriterTier(pathParams.userId!, { tier: 'pro', forever: true });
+      return { periodId: period.id };
+    }
+    case 'checkSubscriptionKey':
+    case 'redeemSubscriptionKey': {
+      // A key of «Писатель» from a batch: the synthetic author has «Профи» without term, so it starts now in parallel.
+      const file = await repository.createAdminKeyBatch({ tier: 'writer', count: 1 });
+      preparedKey = (await file.blob.text()).trim();
+      return {};
+    }
+    case 'revokeAdminKeyBatch': {
+      await repository.createAdminKeyBatch({ tier: 'writer', count: 1 });
+      return { batchId: (await repository.listAdminKeyBatches()).batches[0]!.id };
+    }
     case 'getFeedbackThread':
     case 'addFeedbackMessage':
     case 'getFeedbackImage':
@@ -1332,6 +1395,12 @@ async function prepareRepositoryForOperation(
       }
       return { draftId: draft.id };
     }
+    case 'withdrawChapterDraftPlan': {
+      const draft = await repository.createChapterDraft('project-white-port', { kind: 'sketch', title: 'Глава', idea: 'Кира уходит.', text: 'Кира шла к воротам.\n\nОльм вышел из караулки.' },
+        { idempotencyKey: 'idem-msw-draft-withdraw' });
+      await repository.submitDraftTurn('project-white-port', draft.id, { text: 'Отсюда до конца', place: 'Ольм вышел из караулки.', button: true }, { idempotencyKey: 'idem-msw-turn-withdraw' });
+      return { draftId: draft.id };
+    }
     case 'getChapterDraftPlan':
     case 'updateChapterDraftPlan':
     case 'updateChapterDraftMoment':
@@ -1358,6 +1427,9 @@ async function prepareRepositoryForOperation(
     }
     case 'loadChapterDraftFile':
       return { draftId: (await repository.createChapterDraft('project-white-port', { kind: 'sketch', title: 'Глава', text: 'Набросок' }, { idempotencyKey: 'idem-msw-draft-file' })).id };
+    case 'takeChapterDraftOriginalLook':
+      // A draft of the text the mock reads from any Word file, loaded as a text: its original has no look.
+      return { draftId: (await repository.startChapterProofread('project-white-port', { text: mockWordChapter }, { idempotencyKey: 'idem-msw-proofread-look' })).id };
     case 'applyChapterDraftNotes':
     case 'getChapterDraftExport': {
       const draft = await repository.startChapterProofread('project-white-port', { text: 'Кайл шол к реке.' }, { idempotencyKey: `idem-msw-proofread-${operationId}` });
@@ -1379,6 +1451,33 @@ async function prepareRepositoryForOperation(
       return {
         drawingId: (await repository.createDrawing('project-white-port', { idea: 'Дракон на скале', selfDescribed: true }, { idempotencyKey: `idem-msw-drawing-${operationId}` })).id,
       };
+    case 'redrawProjectImageVariant': {
+      // A variant of a group that the service of drawings stopped (specs/2026-11-12-ux10-drawing-ops.md DO1).
+      const drawing = await repository.createDrawing('project-white-port', { idea: 'Дракон на скале', selfDescribed: true }, { idempotencyKey: 'idem-msw-redraw' });
+      const drawn = await repository.drawDrawing('project-white-port', drawing.id, { variants: 2, expectedRevision: drawing.revision }, { idempotencyKey: 'idem-msw-redraw-draw' });
+      const [ready, failed] = drawn.variantImages.map((image) => image.number);
+      for (let read = 0; read < 7; read += 1) await repository.getProjectImage('project-white-port', ready!);
+      repository.setScenario({ ...repository.getScenario(), drawingLimit: { retryAt: null } });
+      for (let read = 0; read < 3; read += 1) await repository.getProjectImage('project-white-port', failed!);
+      repository.setScenario({ ...repository.getScenario(), drawingLimit: undefined });
+      return { number: String(failed) };
+    }
+    case 'cancelDeferredDrawing': {
+      // A drawing put off until the service of drawings is free (DO2.2).
+      const drawing = await repository.createDrawing('project-white-port', { idea: 'Дракон на скале', selfDescribed: true }, { idempotencyKey: 'idem-msw-put-off' });
+      repository.setScenario({ ...repository.getScenario(), drawingLimit: { retryAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() } });
+      const drawn = await repository.drawDrawing('project-white-port', drawing.id, { variants: 1, expectedRevision: drawing.revision }, { idempotencyKey: 'idem-msw-put-off-draw' });
+      for (let read = 0; read < 3; read += 1) await repository.getProjectImage('project-white-port', drawn.current!.number);
+      repository.setScenario({ ...repository.getScenario(), drawingLimit: undefined });
+      await repository.drawDrawing('project-white-port', drawing.id, { variants: 1, expectedRevision: drawing.revision, whenFree: true }, { idempotencyKey: 'idem-msw-put-off-later' });
+      return { drawingId: drawing.id };
+    }
+    case 'restoreDrawing': {
+      // A drawing of «Недавно удалённые» (specs/2026-11-11-ux7-trash.md TB3.1).
+      const drawing = await repository.createDrawing('project-white-port', { idea: 'Дракон на скале', selfDescribed: true }, { idempotencyKey: 'idem-msw-drawing-restore' });
+      await repository.deleteDrawing('project-white-port', drawing.id);
+      return { drawingId: drawing.id };
+    }
     case 'chooseProjectImageLayerVariant': {
       const image = await repository.createProjectImageLayer('project-white-port', 1, { instruction: 'Сова', region: { x: 0.5, y: 0.1, w: 0.25, h: 0.25 } }, { idempotencyKey: 'idem-msw-layer-choice' });
       return { number: '1', layerId: image.layers.at(-1)!.id };
@@ -1440,16 +1539,13 @@ async function prepareRepositoryForOperation(
       return { version: '1' };
     case 'getImportQueue':
     case 'uploadImportQueueItem':
-    case 'updateImportQueue':
     case 'cancelImportQueue':
+    case 'startImportQueue':
       return { queueId: await createImportQueueFixture(repository) };
-    case 'startImportQueue': {
-      // Like the backend, the queue starts only after its volume number is confirmed.
-      const queueId = await createImportQueueFixture(repository);
-      await repository.updateImportQueue(pathParams.projectId!, queueId, {
-        expectedVersion: 2,
-        items: [{ id: `${queueId}-item-1`, position: 1, confirmedBookOrder: 5 }],
-      });
+    case 'skipImportQueueItem': {
+      // A volume waits for the author: its file did not pass the check (specs/2026-11-11-ux7-upload.md UP3.2).
+      const queueId = await createImportQueueFixture(repository, 'text/plain');
+      await repository.startImportQueue(pathParams.projectId!, queueId, { expectedVersion: 2 }, { idempotencyKey: 'idem-msw-skip-start' });
       return { queueId };
     }
     case 'updateProjectImageLayer':
@@ -1473,6 +1569,17 @@ async function prepareRepositoryForOperation(
     case 'restoreBook':
       await repository.deleteBook(pathParams.bookId!);
       return {};
+    case 'previewBookUpdateRevert':
+    case 'revertBookUpdate': {
+      // The book was updated from a file: its version before the update can come back (specs/2026-11-12-ux10-book-revert.md).
+      const started = await repository.importBookFile(pathParams.projectId!, {
+        file: new File(['<FictionBook>том</FictionBook>'], 'tom.fb2', { type: 'application/x-fictionbook+xml' }),
+        options: { importMode: 'update_book', bookId: pathParams.bookId! },
+      }, { idempotencyKey: 'idem-msw-book-update' });
+      await repository.getJob(started.job.id);
+      preparedFingerprint = (await repository.previewBookUpdateRevert(pathParams.bookId!)).fingerprint;
+      return {};
+    }
     case 'restoreChapter':
       await repository.deleteChapter(pathParams.chapterId!);
       return {};
@@ -1481,18 +1588,17 @@ async function prepareRepositoryForOperation(
   }
 }
 
-async function createImportQueueFixture(repository: ReturnType<typeof createMockApiClient>) {
+async function createImportQueueFixture(repository: ReturnType<typeof createMockApiClient>, contentType = 'application/epub+zip') {
   const queue = await repository.createImportQueue(pathParams.projectId!, {
     items: [{
       clientItemId: 'msw-import-fixture',
       position: 1,
       sourceFileName: 'white-port.epub',
-      detectedBookOrder: 5,
     }],
   }, { idempotencyKey: 'idem-msw-import-queue-fixture' });
   await repository.uploadImportQueueItem(pathParams.projectId!, queue.id, {
     itemId: queue.items[0]!.id,
-    file: { name: 'white-port.epub', contentType: 'application/epub+zip', sizeBytes: 12 },
+    file: { name: 'white-port.epub', contentType, sizeBytes: 12 },
   }, { idempotencyKey: 'idem-msw-import-upload-fixture' });
   return queue.id;
 }
@@ -1507,11 +1613,14 @@ async function createChatFixture(repository: ReturnType<typeof createMockApiClie
 }
 
 const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
+  grantAdminWriterTier: 201,
+  createAdminKeyBatch: 201,
   uploadFeedbackImage: 201,
   createFeedbackThread: 201,
   addFeedbackMessage: 201,
   replyAdminFeedback: 201,
   createAuthorMemory: 201,
+  createAuthorMaterial: 201,
   hideSagaMapItem: 201,
   restoreSagaMapItem: 204,
   deleteAuthorMemory: 204,
@@ -1550,13 +1659,13 @@ const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
   deleteChatSession: 204,
   deleteProjectImage: 204,
   cutoutProjectImage: 201,
+  changeProjectImageAngle: 201,
   createProjectImageVariant: 201,
   enlargeProjectImage: 201,
   createProjectImageLayer: 201,
   createProjectCharacterSheet: 201,
   createIllustrationStyleSketches: 201,
   uploadProjectImage: 201,
-  createIllustrationAccessRequest: 201,
   createAdminPromoPermission: 201,
   createDrawing: 201,
   deleteDrawing: 204,
@@ -1582,6 +1691,12 @@ async function expectGeneratedOperationResponse(operationId: OperationId, respon
   if (operationId === 'getBookExport' || operationId === 'getChapterDraftExport') {
     expect(response.headers.get('content-disposition'), operationId).toContain("attachment; filename*=utf-8''");
     expect((await response.arrayBuffer()).byteLength, operationId).toBeGreaterThan(0);
+    return;
+  }
+  if (operationId === 'createAdminKeyBatch') {
+    expect(response.headers.get('content-type'), operationId).toContain('text/plain');
+    expect(response.headers.get('content-disposition'), operationId).toMatch(/^attachment; filename="canonkeeper-writer-\d{4}-\d{2}-\d{2}-2\.txt"$/u);
+    expect((await response.text()).split('\n'), operationId).toHaveLength(2);
     return;
   }
   if (operationId === 'getFeedbackImage') {

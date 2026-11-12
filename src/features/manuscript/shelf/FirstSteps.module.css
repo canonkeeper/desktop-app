@@ -108,3 +108,16 @@
     padding: 14px;
   }
 }
+
+/* The steps and, while the saga has no book, the other ways in beside each other under them (FS1.5). */
+.first {
+  display: grid;
+  gap: 16px;
+}
+
+.ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: start;
+  gap: 16px;
+}

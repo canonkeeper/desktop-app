@@ -12,8 +12,10 @@ import (
 	"strconv"
 
 	domain "canonkeeper/backend/internal/domain/sagamemory"
+	"canonkeeper/backend/internal/domain/shelf"
 	service "canonkeeper/backend/internal/services/sagamemory"
 	storedb "canonkeeper/backend/internal/store/db"
+	indexingstore "canonkeeper/backend/internal/store/indexing"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -22,9 +24,18 @@ import (
 
 type Repository struct {
 	db *storedb.DB
+	// textIndex is the owner of the text index the cards Job is queued through; the store of the process, which knows
+	// whether the build has its helper (specs/2026-11-12-desk-window.md WN3.4).
+	textIndex *indexingstore.Store
 }
 
 func New(db *storedb.DB) *Repository { return &Repository{db: db} }
+
+// WithTextIndex queues the cards Job through the text index store of the process; without it the repository queues none.
+func (repository *Repository) WithTextIndex(store *indexingstore.Store) *Repository {
+	repository.textIndex = store
+	return repository
+}
 
 // Selection reads the canonical chapter selection of a text version (the same rows the
 // chat turn baseline uses) and fingerprints it. Only chapters whose current revision has
@@ -74,13 +85,17 @@ func readSelection(ctx context.Context, queries *sqlc.Queries, project pgtype.UU
 	if err != nil {
 		return service.Selection{}, err
 	}
-	bookOrder := map[string]int{}
+	bookNumber := map[string]int{}
 	bookTitle := map[string]string{}
+	shelved := make([]shelf.Book, 0, len(books))
 	for _, book := range books {
 		id := storedb.UUIDString(book.ID)
-		bookOrder[id] = int(book.Order)
+		shelved = append(shelved, shelf.Book{ID: id, Order: int(book.Order)})
+		bookNumber[id] = int(book.KeyNumber)
 		bookTitle[id] = book.Title
 	}
+	// «Книга N» of the places is the rank of the book among the living ones (specs/2026-11-11-ux7-reorder.md RK1.6).
+	bookOrder := shelf.Places(shelved)
 	selection := service.Selection{ProjectID: projectID, View: view}
 	hash := sha256.New()
 	for _, row := range rows {
@@ -92,7 +107,7 @@ func readSelection(ctx context.Context, queries *sqlc.Queries, project pgtype.UU
 		chapter := service.SelectedChapter{
 			ID: storedb.UUIDString(row.ChapterID), Revision: row.SourceRevision.Int64,
 			ContentHash: hex.EncodeToString(row.StateChapterContentHash),
-			BookID:      bookID, BookOrder: bookOrder[bookID], BookTitle: bookTitle[bookID],
+			BookID:      bookID, BookOrder: bookOrder[bookID], BookKeyNumber: bookNumber[bookID], BookTitle: bookTitle[bookID],
 			Order: int(row.ChapterOrder.Int32), Title: row.ChapterTitle.String,
 		}
 		selection.Chapters = append(selection.Chapters, chapter)
@@ -134,7 +149,7 @@ func (repository *Repository) Chapters(ctx context.Context, selection service.Se
 		byID[selected.ID] = i
 		chapters[i] = domain.Chapter{
 			ID: selected.ID, Revision: selected.Revision, ContentHash: selected.ContentHash, BookID: selected.BookID,
-			BookOrder: selected.BookOrder, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
+			BookOrder: selected.BookOrder, BookKeyNumber: selected.BookKeyNumber, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
 		}
 	}
 	if len(params.ChapterIds) == 0 {

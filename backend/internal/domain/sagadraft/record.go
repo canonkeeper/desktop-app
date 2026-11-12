@@ -84,6 +84,28 @@ type Job struct {
 	Done      int
 	Total     int
 	ErrorCode string
+	// Missing is the scene a writing failed on and the numbers of the lines of the author it lost
+	// (specs/2026-11-11-ux9-writing-a.md WA2.4); nil for any other end.
+	Missing *Missing
+	// Writing is the scene the writing writes now, as its answer comes (specs/2026-11-12-ux10-scene-stream.md ST1.4): only
+	// while the Job runs, and only for an editor of the saga.
+	Writing *Writing
+}
+
+// Writing is the scene in writing: its number in the plan, its call, its step — writing, checking, again — why it is
+// written again, and its text so far, a draft that may still change.
+type Writing struct {
+	Scene   int    `json:"scene"`
+	Attempt int    `json:"attempt"`
+	Step    string `json:"step"`
+	Reason  string `json:"reason,omitempty"`
+	Text    string `json:"text,omitempty"`
+}
+
+// Missing is the scene of the plan whose writing kept losing lines to keep word for word, and their numbers among them.
+type Missing struct {
+	Scene int   `json:"scene"`
+	Lines []int `json:"lines"`
 }
 
 // Active says the Job may still write into the draft.
@@ -130,9 +152,14 @@ type Draft struct {
 	PlanNumber   int
 	PlanApproved bool
 	PlanIdeaHash string
-	PackChoices  []PackChoice
+	// PlanReason is why the latest version of the plan was made (WA4): a page tells a plan from the author's text by it.
+	PlanReason  string
+	PackChoices []PackChoice
 	// Original is the chapter the author loaded as a file, nil without one (specs/2026-11-07-writing-proofread.md, PR7.1).
 	Original *Original
+	// KeptVersion is the version the edit that answered this draft kept of it before the edit, 0 without one
+	// (Change.KeepVoice).
+	KeptVersion int
 }
 
 // PackChoice is the author's decision about an entry of the pack of the writing agent (specs/2026-11-06-writing-agent.md,
@@ -167,6 +194,9 @@ type Edit struct {
 	BookWords    int
 	// Gone says the chapter is deleted from the book: the draft goes in as a new chapter.
 	Gone bool
+	// Same says the book holds the text and the title of the draft (HeldByBook): «Заменить главу в книге» has nothing to
+	// put there (specs/2026-11-11-ux9-writing-a.md WA4.1).
+	Same bool
 }
 
 // Changed says the chapter changed in the book since the draft took its text.
@@ -205,11 +235,24 @@ type Change struct {
 	// author takes a piece out with the menu of a selection (WA7.7).
 	CaseChoice  *Case
 	KeepVersion bool
+	// KeepVoice keeps the draft as it stands — its text and its idea — in the version «до разговора» before the edit, or
+	// alone when the change edits nothing: the first change a conversation with the voice makes in the draft
+	// (specs/2026-11-10-ux5-voice.md VO1.1).
+	KeepVoice bool
+	// Variant keeps a text of the author the draft could not take — the chapter changed in another place where he typed —
+	// as the version «Ваш вариант», and changes nothing else (specs/2026-11-11-ux5-writing-path.md WP5.4).
+	Variant *Variant
+}
+
+// Variant is the author's text of the chapter, his idea, or both, as he typed them; what he did not type is the draft's.
+type Variant struct {
+	Text *string
+	Idea *string
 }
 
 // Empty says the edit changes nothing.
 func (change Change) Empty() bool {
-	return change == Change{} || change == Change{KeepVersion: true}
+	return change.Title == nil && change.Place == nil && change.Idea == nil && change.Kind == nil && change.Text == nil && change.CaseChoice == nil
 }
 
 // Apply is the draft after the edit.
@@ -232,11 +275,6 @@ func (change Change) Apply(draft Draft) Draft {
 	return draft
 }
 
-// Paragraphs is the text of a chapter as a book holds it: one paragraph per line that is not blank.
-func Paragraphs(chapter string) []string {
-	return Lines(chapter)
-}
-
 // Summary is a draft in the list: nothing of its text.
 type Summary struct {
 	ID    string
@@ -244,13 +282,42 @@ type Summary struct {
 	Kind  Kind
 	Stage Stage
 	// Words are those of the working text (owner 03.11: «название · сколько слов · когда»).
-	Words     int
-	JobStatus string
-	Revision  int64
-	// Edits says the draft edits a chapter of the book (A8.7).
+	Words    int
+	Revision int64
+	// Edits says the draft edits a chapter of the book (A8.7); EditState where it stands against it (WA1.3).
 	Edits     bool
+	EditState EditState
+	// Opening names a draft without a title by the beginning of its idea or text (WA1.1).
+	Opening   string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// What names the step of the draft in the list in the words of its strip (specs/2026-11-11-ux5-writing-path.md WP1.2):
+	// whether it has an idea, its latest plan, its last Job, its open findings of «Сверка» and corrections of the
+	// proofreading. Nothing of its text.
+	Idea        bool
+	Plan        *PlanState
+	Job         *Job
+	Findings    int
+	Corrections int
+	// Attachment is the chapter attached in the chat the proofreading of the draft began from, nil for any other draft
+	// (specs/2026-11-11-ux5-proofread-mode.md PM3.3): the card of the chat reads its state by it.
+	Attachment *Attachment
+}
+
+// Attachment names a chapter attached to a question of the chat: the chat and the number of the attachment in it
+// (specs/2026-11-07-chat-attach-chapter.md CA2.4).
+type Attachment struct {
+	ChatID string
+	Number int
+}
+
+// PlanState is the latest version of the plan of a draft as a page names its step: approved by the author, outgrown by
+// a new idea, and why it was made (specs/2026-11-06-writing-agent.md WA4).
+type PlanState struct {
+	Number   int
+	Approved bool
+	Stale    bool
+	Reason   string
 }
 
 // Cursor continues a list after the draft it names.
@@ -272,10 +339,15 @@ func IdeaHash(idea string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Original is what the page shows of the chapter loaded as a file: its name, its kind, its words and when it came.
+// Original is what the page shows of the chapter loaded as a file: its name, its kind, its words, when it came, and
+// whether it keeps the look of its Word file (specs/2026-11-07-writing-proofread.md, PR9.3).
 type Original struct {
 	FileName string
 	Format   string
 	Words    int
 	LoadedAt time.Time
+	Look     bool
+	// Revisions are the revisions of Word the file with corrections has now (specs/2026-11-11-ux5-proofread-mode.md
+	// PM1.4): counted by the writer of the file (writingagent.FileRevisions).
+	Revisions int
 }

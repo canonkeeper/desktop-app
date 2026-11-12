@@ -1,0 +1,86 @@
+/* An empty section (specs/2026-11-10-ux2-patterns-states.md PS2.1; Pattern/Common/Empty Block — Empty State in 720 px). */
+.empty {
+  display: grid;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  justify-items: center;
+  gap: var(--ck-space-3);
+  margin-inline: auto;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: var(--ck-space-6) var(--ck-space-5);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  text-align: center;
+}
+
+.icon {
+  display: inline-grid;
+  color: var(--ck-subtle-foreground);
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.why,
+.need {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  line-height: 1.45;
+}
+
+.need {
+  color: var(--ck-foreground);
+}
+
+/* Nothing by the filter (PS2.3): one line and «Сбросить отбор», lighter than an empty section. */
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ck-space-2) var(--ck-space-3);
+  padding: var(--ck-space-5) var(--ck-space-4);
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  text-align: center;
+}
+
+.filter p {
+  margin: 0;
+}
+
+.reset {
+  min-height: 44px;
+  border: 0;
+  padding: 0 var(--ck-space-2);
+  background: transparent;
+  color: var(--ck-link);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* «Сага не найдена» (specs/2026-11-11-ux9-shelf-chat.md SC1.9): the sagas of the author to open, one button each. */
+.choice {
+  display: grid;
+  justify-items: center;
+  gap: var(--ck-space-2);
+}
+
+.choiceList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--ck-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

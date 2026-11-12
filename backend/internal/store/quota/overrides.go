@@ -12,9 +12,24 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Overrides reads the writer's own values (nil — the default).
-func (store *Store) Overrides(ctx context.Context, userID string) (map[quota.Key]*int64, error) {
-	return Overrides(ctx, store.db.Pool, userID)
+// LimitSources is the port of services/quota.GetWriterQuota (specs/2026-11-08-subscription-tiers.md TR2.6): where each
+// limit of the writer comes from — his own value, his plan or the default — by the order of quota.Resolve.
+func (store *Store) LimitSources(ctx context.Context, userID string) (map[quota.Key]quota.Source, error) {
+	overrides, err := Overrides(ctx, store.db.Pool, userID)
+	if err != nil {
+		return nil, err
+	}
+	own := quota.Settings{}
+	for key, value := range overrides {
+		if value != nil {
+			own[key] = *value
+		}
+	}
+	plan, err := store.fence.planInTx(ctx, store.db.Pool, userID)
+	if err != nil {
+		return nil, err
+	}
+	return quota.LimitSources(own, plan), nil
 }
 
 // SetOverrides is the port of services/quota.SetOverrides: the changes to one live writer in one
@@ -42,7 +57,7 @@ func (store *Store) SetOverrides(ctx context.Context, userID string, changes []q
 }
 
 // Overrides reads the writer's own values (nil — the default).
-func Overrides(ctx context.Context, db querier, userID string) (map[quota.Key]*int64, error) {
+func Overrides(ctx context.Context, db Querier, userID string) (map[quota.Key]*int64, error) {
 	values, err := readOverrides(ctx, db, userID, false)
 	if err != nil {
 		return nil, err
@@ -100,7 +115,7 @@ func SetOverridesInTx(ctx context.Context, tx pgx.Tx, userID string, changes []q
 	return changed, nil
 }
 
-func readOverrides(ctx context.Context, db querier, userID string, lock bool) ([16]*int64, error) {
+func readOverrides(ctx context.Context, db Querier, userID string, lock bool) ([16]*int64, error) {
 	var values [16]*int64
 	query := `
 		SELECT chat_turns_per_day::bigint, active_turns::bigint, imports_per_day::bigint, projects::bigint,

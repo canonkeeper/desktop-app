@@ -1,8 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { ReaderChapter } from '../../../entities/manuscript/api';
 import type { SourceView } from '../../../entities/saga/api';
-import type { RouteNavigate } from '../../../shared/navigation/app-route';
-import type { ToastInput } from '../../../ui/feedback/useToastQueue';
+import type { BackFrom, RouteNavigate } from '../../../shared/navigation/app-route';
 import type { ReaderParagraphDrawings } from './ReaderCore';
 
 export interface ReaderDrawingsOptions {
@@ -14,22 +13,32 @@ export interface ReaderDrawingsOptions {
   canEdit: boolean;
   route: { query: URLSearchParams };
   navigate: RouteNavigate;
-  toasts: { push: (toast: ToastInput) => number };
+  /** The way back of a step from the reader: «← К главе «…»» over «Рисование» leads back to this place (RD3.2, PS4.1). */
+  from: BackFrom;
 }
 
-/** The drawings of the reader on the site (illustrations R8.9, R8.10): what the open chapter shows of them. */
+/** «Нарисовать» of a selection (RD3.2): the words, where they stand on the screen, their paragraphs and their place in words. */
+export interface DrawSelection {
+  text: string;
+  rect: DOMRect;
+  paragraphIds: string[];
+  /** «Книга 2, гл. 12 «Белый порт», абзацы 3–4». */
+  place: string;
+}
+
+/** The drawings of the reader on the site (illustrations R8.9, R8.10; specs/2026-11-10-ux7-reader.md RD1.8, RD3.2, RD3.3). */
 export interface ReaderDrawings {
   /** The key of the open chapter in the saga: the place of the voice call (specs/2026-11-03-voice-assistant.md V2.4). */
   chapterKey: string;
   drawings?: ReaderParagraphDrawings;
-  /** «Иллюстрированная книга» in the chapter header. */
-  toggle: ReactNode;
-  /** On a phone the chapter header is hidden: the switch stands above the text. */
-  mobileToggle: ReactNode;
+  /** «Показывать рисунки в тексте» of «⋯»; null while the saga has no drawings and the author may not draw. */
+  inText: { shown: boolean; set: (shown: boolean) => void } | null;
+  /** The tab «Рисунки» of «Содержание»; null — the chapter has none. */
+  tab: ReactNode;
   drawingCount: number;
   drawLocked: boolean;
-  /** «Нарисовать эту сцену» with the selected paragraphs as the source of the question. */
-  onDrawSelection?: (selected: string[]) => void;
+  /** «Нарисовать» of a selection: the window at the selection; a drawing is made only by its own «Нарисовать». */
+  onDrawSelection?: (selection: DrawSelection) => void;
   notice: ReactNode;
   overlays: ReactNode;
 }

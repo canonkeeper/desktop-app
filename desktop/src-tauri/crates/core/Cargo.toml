@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[package]
+name = "canonkeeper-desktop-core"
+version = "0.1.0"
+description = "The CanonKeeper desktop shell without its window: the control channel, paths, words, navigation and the supervision of the backend"
+license = "AGPL-3.0-only"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"

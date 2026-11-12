@@ -2,7 +2,8 @@ import type { Element, ElementContent, Root } from 'hast';
 import { useMemo, useRef, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { parseAttachmentCitation, parseSourceCitation, type SourceCitation } from '../shared/navigation/chat-source';
+import { attachmentNumber, parseAttachmentCitation, parseSourceCitation, type SourceCitation } from '../shared/navigation/chat-source';
+import { missingPlace, paragraphsLabel, placeLabel, withoutDeviceWords, type Places } from '../shared/text/place';
 import styles from './MarkdownContent.module.css';
 
 const openingPunctuation = /[([«„“‘"']+$/u;
@@ -83,6 +84,18 @@ function addressAsText(node: Element | undefined, href: string | undefined, labe
   return <>{label}<span data-link-address=""> ({address})</span></>;
 }
 
+/**
+ * The words of a citation as the author reads them (specs/2026-11-10-ux1-names.md N2.3): the place the server named
+ * for its chapter with the paragraphs in words — «Книга 2, гл. 12 „Белый порт“, абзац 3». Until the server has named
+ * it (a remark being written, a chapter the text lost) the words of the model stand, without «¶» and keys. A place of
+ * the chapter attached to the chat is «ваша глава, абзац 2».
+ */
+function citationWords(source: SourceCitation, written: string, places: Places | undefined) {
+  if (attachmentNumber(source) !== null) return ['ваша глава', paragraphsLabel(source.from, source.to)].filter(Boolean).join(', ');
+  const place = places?.[source.chapterKey];
+  return place ? placeLabel(place, source.from, source.to) : withoutDeviceWords(written).trim() || missingPlace;
+}
+
 /** Where a `drawing:` link of the chat leads: the form of a new drawing, or the drawing of version K. */
 export type WorkshopLinkTarget = 'new' | number;
 
@@ -113,32 +126,39 @@ interface MarkdownContentProps {
   renderImage?: (image: MarkdownImage) => ReactNode;
   /**
    * Draws a `drawing:new` or `drawing:K` link of the chat into the drawing workshop (specs/2026-11-02-image-workshop.md
-   * IW7.3); without it the label stays as text.
+   * IW7.3); without it the label stays as text. `scene` is the title of the link — the scene the helper described,
+   * `[Нарисовать в «Рисунках»](drawing:new "Мара на причале…")` (specs/2026-11-11-ux9-shelf-chat.md SC3.4).
    */
-  renderWorkshopLink?: (target: WorkshopLinkTarget, label: ReactNode) => ReactNode;
+  renderWorkshopLink?: (target: WorkshopLinkTarget, label: ReactNode, scene?: string) => ReactNode;
   /** The product's own text (legal documents): its links stay links. Elsewhere only source citations are. */
   ownLinks?: boolean;
+  /** The places of the chapters the citations of the text name, as the server wrote them beside the keys (N2.3). */
+  places?: Places;
 }
 
-export function MarkdownContent({ children, className, renderImage, renderSourceLink, renderWorkshopLink, ownLinks = false }: MarkdownContentProps) {
+export function MarkdownContent({ children, className, places, renderImage, renderSourceLink, renderWorkshopLink, ownLinks = false }: MarkdownContentProps) {
   const sourceRenderer = useRef(renderSourceLink);
   sourceRenderer.current = renderSourceLink;
+  const placesRef = useRef(places);
+  placesRef.current = places;
   const imageRenderer = useRef(renderImage);
   imageRenderer.current = renderImage;
   const workshopRenderer = useRef(renderWorkshopLink);
   workshopRenderer.current = renderWorkshopLink;
   // Stable component identities keep the clicked source link mounted across deltas and navigation.
   const components = useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>['components']>>(() => ({
-    a: ({ node, href, id, children: label }) => {
+    a: ({ node, href, id, title, children: label }) => {
       // A footnote and its way back are links inside the page, not a way out of it.
       if (ownLinks || href?.startsWith('#')) return <a href={href} id={id}>{label}</a>;
       const workshop = parseWorkshopLink(href);
-      if (workshop !== null) return workshopRenderer.current ? <>{workshopRenderer.current(workshop, label)}</> : <>{label}</>;
+      const scene = title?.trim() || undefined;
+      if (workshop !== null) return workshopRenderer.current ? <>{workshopRenderer.current(workshop, label, scene)}</> : <>{label}</>;
       if (!href || !citationLink(href)) return addressAsText(node, href, label);
       const source = citationOf(href);
+      const words = source ? citationWords(source, node ? textOf(node) : '', placesRef.current) : label;
       return source && sourceRenderer.current
-        ? sourceRenderer.current(source, label)
-        : <span title="Источник недоступен">{label}</span>;
+        ? sourceRenderer.current(source, words)
+        : <span title="Место недоступно">{source ? words : withoutDeviceWords(node ? textOf(node) : '') || label}</span>;
     },
     img: ({ alt, src }) => typeof src === 'string' && src.startsWith('image:') && imageRenderer.current
       ? <>{imageRenderer.current({ src, alt: alt ?? '' })}</>

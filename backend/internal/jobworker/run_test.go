@@ -576,6 +576,61 @@ func TestWorkerRunOnceHeartbeatConflictFinishesExactCancelingClaim(t *testing.T)
 	}
 }
 
+// The cancel of a Job in work reaches the model call it waits on, for every kind
+// (specs/2026-11-08-deletion-stops-processing.md R2.1): the author's cancel, a deletion or a
+// superseding index turns the Job canceling, the next heartbeat cannot extend the claim, cancels
+// the handler's context, and the Job ends canceled through its owner under the same claim.
+func TestWorkerRunOnceCancelsTheWaitingModelCallWhenTheJobTurnsCanceling(t *testing.T) {
+	for _, kind := range []jobs.Kind{jobs.KindChapterCards, jobs.KindSagaLayer, jobs.KindCanonTextIndex, jobs.KindImport} {
+		t.Run(string(kind), func(t *testing.T) {
+			job := jobForWorkerTest("job-1", kind)
+			store := newFakeWorkerStore(job)
+			calling := make(chan struct{})
+			var callErr error
+			handler := &committedHandlerForTest{
+				kind:  kind,
+				store: store,
+				onHandle: func(ctx context.Context, _ jobs.Job) error {
+					close(calling)
+					// The model call: it returns only when its context ends.
+					<-ctx.Done()
+					callErr = ctx.Err()
+					return callErr
+				},
+			}
+			worker := NewWorker(store, []Handler{handler}, workerTestLogger)
+			worker.heartbeatInterval = time.Millisecond
+			go func() {
+				<-calling
+				store.forceStatusForTest(job.ID, jobs.StatusCanceling)
+			}()
+
+			done := make(chan struct{})
+			var ran bool
+			var err error
+			go func() {
+				ran, err = worker.RunOnce(context.Background())
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the handler kept waiting on its model call after the Job turned canceling")
+			}
+			if err != nil || !ran {
+				t.Fatalf("RunOnce() = (%v, %v), want the canceling Job finished", ran, err)
+			}
+			if !errors.Is(callErr, context.Canceled) {
+				t.Fatalf("model call ended with %v, want its context canceled", callErr)
+			}
+			if len(handler.cancellations) != 1 || handler.cancellations[0].Status != jobs.StatusCanceling ||
+				handler.cancellations[0].WorkerClaim != store.jobs[job.ID].WorkerClaim || store.jobs[job.ID].Status != jobs.StatusCanceled {
+				t.Fatalf("cancellations/job = %#v / %#v, want one owner cancel under the same claim", handler.cancellations, store.jobs[job.ID])
+			}
+		})
+	}
+}
+
 func TestWorkerRunOnceRequiresLaunchCleanupBeforeCancellationTerminalizes(t *testing.T) {
 	store := newFakeWorkerStore(jobForWorkerTest("job-1", jobs.KindChapterCards))
 	store.heartbeatErrs = []error{jobs.ErrConflict}

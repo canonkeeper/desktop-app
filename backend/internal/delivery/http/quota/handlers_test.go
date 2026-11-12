@@ -27,6 +27,7 @@ func (account *fakeAccount) Execute(_ context.Context, userID string) (domain.Ac
 	return domain.Account{
 		Limits: domain.Defaults(), Day: time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC),
 		ResetsAt: time.Date(2026, 10, 28, 21, 0, 0, 0, time.UTC), ChatTurns: 24, ActiveTurns: 1, Projects: 1, Images: 3,
+		ImageUploads: 2, ChapterDrafts: 5, DrawingTurns: 7, DraftTurns: 11, DraftRewrites: 13,
 		Sources:       domain.Sources{Books: 13, Chapters: 641, Characters: 6534115},
 		OwnedProjects: []domain.ProjectSources{{ProjectID: "project-a", Sources: domain.Sources{Books: 13, Chapters: 641, Characters: 6534115}}},
 	}, nil
@@ -47,6 +48,14 @@ func TestGetAccountQuota(t *testing.T) {
 		body.ChatTurns != (counter{Used: 24, Limit: 30}) || body.Images != (counter{Used: 3, Limit: 30}) || body.Account.Characters != (counter{Used: 6534115, Limit: 25_000_000}) ||
 		len(body.OwnedProjects) != 1 || body.OwnedProjects[0].Sources.Characters != (counter{Used: 6534115, Limit: 15_000_000}) {
 		t.Fatalf("body = %+v", body)
+	}
+
+	// specs/2026-11-10-ux2-tariff-account.md TA2.3: every counter of a day a refusal can meet stands in the answer, read
+	// by the same fence as the limits — the page «Тариф» counts nothing itself.
+	if body.ImageUploads != (counter{Used: 2, Limit: 30}) || body.ChapterDrafts != (counter{Used: 5, Limit: 20}) ||
+		body.DrawingTurns != (counter{Used: 7, Limit: 60}) || body.DraftTurns != (counter{Used: 11, Limit: 60}) ||
+		body.DraftRewrites != (counter{Used: 13, Limit: 200}) {
+		t.Fatalf("the counters of the day = %+v", body)
 	}
 
 	router = chi.NewRouter()

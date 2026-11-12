@@ -321,7 +321,7 @@ func readyImportQueueForRetention(t *testing.T, store *librarystore.Store, proje
 	for index, order := range orders {
 		items[index] = library.CreateImportQueueItemStoreInput{
 			ClientItemID: fmt.Sprintf("%s-item-%d", key, index), Position: index + 1,
-			SourceFileName: fmt.Sprintf("book-%d.fb2", order), DetectedBookOrder: order,
+			SourceFileName: fmt.Sprintf("book-%d.fb2", order),
 		}
 	}
 	queue, err := store.CreateImportQueueDraftForActor(context.Background(), library.CreateImportQueueDraftStoreInput{
@@ -339,7 +339,7 @@ func readyImportQueueForRetention(t *testing.T, store *librarystore.Store, proje
 			ExpectedVersion: queue.Version + int64(index), StorageKey: key + fmt.Sprintf("-upload-%d", index),
 			SourceFileName: queue.Items[index].SourceFileName, MIMEType: "application/x-fictionbook+xml",
 			SizeBytes: int64(len(payload)), SHA256: hex.EncodeToString(digest[:]), FileBytes: payload,
-			PreflightStatus: library.ImportQueueItemReady, DetectedBookOrder: orders[index], ConfirmedBookOrder: orders[index],
+			PreflightStatus: library.ImportQueueItemReady,
 		})
 		if err != nil {
 			t.Fatal(err)

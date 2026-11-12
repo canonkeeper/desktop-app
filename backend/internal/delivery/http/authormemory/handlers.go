@@ -200,7 +200,9 @@ func (handlers Handlers) delete(w http.ResponseWriter, r *http.Request) {
 // The JSON shapes of contracts/openapi.json (AuthorMemory* schemas).
 
 type chapterRef struct {
-	Key       string `json:"key"`
+	Key string `json:"key"`
+	// Label is the place of the chapter as the author reads it (specs/2026-11-10-ux1-names.md N5.1).
+	Label     string `json:"label"`
 	ChapterID string `json:"chapterId"`
 	BookID    string `json:"bookId"`
 	BookOrder int    `json:"bookOrder"`
@@ -209,16 +211,25 @@ type chapterRef struct {
 	Number    int    `json:"number,omitempty"`
 }
 
+// origin is where a record came from (specs/2026-11-10-ux8-memory-records.md MR1.5).
+type origin struct {
+	Kind   string `json:"kind"`
+	ChatID string `json:"chatId,omitempty"`
+	Title  string `json:"title,omitempty"`
+}
+
 type record struct {
-	ID        string      `json:"id"`
-	Kind      string      `json:"kind"`
-	Text      string      `json:"text"`
-	Chapter   *chapterRef `json:"chapter,omitempty"`
-	Name      string      `json:"name,omitempty"`
-	Revision  int64       `json:"revision"`
-	Author    string      `json:"author"`
-	CreatedAt time.Time   `json:"createdAt"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	ID          string      `json:"id"`
+	Kind        string      `json:"kind"`
+	Text        string      `json:"text"`
+	Chapter     *chapterRef `json:"chapter,omitempty"`
+	ChapterGone bool        `json:"chapterGone,omitempty"`
+	Name        string      `json:"name,omitempty"`
+	Revision    int64       `json:"revision"`
+	Author      string      `json:"author"`
+	Origin      origin      `json:"origin"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
 }
 
 type pageMeta struct {
@@ -228,8 +239,9 @@ type pageMeta struct {
 }
 
 type page struct {
-	Data []record `json:"data"`
-	Meta pageMeta `json:"meta"`
+	Data   []record `json:"data"`
+	Meta   pageMeta `json:"meta"`
+	Shared bool     `json:"shared"`
 }
 
 func chapterDTO(chapter *sagamemory.Chapter) *chapterRef {
@@ -237,20 +249,21 @@ func chapterDTO(chapter *sagamemory.Chapter) *chapterRef {
 		return nil
 	}
 	return &chapterRef{
-		Key: chapter.Key, ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
+		Key: chapter.Key, Label: chapter.Place(), ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
 		BookTitle: chapter.BookTitle, Title: chapter.Title, Number: chapter.Number,
 	}
 }
 
 func recordDTO(view service.View) record {
 	return record{
-		ID: view.ID, Kind: string(view.Kind), Text: view.Text, Chapter: chapterDTO(view.Chapter), Name: view.Name,
+		ID: view.ID, Kind: string(view.Kind), Text: view.Text, Chapter: chapterDTO(view.Chapter), ChapterGone: view.ChapterGone, Name: view.Name,
 		Revision: view.Revision, Author: view.AuthorName, CreatedAt: view.CreatedAt, UpdatedAt: view.UpdatedAt,
+		Origin: origin{Kind: string(view.Origin.Kind), ChatID: view.Origin.ChatID, Title: view.Origin.Title},
 	}
 }
 
 func pageDTO(view service.PageView) page {
-	result := page{Data: make([]record, len(view.Records)), Meta: pageMeta{TotalCount: view.Total}}
+	result := page{Data: make([]record, len(view.Records)), Meta: pageMeta{TotalCount: view.Total}, Shared: view.Shared}
 	for index, item := range view.Records {
 		result.Data[index] = recordDTO(item)
 	}

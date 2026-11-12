@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAuthorMemoryMembers = `-- name: CountAuthorMemoryMembers :one
+SELECT count(*) FROM project_memberships AS member
+WHERE member.project_id = $1 AND member.removed_at IS NULL
+`
+
+// How many members the saga has now: the page signs a record with its author only in a saga of several (MR1.5).
+func (q *Queries) CountAuthorMemoryMembers(ctx context.Context, projectID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuthorMemoryMembers, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuthorMemory = `-- name: CreateAuthorMemory :one
 INSERT INTO author_memory (project_id, kind, body, chapter_id, name, job_id, created_by, updated_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
@@ -63,7 +76,7 @@ func (q *Queries) DeleteAuthorMemory(ctx context.Context, arg DeleteAuthorMemory
 
 const getAuthorMemory = `-- name: GetAuthorMemory :one
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, author.display_name AS author_name
+       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name
 FROM author_memory AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE record.project_id = $1 AND record.id = $2
@@ -85,6 +98,7 @@ type GetAuthorMemoryRow struct {
 	CreatedBy  pgtype.UUID        `json:"created_by"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	JobID      pgtype.UUID        `json:"job_id"`
 	AuthorName string             `json:"author_name"`
 }
 
@@ -102,6 +116,7 @@ func (q *Queries) GetAuthorMemory(ctx context.Context, arg GetAuthorMemoryParams
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.JobID,
 		&i.AuthorName,
 	)
 	return i, err
@@ -110,7 +125,7 @@ func (q *Queries) GetAuthorMemory(ctx context.Context, arg GetAuthorMemoryParams
 const listAuthorMemory = `-- name: ListAuthorMemory :many
 WITH filtered AS (
   SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-         record.created_by, record.created_at, record.updated_at
+         record.created_by, record.created_at, record.updated_at, record.job_id
   FROM author_memory AS record
   WHERE record.project_id = $5
     AND ($6::text[] = '{}' OR record.kind = ANY($6::text[]))
@@ -120,7 +135,7 @@ WITH filtered AS (
       OR strpos(lower(coalesce(record.name, '')), lower($8)) > 0)
 )
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, author.display_name AS author_name,
+       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name,
        (SELECT count(*) FROM filtered) AS total_count
 FROM filtered AS record
 JOIN users AS author ON author.id = record.created_by
@@ -152,6 +167,7 @@ type ListAuthorMemoryRow struct {
 	CreatedBy  pgtype.UUID        `json:"created_by"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	JobID      pgtype.UUID        `json:"job_id"`
 	AuthorName string             `json:"author_name"`
 	TotalCount int64              `json:"total_count"`
 }
@@ -185,8 +201,68 @@ func (q *Queries) ListAuthorMemory(ctx context.Context, arg ListAuthorMemoryPara
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.JobID,
 			&i.AuthorName,
 			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuthorMemoryConversations = `-- name: ListAuthorMemoryConversations :many
+SELECT turn.job_id, chat.id AS chat_id, chat.kind AS session_kind, chat.title AS chat_title,
+       (chat.deleted_at IS NULL)::boolean AS alive,
+       (chat.source_view = 'published' OR $1::boolean)::boolean AS visible,
+       coalesce((SELECT draft.title FROM chapter_drafts AS draft
+                 WHERE draft.project_id = chat.project_id AND draft.chat_id = chat.id
+                 ORDER BY draft.created_at, draft.id LIMIT 1), '')::text AS draft_title
+FROM chat_turns AS turn
+JOIN chat_sessions AS chat ON chat.id = turn.chat_id AND chat.project_id = turn.project_id
+WHERE turn.project_id = $2 AND turn.job_id = ANY($3::uuid[])
+`
+
+type ListAuthorMemoryConversationsParams struct {
+	Editor    bool          `json:"editor"`
+	ProjectID pgtype.UUID   `json:"project_id"`
+	JobIds    []pgtype.UUID `json:"job_ids"`
+}
+
+type ListAuthorMemoryConversationsRow struct {
+	JobID       pgtype.UUID `json:"job_id"`
+	ChatID      pgtype.UUID `json:"chat_id"`
+	SessionKind string      `json:"session_kind"`
+	ChatTitle   string      `json:"chat_title"`
+	Alive       bool        `json:"alive"`
+	Visible     bool        `json:"visible"`
+	DraftTitle  string      `json:"draft_title"`
+}
+
+// What is left of the conversations the records of a page were made in (specs/2026-11-10-ux8-memory-records.md MR1.5):
+// the session of the turn of each Job, alive or deleted, and the title of the draft its helper writes. A chat of the draft
+// text version is named only to an editor, as the list of chats does.
+func (q *Queries) ListAuthorMemoryConversations(ctx context.Context, arg ListAuthorMemoryConversationsParams) ([]ListAuthorMemoryConversationsRow, error) {
+	rows, err := q.db.Query(ctx, listAuthorMemoryConversations, arg.Editor, arg.ProjectID, arg.JobIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuthorMemoryConversationsRow
+	for rows.Next() {
+		var i ListAuthorMemoryConversationsRow
+		if err := rows.Scan(
+			&i.JobID,
+			&i.ChatID,
+			&i.SessionKind,
+			&i.ChatTitle,
+			&i.Alive,
+			&i.Visible,
+			&i.DraftTitle,
 		); err != nil {
 			return nil, err
 		}

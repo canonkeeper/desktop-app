@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/api';
 import { clone } from './common';
 import type { MockRepositoryContext } from './context';
+import { linkedKeys, placesOf } from './places';
 import { MockApiError } from '../scenarios';
 
 const timelinePageSize = 2;
@@ -24,8 +25,8 @@ export function mockAsksToDraw(question: string) {
 }
 
 /** The answer of the chat to a request to draw: drawings are made in the workshop (image-workshop IW7.3). */
-const workshopAnswer = 'Рисунки делаются в мастерской рисунков: там помощник подготовит описание по книге, а нарисуете вы. '
-  + '[Открыть мастерскую рисунков](drawing:new)';
+const workshopAnswer = 'Рисунки делаются в разделе «Рисунки»: там помощник подготовит описание по книге, а нарисуете вы. '
+  + '[Нарисовать в «Рисунках»](drawing:new)';
 
 /** The chapter of the author attached to a question, as the timeline shows it (specs/2026-11-07-chat-attach-chapter.md CA4.1). */
 type QuestionAttachment = NonNullable<AgentTimelineEvent['attachment']>;
@@ -118,13 +119,15 @@ function timelineEvents(job: Job, drawingRequest = false, attachment?: QuestionA
  * native question (illustrations R15.9), and so does a question to the writing helper; the mock shows no other questions.
  */
 function withQuestion(
-  job: Job, question: { text: string; images: number[]; attachment?: QuestionAttachment } | undefined, events: AgentTimelineEvent[],
+  job: Job, question: { text: string; images: number[]; attachment?: QuestionAttachment; button?: boolean } | undefined, events: AgentTimelineEvent[],
 ): AgentTimelineEvent[] {
   if (!question) return events;
   const turn = job.subject.type === 'research_chat_turn' ? { providerTurnId: job.subject.turnId } : {};
   const asked: AgentTimelineEvent = {
     id: eventId(job.id, 'question'), cursor: cursorFor(1), kind: 'user', jobId: job.id, role: 'main', logicalSection: 0, ...turn,
     text: question.text, images: [...question.images], ...(question.attachment ? { attachment: { ...question.attachment } } : {}),
+    // A button of the page sent it (specs/2026-11-11-ux9-writing-b.md WB3.3).
+    ...(question.button ? { button: true } : {}),
   };
   return [asked, ...events].map((event, index) => ({ ...event, cursor: cursorFor(index + 1) }));
 }
@@ -139,6 +142,21 @@ function withSteers(job: Job, steers: readonly { steerId: string; text: string; 
     ...(steer.images.length ? { images: [...steer.images], firstPhoto: steer.firstPhoto ?? 1 } : {}),
   }));
   return [...events, ...rows].map((event, index) => ({ ...event, cursor: cursorFor(index + 1) }));
+}
+
+/** The arguments of a tool that name a chapter by its key, as the backend reads them. */
+const keyArguments = ['chapter', 'from', 'to', 'at', 'from_chapter'] as const;
+
+/**
+ * Beside the keys an event shows stand the places of their chapters, as the backend writes them
+ * (specs/2026-11-10-ux1-names.md N2.1): the arguments of its tool and the source links of its text.
+ */
+function withPlaces(context: MockRepositoryContext, projectId: string, event: AgentTimelineEvent): AgentTimelineEvent {
+  const args = event.tool?.arguments ?? {};
+  const keys = keyArguments.flatMap((name) => typeof args[name] === 'string' ? [args[name]] : []);
+  const text = event.kind === 'user' || event.kind === 'steer' || event.kind === 'assistant' ? linkedKeys(event.text) : [];
+  const places = placesOf(context, projectId, [...keys, ...text]);
+  return places ? { ...event, places } : event;
 }
 
 function parseCursor(cursor: string | null | undefined) {
@@ -170,7 +188,8 @@ export function createAgentTimelineOperations(context: MockRepositoryContext) {
     const drawingRequest = job.subject.type === 'research_chat_turn' && Boolean(context.state.gallery.drawingRequests[job.subject.turnId]);
     const steers = job.subject.type === 'research_chat_turn' ? context.state.gallery.turnSteers[job.subject.turnId] ?? [] : [];
     const described = job.subject.type === 'research_chat_turn' ? context.state.gallery.turnDescribes[job.subject.turnId] : undefined;
-    const events = withSteers(job, steers, withQuestion(job, question, timelineEvents(job, drawingRequest, question?.attachment, described)));
+    const events = withSteers(job, steers, withQuestion(job, question, timelineEvents(job, drawingRequest, question?.attachment, described)))
+      .map((event) => withPlaces(context, projectId, event));
     const offset = parseCursor(options.cursor);
     const pageEvents = events.slice(offset, offset + timelinePageSize);
     const nextOffset = offset + pageEvents.length;

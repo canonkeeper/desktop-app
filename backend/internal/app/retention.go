@@ -111,7 +111,7 @@ func runRetention(ctx context.Context, runner retentionRunner, logger *log.Logge
 		return
 	}
 	logger.Printf(
-		"retention completed expired_sessions_revoked=%d retention_deadline_breaches_recorded=%d source_hard_purges_enqueued=%d deletion_proofs_garbage_collected=%d deletion_targets_reconciled=%d deletion_target_retries_scheduled=%d terminal_import_queue_jobs_reconciled=%d",
+		"retention completed expired_sessions_revoked=%d retention_deadline_breaches_recorded=%d source_hard_purges_enqueued=%d deletion_proofs_garbage_collected=%d deletion_targets_reconciled=%d deletion_target_retries_scheduled=%d terminal_import_queue_jobs_reconciled=%d expired_book_updates_removed=%d",
 		summary.ExpiredSessionsRevoked,
 		summary.RetentionDeadlineBreachesRecorded,
 		summary.SourceHardPurgesEnqueued,
@@ -119,5 +119,6 @@ func runRetention(ctx context.Context, runner retentionRunner, logger *log.Logge
 		summary.DeletionTargetsReconciled,
 		summary.DeletionTargetRetriesScheduled,
 		summary.TerminalImportQueueJobsReconciled,
+		summary.ExpiredBookUpdatesRemoved,
 	)
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -13,6 +14,12 @@ import (
 // R1.6): 429 for questions and uploads — with Retry-After until 00:00 Moscow time for a daily
 // limit — and 409 for projects, books, chapters and text. It reports false for any other error.
 func WriteQuotaProblem(w http.ResponseWriter, err error, now time.Time) bool {
+	if errors.Is(err, quota.ErrDemoSaga) {
+		// The demo saga is out of the limits and takes no text (specs/2026-11-09-demo-saga.md DS3.3).
+		w.Header().Set("Cache-Control", "no-store")
+		WriteProblem(w, "", http.StatusConflict, "Conflict", "the demo saga takes no text", quota.DemoSagaCode)
+		return true
+	}
 	exceeded, ok := quota.AsExceeded(err)
 	if !ok {
 		return false

@@ -14,6 +14,7 @@ export default defineConfig({
     pool: 'threads',
     // Every core, at most 8: a jsdom worker holds about 200 MB and more workers barely help.
     maxWorkers: Math.min(availableParallelism(), 8),
-    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.local-test/**', '**/.local-production/**', 'e2e/**', 'scripts/**/*.test.mjs'],
+    // The worktrees of agents inside this copy are whole repositories with their own tests: each runs them itself.
+    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.claude/worktrees/**', '**/.local-test/**', '**/.local-production/**', 'e2e/**', 'scripts/**/*.test.mjs'],
   },
 });

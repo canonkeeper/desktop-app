@@ -66,6 +66,43 @@ func TestAllFlowsReceiveInlineCommunicationRulesOnStartAndResume(t *testing.T) {
 	}
 }
 
+// recordChatSkill writes testdata/research-chat-skill-with-layer.golden anew: only when the skill of the chat changes on
+// purpose.
+const recordChatSkill = "CANONKEEPER_CHAT_SKILL_RECORD"
+
+// specs/2026-11-12-desk-window.md WN2.1: the skill of the chat of the site — its set with saga.threads and saga.image — is
+// the text it was before the slice to the letter (recorded on the tree before it); the set of a build without the thread
+// layer reads no section of the threads and no mark of their place.
+func TestTheChatSkillOfTheSiteIsAsItWas(t *testing.T) {
+	skill := filepath.Join("..", "..", "..", "..", "codex-homes", "research-chat", "skills", "canonkeeper-research-chat")
+	body, err := os.ReadFile(filepath.Join(skill, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	site, err := withSections(string(body), skill, chatSkillTools(
+		"search", "read", "chapters", "glossary", "entity", "timeline", "threads", "changes", "scan", "remember", "memory", "image", "attachment",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "research-chat-skill-with-layer.golden")
+	if os.Getenv(recordChatSkill) == "1" {
+		if err := os.WriteFile(path, []byte(site), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	golden, err := os.ReadFile(path)
+	if err != nil || site != string(golden) {
+		t.Fatalf("the skill of the chat of the site is not the recorded one: %v", err)
+	}
+	desktop, err := withSections(string(body), skill, chatSkillTools(
+		"search", "read", "chapters", "glossary", "entity", "timeline", "changes", "scan", "remember", "memory", "attachment",
+	))
+	if err != nil || strings.Contains(desktop, "threads") || strings.Contains(desktop, "{{") {
+		t.Fatalf("the skill without the layer names the threads: %v", err)
+	}
+}
+
 func chatSkillTools(names ...string) []agent.ToolSpec {
 	tools := make([]agent.ToolSpec, 0, len(names))
 	for _, name := range names {

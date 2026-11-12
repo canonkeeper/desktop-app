@@ -26,13 +26,18 @@ type Chapter struct {
 	Revision    int64  // source revision whose paragraphs the chapter holds
 	ContentHash string // text fingerprint of that revision; cards are keyed by it
 	BookID      string
-	BookOrder   int
-	BookTitle   string
-	Order       int
-	Title       string
-	Number      int    // global chapter number written in the title, 0 when absent
-	Key         string // stable agent-facing reference, assigned by NewVersion
-	Index       int    // position in reading order, assigned by NewVersion
+	// BookOrder is the place of the book on the shelf (shelf.Places: its rank among the living books, 1…n — RK1.6): it
+	// orders the reading and names the book to the author — «Книга 2», «Том 2», «т. 2». BookKeyNumber is the number the
+	// book got once in the saga, the number of its chapter keys: a move, a deletion and a return of books leave it
+	// (specs/2026-11-11-ux7-reorder.md RK1.1).
+	BookOrder     int
+	BookKeyNumber int
+	BookTitle     string
+	Order         int
+	Title         string
+	Number        int    // global chapter number written in the title, 0 when absent
+	Key           string // stable agent-facing reference, assigned by NewVersion
+	Index         int    // position in reading order, assigned by NewVersion
 	// ParagraphCount and Runes size the chapter text; a call loads Paragraphs only where it
 	// reads them, so they come from the stored search text (NewOutline) or from the paragraphs.
 	ParagraphCount int
@@ -92,9 +97,9 @@ func ChapterNumber(title string) int {
 	return number
 }
 
-// NewVersion orders chapters by book and chapter order, numbers and normalizes paragraphs and
-// assigns chapter keys: the global number when it is unique in the version, otherwise
-// "b<book order>c<chapter order>".
+// NewVersion orders chapters by the place of their book and their order in it, numbers and normalizes paragraphs
+// and assigns chapter keys — the one rule of the key: the global number when it is unique in the version, otherwise
+// "b<number of the book>c<chapter order>", so a key outlives a move of the volumes (specs/2026-11-11-ux7-reorder.md RK1).
 func NewVersion(projectID, view, fingerprint string, chapters []Chapter) *Version {
 	ordered := append([]Chapter(nil), chapters...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -120,7 +125,7 @@ func NewVersion(projectID, view, fingerprint string, chapters []Chapter) *Versio
 		if chapter.Number > 0 && counts[chapter.Number] == 1 {
 			chapter.Key = strconv.Itoa(chapter.Number)
 		} else {
-			chapter.Key = fmt.Sprintf("b%dc%d", chapter.BookOrder, chapter.Order)
+			chapter.Key = fmt.Sprintf("b%dc%d", chapter.BookKeyNumber, chapter.Order)
 		}
 		for j := range chapter.Paragraphs {
 			chapter.Paragraphs[j].N = j + 1
@@ -135,10 +140,75 @@ func NewVersion(projectID, view, fingerprint string, chapters []Chapter) *Versio
 		}
 		version.byKey[chapter.Key] = i
 	}
+	version.keepBookKeys()
+	version.keepBareNumbers(counts)
 	return version
 }
 
-// Find resolves a chapter key such as "481", "гл. 481" or "b3c50".
+// keepBookKeys keeps the key bKcM of a chapter keyed by its bare number readable (specs/2026-11-11-ux7-reorder.md RK1.5):
+// it was its key while another chapter had the same number, and the links of answers kept it; the number of a book in the
+// saga is never given twice, so bKcM names no other chapter.
+func (version *Version) keepBookKeys() {
+	for i := range version.Chapters {
+		chapter := &version.Chapters[i]
+		if chapter.BookKeyNumber <= 0 {
+			continue
+		}
+		key := fmt.Sprintf("b%dc%d", chapter.BookKeyNumber, chapter.Order)
+		if _, taken := version.byKey[key]; !taken {
+			version.byKey[key] = i
+		}
+	}
+}
+
+// keepBareNumbers keeps the bare numbers that turned ambiguous readable (specs/2026-11-11-ux7-reorder.md RK1.5). «2» was
+// the key of «Глава 2» while it was the only one in the saga, and the links of answers, the places of drawings and the
+// rest kept it; once another chapter with that number comes in, the new keys of both are bKcM, and «2» still names the
+// chapter with that number in the book with the lowest number in the saga (the earliest of them in it): a bare key could
+// only be given before the books that came later. The keys the chapters show do not change.
+func (version *Version) keepBareNumbers(counts map[int]int) {
+	holders := map[int]int{}
+	for i := range version.Chapters {
+		chapter := &version.Chapters[i]
+		if chapter.Number <= 0 || counts[chapter.Number] < 2 {
+			continue
+		}
+		if held, ok := holders[chapter.Number]; !ok || earlierHolder(chapter, &version.Chapters[held]) {
+			holders[chapter.Number] = i
+		}
+	}
+	for number, i := range holders {
+		version.byKey[strconv.Itoa(number)] = i
+	}
+}
+
+// earlierHolder says whether a chapter holds a bare number before another: by the number of its book in the saga, then
+// by its place in the book.
+func earlierHolder(chapter, other *Chapter) bool {
+	if chapter.BookKeyNumber != other.BookKeyNumber {
+		return chapter.BookKeyNumber < other.BookKeyNumber
+	}
+	if chapter.Order != other.Order {
+		return chapter.Order < other.Order
+	}
+	return chapter.ID < other.ID
+}
+
+// KeysOf are all the keys Find reads as the chapter: its own key and the kept ones (keepBookKeys, keepBareNumbers) — what
+// a stored key of the chapter may be.
+func (version *Version) KeysOf(chapter *Chapter) []string {
+	keys := []string{}
+	for key, index := range version.byKey {
+		if index == chapter.Index {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Find resolves a chapter key such as "481", "гл. 481" or "b3c50" — every reader of a kept key reads it here; a bare
+// number that turned ambiguous names the chapter keepBareNumbers says, the bKcM of a chapter keyed by its number names it.
 func (version *Version) Find(key string) (*Chapter, bool) {
 	key = strings.ToLower(strings.TrimSpace(key))
 	for _, prefix := range []string{"глава", "гл.", "гл"} {

@@ -181,8 +181,9 @@ func TestCardsCoverageLeavesOutProjectsWithoutAnActiveOwner(t *testing.T) {
 	seedMemoryProject(t, db)
 	ctx := context.Background()
 	repository := New(db)
-	if coverage, err := repository.CardsCoverage(ctx); err != nil || len(coverage) != 1 || coverage[0].Texts != 3 {
-		t.Fatalf("coverage = %+v, %v; want the project's three texts", coverage, err)
+	// specs/2026-11-08-admin-redesign.md AR6.2: the row names the owner of the saga.
+	if coverage, err := repository.CardsCoverage(ctx); err != nil || len(coverage) != 1 || coverage[0].Texts != 3 || coverage[0].OwnerID != memoryOwnerID {
+		t.Fatalf("coverage = %+v, %v; want the project's three texts and its owner", coverage, err)
 	}
 	if _, err := db.Pool.Exec(ctx, `UPDATE users SET disabled_at = now() WHERE id = $1`, memoryOwnerID); err != nil {
 		t.Fatal(err)

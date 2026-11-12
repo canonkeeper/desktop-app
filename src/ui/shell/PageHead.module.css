@@ -1,0 +1,62 @@
+/* The top of a page (specs/2026-11-10-ux2-patterns-states.md PS1.1; master `Page Header`): the heading, one line, one action. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: var(--ck-space-3) var(--ck-space-4);
+}
+
+.words {
+  display: grid;
+  /* The words give way first: a short heading keeps its action beside it on a phone, a wide action goes under them. */
+  flex: 1 1 0;
+  min-width: 7rem;
+  gap: var(--ck-space-1);
+}
+
+.title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.line {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: var(--ck-line-height-body);
+}
+
+.actions {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+
+/* The heading of a workplace in the row of its panel (PL2): the size of the heading of a phone, on one line. */
+.workplace {
+  flex: none;
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .title {
+    font-size: 22px;
+  }
+}

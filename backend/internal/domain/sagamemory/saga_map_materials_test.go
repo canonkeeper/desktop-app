@@ -36,7 +36,7 @@ func TestNamedInFindsANameInItsCases(t *testing.T) {
 // node it names; once the book knows the name there is one node.
 func TestAddMaterialsDrawsWhatTheBookDoesNotKnow(t *testing.T) {
 	set := mapSaga()
-	m := BuildMap(set)
+	m := BuildMap(set, nil)
 	before, links := len(m.Nodes), len(m.Links)
 	hero := m.Nodes[m.Hero].Entry
 	m.AddMaterials(set.Glossary, []MapMaterial{

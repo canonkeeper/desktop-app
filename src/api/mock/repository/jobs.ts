@@ -10,9 +10,9 @@ import {
 } from './common';
 import type { MockRepositoryContext } from './context';
 import { draftBookId } from './fixtures';
-import { firstMissingBookOrder } from './books';
+import { importFileTitle, nextShelfOrder } from './books';
 import { canProcessImportQueueJob, reconcileImportQueueAfterJob } from './import-queues';
-import { advanceIndexingJob, queueImportTextIndexes } from './indexing';
+import { advanceIndexingJob, openSagaWave, queueImportTextIndexes } from './indexing';
 import { completeAgentJob } from './agent-job-transition';
 import { MockApiError } from '../scenarios';
 
@@ -85,7 +85,7 @@ export function createJobOperations(context: MockRepositoryContext) {
     context.applyOperation('getJob');
     const job = context.jobFor(id, 'getJob');
     completeAgentJob(job, context.scenario.turnFailure);
-    advanceIndexingJob(context.state, job);
+    advanceIndexingJob(context.state, job, context.scenario.helperMissing === true);
     if (
       job.kind === 'import'
       && job.subject.type === 'import'
@@ -95,10 +95,12 @@ export function createJobOperations(context: MockRepositoryContext) {
     ) {
       const result = job.result;
       if (!context.state.books.some((book) => book.id === result.bookId)) {
-        const nextOrder = firstMissingBookOrder(context.state.books, job.subject.projectId);
-        const expectedOrder = job.subject.expectedBookOrder ?? nextOrder;
-        if (nextOrder === null || expectedOrder !== nextOrder) {
-          const conflictCode = nextOrder === null
+        // The new book takes the place its import was given while no living book stands there (UP2.3, UP3.2).
+        const shelfOrder = nextShelfOrder(context.state.books, job.subject.projectId);
+        const expectedOrder = job.subject.expectedBookOrder ?? shelfOrder;
+        const taken = context.state.books.some((book) => book.projectId === job.subject.projectId && book.order === expectedOrder);
+        if (shelfOrder === null || expectedOrder === null || taken) {
+          const conflictCode = shelfOrder === null
             ? 'import_sequence_conflict'
             : 'import_expected_order_conflict';
           Object.assign(job, {
@@ -124,8 +126,8 @@ export function createJobOperations(context: MockRepositoryContext) {
           ...clone(templateChapter),
           id: `${result.bookId}-chapter-1`,
           bookId: result.bookId,
-          title: result.sourceFileName.replace(/\.[^.]+$/, ''),
-          // FB2, EPUB and DOCX publish the imported text at once (`publish_imported`).
+          title: importFileTitle(result.sourceFileName),
+          // Every kind of a book file publishes the imported text at once (`publish_imported`).
           status: 'published' as const,
           publishedAt: now,
           paragraphs: templateChapter.paragraphs.map((paragraph, index) => ({
@@ -138,10 +140,10 @@ export function createJobOperations(context: MockRepositoryContext) {
           ...clone(templateBook),
           id: result.bookId,
           projectId: job.subject.projectId,
-          title: result.sourceFileName.replace(/\.[^.]+$/, ''),
+          title: importFileTitle(result.sourceFileName),
           subtitle: null,
-          order: nextOrder,
-          displayNumber: String(nextOrder),
+          order: expectedOrder,
+          displayNumber: String(expectedOrder),
           status: 'draft',
           chapterCount: importedChapter ? 1 : 0,
           wordCount: importedChapter?.wordCount ?? 0,
@@ -149,8 +151,17 @@ export function createJobOperations(context: MockRepositoryContext) {
           updatedAt: now,
         });
         if (importedChapter) context.state.chapters.push(importedChapter);
+        openSagaWave(context.state, job.subject.projectId, context.jobCreators.get(job.id)?.principalId ?? null);
       }
       Object.assign(job, { status: 'succeeded', progress: 1, canCancel: false, updatedAt: now });
+      // An update of a book from a file is kept 7 days for «Вернуть прежнюю версию» (specs/2026-11-12-ux10-book-revert.md BR1).
+      const updated = result.importMode === 'update_book' ? context.state.books.find((book) => book.id === result.bookId) : undefined;
+      if (updated) {
+        updated.update = {
+          at: now, revertUntil: new Date(Date.parse(now) + 7 * 24 * 3_600_000).toISOString(), jobId: job.id,
+          changed: result.changedChapters ?? 0, added: result.addedChapters ?? 0, removed: result.removedChapters ?? 0,
+        };
+      }
       queueImportTextIndexes(context.state, job.subject.projectId);
       reconcileImportQueueAfterJob(context.state, job.id);
     }

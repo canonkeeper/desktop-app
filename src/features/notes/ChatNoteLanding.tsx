@@ -42,7 +42,7 @@ function rangesOf(textNodes: readonly Node[], quote: string) {
   return ranges;
 }
 
-/** A note on a narration line of a finished turn lands inside its folded «Ход работы». */
+/** A note on a narration line of a finished turn lands inside its folded «Как я искал». */
 export function revealFolded(element: HTMLElement) {
   for (let fold = element.closest('details'); fold; fold = fold.parentElement?.closest('details') ?? null) fold.open = true;
 }
@@ -91,7 +91,7 @@ export function ChatNoteLanding({ api, accountId, route, navigate }: {
   if (located && !quoteMissing) return null;
   const wrongChat = source && (source.kind !== 'chat' || source.chatId !== chatId);
   return <div className={styles.landing}><Alert tone={query.isError || wrongChat ? 'error' : 'info'}>
-    {query.isError ? 'Не удалось загрузить заметку.' : wrongChat ? 'Эта заметка относится к другому источнику.' : quoteMissing ? 'Сообщение найдено, но сохранённый текст не совпадает с текущим. Заметка не изменена.' : 'Ищем исходное сообщение. Если оно недоступно, сохранённый текст останется в заметке.'}
+    {query.isError ? 'Не удалось загрузить заметку.' : wrongChat ? 'Эта заметка не из этого чата.' : quoteMissing ? 'Сообщение найдено, но сохранённый текст не совпадает с текущим. Заметка не изменена.' : 'Ищем исходное сообщение. Если оно недоступно, сохранённый текст останется в заметке.'}
     {query.isError ? <Button onClick={() => void query.refetch()} variant="outline">Повторить</Button> : null}<Button onClick={dismiss} variant="ghost">Закрыть</Button>
   </Alert></div>;
 }

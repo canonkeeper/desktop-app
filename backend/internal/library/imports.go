@@ -1,13 +1,11 @@
 package library
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"hash"
-	"mime"
 	"path"
 	"slices"
 	"strconv"
@@ -30,16 +28,9 @@ var (
 	ErrImportSequenceConflict      = errors.New("library: import book sequence conflict")
 	ErrImportExpectedOrderConflict = errors.New("library: import expected book order conflict")
 
-	allowedImportExtensions = []string{".fb2", ".epub", ".docx"}
-	allowedImportMIMETypes  = []string{
-		"application/epub+zip",
-		"application/x-fictionbook+xml",
-		"text/xml",
-		"application/xml",
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	}
-	allowedImportExtensionSet = stringSet(allowedImportExtensions)
-	allowedImportMIMETypeSet  = stringSet(allowedImportMIMETypes)
+	allowedImportExtensions  = importFileKindSuffixes()
+	allowedImportMIMETypes   = importFileKindMIMETypes()
+	allowedImportMIMETypeSet = stringSet(allowedImportMIMETypes)
 )
 
 const (
@@ -80,7 +71,6 @@ type ImportConstraints struct {
 	AllowedExtensions []string
 	AllowedMIMETypes  []string
 	MaxFileSizeBytes  int64
-	NextBookOrder     int
 }
 
 type CreateImportJobInput struct {
@@ -97,6 +87,10 @@ type CreateImportJobInput struct {
 	ExpectedBookOrder int
 	Title             *string
 	SessionWriteProof auth.SessionWriteProof
+	// Seed marks the one import of the book of the demo saga (specs/2026-11-09-demo-saga.md DS3.4): it goes only
+	// into an empty demo saga, checks no limit of books and text and spends no upload of the day. Only the use case
+	// of the demo saga sets it; the import of the author over HTTP never does.
+	Seed bool
 }
 
 type ImportFileMetadata struct {
@@ -186,19 +180,15 @@ type CreateImportStagingForActorInput struct {
 	FileBytes          []byte
 	Metadata           ImportFileMetadata
 	SessionWriteProof  auth.SessionWriteProof
+	// Seed is CreateImportJobInput.Seed: the store admits it only into an empty demo saga.
+	Seed bool
 }
 
 func (s *Service) ImportConstraints(ctx context.Context, actor Actor, projectID string) (ImportConstraints, error) {
 	if err := requireImportRead(ctx, s.store, actor, projectID); err != nil {
 		return ImportConstraints{}, err
 	}
-	nextBookOrder, err := s.store.NextBookOrder(ctx, projectID)
-	if err != nil {
-		return ImportConstraints{}, err
-	}
-	constraints := DefaultImportConstraints()
-	constraints.NextBookOrder = nextBookOrder
-	return constraints, nil
+	return DefaultImportConstraints(), nil
 }
 
 func (s *Service) AuthorizeImportMutation(ctx context.Context, actor Actor, projectID string) error {
@@ -228,11 +218,11 @@ func createImportJob(ctx context.Context, store ImportStore, ids IDGenerator, ac
 	if sourceFileName == "" {
 		return jobs.Job{}, ErrValidation
 	}
-	extension := strings.ToLower(path.Ext(sourceFileName))
-	if !allowedImportExtensionSet[extension] {
+	extension := ImportFileKind(sourceFileName)
+	if extension == "" {
 		return jobs.Job{}, ErrImportUnsupportedMediaType
 	}
-	mimeType, err := validatedImportMIMEType(input.MIMEType)
+	mimeType, err := validatedImportMIMEType(extension, input.MIMEType)
 	if err != nil {
 		return jobs.Job{}, err
 	}
@@ -270,6 +260,10 @@ func createImportJob(ctx context.Context, store ImportStore, ids IDGenerator, ac
 		importMode.UpdatesBook() && (input.ExpectedBookOrder > 0 || input.Title != nil) {
 		return jobs.Job{}, ErrValidation
 	}
+	// The seed of the demo saga is its one new book.
+	if input.Seed && importMode != ImportModeNewBook {
+		return jobs.Job{}, ErrValidation
+	}
 	initialPublication, err := InitialPublicationForImportExtension(extension)
 	if err != nil {
 		return jobs.Job{}, err
@@ -297,6 +291,7 @@ func createImportJob(ctx context.Context, store ImportStore, ids IDGenerator, ac
 		ExpectedBookOrder:  input.ExpectedBookOrder,
 		FileBytes:          slices.Clone(input.FileBytes),
 		SessionWriteProof:  input.SessionWriteProof,
+		Seed:               input.Seed,
 		Metadata: ImportFileMetadata{
 			StorageKey:         storageKey,
 			SourceFileName:     sourceFileName,
@@ -359,18 +354,6 @@ func sanitizedImportSourceFileName(fileName string) string {
 	return base
 }
 
-func validatedImportMIMEType(value string) (string, error) {
-	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
-	if err != nil {
-		return "", ErrImportUnsupportedMediaType
-	}
-	mediaType = strings.ToLower(mediaType)
-	if !allowedImportMIMETypeSet[mediaType] {
-		return "", ErrImportUnsupportedMediaType
-	}
-	return mediaType, nil
-}
-
 func validatedImportIdempotencyKey(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if len(value) < minIdempotencyKeyLength || len(value) > maxIdempotencyKeyLength {
@@ -388,69 +371,6 @@ func normalizedImportMode(value ImportMode) (ImportMode, error) {
 	default:
 		return "", ErrValidation
 	}
-}
-
-func InitialPublicationForImportExtension(extension string) (InitialPublication, error) {
-	switch strings.ToLower(strings.TrimSpace(extension)) {
-	case ".fb2", ".epub", ".docx":
-		return InitialPublicationPublishImported, nil
-	default:
-		return "", ErrImportUnsupportedMediaType
-	}
-}
-
-func validateImportExtensionMIMEContent(extension, mimeType string, data []byte) error {
-	if !importMIMETypeMatchesExtension(extension, mimeType) {
-		return ErrImportContentMismatch
-	}
-	switch extension {
-	case ".epub", ".docx":
-		if !isZipLike(data) {
-			return ErrImportContentMismatch
-		}
-	case ".fb2":
-		if !isXMLLike(data) {
-			return ErrImportContentMismatch
-		}
-	default:
-		return ErrValidation
-	}
-	return nil
-}
-
-func importMIMETypeMatchesExtension(extension, mimeType string) bool {
-	switch extension {
-	case ".epub":
-		return mimeType == "application/epub+zip"
-	case ".docx":
-		return mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".fb2":
-		return mimeType == "application/x-fictionbook+xml" || mimeType == "text/xml" || mimeType == "application/xml"
-	default:
-		return false
-	}
-}
-
-func isZipLike(data []byte) bool {
-	return bytes.HasPrefix(data, []byte("PK\x03\x04")) ||
-		bytes.HasPrefix(data, []byte("PK\x05\x06")) ||
-		bytes.HasPrefix(data, []byte("PK\x07\x08"))
-}
-
-func isXMLLike(data []byte) bool {
-	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
-	data = bytes.TrimSpace(data)
-	if !bytes.HasPrefix(data, []byte("<")) {
-		return false
-	}
-	if bytes.HasPrefix(data, []byte("<FictionBook")) {
-		return true
-	}
-	sample := data
-	if len(sample) > 4096 {
-		sample = sample[:4096]
-	}
-	return bytes.Contains(sample, []byte("<FictionBook"))
 }
 
 func sha256Hex(data []byte) string {

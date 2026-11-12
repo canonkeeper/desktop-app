@@ -21,13 +21,12 @@ var (
 	ErrPDF = errors.New("author materials: PDF")
 	// ErrPicture is a picture.
 	ErrPicture = errors.New("author materials: picture")
-	// ErrPlainText is a text file: CSV or TXT.
-	ErrPlainText = errors.New("author materials: plain text file")
 )
 
 // Parse reads a file by what it holds, whatever its name says: a workbook named .docx or a macro workbook is read as a
-// workbook (R9.2, R9.3).
-func Parse(data []byte) (Parsed, SourceKind, error) {
+// workbook (R9.2, R9.3). A text file is a table when its name ends in .csv and a text with paragraphs otherwise
+// (specs/2026-11-10-ux8-memory-records.md MR2.4): the name is the only thing that tells them apart.
+func Parse(name string, data []byte) (Parsed, SourceKind, error) {
 	if len(data) == 0 {
 		return Parsed{}, "", ErrEmpty
 	}
@@ -50,7 +49,12 @@ func Parse(data []byte) (Parsed, SourceKind, error) {
 	case isPicture(data):
 		return Parsed{}, "", ErrPicture
 	case isText(data):
-		return Parsed{}, "", ErrPlainText
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), ".csv") {
+			parsed, err := ParseCSV(data)
+			return parsed, SourceCSV, err
+		}
+		parsed, err := ParseTextFile(data)
+		return parsed, SourceText, err
 	default:
 		return Parsed{}, "", ErrUnreadable
 	}

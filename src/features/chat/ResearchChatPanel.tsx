@@ -3,6 +3,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { isApiStatusFailure } from '../../entities/api-errors';
 import { invalidateAccountQuota, quotaFailureCode, useAccountQuota } from '../../entities/account-quota/api';
 import { useCanonicalAgentTimeline } from '../../entities/agent-timeline/api';
+import { type FirstQuestionsApi, useSagaFirstQuestionsQuery } from '../../entities/saga/api';
 import {
   chatQueryKeys,
   type ChatApiClient,
@@ -10,14 +11,20 @@ import {
   type SourceView,
 } from '../../entities/chat/api';
 import type { AgentJobStatus, CanonicalAgentTimelineEvent } from './feed/types';
-import { Plus } from 'lucide-react';
+import { FilePlus2, Plus } from 'lucide-react';
+import { useAccountSession } from '../../shared/session/account-session';
 import { Button } from '../../ui/controls/Button';
 import { Alert } from '../../ui/feedback/Alert';
-import { ToastRegion } from '../../ui/feedback/Toast';
+import { useToasts } from '../../ui/feedback/useToastQueue';
+import { Confirm } from '../../ui/overlays/Confirm';
+import { refusalLine } from '../../entities/account-quota/refusal-words';
+import { type AnswerAsk } from './AnswerActions';
+import { askWhereQuestion, phraseAt } from './source-phrase';
 import { ChatExamples } from './ChatExamples';
 import { ResearchChatComposer } from './ResearchChatComposer';
-import { ChatQuotaHint } from './ChatQuotaHint';
-import { chatQuotaHint, chatQuotaRefusal } from './chat-quota';
+import { useChatFieldNotes } from './ChatLimitNotice';
+import { ChatActionsButton } from './ChatActionsMenu';
+import { ChatDeleteDialog } from './ChatDeleteDialog';
 import { ResearchChatConversation } from './ResearchChatConversation';
 import { ResearchChatSessions } from './ResearchChatSessions';
 import { useResearchChatDelete } from './research-chat-delete';
@@ -32,13 +39,18 @@ import {
 import { useResearchChatStop } from './research-chat-stop';
 import { useResearchChatSteer } from './research-chat-steer';
 import { useChatChapter } from './chat-chapter';
-import { ChatChapterButton, ChatChapterStrip } from './ChatChapterField';
+import type { Blank } from './brackets';
+import { questionSlot, useQuestionField } from './question-draft';
+import { ChatChapterButton, ChatChapterStrip, type ChapterQuickActions } from './ChatChapterField';
+import { chatQuotaHint } from './chat-quota';
+import { useChatDrop } from './chat-drop';
 import { ChatAttachmentHostProvider } from './ChatAttachmentCard';
 import {
   conversationFailure,
   latestUserBody,
   outdatedChatMessage,
   useResearchChatFailure,
+  useStreamLostLong,
 } from './research-chat-presentation';
 import {
   chatErrorRequestId,
@@ -59,7 +71,12 @@ import { ChatMemoryProvider, type ChatMemoryHost } from './RememberedUndo';
 import { useChatSlot, type ChatAttachmentHost, type ChatDrawingsOptions, type ChatIllustrationRoutes } from './chat-slot';
 
 /** What the chat surface asks of the API: the chat and the undo of what it remembered. */
-export type ChatSurfaceApi = ChatApiClient & ChatMemoryHost['api'];
+export type ChatSurfaceApi = ChatApiClient & ChatMemoryHost['api'] & FirstQuestionsApi;
+
+/** The chat without the proofreading of the site: the chapter at the field has no «Вычитать». */
+function noProofreadChapter(): undefined {
+  return undefined;
+}
 
 /** The chat without the drawings of the site: nothing around the conversation, no overlays. */
 function noDrawings(_options: ChatDrawingsOptions) {
@@ -67,6 +84,10 @@ function noDrawings(_options: ChatDrawingsOptions) {
 }
 
 interface ResearchChatPanelProps {
+  /** Who writes here: the draft of a question is his own (specs/2026-11-10-ux1-chat.md CH1.6). */
+  authorId?: string | undefined;
+  /** The demo saga of the site: an empty chat begins with its questions (specs/2026-11-09-demo-saga.md DS4.3). */
+  demo?: boolean;
   api: ChatSurfaceApi;
   canCreate: boolean;
   /** The lightbox the URL opens, the page of the feature and the gallery (illustrations R8.5, R11.4). */
@@ -79,36 +100,60 @@ interface ResearchChatPanelProps {
   initialQuestion?: string;
   /** The saga preparation notice above the feed (UC2.3). */
   preparation?: ReactNode;
+  /**
+   * Why no question goes now, as the server says it — the reading of the saga waits for the helper
+   * (specs/2026-11-12-desk-window.md WN3.3): the field keeps the words, nothing is sent; questions are still put into it.
+   */
+  unavailable?: string | null;
   /** The draft «Вычитать и вернуть .docx» made of an attached chapter, in «Письмо» (specs/2026-11-07-chat-attach-chapter.md CA5.3). */
   onOpenDraft?: (draftId: string) => void;
+  /** «Что помнит помощник» of the saga, for what a turn remembered (specs/2026-11-10-ux1-chat.md CH4.2). */
+  memoryLink?: ChatMemoryHost['memoryLink'];
+  /** «Что дальше» under the first answer of the saga (specs/2026-11-10-ux3-first-screen.md FS3.1): its one chat shows it. */
+  whatNext?: ReactNode;
   projectId: string;
   selectedChatId: string;
   sourceView: SourceView;
-  toolbar?: ReactNode;
+  /**
+   * The row of the panel the page keeps with its heading (specs/2026-11-11-ux2-polish.md PL2.1): «Новый чат», «Чаты» and
+   * the actions of the open chat stand in it. Without it the panel keeps its own row of «Чаты».
+   */
+  row?: HTMLElement | null;
 }
 
 type CreatedTurnState = CreatedChatTurn & Pick<ChatJob, 'canCancel' | 'id'> & { task: string };
 export function ResearchChatPanel({
   api,
+  authorId,
   canCreate,
+  demo = false,
   initialQuestion,
   illustrationRoutes,
   onOpenSource,
   onSelectChatId,
   onStartIndexing,
   onOpenDraft,
+  memoryLink,
   preparation,
   projectId,
   selectedChatId,
   sourceView,
   sourceNavigation,
-  toolbar,
+  row,
+  unavailable = null,
+  whatNext,
 }: ResearchChatPanelProps) {
-  const [taskDraft, setTaskText] = useState<string | null>(initialQuestion ?? null);
+  // What the author typed is kept in the browser by chat until the server takes it (specs/2026-11-10-ux1-chat.md CH1).
+  const field = useQuestionField({ projectId, authorId }, selectedChatId, initialQuestion);
   const [createdTurn, setCreatedTurn] = useState<CreatedTurnState | null>(null);
   const [mutationAuthorityLost, setMutationAuthorityLost] = useState(false);
+  // «Переименовать» of the actions over the feed: the chat list takes it (CH2.2).
+  const [renameRequest, setRenameRequest] = useState('');
+  // A question of a button under an answer that waits for «Заменить набранное?» (AA1.3).
+  const [replacing, setReplacing] = useState<string | null>(null);
   const questionField = useRef<HTMLTextAreaElement>(null);
-  const chapter = useChatChapter();
+  // The chapter at the field is kept by chat with the question, until the question goes (AA2.4, CA7).
+  const chapter = useChatChapter(questionSlot(projectId, selectedChatId, authorId));
   const { clearPanelFailure, failure: panelFailure, retryDelaySeconds, showPanelFailure } = useResearchChatFailure(() => setMutationAuthorityLost(true));
   const pendingTask = useRef<PendingTask | null>(null);
   const activeAction = useRef(0);
@@ -118,8 +163,7 @@ export function ResearchChatPanel({
   const queryClient = useQueryClient();
   const chatSlot = useChatSlot();
   const chatScope = { projectId, sourceView };
-  // The question comes back to the field only if the author has not written there (chat steering R4.4).
-  const restoreQuestion = (task: string) => setTaskText((current) => current?.trim() ? current : task);
+  const restoreQuestion = field.restore;
   const stopFlow = useResearchChatStop({
     action: () => activeAction.current,
     api,
@@ -136,6 +180,7 @@ export function ResearchChatPanel({
   const sessionsQuery = useChatSessionsQuery(api, chatScope);
   const accountQuota = useAccountQuota(api, canCreate).data;
   const sessions = sessionsQuery.data?.data ?? [];
+  const toasts = useToasts();
   const deleteFlow = useResearchChatDelete({
     api,
     isCurrentChat: () => mounted.current && observedSelectedChatId.current === selectedChatId,
@@ -144,7 +189,7 @@ export function ResearchChatPanel({
       pendingTask.current = null;
       expectedSelectedChatId.current = nextChatId;
       onSelectChatId(nextChatId);
-      setTaskText('');
+      field.sent(selectedChatId);
       setCreatedTurn(null);
     },
     scope: chatScope,
@@ -169,7 +214,7 @@ export function ResearchChatPanel({
   const createTurnMutation = useCreateChatTurnMutation(api, chatScope);
   const timelineJobId = createdTurnForChat?.id ?? recoveredTurnJob?.id ?? selectedSession?.latestTurnJobId ?? '';
   const savedSession = sessionMatchesScope && !timelineJobId && selectedSession?.savedAssignment ? selectedSession : undefined;
-  const taskText = taskDraft ?? savedSession?.savedAssignment?.body ?? '';
+  const taskText = field.text ?? savedSession?.savedAssignment?.body ?? '';
   const savedStartUnavailable = Boolean(savedSession && !savedSession.savedAssignment?.availableActions.includes('start'));
   const chatOutdated = Boolean(sessionMatchesScope && selectedSession?.outdated);
   const timeline = useCanonicalAgentTimeline({
@@ -191,6 +236,9 @@ export function ResearchChatPanel({
   const unseenQuestion = jobIsActive && createdTurnForChat && createdTurnForChat.task !== latestUserBody(timeline.events) ? createdTurnForChat : undefined;
   // A turn that is being stopped takes no correction.
   const steerOpen = jobIsActive && jobStatus !== 'canceling' && !stoppingTurn && Boolean(runningTurnId) && canCreate && !mutationAuthorityLost;
+  const queuePosition = recoveredTurnJob?.id === timelineJobId && recoveredTurnJob.status === 'queued' ? recoveredTurnJob.queuePosition : undefined;
+  // A question in the queue has not started: the server takes its correction only once the helper works (CH5.1).
+  const steerWaits = steerOpen && typeof queuePosition === 'number';
   const steer = useResearchChatSteer({
     active: steerOpen, api, chatId: readableChatId, events: timeline.events as readonly CanonicalAgentTimelineEvent[], turnId: runningTurnId,
     jobId: timelineJobId, scope: chatScope,
@@ -199,14 +247,16 @@ export function ResearchChatPanel({
     clearFailure: () => clearPanelFailure(),
     onFailure: (error) => showPanelFailure(error, 'steer'),
     // What the author wrote while it was sent stays.
-    onSent: (message) => setTaskText((current) => current?.trim() === message ? '' : current),
+    onSent: (message) => field.corrected(readableChatId, message),
     onEnded: (jobId) => setCreatedTurn((current) => current?.id === jobId ? null : current),
   });
   const useDrawings = chatSlot?.drawings?.useDrawings ?? noDrawings;
+  // «Вычитать» of the chapter at the field is the site's (AA4.1); the desktop has no proofreading.
+  const useProofreadChapter = chatSlot?.proofread?.useProofreadChapter ?? noProofreadChapter;
+  const proofreadChapter = useProofreadChapter({ projectId, canEdit: canCreate && !mutationAuthorityLost, openDraft: onOpenDraft }, chapter.chapter);
   const illustrations = useDrawings({
     scope: chatScope, canEdit: canCreate && !mutationAuthorityLost,
     ...illustrationRoutes, onOpenSource,
-    toasts: deleteFlow.toasts,
   });
 
   useEffect(() => {
@@ -232,7 +282,7 @@ export function ResearchChatPanel({
     activeAction.current += 1;
   }, [selectedChatId]);
 
-  // The field empties when the author goes to another chat, not when the panel opens: a question brought from the
+  // The field takes the draft of the chat the author goes to, not when the panel opens: a question brought from the
   // saga map waits there (saga map R5.6).
   const fieldChat = useRef(selectedChatId);
   useEffect(() => {
@@ -240,11 +290,8 @@ export function ResearchChatPanel({
     const changed = fieldChat.current !== selectedChatId;
     fieldChat.current = selectedChatId;
     const keepFirstTask = pendingTask.current?.chatId === selectedChatId;
-    if (!keepFirstTask && changed) {
-      setTaskText(null);
-      // The chapter at the field belongs to the question being written there (specs/2026-11-07-chat-attach-chapter.md CA7).
-      chapter.remove();
-    }
+    // The chapter at the field follows the chat by itself: it is kept with the question of each (AA2.4).
+    if (!keepFirstTask && changed) field.open(selectedChatId);
     setCreatedTurn((current) => current?.chatId === selectedChatId ? current : null);
     clearPanelFailure();
   }, [selectedChatId]);
@@ -278,7 +325,6 @@ export function ResearchChatPanel({
 
   function startNewChat() {
     pendingTask.current = null;
-    setTaskText('');
     setCreatedTurn(null);
     clearPanelFailure();
     deleteFlow.dismiss();
@@ -299,9 +345,12 @@ export function ResearchChatPanel({
     return mounted.current && activeAction.current === actionId;
   }
 
-  /** A question from the field, with the chapter attached to it (specs/2026-11-07-chat-attach-chapter.md CA7). */
-  async function startTask(message: string, attached = chapter.chapter) {
-    if (!message || busy || !canMutate || savedStartUnavailable || chatOutdated || (selectedChatId && !readableChatId)) return;
+  /**
+   * A question from the field, with the chapter attached to it (specs/2026-11-07-chat-attach-chapter.md CA7) — or the
+   * question of a ready action of the chapter (AA4.1), which leaves what the author typed in the field.
+   */
+  async function startTask(message: string, attached = chapter.chapter, fromField = true) {
+    if (!message || busy || !canMutate || unavailable || savedStartUnavailable || chatOutdated || (selectedChatId && !readableChatId)) return;
     const actionId = ++activeAction.current;
     const submission = pendingTaskFor(pendingTask.current, message, readableChatId, attached ?? undefined);
     pendingTask.current = submission;
@@ -316,6 +365,8 @@ export function ResearchChatPanel({
         if (!actionIsCurrent(actionId)) return;
         submission.chatId = chat.id;
         submission.createdSession = true;
+        if (fromField || taskText.trim()) field.moved(chat.id, fromField ? message : taskText);
+        if (attached) chapter.moved(questionSlot(projectId, chat.id, authorId));
         if (actionIsCurrent(actionId)) {
           expectedSelectedChatId.current = chat.id;
           onSelectChatId(chat.id);
@@ -333,7 +384,7 @@ export function ResearchChatPanel({
         chatQueryKeys.activeTurn(chatScope, submission.chatId),
         job,
       );
-      setTaskText('');
+      if (fromField) field.sent(submission.chatId);
       if (submission.chapterKey) chapter.sent(submission.chapterKey);
       void invalidateAccountQuota(queryClient);
       setCreatedTurn({
@@ -352,23 +403,76 @@ export function ResearchChatPanel({
     }
   }
 
-  function changeTask(nextTask: string) {
+  /** «Повторить вопрос» of a stopped or failed turn: the question stands in the field, the author sends it (CW2.8). */
+  function repeatQuestion(text: string) {
+    changeTask(text, []);
+    questionField.current?.focus();
+  }
+
+  /** A question put into the field by a button: the focus stands at its end, nothing is sent (AA1.3, AA1.5). */
+  function putQuestion(text: string) {
+    changeTask(text, []);
+    window.requestAnimationFrame(() => {
+      const node = questionField.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(node.value.length, node.value.length);
+    });
+  }
+
+  /** What the author typed is not lost: another question asks first (AA1.3). */
+  function askFromAnswer(text: string) {
+    const typed = taskText.trim();
+    if (typed && typed !== text.trim()) {
+      setReplacing(text);
+      return;
+    }
+    putQuestion(text);
+  }
+  const askFromAnswerRef = useRef(askFromAnswer);
+  askFromAnswerRef.current = askFromAnswer;
+
+  /** What the author typed, or what a button put into the field with the blanks of its example (none for a whole question). */
+  function changeTask(nextTask: string, blanks?: readonly Blank[]) {
     if (nextTask !== taskText && panelFailure) clearPanelFailure();
-    setTaskText(nextTask);
+    field.change(nextTask, blanks);
   }
 
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (steerWaits) return;
     void (steerOpen ? steer.send(taskText.trim()) : startTask(taskText.trim()));
   }
 
   const canMutate = canCreate && !mutationAuthorityLost;
-  const memoryHost = useMemo<ChatMemoryHost>(() => ({ api, projectId, canEdit: canMutate }), [api, canMutate, projectId]);
+  // Why a button under an answer cannot put a question now; it stays and says so (AA1.3).
+  const answerAskUnavailable = jobIsActive ? 'Дождитесь ответа на идущий вопрос.'
+    : accountQuota?.chatTurns && accountQuota.chatTurns.limit > 0 && accountQuota.chatTurns.used >= accountQuota.chatTurns.limit
+      ? refusalLine('quota.chat_turns_daily', accountQuota) ?? null : null;
+  // The page keeps one function for the buttons of every answer: typing in the field draws no answer anew.
+  const answerAsk = useMemo<AnswerAsk | undefined>(() => canMutate && !chatOutdated
+    ? { put: (text) => askFromAnswerRef.current(text), unavailable: answerAskUnavailable }
+    : undefined, [answerAskUnavailable, canMutate, chatOutdated]);
+  const memoryHost = useMemo<ChatMemoryHost>(() => ({ api, projectId, canEdit: canMutate, memoryLink }), [api, canMutate, memoryLink, projectId]);
   const attachmentHost = useMemo<ChatAttachmentHost>(() => ({
     api, projectId, chatId: readableChatId, canEdit: canMutate, openSource: onOpenSource, openDraft: onOpenDraft,
   }), [api, canMutate, onOpenDraft, onOpenSource, projectId, readableChatId]);
   const retryWaiting = typeof retryDelaySeconds === 'number' && retryDelaySeconds > 0;
-  const quotaRefusal = panelFailure?.quotaCode ? chatQuotaRefusal(panelFailure.quotaCode, accountQuota) : '';
+  // The ready actions of the chapter at the field (AA4.1): two questions that go with it at once and its proofreading.
+  const quickHint = chatQuotaHint(accountQuota, 'question');
+  const chapterActions: ChapterQuickActions = {
+    ask: { onAsk: (question) => void startTask(question, chapter.chapter, false), unavailable: unavailable ?? answerAskUnavailable },
+    price: `«Сверить с книгой» и «Найти противоречия» — это вопрос чата${quickHint ? `: ${quickHint.charAt(0).toLowerCase()}${quickHint.slice(1)}` : '.'}${proofreadChapter ? ' «Вычитать» вопроса не тратит.' : ''}`,
+    proofread: proofreadChapter,
+  };
+  // A refusal by a limit is one block above the field; it stands in advance once the day has nothing left (CH3.3, CH3.4).
+  const fieldNotes = useChatFieldNotes({
+    quota: accountQuota, refusedCode: panelFailure?.quotaCode ?? '', turnActive: jobIsActive, text: taskText,
+    running: sessions.filter(chatIsWorking).map((session) => ({ id: session.id, title: session.title })),
+    onOpenChat: (chatId) => selectChat(chatId),
+    mode: steerWaits ? 'waiting' : steerOpen ? 'correction' : 'question',
+  });
+  const limitNotice = fieldNotes.limit;
   const selectedChatMissing = Boolean(selectedChatId && (
     (selectedSessionQuery.isSuccess && !sessionMatchesScope)
     || (isApiStatusFailure(selectedSessionQuery.error) && selectedSessionQuery.error.status === 404)
@@ -394,8 +498,12 @@ export function ResearchChatPanel({
     || stoppingTurn
     || turnIsActive;
   const busy = sessionsQuery.isPending || sessionPending || mutationBusy;
+  // A chapter dropped on the panel goes where «Приложить главу» puts it, while the field takes one (AA4.4).
+  const emailUnverified = Boolean(useAccountSession()?.emailVerification);
+  // A short break of the stream is a quiet line of the feed; a block only once it did not mend in a minute (AA2.6).
+  const streamLostLong = useStreamLostLong(timeline.connection);
   const { failure, loadFailure, sendFailure } = conversationFailure({
-    panelFailure, quotaRefusal, selectedChatMissing, jobIsActive, connection: timeline.connection, recoveredJob: recoveredTurnJob,
+    panelFailure, limitNamed: Boolean(limitNotice?.refused), selectedChatMissing, jobIsActive, connection: streamLostLong ? timeline.connection : 'connected', recoveredJob: recoveredTurnJob,
     sessionError: selectedSessionQuery.error, sessionErrorRequestId: chatErrorRequestId(selectedSessionQuery.error),
   });
   const retryFailure = failure?.action !== 'retry' ? undefined
@@ -406,19 +514,35 @@ export function ResearchChatPanel({
       ? undefined
       : 'Задайте первый вопрос о саге.'
     : emptyChatMessage(selectedChatId, canCreate, sessions.length);
+  // The questions with the names of the book (specs/2026-11-10-first-questions.md FQ1.5); the demo saga has its own.
+  const drop = useChatDrop({
+    enabled: canMutate && !chatOutdated && !selectedChatMissing && !jobIsActive && !busy && !retryWaiting && !savedStartUnavailable && !emailUnverified,
+    onFile: chapter.attachFile,
+  });
+  const firstQuestions = useSagaFirstQuestionsQuery(api, projectId, sourceView, !selectedChatId && canMutate && Boolean(emptyMessage) && !demo).data?.questions;
 
   return (
-    <section className={styles.panel} data-toolbar={Boolean(toolbar) || undefined} aria-label="Исследовательский чат">
-      <ResearchChatLayout toolbar={toolbar} sourceOpen={Boolean(sourceNavigation?.target)} working={sessions.filter(chatIsWorking).length} sessions={(onNavigate) => <ResearchChatSessions
+    <section className={styles.panel} data-row={row !== undefined || undefined} aria-label="Исследовательский чат" {...drop.handlers}>
+      {drop.dragging ? <div className={styles.dropOverlay}><FilePlus2 aria-hidden="true" size={28} /><strong>Отпустите, чтобы приложить главу</strong></div> : null}
+      <ResearchChatLayout row={row} sourceOpen={Boolean(sourceNavigation?.target)} working={sessions.filter(chatIsWorking).length}
+        actions={canMutate && deleteFlow.selectedTitle && !selectedChatMissing ? (showSessions) => <ChatActionsButton
+          deleteUnavailable={turnIsActive ? 'Удалить чат можно, когда ответ будет готов или остановлен.' : null}
+          disabled={startBusy || stoppingTurn}
+          onDelete={() => deleteFlow.show()}
+          onRename={() => { setRenameRequest(selectedChatId); showSessions(); }}
+          title={deleteFlow.selectedTitle}
+        /> : undefined}
+        sessions={(onNavigate, newChatIn) => <ResearchChatSessions
           api={api}
-          busy={mutationBusy}
           canCreate={canMutate}
           error={sessionsQuery.error}
           errorRequestId={chatErrorRequestId(sessionsQuery.error)}
           loading={sessionsQuery.isPending}
+          newChatIn={newChatIn}
           onAuthorityLost={() => setMutationAuthorityLost(true)}
           onDelete={deleteFlow.show}
-          onNotify={deleteFlow.toasts.push}
+          onNotify={toasts.push}
+          onRenameStarted={() => setRenameRequest('')}
           onRetry={() => void sessionsQuery.refetch()}
           onSelect={(chatId) => { selectChat(chatId); onNavigate(); }}
           onSessionGone={(chatId) => {
@@ -428,76 +552,93 @@ export function ResearchChatPanel({
             onSelectChatId('');
           }}
           onStartNew={() => { startNewChat(); onNavigate(); }}
+          renameRequest={renameRequest}
           scope={chatScope}
           selectedChatId={selectedChatMissing ? '' : selectedChatId}
           sessions={sessions}
           startBusy={startBusy}
         />}>
         <ChatMemoryProvider value={memoryHost}>{illustrations.provide(<ChatAttachmentHostProvider value={attachmentHost}><ResearchChatConversation
+          answerAsk={answerAsk}
           chatId={readableChatId}
           connection={timeline.connection}
           emptyMessage={emptyMessage}
-          examples={!selectedChatId && canMutate && emptyMessage ? <ChatExamples field={questionField} message={emptyMessage} onPick={changeTask} /> : undefined}
+          examples={!selectedChatId && canMutate && emptyMessage
+            ? (demo ? chatSlot?.demoExamples?.({ field: questionField, onPick: (question) => changeTask(question, []) }) : null)
+              ?? <ChatExamples field={questionField} message={emptyMessage} onPick={changeTask} questions={firstQuestions} typed={Boolean(taskText)} />
+            : undefined}
           failure={failure}
+          firstAnswerNext={sessions.length === 1 && sessions[0]?.id === readableChatId ? whatNext : undefined}
           events={timeline.events as readonly CanonicalAgentTimelineEvent[]}
           selectedSource={sourceNavigation?.target}
-          sourcePane={sourceNavigation?.target && readableChatId ? <ResearchChatSourceInspector api={api} chatId={readableChatId} navigation={sourceNavigation} projectId={projectId} sourceView={sourceView} /> : undefined}
+          sourcePane={sourceNavigation?.target && readableChatId ? <ResearchChatSourceInspector api={api} chatId={readableChatId} chatTitle={selectedSession?.title} navigation={sourceNavigation} projectId={projectId} sourceView={sourceView}
+            onAskWhere={answerAsk && !answerAsk.unavailable ? () => {
+              // The link the panel stands for is the one open beside the chat; after a reload it is found the same way.
+              const link = document.querySelector<HTMLElement>('[data-chat-source][aria-expanded="true"]');
+              const question = askWhereQuestion(link ? phraseAt(link) : '');
+              sourceNavigation.close();
+              askFromAnswer(question);
+            } : undefined} /> : undefined}
           onOpenSource={onOpenSource}
           jobStatus={jobStatus as AgentJobStatus | null}
           startedAt={jobIsActive ? recoveredTurnJob?.createdAt : undefined}
+          // «Остановить» stands in the status of the turn, the field keeps one action (specs/2026-11-10-ux4-chat-waiting.md CW2.4).
+          stop={turnIsActive && canMutate ? { canStop: Boolean(activeTurnJobId && activeTurnCanCancel), stopping: stoppingTurn || jobStatus === 'canceling', onStop: () => void stopTurn() } : undefined}
+          onRepeatQuestion={canMutate ? repeatQuestion : undefined}
           pendingQuestion={unseenQuestion?.task}
           pendingSteers={steer.waiting}
-          onAskSteer={canMutate ? (text) => { changeTask(text); questionField.current?.focus(); } : undefined}
+          onAskSteer={canMutate ? (text) => { changeTask(text, []); questionField.current?.focus(); } : undefined}
           preparation={preparation}
-          queuePosition={recoveredTurnJob?.id === timelineJobId && recoveredTurnJob.status === 'queued' ? recoveredTurnJob.queuePosition : undefined}
+          queuePosition={queuePosition}
           loading={sessionPending}
           savedSession={savedSession}
-          savedBusy={busy || retryWaiting}
-          onStartSaved={canMutate && !savedStartUnavailable ? () => void startTask(savedSession?.savedAssignment?.body ?? '') : undefined}
+          savedInField={canMutate && !chatOutdated}
           onStartNew={canMutate ? startNewChat : undefined}
           footer={chatOutdated ? (
             <Alert aria-label="Чат прежнего помощника" className={styles.outdatedNotice}>
               {outdatedChatMessage()}
               {canMutate ? <Button onClick={startNewChat} variant="primary"><Plus aria-hidden="true" size={16} />Новый чат</Button> : null}
             </Alert>
-          ) : (readableChatId || !selectedChatId || sessionPending) && canMutate && !selectedChatMissing ? (<>
-            <ChatQuotaHint text={quotaRefusal ? '' : chatQuotaHint(accountQuota)} />
+          ) : (readableChatId || !selectedChatId || sessionPending) && canMutate && !selectedChatMissing ? (
             <ResearchChatComposer
+              above={fieldNotes.above}
+              describedBy={fieldNotes.describedBy}
               active={turnIsActive}
               attachButton={({ compact, row }) => <ChatChapterButton chapter={chapter} compact={compact} disabled={busy || retryWaiting} row={row} />}
-              chapterStrip={<ChatChapterStrip chapter={chapter} />}
+              chapterStrip={<ChatChapterStrip actions={chapterActions} chapter={chapter} onOpenBooks={onStartIndexing} />}
+              chapterAttached={Boolean(chapter.chapter)}
               onLongPaste={chapter.offerPaste}
+              blanks={field.text === null ? undefined : field.blanks}
               busy={busy}
-              canStop={Boolean(activeTurnJobId && activeTurnCanCancel)}
-              canDelete={Boolean(readableChatId)}
-              deleteConfirmationOpen={deleteFlow.open}
-              deleteError={deleteFlow.error}
-              deleteErrorCode={deleteFlow.errorCode}
-              deleteTitle={deleteFlow.selectedTitle}
-              deleting={deleteFlow.isPending}
+              demo={demo}
               fieldRef={questionField}
-              onCancelDelete={deleteFlow.dismiss}
-              onConfirmDelete={() => void deleteFlow.confirm()}
-              onDelete={deleteFlow.show}
-              onStop={() => void stopTurn()}
-              onTaskChange={changeTask}
+              onTaskChange={(text) => changeTask(text)}
               onSubmit={submitTask}
               // The one «Спросить снова» of a failure lives here, with the question in the field (R4.2.3).
-              recovery={Boolean(taskText) && (failure ? failure.action === 'ask_again' : latestTurnFailed)}
+              recovery={Boolean(taskText) && !limitNotice && (failure ? failure.action === 'ask_again' : latestTurnFailed)}
               retryAfterSeconds={retryDelaySeconds}
               retryUnavailable={savedStartUnavailable}
               steering={steerOpen}
               steerSending={steer.sending}
-              stopping={stoppingTurn}
+              steerWaits={steerWaits}
+              spent={limitNotice?.code === 'quota.chat_turns_daily'}
+              stopping={stoppingTurn || jobStatus === 'canceling'}
               taskText={taskText}
+              unavailable={unavailable}
             />
-          </>) : null}
+          ) : null}
           onRetry={retryFailure}
           onReturnToChats={selectedChatMissing ? () => selectChat('') : undefined}
           onStartIndexing={onStartIndexing}
         /></ChatAttachmentHostProvider>)}</ChatMemoryProvider>
       </ResearchChatLayout>
-      <ToastRegion onDismiss={deleteFlow.toasts.dismiss} queue={deleteFlow.toasts.queue} />
+      <ChatDeleteDialog flow={deleteFlow} />
+      {replacing !== null ? (
+        <Confirm action="Заменить" consent="no" onCancel={() => setReplacing(null)} title="Заменить набранное?"
+          onConfirm={() => { putQuestion(replacing); setReplacing(null); }}>
+          {`В поле уже есть ваш текст. Вместо него встанет: «${replacing.trim()}»`}
+        </Confirm>
+      ) : null}
       {illustrations.overlays}
     </section>
   );

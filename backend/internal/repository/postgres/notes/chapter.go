@@ -16,6 +16,8 @@ type chapterSnapshot struct {
 	governance.CanonicalChapterSourceLocatorV1
 	Content    string
 	Paragraphs []governance.CanonicalParagraphContent
+	// Place is the chapter as the author reads it: «Книга 2, гл. 12 „Белый порт“».
+	Place string
 }
 
 // Read the same published revision as Reader, including when search indexing is
@@ -26,8 +28,11 @@ func readableChapter(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, source d
 		ProjectID: locator.ProjectID, BookID: locator.BookID, ChapterID: locator.ChapterID, SourceRef: locator.ChapterID, SourceView: governance.SourceViewPublished,
 	}}
 	var projectGeneration, bookGeneration, chapterGeneration int64
+	var chapterOrder int
+	var title string
 	err := tx.QueryRow(ctx, `
-  SELECT chapter.published_revision,project.lifecycle_generation,book.lifecycle_generation,chapter.lifecycle_generation
+  SELECT chapter.published_revision,project.lifecycle_generation,book.lifecycle_generation,chapter.lifecycle_generation,
+   chapter."order",chapter.title
   FROM chapters AS chapter
   JOIN books AS book ON book.id=chapter.book_id AND book.project_id=chapter.project_id AND book.deleted_at IS NULL
   JOIN projects AS project ON project.id=chapter.project_id AND project.deleted_at IS NULL
@@ -35,10 +40,16 @@ func readableChapter(ctx context.Context, tx pgx.Tx, owner pgtype.UUID, source d
   WHERE chapter.id=$2::uuid AND book.id=$3::uuid AND project.id=$4::uuid
     AND chapter.deleted_at IS NULL AND chapter.published_revision IS NOT NULL
   FOR SHARE OF chapter,book,project,member
- `, owner, locator.ChapterID, locator.BookID, locator.ProjectID).Scan(&current.SourceRevision, &projectGeneration, &bookGeneration, &chapterGeneration)
+ `, owner, locator.ChapterID, locator.BookID, locator.ProjectID).Scan(&current.SourceRevision, &projectGeneration, &bookGeneration, &chapterGeneration,
+		&chapterOrder, &title)
 	if err != nil {
 		return current, err
 	}
+	places, err := shelfPlaces(ctx, tx, []string{locator.ProjectID})
+	if err != nil {
+		return current, err
+	}
+	current.Place = chapterPlace(places[locator.ProjectID][locator.BookID], chapterOrder, title)
 	current.SourceGeneration, err = governance.SourceGenerationDigest(governance.SourceGenerationVector{
 		ProjectID: locator.ProjectID, ProjectGeneration: governance.LifecycleGeneration(projectGeneration),
 		BookID: locator.BookID, BookGeneration: governance.LifecycleGeneration(bookGeneration),

@@ -1,14 +1,20 @@
-/* The author's materials (specs/2026-11-04-saga-map.md, UC9): the panel beside the map, the import and the dialogs. */
+/*
+ * The author's materials (specs/2026-11-04-saga-map.md, UC9): «Ваши материалы» of the page «Что помнит помощник»
+ * (specs/2026-11-10-ux2-memory-page.md MP1.3), the import and the dialogs.
+ */
 
-.panel {
+.part {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--ck-space-3);
-  padding: var(--ck-space-5);
 }
 
-.panel h2,
+.part > button {
+  align-self: flex-start;
+}
+
+.part h2,
 .form h2 {
   margin: 0;
   font-size: 18px;
@@ -40,12 +46,6 @@
   line-height: 18px;
 }
 
-.running {
-  display: flex;
-  align-items: center;
-  gap: var(--ck-space-2);
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -72,23 +72,31 @@
   border-bottom: 1px solid var(--ck-border);
 }
 
-.recordOpen {
+.recordText {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
   gap: 2px;
   padding: var(--ck-space-2) 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.recordOpen:hover strong {
+/* The name is a link to the card of the record on the map. */
+.recordName {
+  align-self: flex-start;
+  color: var(--ck-foreground);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.recordName:hover {
   text-decoration: underline;
+}
+
+.recordName:focus-visible {
+  border-radius: var(--ck-radius-xs);
+  outline: 1.5px solid var(--ck-ring);
 }
 
 .recordActions {
@@ -203,10 +211,9 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--ck-space-2);
-  margin: 0 calc(-1 * var(--ck-space-5)) calc(-1 * var(--ck-space-5));
-  padding: var(--ck-space-3) var(--ck-space-5);
+  padding: var(--ck-space-3) 0;
   border-top: 1px solid var(--ck-border);
-  background: var(--ck-card);
+  background: var(--ck-background);
 }
 
 .candidate {
@@ -311,4 +318,27 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* «Добавить файл или текст» and «Добавить запись» side by side (specs/2026-11-10-ux8-memory-records.md MR2.2). */
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ck-space-2);
+}
+
+/* The one line over the file field (MR2.5). */
+.lead {
+  color: var(--ck-foreground);
+  font-size: 14px;
+  line-height: 20px;
+  margin: 0;
+}
+
+/* The ways from the block after saving (MR3.5). */
+.savedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ck-space-2);
+  margin-top: var(--ck-space-2);
 }

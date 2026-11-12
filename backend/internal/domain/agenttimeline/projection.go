@@ -115,10 +115,12 @@ type Event struct {
 	// Attachment is the card of the chapter of the author attached to a question (EventUser,
 	// specs/2026-11-07-chat-attach-chapter.md CA4.1): read from the native question, never from PostgreSQL.
 	Attachment *QuestionAttachment
-	Phase      string
-	Outcome    Outcome
-	Tool       *ToolCall
-	Subagent   *Subagent
+	// Button: a button of the page sent the question (EventUser, specs/2026-11-11-ux9-writing-b.md WB3.3).
+	Button   bool
+	Phase    string
+	Outcome  Outcome
+	Tool     *ToolCall
+	Subagent *Subagent
 }
 
 // QuestionAttachment is what the card of an attached chapter shows: its number in the chat, title and words.
@@ -270,7 +272,7 @@ func projectItem(item nativeItem, publicQuestion bool) ([]Event, error) {
 				FirstPhoto: question.FirstPhoto, SteerID: item.ClientID,
 			}}, nil
 		}
-		event := Event{Kind: EventUser, Text: question.Text, Images: question.Images}
+		event := Event{Kind: EventUser, Text: question.Text, Images: question.Images, Button: question.Button}
 		if attachment := question.Attachment; attachment != nil {
 			event.Attachment = &QuestionAttachment{Number: attachment.Number, Title: attachment.Title, Words: attachment.Words}
 		}

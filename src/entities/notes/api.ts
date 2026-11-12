@@ -46,3 +46,28 @@ export function usePersonalNote(api: NotesApiClient, accountId: string, noteId: 
     meta: notesMeta(api),
   });
 }
+
+/**
+ * Where the place of a note is now (specs/2026-11-11-ux7-notes.md NT1.1, NT2.4): the place of its chapter in the words of
+ * the server, or that the book no longer has it. A note of the book reads it when it opens; a note of a chat reads it by
+ * the press of its link, as that reads the conversation.
+ */
+export function useNoteSource(api: NotesApiClient, accountId: string, noteId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: noteQueryKeys.source(accountId, noteId),
+    queryFn: ({ meta, signal }) => notesApiFromMeta(meta).resolvePersonalNoteSource(noteId, { signal }),
+    enabled: enabled && Boolean(noteId),
+    meta: notesMeta(api),
+    retry: false,
+  });
+}
+
+/**
+ * The line a note is named by (NT1.3): an older note's own title, the first line of the thought, or — without a thought —
+ * the beginning of the cited words in quotation marks.
+ */
+export function noteLine(note: { title: string; thought: string; quote?: string | undefined }) {
+  const firstLine = (text: string) => text.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+  const quote = firstLine(note.quote ?? '');
+  return note.title.trim() || firstLine(note.thought) || (quote ? `«${quote}»` : '');
+}

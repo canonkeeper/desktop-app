@@ -1,0 +1,83 @@
+/* «Долгая работа» — Pattern/Common/Long Work (board 15·08): the line, its action and its bar. */
+.longWork {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: 12px 16px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+}
+
+.longWork[data-tone='done'] {
+  border-color: var(--ck-color-success-foreground);
+}
+
+.longWork[data-tone='stalled'] {
+  border-color: var(--ck-destructive);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.now {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.what,
+.howLong {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.what {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.howLong {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.action {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.progress {
+  width: 100%;
+}
+
+.announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 390: the action under the line (board 15·08). */
+@media (max-width: 767px) {
+  .line {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action > * {
+    flex: 1 1 auto;
+  }
+}

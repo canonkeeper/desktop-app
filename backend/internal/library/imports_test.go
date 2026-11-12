@@ -41,74 +41,28 @@ func TestImportConstraintsHandlerReturnsOpenAPIContract(t *testing.T) {
 		AllowedExtensions []string `json:"allowedExtensions"`
 		AllowedMIMETypes  []string `json:"allowedMimeTypes"`
 		MaxFileSizeBytes  int64    `json:"maxFileSizeBytes"`
-		NextBookOrder     int      `json:"nextBookOrder"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode constraints response: %v", err)
 	}
-	assertStringSliceEqualForTest(t, body.AllowedExtensions, []string{".fb2", ".epub", ".docx"})
+	assertStringSliceEqualForTest(t, body.AllowedExtensions, []string{".fb2", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt", ".fb2.zip"})
 	assertStringSliceEqualForTest(t, body.AllowedMIMETypes, []string{
-		"application/epub+zip",
 		"application/x-fictionbook+xml",
 		"text/xml",
 		"application/xml",
+		"application/epub+zip",
 		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"text/plain",
+		"text/markdown",
+		"text/x-markdown",
+		"application/rtf",
+		"text/rtf",
+		"application/vnd.oasis.opendocument.text",
+		"application/zip",
+		"application/x-zip-compressed",
 	})
 	if body.MaxFileSizeBytes != 52428800 {
 		t.Fatalf("maxFileSizeBytes = %d, want 52428800", body.MaxFileSizeBytes)
-	}
-	if body.NextBookOrder != 1 {
-		t.Fatalf("nextBookOrder = %d, want 1", body.NextBookOrder)
-	}
-}
-
-func TestImportConstraintsReturnsAuthoritativeNextBookOrder(t *testing.T) {
-	store := NewMemoryStoreForTest()
-	store.projectRoles[roleKey("user-1", "project-1")] = projects.RoleViewer
-	store.books["book-1"] = Book{ID: "book-1", ProjectID: "project-1", Order: 1}
-	store.books["book-2"] = Book{ID: "book-2", ProjectID: "project-1", Order: 2}
-
-	constraints, err := NewService(store, StaticIDsForTest(), StaticClockForTest()).ImportConstraints(
-		context.Background(), Actor{UserID: "user-1"}, "project-1",
-	)
-	if err != nil {
-		t.Fatalf("ImportConstraints error = %v", err)
-	}
-	if constraints.NextBookOrder != 3 {
-		t.Fatalf("NextBookOrder = %d, want 3", constraints.NextBookOrder)
-	}
-}
-
-func TestImportConstraintsReturnsFirstMissingOrder(t *testing.T) {
-	store := NewMemoryStoreForTest()
-	store.projectRoles[roleKey("user-1", "project-1")] = projects.RoleViewer
-	store.books["book-1"] = Book{ID: "book-1", ProjectID: "project-1", Order: 1}
-	store.books["book-3"] = Book{ID: "book-3", ProjectID: "project-1", Order: 3}
-
-	constraints, err := NewService(store, StaticIDsForTest(), StaticClockForTest()).ImportConstraints(
-		context.Background(), Actor{UserID: "user-1"}, "project-1",
-	)
-	if err != nil {
-		t.Fatalf("ImportConstraints error = %v", err)
-	}
-	if constraints.NextBookOrder != 2 {
-		t.Fatalf("NextBookOrder = %d, want 2", constraints.NextBookOrder)
-	}
-}
-
-func TestImportConstraintsRejectsDuplicateOrder(t *testing.T) {
-	store := NewMemoryStoreForTest()
-	store.projectRoles[roleKey("user-1", "project-1")] = projects.RoleViewer
-	for index, order := range []int{1, 2, 2} {
-		id := fmt.Sprintf("book-%d", index+1)
-		store.books[id] = Book{ID: id, ProjectID: "project-1", Order: order}
-	}
-
-	_, err := NewService(store, StaticIDsForTest(), StaticClockForTest()).ImportConstraints(
-		context.Background(), Actor{UserID: "user-1"}, "project-1",
-	)
-	if !errors.Is(err, ErrImportSequenceConflict) {
-		t.Fatalf("ImportConstraints error = %v, want ErrImportSequenceConflict", err)
 	}
 }
 
@@ -239,7 +193,7 @@ func TestInitialPublicationForImportExtension(t *testing.T) {
 			t.Fatalf("InitialPublicationForImportExtension(%q) = %q, %v; want %q", extension, got, err, want)
 		}
 	}
-	if _, err := InitialPublicationForImportExtension(".txt"); !errors.Is(err, ErrImportUnsupportedMediaType) {
+	if _, err := InitialPublicationForImportExtension(".pdf"); !errors.Is(err, ErrImportUnsupportedMediaType) {
 		t.Fatalf("unsupported extension error = %v, want ErrImportUnsupportedMediaType", err)
 	}
 }

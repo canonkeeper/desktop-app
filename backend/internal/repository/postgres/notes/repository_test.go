@@ -61,6 +61,17 @@ func TestPersonalNotesPrivacyReplayRevisionAndSessionFence(t *testing.T) {
 	if _, err = repo.Update(ctx, actors[1], first.ID, service.UpdateInput{Body: testText("stolen"), ExpectedRevision: 1}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("foreign update = %v", err)
 	}
+	// An empty thought is a thought beside a quote only (specs/2026-11-11-ux7-notes.md NT1.2): another account's note is
+	// still not found, an own note without a quote is refused and kept.
+	if _, err = (service.Update{Repository: repo}).Execute(ctx, actors[1], first.ID, service.UpdateInput{Body: testText(""), ExpectedRevision: 1}); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("foreign empty thought = %v", err)
+	}
+	if _, err = (service.Update{Repository: repo}).Execute(ctx, actors[0], first.ID, service.UpdateInput{Body: testText(" "), ExpectedRevision: 1}); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("own note emptied = %v", err)
+	}
+	if kept, err := repo.Get(ctx, actors[0].UserID, first.ID); err != nil || kept.Body != "Личная копия" || kept.Revision != 1 {
+		t.Fatalf("refused empty thought changed the note = %#v, %v", kept, err)
+	}
 	if err = repo.Delete(ctx, actors[1], first.ID, 1); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("foreign delete = %v", err)
 	}
@@ -92,5 +103,8 @@ func TestPersonalNotesPrivacyReplayRevisionAndSessionFence(t *testing.T) {
 	}
 	if _, err = create.Execute(ctx, actors[1], input, "request-2", "POST", "/personal-notes"); !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatalf("revoked write = %v", err)
+	}
+	if _, err = (service.Update{Repository: repo}).Execute(ctx, actors[1], own.ID, service.UpdateInput{Body: testText(""), ExpectedRevision: 1}); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("revoked empty thought = %v", err)
 	}
 }

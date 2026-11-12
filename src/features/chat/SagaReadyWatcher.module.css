@@ -1,0 +1,31 @@
+/* «Книга прочитана — можно спрашивать» under the top bar, beside the line of the address (SS3.5). */
+.strip {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 6px 28px;
+  background: var(--ck-color-success);
+  color: var(--ck-foreground);
+  font-size: 14px;
+}
+
+.icon {
+  flex: none;
+  color: var(--ck-color-success-foreground);
+}
+
+.message {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .strip {
+    padding: 6px 14px;
+  }
+}

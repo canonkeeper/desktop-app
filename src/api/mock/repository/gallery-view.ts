@@ -3,6 +3,7 @@ import { MockApiError, type MockScenarioControl } from '../scenarios';
 import { clone, now } from './common';
 import type { MockRepositoryContext } from './context';
 import { mockAspectSize, pendingCheck, settledCheck, type MockImageLayer, type MockSagaImage } from './gallery-state';
+import { placesOf } from './places';
 
 type SagaImage = Schema<'SagaImage'>;
 
@@ -26,6 +27,13 @@ function fileAddress(image: MockSagaImage, query: string) {
  */
 function step(item: MockSagaImage | MockImageLayer, limit: MockScenarioControl['drawingLimit'], lastFrame = 3) {
   if (item.status !== 'drawing') return false;
+  // A drawing put off until the service of drawings is free waits for its time (specs/2026-11-12-ux10-drawing-ops.md DO2.1).
+  if ('startsAfter' in item && item.startsAfter) {
+    if (Date.parse(item.startsAfter) > Date.now()) return false;
+    delete item.startsAfter;
+    // Its work begins now, as the server's first claim of its Job (specs/2026-11-12-ux12-drawings.md DW1.2).
+    item.startedAt = new Date().toISOString();
+  }
   if (item.phase === 'queued') {
     item.phase = 'reading';
   } else if (item.phase === 'reading' && limit) {
@@ -71,6 +79,7 @@ export function createGalleryView(context: MockRepositoryContext) {
       }
     }
     giveBack(image);
+    dropCurrent(image);
     for (const layer of image.layers) {
       if (step(layer, limit) && layer.visible) {
         image.renderRevision += 1;
@@ -80,6 +89,18 @@ export function createGalleryView(context: MockRepositoryContext) {
       }
       giveBack(layer);
     }
+  }
+
+  /**
+   * A version that ended without being drawn stops being the current one of its drawing, as its Job ends it on the
+   * backend: the latest ready version without a group takes its place, otherwise none (image-workshop IW5.2, I2, I3).
+   */
+  function dropCurrent(image: MockSagaImage) {
+    if (image.status !== 'failed' && image.status !== 'refused') return;
+    const drawing = gallery().drawings.find((item) => item.projectId === image.projectId && item.branch === image.branch && item.current === image.number);
+    if (!drawing) return;
+    const ready = gallery().images.filter((item) => item.projectId === image.projectId && item.branch === image.branch && item.status === 'ready' && !item.variantGroup && item.kind !== 'upload');
+    drawing.current = ready.reduce<number | null>((latest, item) => (latest === null || item.number > latest ? item.number : latest), null);
   }
 
   /** A version enlarged is ready at twice the size with the check of its base: no critic looks at it (R17.11). */
@@ -99,8 +120,7 @@ export function createGalleryView(context: MockRepositoryContext) {
    */
   function giveBack(item: MockSagaImage | MockImageLayer) {
     if (item.status !== 'failed' || item.errorCode !== 'draw_limited' || !item.charge) return;
-    const right = gallery().access.rights[item.createdBy];
-    if (item.charge === 'trial' && right) right.trialLeft += 1;
+    if (item.charge === 'trial') context.state.trialImagesUsed[item.createdBy] = Math.max(0, (context.state.trialImagesUsed[item.createdBy] ?? 0) - 1);
     item.charge = null;
   }
 
@@ -119,18 +139,22 @@ export function createGalleryView(context: MockRepositoryContext) {
   }
 
   function view(image: MockSagaImage): SagaImage {
-    const { projectId, createdBy, partialFrame, layers, turnId: _turnId, facts: _facts, check, checkRevision, charge: _charge, enlargedSize: _enlargedSize, variantPaid: _variantPaid, ...rest } = image;
+    const { projectId, createdBy, partialFrame, layers, turnId: _turnId, facts: _facts, check, checkRevision, charge: _charge, enlargedSize: _enlargedSize, variantPaid: _variantPaid, freeSketch: _freeSketch, ...rest } = image;
     const role = context.actorRole(projectId);
     const ready = image.status === 'ready';
     // The check of an older render is not shown, as the backend's (R12.3).
     const current = check && checkRevision === image.renderRevision ? { check } : {};
+    const references = gallery().references.filter((reference) => reference.projectId === projectId && reference.number === image.number);
+    // Beside the keys of the drawing stand the places of their chapters, as the backend writes them (ux1-names N3.1).
+    const places = placesOf(context, projectId, [image.chapter, ...image.sources.map((source) => source.split('/')[0]), ...references.map((reference) => reference.fromChapter)]);
     return clone({
       ...rest,
       ...current,
+      ...(places ? { places } : {}),
       ...(image.kind === 'item' ? { transparent: true } : {}),
-      references: gallery().references
-        .filter((reference) => reference.projectId === projectId && reference.number === image.number)
-        .map(({ fromChapter, look, subjectKey, subjectName }) => ({ subjectKey, subjectName, fromChapter, ...(look ? { look } : {}) })),
+      references: references.map(({ fromChapter, look, subjectKey, subjectName }) => ({
+        subjectKey, subjectName, fromChapter, ...(fromChapter && places?.[fromChapter] ? { fromPlace: places[fromChapter] } : {}), ...(look ? { look } : {}),
+      })),
       canDelete: role === 'owner' || (createdBy === context.currentPrincipalId() && editorRoles.includes(role as typeof editorRoles[number])),
       partialUrl: image.status === 'drawing' && partialFrame > 0 ? fileAddress(image, `size=partial&frame=${partialFrame}`) : null,
       ...(image.enlarged && image.status === 'drawing' ? { enlargeProgress: { done: Math.max(0, partialFrame - 1), total: enlargeTiles(image.aspect) } } : {}),

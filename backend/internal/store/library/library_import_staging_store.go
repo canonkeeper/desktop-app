@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
 	authstore "canonkeeper/backend/internal/store/auth"
-	"canonkeeper/backend/internal/store/db"
+	storedb "canonkeeper/backend/internal/store/db"
 	governancestore "canonkeeper/backend/internal/store/governance"
 	jobstore "canonkeeper/backend/internal/store/jobs"
-	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -83,19 +83,29 @@ func (s *Store) createImportStagingForActor(ctx context.Context, input library.C
 			return err
 		}
 		var projectGeneration int64
+		var demo bool
 		var createdAt, expiresAt time.Time
 		if err := tx.QueryRow(ctx, `
 			WITH stamp AS MATERIALIZED (
 				SELECT date_trunc('microseconds', clock_timestamp()) AS created_at
 			)
 			SELECT project.lifecycle_generation,
+			       project.demo,
 			       stamp.created_at,
 			       stamp.created_at + interval '24 hours'
 			FROM projects AS project
 			CROSS JOIN stamp
 			WHERE project.id = $1 AND project.deleted_at IS NULL
-		`, projectUUID).Scan(&projectGeneration, &createdAt, &expiresAt); err != nil {
+		`, projectUUID).Scan(&projectGeneration, &demo, &createdAt, &expiresAt); err != nil {
 			return err
+		}
+		// The demo saga takes its seed and no other import, in any mode, and the seed goes into no other saga
+		// (specs/2026-11-09-demo-saga.md DS3.3, DS3.4).
+		if demo && !input.Seed {
+			return quota.ErrDemoSaga
+		}
+		if input.Seed && (!demo || targetBookID.Valid) {
+			return library.ErrValidation
 		}
 		progressJSON, err := jobstore.MarshalImportProgress(jobs.ImportProgress{
 			Phase: jobs.ImportPhaseQueued, BytesTransferred: input.Metadata.SizeBytes,
@@ -153,8 +163,18 @@ func (s *Store) createImportStagingForActor(ctx context.Context, input library.C
 		// Quotas count only a new idempotency key (R1.3): books and text of a new book for the
 		// project owner (R3.2, R1.4), then the upload for the actor (R3.1). The owner's quota lock
 		// comes before the actor's day row, as on every path (owner-tools lock order).
-		if !targetBookID.Valid {
-			if err := quotastore.CheckNewBooksInTx(ctx, tx, projectUUID.String(), 1, true); err != nil {
+		//
+		// The seed of the demo saga stands out of the limits and of the day (DS3.4): under the same lock of the
+		// owner the saga holds neither its book nor an import of it, or the seed is a conflict.
+		switch {
+		case input.Seed:
+			if err := s.quota.CheckDemoSeedInTx(ctx, tx, projectUUID.String()); errors.Is(err, quota.ErrDemoSeed) {
+				return library.ErrConflict
+			} else if err != nil {
+				return err
+			}
+		case !targetBookID.Valid:
+			if err := s.quota.CheckNewBooksInTx(ctx, tx, projectUUID.String(), 1, true); err != nil {
 				return err
 			}
 		}
@@ -173,8 +193,8 @@ func (s *Store) createImportStagingForActor(ctx context.Context, input library.C
 				return err
 			}
 		}
-		if !previewed {
-			if err := quotastore.ReserveImportsInTx(ctx, tx, actorUserUUID.String(), 1, createdAt); err != nil {
+		if !previewed && !input.Seed {
+			if err := s.quota.ReserveDailyInTx(ctx, tx, actorUserUUID.String(), quota.KeyImportsPerDay, 1, createdAt); err != nil {
 				return err
 			}
 		}

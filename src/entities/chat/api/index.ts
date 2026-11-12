@@ -95,3 +95,14 @@ export function sagaHasChatQueryOptions(api: ChatSessionsClient, scope: ChatScop
     select: (list: ChatSessionList) => list.data.length > 0,
   });
 }
+
+/**
+ * Whether the saga has had an answer (specs/2026-11-10-ux3-first-screen.md FS3.3): a chat of it whose latest turn
+ * succeeded, by the same list of the chats.
+ */
+export function sagaHasAnswerQueryOptions(api: ChatSessionsClient, scope: ChatScope) {
+  return queryOptions({
+    ...chatSessionsQueryOptions(api, scope),
+    select: (list: ChatSessionList) => list.data.some((chat) => chat.latestTurnStatus === 'succeeded'),
+  });
+}

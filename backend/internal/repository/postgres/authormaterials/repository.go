@@ -8,7 +8,9 @@ import (
 	"errors"
 	"time"
 
+	"canonkeeper/backend/internal/auth"
 	domain "canonkeeper/backend/internal/domain/authormaterials"
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/projects"
@@ -20,12 +22,12 @@ import (
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var (
 	_ service.ListStore    = (*Repository)(nil)
+	_ service.CreateStore  = (*Repository)(nil)
 	_ service.UpdateStore  = (*Repository)(nil)
 	_ service.DeleteStore  = (*Repository)(nil)
 	_ service.StartStore   = (*Repository)(nil)
@@ -39,11 +41,19 @@ var (
 const maxReadRecords = 5000
 
 type Repository struct {
-	db   *storedb.DB
-	jobs *jobstore.Store
+	db    *storedb.DB
+	jobs  *jobstore.Store
+	quota quotastore.Fence
 }
 
 func New(db *storedb.DB, jobs *jobstore.Store) *Repository { return &Repository{db: db, jobs: jobs} }
+
+// WithQuota gives the repository the quota fence of the build (specs/2026-11-08-subscription-tiers.md TR2.4); without
+// it the fence has no plan, as the open core and its tests run.
+func (repository *Repository) WithQuota(fence quotastore.Fence) *Repository {
+	repository.quota = fence
+	return repository
+}
 
 func projectAndActor(projectID, actorUserID string) (pgtype.UUID, pgtype.UUID, error) {
 	project, err := storedb.ParseUUID(projectID)
@@ -152,12 +162,26 @@ func (repository *Repository) AuthorMaterials(ctx context.Context, projectID str
 
 // writeTx runs a web mutation behind the session's write proof for an editor or above.
 func (repository *Repository) writeTx(ctx context.Context, write service.Write, run func(pgx.Tx, *sqlc.Queries, pgtype.UUID, pgtype.UUID) error) error {
+	return repository.lockedTx(ctx, write, authstore.LockSessionWriteProof, run)
+}
+
+// modelWorkTx is writeTx for a start of model work: the actor's address must be verified too, as for a question of the
+// chat (specs/2026-11-09-quota-accounting.md Q5.3).
+func (repository *Repository) modelWorkTx(ctx context.Context, write service.Write, run func(pgx.Tx, *sqlc.Queries, pgtype.UUID, pgtype.UUID) error) error {
+	return repository.lockedTx(ctx, write, authstore.LockVerifiedSessionWriteProof, run)
+}
+
+func (repository *Repository) lockedTx(
+	ctx context.Context, write service.Write,
+	fence func(context.Context, pgx.Tx, pgtype.UUID, auth.SessionWriteProof) (pgtype.UUID, error),
+	run func(pgx.Tx, *sqlc.Queries, pgtype.UUID, pgtype.UUID) error,
+) error {
 	project, actor, err := projectAndActor(write.ProjectID, write.UserID)
 	if err != nil {
 		return err
 	}
 	return repository.db.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, err := authstore.LockSessionWriteProof(ctx, tx, actor, write.Proof); err != nil {
+		if _, err := fence(ctx, tx, actor, write.Proof); err != nil {
 			return err
 		}
 		queries := sqlc.New(tx)
@@ -188,42 +212,6 @@ func lockAtRevision(ctx context.Context, queries *sqlc.Queries, project pgtype.U
 		return pgtype.UUID{}, domain.ErrConflict
 	}
 	return id, nil
-}
-
-func isNameTaken(err error) bool {
-	var pgError *pgconn.PgError
-	return errors.As(err, &pgError) && pgError.Code == "23505"
-}
-
-// UpdateAuthorMaterial replaces what a record says at the expected revision; another record of the name is a conflict.
-func (repository *Repository) UpdateAuthorMaterial(ctx context.Context, write service.Write, recordID string, expected int64, draft domain.Draft, key string) (domain.Record, error) {
-	properties, err := propertiesJSON(draft.Properties)
-	if err != nil {
-		return domain.Record{}, domain.ErrInvalid
-	}
-	var record domain.Record
-	err = repository.writeTx(ctx, write, func(_ pgx.Tx, queries *sqlc.Queries, project, actor pgtype.UUID) error {
-		id, err := lockAtRevision(ctx, queries, project, recordID, expected)
-		if err != nil {
-			return err
-		}
-		if _, err := queries.UpdateAuthorMaterial(ctx, sqlc.UpdateAuthorMaterialParams{
-			ProjectID: project, ID: id, Name: draft.Name, NameKey: key, Kind: string(draft.Kind), Description: draft.Description,
-			Properties: properties, Section: draft.Section, Actor: actor, ExpectedRevision: expected,
-		}); err != nil {
-			if isNameTaken(err) {
-				return domain.ErrConflict
-			}
-			return err
-		}
-		row, err := queries.GetAuthorMaterial(ctx, sqlc.GetAuthorMaterialParams{ProjectID: project, ID: id})
-		if err != nil {
-			return err
-		}
-		record, err = recordOf(row)
-		return err
-	})
-	return record, err
 }
 
 // DeleteAuthorMaterial removes a record at the expected revision.
@@ -258,7 +246,7 @@ type startReplay struct {
 // replaces an import that waits for an answer and refuses while another one is running.
 func (repository *Repository) StartAuthorMaterialsImport(ctx context.Context, command service.StartCommand) (domain.Import, error) {
 	var started domain.Import
-	err := repository.writeTx(ctx, command.Write, func(tx pgx.Tx, queries *sqlc.Queries, project, actor pgtype.UUID) error {
+	err := repository.modelWorkTx(ctx, command.Write, func(tx pgx.Tx, queries *sqlc.Queries, project, actor pgtype.UUID) error {
 		// One start of a project at a time: the row of its import cannot lock an import that is not there yet.
 		if _, err := tx.Exec(ctx, `SELECT id FROM projects WHERE id = $1 FOR UPDATE`, project); err != nil {
 			return err
@@ -303,7 +291,7 @@ func (repository *Repository) StartAuthorMaterialsImport(ctx context.Context, co
 				return err
 			}
 		}
-		if err := quotastore.ReserveImportsInTx(ctx, tx, command.UserID, 1, command.At); err != nil {
+		if err := repository.quota.ReserveDailyInTx(ctx, tx, command.UserID, quota.KeyImportsPerDay, 1, command.At); err != nil {
 			return err
 		}
 		var jobID, importID string
@@ -528,8 +516,10 @@ func (repository *Repository) ImportParsed(ctx context.Context, claim jobs.Worke
 	return parsed, nil
 }
 
-// FinishImport ends the Job under its claim: a success keeps the candidates, a failure keeps only the import to say so,
-// a stop removes the import. The text of the file goes in every case.
+// FinishImport ends the Job under its claim: a success keeps the candidates, a failure keeps only the import to say so
+// and gives its author back the upload of the day its start spent — the model or the worker failed, the file was read
+// before the Job (specs/2026-11-09-quota-accounting.md Q5.2) — a stop removes the import. The text of the file goes in
+// every case.
 func (repository *Repository) FinishImport(ctx context.Context, claim jobs.WorkerClaim, outcome service.ImportOutcome) error {
 	from := jobs.StatusRunning
 	var resultJSON, errorJSON, candidates []byte
@@ -568,6 +558,17 @@ func (repository *Repository) FinishImport(ctx context.Context, claim jobs.Worke
 		return service.ErrInvalidJob
 	}
 	return repository.db.WithTx(ctx, func(tx pgx.Tx) error {
+		var author string
+		var startedAt time.Time
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(creator_user_id::text, ''), created_at FROM jobs
+			WHERE project_id = $1 AND id = $2 AND kind = 'author_materials_import'
+		`, project, job).Scan(&author, &startedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return jobs.ErrConflict
+			}
+			return err
+		}
 		return jobstore.EndClaimedJobInTx(ctx, tx, jobstore.ClaimedJobEnd{
 			Kind: jobs.KindAuthorMaterialsImport, ProjectID: project, JobID: job, From: from, To: outcome.Status,
 			ClaimIncarnation: claim.ClaimIncarnation, ResultJSON: resultJSON, ErrorJSON: errorJSON,
@@ -576,8 +577,13 @@ func (repository *Repository) FinishImport(ctx context.Context, claim jobs.Worke
 			if outcome.Status == jobs.StatusCanceled {
 				return queries.DeleteAuthorMaterialImportOfJob(ctx, sqlc.DeleteAuthorMaterialImportOfJobParams{ProjectID: project, JobID: job})
 			}
-			_, err := queries.EndAuthorMaterialImport(ctx, sqlc.EndAuthorMaterialImportParams{ProjectID: project, JobID: job, Candidates: candidates})
-			return err
+			if _, err := queries.EndAuthorMaterialImport(ctx, sqlc.EndAuthorMaterialImportParams{ProjectID: project, JobID: job, Candidates: candidates}); err != nil {
+				return err
+			}
+			if outcome.Status != jobs.StatusFailed || author == "" {
+				return nil
+			}
+			return repository.quota.ReleaseDailyInTx(ctx, tx, author, quota.KeyImportsPerDay, 1, startedAt)
 		})
 	})
 }

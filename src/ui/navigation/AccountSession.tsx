@@ -1,6 +1,7 @@
-import { ClockAlert, FileText, KeyRound, LayoutDashboard, LifeBuoy, LogOut, MailWarning, Megaphone, Send, Undo2, UserCog } from 'lucide-react';
-import { useAccountSession, type EmailVerificationState } from '../../shared/session/account-session';
+import { ClockAlert, Gauge, LayoutDashboard, LifeBuoy, MailWarning, Megaphone, Send, Undo2, UserCog, UserRound } from 'lucide-react';
+import { sendAgainWords, useAccountSession, type EmailVerificationState } from '../../shared/session/account-session';
 import { Button } from '../controls/Button';
+import { pluralize } from '../copy';
 import { emailVerificationStatusText } from '../feedback/EmailVerificationNotice';
 import styles from './AccountSession.module.css';
 
@@ -11,14 +12,27 @@ export function useAccountButtonLabel() {
   const session = useAccountSession();
   const actingAs = session?.actingAs;
   if (actingAs) return `Аккаунт: вы работаете как ${actingAs.name}`;
+  // A waiting request of CanonKeeper is said by its notice, a «status», and by its line of the menu (AC3.7), not here.
   return session?.contactUnread ? 'Аккаунт: есть ответ поддержки' : 'Аккаунт';
 }
 
-/** The mark on the account button while a reply of support waits to be opened (specs/2026-11-07-contacts.md F3.2). */
+/**
+ * The mark on the account button while a reply of support waits to be opened (specs/2026-11-07-contacts.md F3.2) or a
+ * request of CanonKeeper waits for the answer (specs/2026-11-11-ux9-account.md AC3.7).
+ */
 export function AccountUnreadMark({ className }: { className?: string }) {
-  const unread = useAccountSession()?.contactUnread ?? 0;
-  if (unread <= 0) return null;
+  const session = useAccountSession();
+  const unread = session?.contactUnread ?? 0;
+  if (unread <= 0 && !session?.promoRequest) return null;
   return <span aria-hidden="true" className={className ? `${styles.unread} ${className}` : styles.unread} data-account-unread="" />;
+}
+
+/**
+ * The badge of the tier in force right before the account button of a top bar, where the build has plans
+ * (specs/2026-11-08-subscription-tiers.md TR9.9); nothing while the plan loads or fails.
+ */
+export function AccountPlanBadge() {
+  return <>{useAccountSession()?.plan?.badge}</>;
 }
 
 /** The mark on the account button while a platform admin works as another user. */
@@ -34,50 +48,52 @@ export function AccountActingMark({ className }: { className?: string }) {
 }
 
 /**
- * The account part of a menu before «Выйти»: the admin items («Админка» and «Работать как
- * пользователь», or who the admin works as and the way back), the security items and «Связаться с нами».
- * `onDone` closes the menu and returns focus to the account button before the action opens a
- * dialog or changes the identity.
+ * The account part of a menu before «Выйти» (specs/2026-11-10-ux2-tariff-account.md TA1.1, TA1.2): the lines of the
+ * sign-in — the unverified address, the admin items («Админка» and «Работать как пользователь», or who the admin works as
+ * and the way back) — then «Тариф · «Писатель» до …», «Аккаунт» and «Написать нам» with the replies not opened yet.
+ * `onDone` closes the menu and returns focus to the account button before the action opens a dialog or changes the
+ * identity.
  */
-export function AccountSessionItems({ itemRole, onDone }: { itemRole?: 'menuitem'; onDone?: () => void }) {
+export function AccountSessionItems({ itemRole, onDone, support = true }: {
+  itemRole?: 'menuitem';
+  onDone?: () => void;
+  /** «Написать нам»; the drawer of a phone has «Помощь» above it instead (specs/2026-11-10-ux2-shell.md S1.3). */
+  support?: boolean;
+}) {
   const session = useAccountSession();
   // An admin working as another user does not write as that user (R4.2.6): the context has no onOpenContact then.
   const unread = session?.contactUnread ?? 0;
-  const supportItem = session?.onOpenContact && !session.actingAs ? (
+  const supportItem = support && session?.onOpenContact && !session.actingAs ? (
     <Button className={styles.item} onClick={() => { onDone?.(); session.onOpenContact?.(); }} role={itemRole} size="touch" variant="ghost">
       <LifeBuoy aria-hidden="true" size={17} />
-      Связаться с нами
-      {unread > 0 ? <span className={styles.count}>{unread}<span className={styles.hidden}> {unread === 1 ? 'новый ответ' : 'новых ответа'}</span></span> : null}
+      Написать нам
+      {unread > 0 ? <>{' '}<span className={styles.count}>· {unread} {pluralize(unread, 'ответ', 'ответа', 'ответов')}</span></> : null}
     </Button>
   ) : null;
   if (!session) return supportItem;
-  const { onChangePassword, onLogoutEverywhere, onOpenDocuments, onOpenPromoPermissions } = session;
+  const { onOpenAccount, onOpenTariff, plan } = session;
   return (
     <>
       {session.emailVerification ? <EmailVerificationItems itemRole={itemRole} verification={session.emailVerification} /> : null}
       <AdminSessionItems itemRole={itemRole} onDone={onDone} />
-      {onChangePassword ? (
-        <Button className={styles.item} onClick={() => { onDone?.(); onChangePassword(); }} role={itemRole} size="touch" variant="ghost">
-          <KeyRound aria-hidden="true" size={17} />
-          Сменить пароль
+      {onOpenTariff ? (
+        <Button className={styles.item} data-ending={plan?.ending ? '' : undefined} onClick={() => { onDone?.(); onOpenTariff(); }} role={itemRole} size="touch" variant="ghost">
+          <Gauge aria-hidden="true" size={17} />
+          <span className={styles.itemText}>{plan?.line ?? 'Тариф'}</span>
         </Button>
       ) : null}
-      {onLogoutEverywhere ? (
-        <Button className={styles.item} onClick={() => { onDone?.(); onLogoutEverywhere(); }} role={itemRole} size="touch" variant="ghost">
-          <LogOut aria-hidden="true" size={17} />
-          Выйти на всех устройствах
+      {onOpenAccount ? (
+        <Button className={styles.item} onClick={() => { onDone?.(); onOpenAccount(); }} role={itemRole} size="touch" variant="ghost">
+          <UserRound aria-hidden="true" size={17} />
+          Аккаунт
         </Button>
       ) : null}
-      {onOpenPromoPermissions ? (
-        <Button className={styles.item} onClick={() => { onDone?.(); onOpenPromoPermissions(); }} role={itemRole} size="touch" variant="ghost">
+      {session.promoRequest ? (
+        // While a request waits — the line the mark of the account button stands for (AC3.7).
+        <Button className={styles.item} onClick={() => { onDone?.(); session.promoRequest?.onOpen(); }} role={itemRole} size="touch" variant="ghost">
           <Megaphone aria-hidden="true" size={17} />
-          Разрешения на продвижение
-        </Button>
-      ) : null}
-      {onOpenDocuments ? (
-        <Button className={styles.item} onClick={() => { onDone?.(); onOpenDocuments(); }} role={itemRole} size="touch" variant="ghost">
-          <FileText aria-hidden="true" size={17} />
-          Документы
+          <span className={styles.itemText}>Запрос CanonKeeper ждёт ответа</span>
+          <span aria-hidden="true" className={styles.itemMark} />
         </Button>
       ) : null}
       {supportItem}
@@ -105,7 +121,7 @@ function EmailVerificationItems({ itemRole, verification }: { itemRole?: 'menuit
           variant="ghost"
         >
           <Send aria-hidden="true" size={17} />
-          {verification.status === 'sending' ? 'Отправляем…' : 'Отправить письмо ещё раз'}
+          {sendAgainWords(verification)}
         </Button>
       ) : null}
     </div>

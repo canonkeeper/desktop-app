@@ -1,0 +1,70 @@
+.overlay {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: stretch;
+  background: color-mix(in srgb, var(--ck-card) 70%, transparent);
+  padding: 24px;
+  pointer-events: none;
+}
+
+.target {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  border: 2px dashed var(--ck-primary);
+  border-radius: var(--ck-radius-lg);
+  /* The books stay seen under it: a cover takes a new version of its book (SC1.3). */
+  background: color-mix(in srgb, var(--ck-card) 82%, transparent);
+  color: var(--ck-foreground);
+  padding: 24px;
+  text-align: center;
+}
+
+.target svg {
+  color: var(--ck-primary);
+}
+
+.target strong {
+  color: var(--ck-foreground-strong);
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.target span {
+  max-width: 560px;
+  color: var(--ck-muted-foreground);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.overlay[data-blocked] .target {
+  border-color: var(--ck-border-strong);
+}
+
+.overlay[data-blocked] .target svg {
+  color: var(--ck-muted-foreground);
+}
+
+/* Over the cover of a book (specs/2026-11-11-ux9-shelf-chat.md SC1.3): a line at the top names the book, the page and its
+   marked card stay seen. */
+.overlay[data-book] {
+  place-items: start center;
+  background: transparent;
+}
+
+.overlay[data-book] .target {
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 10px;
+  border-style: solid;
+  padding: 12px 18px;
+  background: var(--ck-card);
+  box-shadow: var(--ck-shadow-md);
+}
+
+.overlay[data-book] .target strong {
+  font-size: 16px;
+}

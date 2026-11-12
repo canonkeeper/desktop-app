@@ -3,6 +3,7 @@ package sagadraft
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -11,21 +12,36 @@ import (
 
 	"canonkeeper/backend/internal/auth"
 	domain "canonkeeper/backend/internal/domain/sagadraft"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/jobs"
+	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/projects"
 	authstore "canonkeeper/backend/internal/store/auth"
+	storedb "canonkeeper/backend/internal/store/db"
 	jobstore "canonkeeper/backend/internal/store/jobs"
+	librarystore "canonkeeper/backend/internal/store/library"
 	projectstore "canonkeeper/backend/internal/store/projects"
 	"canonkeeper/backend/internal/testutil"
 
 	"github.com/jackc/pgx/v5"
 )
 
+// todaysProjects gives a schema older than 0124 the sign of the demo saga (specs/2026-11-09-demo-saga.md DS3.1):
+// today's project and library code, which makes the rows of these tests, reads and writes it. None of the migrations
+// applied here touches it, so it stays to the end of a test.
+func todaysProjects(t *testing.T, db *storedb.DB) {
+	t.Helper()
+	if _, err := db.Pool.Exec(context.Background(), `ALTER TABLE projects ADD COLUMN demo boolean NOT NULL DEFAULT false`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // specs/2026-11-01-writer-assistant-index.md, R7.3: migration 0087 removes the chapter_draft Jobs the stand has
 // from before the section, with their source owners and references, and nothing else.
 func TestMigration0087RemovesTheJobsOfChats(t *testing.T) {
 	ctx := context.Background()
 	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_migration_0087", 86)
+	todaysProjects(t, db)
 	// Today's project code reads the limit columns of 0087, 0089, 0091 and 0108: they exist only while the rows are made.
 	if _, err := db.Pool.Exec(ctx, `
 		ALTER TABLE writer_quota_overrides ADD COLUMN chapter_drafts_per_day integer, ADD COLUMN drawing_turns_per_day integer, ADD COLUMN draft_turns_per_day integer,
@@ -102,6 +118,7 @@ func TestMigration0087RemovesTheJobsOfChats(t *testing.T) {
 func TestMigration0090MovesWhatShouldHappenIntoTheIdea(t *testing.T) {
 	ctx := context.Background()
 	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_migration_0090", 89)
+	todaysProjects(t, db)
 	// Today's project code reads the limit columns of 0091 and 0108: they exist only while the project is made.
 	if _, err := db.Pool.Exec(ctx, `
 		ALTER TABLE writer_quota_overrides ADD COLUMN draft_turns_per_day integer, ADD COLUMN draft_rewrites_per_day integer;
@@ -212,6 +229,7 @@ func TestMigration0090MovesWhatShouldHappenIntoTheIdea(t *testing.T) {
 func TestMigration0109MakesTheChapterTheOneWorkingText(t *testing.T) {
 	ctx := context.Background()
 	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_migration_0109", 108)
+	todaysProjects(t, db)
 	registered, err := auth.NewService(authstore.New(db), auth.NewSecureIDGenerator(), auth.SystemClock{}).
 		CreateUser(ctx, auth.NewUser{Email: "owner@example.test", DisplayName: "Автор"})
 	if err != nil {
@@ -249,10 +267,12 @@ func TestMigration0109MakesTheChapterTheOneWorkingText(t *testing.T) {
 	draft(unwritten, "Только набросок автора.", "")
 	counted := map[string]string{}
 	for index, test := range table {
-		if test.Valid && test.Text != "" {
-			id := strconv.Itoa(index)
-			counted["00000000-0000-4000-8000-0000000f000"+id] = test.Text
-			draft("00000000-0000-4000-8000-0000000f000"+id, test.Text, "глава")
+		// 0109 ran before the author's italic and bold came into the working text
+		// (specs/2026-11-08-italic-bold-in-text.md TF1.4): a text of that time has no mark of a face.
+		if test.Valid && test.Text != "" && !textface.HasFaces(test.Text) {
+			id := fmt.Sprintf("00000000-0000-4000-8000-0000000f%04d", index)
+			counted[id] = test.Text
+			draft(id, test.Text, "глава")
 		}
 	}
 	if _, err := db.Pool.Exec(ctx, `
@@ -385,6 +405,7 @@ func TestMigration0109MakesTheChapterTheOneWorkingText(t *testing.T) {
 func TestMigration0109WaitsForTheEarlierWritingToEnd(t *testing.T) {
 	ctx := context.Background()
 	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_migration_0109_active", 108)
+	todaysProjects(t, db)
 	registered, err := auth.NewService(authstore.New(db), auth.NewSecureIDGenerator(), auth.SystemClock{}).
 		CreateUser(ctx, auth.NewUser{Email: "owner@example.test", DisplayName: "Автор"})
 	if err != nil {
@@ -413,5 +434,127 @@ func TestMigration0109WaitsForTheEarlierWritingToEnd(t *testing.T) {
 	var body string
 	if err := db.Pool.QueryRow(ctx, `SELECT subject_json->>'mode' FROM jobs WHERE id = $1`, queued).Scan(&body); err != nil || body != jobs.ChapterDraftWrite {
 		t.Fatalf("the refused migration changed the run: %q, %v", body, err)
+	}
+}
+
+// specs/2026-11-08-italic-bold-in-text.md TF3.1, TF1.5: migration 0116 escapes the stars and backslashes of a paragraph
+// of the book whose markdown is its plain text, so «* * *» reads as three stars and not as italic, and leaves plain_text
+// and a paragraph with its own markdown as they are; the signs ⟨ ⟩ ⟪ ⟫ that came into a working text as text before
+// become ‹ › « » in it, in its versions and in the quotes of its notes, and the draft moves its revision.
+func TestMigration0116EscapesTheBookAndTheSignsOfFaces(t *testing.T) {
+	ctx := context.Background()
+	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_migration_0116", 115)
+	todaysProjects(t, db)
+	registered, err := auth.NewService(authstore.New(db), auth.NewSecureIDGenerator(), auth.SystemClock{}).
+		CreateUser(ctx, auth.NewUser{Email: "owner@example.test", DisplayName: "Автор"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := projects.NewService(projectstore.New(db), projects.NewSecureIDGenerator(), auth.SystemClock{}).
+		CreateProject(ctx, registered.ID, projects.CreateProjectInput{Title: "Сага"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	libraries := librarystore.New(db)
+	const book = "00000000-0000-4000-8000-00000000f601"
+	if _, err := libraries.CreateBook(ctx, library.CreateBookStoreInput{ID: book, ProjectID: project.ID, Title: "Том", Order: 1, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []string{"* * *", `Сумма 5*3 и путь a\b.`, "Обычный абзац."}
+	var chapter string
+	if err := db.WithTx(ctx, func(tx pgx.Tx) error {
+		chapter, err = libraries.AddChapterInTx(ctx, tx, library.AddChapterInput{
+			ProjectID: project.ID, BookID: book, Title: "Глава", Paragraphs: append(append([]string{}, legacy...), "*Своя* разметка."), At: time.Now().UTC(),
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Every writer of the book before 0116 put the plain text into markdown.
+	for order, text := range legacy {
+		if _, err := db.Pool.Exec(ctx, `UPDATE chapter_paragraphs SET markdown = $2, plain_text = $2 WHERE chapter_id = $1 AND "order" = $3`,
+			chapter, text, order+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const signed, plain = "00000000-0000-4000-8000-00000000f611", "00000000-0000-4000-8000-00000000f612"
+	for id, body := range map[string]string{signed: "Стрелка ⟨вправо⟩ и ⟪кавычки⟫, ⟦модель⟧ одна ⟩.", plain: "Без знаков ⟦модели⟧."} {
+		if _, err := db.Pool.Exec(ctx, `
+			INSERT INTO chapter_drafts (id, project_id, title, kind, body, created_by, updated_by) VALUES ($1, $2, 'Глава', 'sketch', $3, $4, $4)
+		`, id, project.ID, body, registered.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Pool.Exec(ctx, `
+		INSERT INTO chapter_draft_versions (project_id, draft_id, number, reason, text, words, author_words) VALUES ($1, $2, 1, 'before_apply', '⟪Было⟫ так.', 2, 2);
+	`, project.ID, signed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool.Exec(ctx, `
+		INSERT INTO chapter_draft_notes (project_id, draft_id, number, kind, target, origin, quote, body, replacement, status)
+		VALUES ($1, $2, 1, 'canon', 'draft', 'helper', 'Стрелка ⟨вправо⟩', 'знак', 'Стрелка ⟨влево⟩', 'open')
+	`, project.ID, signed); err != nil {
+		t.Fatal(err)
+	}
+	revisions := func() map[string]int64 {
+		rows, err := db.Pool.Query(ctx, `SELECT id::text, revision FROM chapter_drafts WHERE project_id = $1`, project.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]int64{}
+		for rows.Next() {
+			var id string
+			var revision int64
+			if err := rows.Scan(&id, &revision); err != nil {
+				t.Fatal(err)
+			}
+			found[id] = revision
+		}
+		return found
+	}
+	before := revisions()
+
+	if err := testutil.ApplyNextMigration(t, db, 115); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Pool.Query(ctx, `SELECT variant || '|' || markdown || '|' || plain_text FROM chapter_paragraphs WHERE chapter_id = $1 ORDER BY variant, "order"`, chapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paragraphs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`draft|\* \* \*|* * *`, `draft|Сумма 5\*3 и путь a\\b.|Сумма 5*3 и путь a\b.`, "draft|Обычный абзац.|Обычный абзац.", "draft|*Своя* разметка.|Своя разметка.",
+		`published|\* \* \*|* * *`, `published|Сумма 5\*3 и путь a\\b.|Сумма 5*3 и путь a\b.`, "published|Обычный абзац.|Обычный абзац.", "published|*Своя* разметка.|Своя разметка.",
+	}
+	if strings.Join(paragraphs, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the paragraphs of the book:\n%q\nwant\n%q", paragraphs, want)
+	}
+	for _, paragraph := range want[:3] {
+		parts := strings.Split(paragraph, "|")
+		if textface.MarkdownPlain(parts[1]) != parts[2] {
+			t.Fatalf("%q does not read as its plain text", parts[1])
+		}
+	}
+	var body, version, quote, replacement, kept string
+	if err := db.Pool.QueryRow(ctx, `SELECT body FROM chapter_drafts WHERE id = $1`, signed).Scan(&body); err != nil || body != "Стрелка ‹вправо› и «кавычки», ⟦модель⟧ одна ›." {
+		t.Fatalf("the working text = %q, %v", body, err)
+	}
+	if err := db.Pool.QueryRow(ctx, `SELECT text FROM chapter_draft_versions WHERE draft_id = $1`, signed).Scan(&version); err != nil || version != "«Было» так." {
+		t.Fatalf("the version = %q, %v", version, err)
+	}
+	if err := db.Pool.QueryRow(ctx, `SELECT quote, replacement FROM chapter_draft_notes WHERE draft_id = $1`, signed).Scan(&quote, &replacement); err != nil ||
+		quote != "Стрелка ‹вправо›" || replacement != "Стрелка ‹влево›" {
+		t.Fatalf("the note = %q → %q, %v", quote, replacement, err)
+	}
+	if err := db.Pool.QueryRow(ctx, `SELECT body FROM chapter_drafts WHERE id = $1`, plain).Scan(&kept); err != nil || kept != "Без знаков ⟦модели⟧." {
+		t.Fatalf("a text without the signs = %q, %v", kept, err)
+	}
+	after := revisions()
+	if after[signed] != before[signed]+1 || after[plain] != before[plain] {
+		t.Fatalf("revisions %v, then %v", before, after)
 	}
 }

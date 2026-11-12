@@ -24,6 +24,8 @@ func TestResultFromTurnClassifiesModelFailures(t *testing.T) {
 		{`"flexUnavailable"`, agent.RunFailureServerOverloaded},
 		{`"modelNotFound"`, ""},
 		{`"tooManyDenials"`, ""},
+		// Codex 0.167.2: an inference hook refused the request; CanonKeeper configures no hooks.
+		{`"inferenceHookDenied"`, ""},
 		{`{"httpConnectionFailed":{"httpStatusCode":502}}`, agent.RunFailureConnectionFailed},
 		{`{"httpConnectionFailed":{"httpStatusCode":null}}`, agent.RunFailureConnectionFailed},
 		{`{"responseStreamConnectionFailed":{"httpStatusCode":503}}`, agent.RunFailureConnectionFailed},

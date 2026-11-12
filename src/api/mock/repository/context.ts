@@ -83,7 +83,7 @@ export type MockRepositoryContext = {
   ): Promise<TResponse>;
 };
 
-const modelWorkOperations = new Set<OperationId>(['importBookFile', 'startImportQueue', 'createChatTurn', 'startProjectIndexing']);
+const modelWorkOperations = new Set<OperationId>(['importBookFile', 'startImportQueue', 'createChatTurn', 'steerChatTurn', 'startAuthorMaterialsImport', 'startProjectIndexing']);
 
 export function createMockRepositoryContext(): MockRepositoryContext {
   const context: MockRepositoryContext = {

@@ -181,21 +181,35 @@ func (field optionalIDRequest) toLibraryPlacement() OrderPlacement {
 }
 
 type bookResponse struct {
-	ID            string     `json:"id"`
-	ProjectID     string     `json:"projectId"`
-	Title         string     `json:"title"`
-	Subtitle      *string    `json:"subtitle"`
-	Order         int        `json:"order"`
-	DisplayNumber string     `json:"displayNumber"`
-	CoverColor    *string    `json:"coverColor"`
-	CoverURL      *string    `json:"coverUrl"`
-	Status        BookStatus `json:"status"`
-	ChapterCount  int        `json:"chapterCount"`
-	WordCount     int        `json:"wordCount"`
-	CreatedAt     string     `json:"createdAt"`
-	UpdatedAt     string     `json:"updatedAt"`
-	DeletedAt     *string    `json:"deletedAt,omitempty"`
-	RestoreUntil  *string    `json:"restoreUntil,omitempty"`
+	ID            string              `json:"id"`
+	ProjectID     string              `json:"projectId"`
+	Title         string              `json:"title"`
+	Subtitle      *string             `json:"subtitle"`
+	Order         int                 `json:"order"`
+	Place         int                 `json:"place"`
+	DisplayNumber string              `json:"displayNumber"`
+	CoverColor    *string             `json:"coverColor"`
+	CoverURL      *string             `json:"coverUrl"`
+	Status        BookStatus          `json:"status"`
+	ChapterCount  int                 `json:"chapterCount"`
+	WordCount     int                 `json:"wordCount"`
+	CreatedAt     string              `json:"createdAt"`
+	UpdatedAt     string              `json:"updatedAt"`
+	DeletedAt     *string             `json:"deletedAt,omitempty"`
+	RestoreUntil  *string             `json:"restoreUntil,omitempty"`
+	Opening       string              `json:"opening,omitempty"`
+	Update        *bookUpdateResponse `json:"update,omitempty"`
+}
+
+// bookUpdateResponse is the last update of the book from a file while it can be returned (specs/2026-11-12-ux10-book-revert.md
+// BR1.3).
+type bookUpdateResponse struct {
+	At          string  `json:"at"`
+	RevertUntil string  `json:"revertUntil"`
+	JobID       *string `json:"jobId"`
+	Changed     int     `json:"changed"`
+	Added       int     `json:"added"`
+	Removed     int     `json:"removed"`
 }
 
 type bookListResponse struct {
@@ -257,6 +271,7 @@ func BookResponseFromBook(book Book) bookResponse {
 		Title:         book.Title,
 		Subtitle:      book.Subtitle,
 		Order:         book.Order,
+		Place:         book.Place,
 		DisplayNumber: book.DisplayNumber,
 		CoverColor:    book.CoverColor,
 		CoverURL:      book.CoverURL,
@@ -265,6 +280,7 @@ func BookResponseFromBook(book Book) bookResponse {
 		WordCount:     book.WordCount,
 		CreatedAt:     formatImportTime(book.CreatedAt),
 		UpdatedAt:     formatImportTime(book.UpdatedAt),
+		Opening:       book.Opening,
 	}
 	if book.DeletedAt != nil {
 		deletedAt := formatImportTime(*book.DeletedAt)
@@ -273,6 +289,16 @@ func BookResponseFromBook(book Book) bookResponse {
 	if book.RestoreUntil != nil {
 		restoreUntil := formatImportTime(*book.RestoreUntil)
 		response.RestoreUntil = &restoreUntil
+	}
+	if update := book.Update; update != nil {
+		response.Update = &bookUpdateResponse{
+			At: formatImportTime(update.At), RevertUntil: formatImportTime(update.RevertUntil),
+			Changed: update.Changed, Added: update.Added, Removed: update.Removed,
+		}
+		if update.JobID != "" {
+			jobID := update.JobID
+			response.Update.JobID = &jobID
+		}
 	}
 	return response
 }

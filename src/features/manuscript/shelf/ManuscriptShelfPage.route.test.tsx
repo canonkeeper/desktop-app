@@ -6,7 +6,10 @@ import { bookId, draftBookId, foreignProjectId, projectId } from '../../../api/m
 import { manuscriptQueryKeys, type ImportQueue, type ProjectJob } from '../../../entities/manuscript/api';
 import { parseRoute } from '../../../shared/navigation/app-route';
 import { FakeWebSocket } from '../../../test/FakeWebSocket';
+import { InShell } from '../../../app/shell/AppShell.test-helpers';
 import { ManuscriptShelfPage } from './ManuscriptShelfPage';
+import { rememberReadingPlace } from '../reader/reading-place';
+import { ToastsProvider } from '../../../ui/feedback/Toast';
 
 type ShelfApi = ReturnType<typeof createMockApiClient>;
 
@@ -42,85 +45,54 @@ describe('ManuscriptShelfPage route state', () => {
     renderShelf(`?projectId=${projectId}`, (api) => api.setScenario({ actorRole: 'editor', preset: 'request-error' }));
 
     const alert = await screen.findByRole('alert');
-    expect(within(alert).getByText('Не удалось загрузить книги')).toBeTruthy();
+    expect(within(alert).getByText('Не открылись книги саги')).toBeTruthy();
     expect(within(alert).getByRole('button', { name: 'Повторить' })).toBeTruthy();
     expect(within(alert).getByText('mock-listProjects')).toBeTruthy();
-    expect(within(alert).getByRole('link', { name: 'Написать в поддержку' })).toBeTruthy();
+    expect(within(alert).getByRole('link', { name: 'Написать нам' })).toBeTruthy();
     expect(screen.queryByText('Проект загружается')).toBeNull();
     expect(screen.queryByText(/^Сага ·/)).toBeNull();
   });
 
-  it('offers project-not-found recovery without exposing the raw route', async () => {
+  // specs/2026-11-11-ux9-shelf-chat.md SC1.9 (W-7G): a calm block, no alarm, with the sagas of the author to open.
+  it('offers the sagas of the author in a calm block without exposing the raw route', async () => {
     const view = renderShelf('?projectId=project-missing&bookId=book-02');
 
     expect(await screen.findByRole('heading', { name: 'Сага не найдена' })).toBeTruthy();
-    expect(screen.getByText('Сага недоступна или вы перешли по старой ссылке.')).toBeTruthy();
+    const missing = screen.getByRole('region', { name: 'Сага не найдена' });
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText(/project-missing/)).toBeNull();
 
-    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Мои книги' }));
-    expect(view.navigate).toHaveBeenCalledWith('/manuscript/books', {});
+    fireEvent.click(within(within(missing).getByRole('list', { name: 'Ваши саги' })).getByRole('button', { name: 'Хроники Белого порта' }));
+    expect(view.navigate).toHaveBeenCalledWith('/manuscript/books', { projectId });
   });
 
-  it('creates a project from the selector when the route project is unavailable', async () => {
-    let createProject: ReturnType<typeof vi.spyOn> | undefined;
-    const view = renderShelf('?projectId=project-missing&sourceView=draft', (api) => {
-      createProject = vi.spyOn(api, 'createProject');
-    });
+  // specs/2026-11-11-ux7-shelf.md SF1.2: an old address with `bookId` (or `bookMenu`) opens the shelf as usual — no chosen
+  // book, no frame, no menu, whatever book it names.
+  it.each([`&bookId=${bookId}&bookMenu=open`, '&bookId=book-missing'])('opens the shelf as usual for an old address %s', async (old) => {
+    renderShelf(`?projectId=${projectId}${old}&sourceView=draft`);
 
-    await screen.findByRole('heading', { name: 'Сага не найдена' });
-    fireEvent.click(screen.getByRole('button', { name: 'Сага не найдена' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Выбор саги' })).getByRole('button', { name: 'Новая сага' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Название саги' }), {
-      target: { value: 'TEST Saga 1→12' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Создать сагу' }));
-
-    await waitFor(() => expect(createProject).toHaveBeenCalledWith({ title: 'TEST Saga 1→12' }));
-    await waitFor(() => expect(view.navigate).toHaveBeenCalledWith('/manuscript/books', {
-      projectId: expect.any(String),
-    }));
-  });
-
-  it('shows a route-scoped read-only state for an explicit unknown book id', async () => {
-    renderShelf(`?projectId=${projectId}&bookId=book-missing&sourceView=draft`);
-
-    expect(await screen.findByText('Книга недоступна или не найдена')).toBeTruthy();
-
-    expect(screen.queryAllByRole('article')).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: 'Новая книга' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Загрузить FB2 / EPUB / DOCX' })).toBeNull();
+    const books = await screen.findAllByRole('article');
+    expect(books.length).toBeGreaterThan(1);
+    expect(books.every((book) => book.getAttribute('aria-current') === null)).toBe(true);
+    expect(screen.queryByRole('menu', { name: 'Действия книги' })).toBeNull();
+    expect(screen.queryByText('Книга недоступна или не найдена')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Добавить книги' })).toBeTruthy();
   });
 
   it('keeps shelf actions for a valid project without an explicit book', async () => {
     renderShelf(`?projectId=${projectId}&sourceView=draft`);
 
     await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    expect(screen.getByText(/^Сага ·/)).toBeTruthy();
+    // The shelf is named «Книги» by the word of the menu and says in one line what is in the saga (PS1.1, PS1.3).
+    expect(screen.getByRole('heading', { level: 1, name: 'Книги' })).toBeTruthy();
+    expect(screen.getByText(/^\d+ книг[аи]? · /u)).toBeTruthy();
 
     expect(screen.queryByRole('button', { name: 'Новая книга' })).toBeNull();
-    const upload = screen.getByRole('button', { name: 'Загрузить файл' });
-    const uploadBackgrounds = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
-      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule
-        && [...upload.classList].some((name) => rule.selectorText === `.${name}`)
-        && Boolean(rule.style.getPropertyValue('background')))
-      .map((rule) => rule.style.getPropertyValue('background'));
-    expect(uploadBackgrounds.at(-1)).toBe('transparent');
-    expect(screen.getByText('Перетащите FB2, EPUB или DOCX')).toBeTruthy();
-    expect(screen.getByText('Разделим на главы и подготовим к вопросам · до 50 МБ')).toBeTruthy();
-  });
-
-  it('keeps project deletion disabled for an editor', async () => {
-    renderShelf(`?projectId=${projectId}&sourceView=draft`);
-
-    await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    fireEvent.click(screen.getByRole('button', { name: 'Хроники Белого порта' }));
-    const deleteButton = within(screen.getByRole('dialog', { name: 'Выбор саги' }))
-      .getByRole('button', { name: 'Удалить сагу' }) as HTMLButtonElement;
-
-    expect(deleteButton.disabled).toBe(true);
-    expect(deleteButton.title).toBe('Удалить сагу может её владелец или администратор.');
-    fireEvent.click(deleteButton);
-    expect(screen.queryByRole('dialog', { name: 'Удалить сагу' })).toBeNull();
+    // The common button in its outline look (specs/2026-11-10-ux2-patterns-refusals.md PR1.1); the whole page takes a
+    // file, there is no zone under the books (specs/2026-11-11-ux7-upload.md UP1.1).
+    const upload = screen.getByRole('button', { name: 'Добавить книги' });
+    expect(upload.getAttribute('data-variant')).toBe('outline');
+    expect(screen.queryByText('Перетащите FB2, EPUB, Word (.docx), RTF, ODT или текст (.txt, .md)')).toBeNull();
   });
 
   it('hides manuscript mutations from a viewer while keeping reading available', async () => {
@@ -132,86 +104,77 @@ describe('ManuscriptShelfPage route state', () => {
 
     expect(screen.queryByRole('button', { name: /Загрузить FB2/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Новая книга' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Удалить сагу' })).toBeNull();
-    expect(within(book).getByRole('button', { name: 'Открыть чтение Книга III. Северный суд' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Хроники Белого порта' }));
-    expect(within(screen.getByRole('dialog', { name: 'Выбор саги' }))
-      .getByRole('button', { name: 'Удалить сагу' })).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('button', { name: /Удалить сагу/u })).toBeNull();
+    expect(within(book).getByRole('link', { name: 'Читать «Книга III. Северный суд»' })).toBeTruthy();
+    // What a viewer may do with the saga itself says «Настроить сагу» of the shell (src/app/shell/AppShell.saga.test.tsx).
   });
 
-  it('opens the cover editor from the exact selected book action', async () => {
-    renderShelf(`?projectId=${projectId}&bookId=${bookId}&sourceView=draft`);
-    const selected = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
+  it('opens the window of the cover of the exact book of the menu, and the menu changes no address', async () => {
+    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`);
+    const book = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
 
-    fireEvent.click(within(selected).getByRole('button', { name: 'Действия книги Книга II. Карта приливов' }));
+    fireEvent.click(within(book).getByRole('button', { name: 'Действия книги Книга II. Карта приливов' }));
     const menu = await screen.findByRole('menu', { name: 'Действия книги' });
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Изменить обложку' }));
+    expect(view.navigate).not.toHaveBeenCalled();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Обложка…' }));
 
-    const editor = await screen.findByRole('dialog', { name: 'Обложка книги' });
-    expect(within(editor).getByText('Книга II. Карта приливов')).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Обложка «Книга II. Карта приливов»' })).toBeTruthy();
+    expect(view.navigate).not.toHaveBeenCalled();
   });
 
-  it.each(['owner', 'admin'] as const)('allows a %s to delete the selected project only after confirmation', async (actorRole) => {
-    let deleteProject: ReturnType<typeof vi.spyOn> | undefined;
-    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      api.setScenario({ actorRole, preset: 'normal' });
-      deleteProject = vi.spyOn(api, 'deleteProject').mockResolvedValue();
-    });
+  // SF1.1: the card opens the book at the chapter this browser read last; «Читать с начала» — at its first chapter.
+  it('opens a book at its place of reading from the card and from its start from the menu', async () => {
+    rememberReadingPlace(bookId, 'chapter-13');
+    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`);
+    const book = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
+    const link = within(book).getByRole('link', { name: 'Читать «Книга II. Карта приливов»' });
+    expect(link.getAttribute('href')).toBe(`/manuscript/books?projectId=${projectId}&bookId=${bookId}&mode=read&chapterId=chapter-13`);
+    fireEvent.click(link);
+    expect(view.navigate).toHaveBeenLastCalledWith('/manuscript/books', { projectId, bookId, mode: 'read', chapterId: 'chapter-13' });
 
-    await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    fireEvent.click(screen.getByRole('button', { name: 'Хроники Белого порта' }));
-    const deleteButton = within(screen.getByRole('dialog', { name: 'Выбор саги' }))
-      .getByRole('button', { name: 'Удалить сагу' }) as HTMLButtonElement;
-    expect(deleteButton.disabled).toBe(false);
-    fireEvent.click(deleteButton);
-    expect(await screen.findByRole('dialog', { name: 'Удалить сагу' })).toBeTruthy();
-    expect(deleteProject).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить' }));
-
-    await waitFor(() => expect(deleteProject).toHaveBeenCalledWith(projectId));
-    await waitFor(() => expect(view.navigate).toHaveBeenCalledWith('/manuscript/books'));
+    fireEvent.click(within(book).getByRole('button', { name: 'Действия книги Книга II. Карта приливов' }));
+    fireEvent.click(within(await screen.findByRole('menu', { name: 'Действия книги' })).getByRole('menuitem', { name: 'Читать с начала' }));
+    expect(view.navigate).toHaveBeenLastCalledWith('/manuscript/books', { projectId, bookId, mode: 'read', chapterId: undefined });
+    window.localStorage.clear();
   });
 
-  it('renames the selected project from its role-aware menu', async () => {
-    let updateProject: ReturnType<typeof vi.spyOn> | undefined;
+  // SF3.1: «Переименовать» — the title in place; the line of the result gives the old one back by the same operation.
+  it('renames a book in place and gives the old title back by «Отменить»', async () => {
+    let updateBook: ReturnType<typeof vi.spyOn> | undefined;
+    renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => { updateBook = vi.spyOn(api, 'updateBook'); });
+    const book = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
+    fireEvent.click(within(book).getByRole('button', { name: 'Действия книги Книга II. Карта приливов' }));
+    fireEvent.click(within(await screen.findByRole('menu', { name: 'Действия книги' })).getByRole('menuitem', { name: 'Переименовать' }));
+
+    const field = await within(book).findByRole('textbox', { name: 'Название книги «Книга II. Карта приливов»' });
+    fireEvent.change(field, { target: { value: 'Карта приливов' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(updateBook).toHaveBeenCalledWith(bookId, { title: 'Карта приливов' }));
+    const line = (await screen.findByText('Книга переименована')).closest('[role="status"]') as HTMLElement;
+    expect(within(line).getByText('Было: «Книга II. Карта приливов»')).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'Читать «Карта приливов»' })).toBeTruthy();
+
+    fireEvent.click(within(line).getByRole('button', { name: 'Отменить' }));
+    await waitFor(() => expect(updateBook).toHaveBeenLastCalledWith(bookId, { title: 'Книга II. Карта приливов' }));
+    expect(await screen.findByRole('link', { name: 'Читать «Книга II. Карта приливов»' })).toBeTruthy();
+    expect(await screen.findByText('Название возвращено: «Книга II. Карта приливов»')).toBeTruthy();
+  });
+
+  // SF2.1, row 1: a book a new file rewrites says so, and its update and deletion wait with their reason.
+  it('says a book is updated from a file and holds its update and deletion with their reason', async () => {
     renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      api.setScenario({ actorRole: 'owner', preset: 'normal' });
-      updateProject = vi.spyOn(api, 'updateProject');
+      vi.spyOn(api, 'listProjectJobs').mockResolvedValue({
+        data: [{ ...importJob('job-update-book', 'running'), subject: { type: 'import', id: 'job-update-book', projectId, bookId, importMode: 'update_book' } }],
+        meta: { hasMore: false, nextCursor: null },
+      } as never);
     });
-    await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Хроники Белого порта' }));
-    const menu = screen.getByRole('dialog', { name: 'Выбор саги' });
-    fireEvent.click(within(menu).getByRole('button', { name: 'Переименовать сагу' }));
-    fireEvent.change(within(menu).getByRole('textbox', { name: 'Новое название саги' }), {
-      target: { value: 'Новый Белый порт' },
-    });
-    fireEvent.click(within(menu).getByRole('button', { name: 'Сохранить название' }));
-
-    await waitFor(() => expect(updateProject).toHaveBeenCalledWith(projectId, { title: 'Новый Белый порт' }));
-  });
-
-  it('creates another project from the project selector', async () => {
-    let createProject: ReturnType<typeof vi.spyOn> | undefined;
-    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      createProject = vi.spyOn(api, 'createProject');
-    });
-
-    await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    fireEvent.click(screen.getByRole('button', { name: 'Хроники Белого порта' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Выбор саги' })).getByRole('button', { name: 'Новая сага' }));
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Название саги' }), {
-      target: { value: 'Сага двенадцати томов' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Создать сагу' }));
-
-    await waitFor(() => expect(createProject).toHaveBeenCalledWith({ title: 'Сага двенадцати томов' }));
-    await waitFor(() => expect(view.navigate).toHaveBeenCalledWith('/manuscript/books', {
-      projectId: expect.any(String),
-    }));
-    await waitFor(() => expect(screen.queryByText('Создайте проект')).toBeNull());
+    const book = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
+    expect(await within(book).findByText('Обновляется из файла')).toBeTruthy();
+    fireEvent.click(within(book).getByRole('button', { name: 'Действия книги Книга II. Карта приливов' }));
+    const menu = await screen.findByRole('menu', { name: 'Действия книги' });
+    expect(within(menu).getByRole('menuitem', { name: /Новая версия из файла…/u }).getAttribute('aria-disabled')).toBe('true');
+    expect(within(menu).getByRole('menuitem', { name: 'Удалить книгу…' }).getAttribute('aria-disabled')).toBe('true');
+    expect(within(menu).getByText('Пока книга обновляется из файла, удалить её нельзя.')).toBeTruthy();
   });
 
   it('keeps the shelf and import queue visible when the jobs feed fails', async () => {
@@ -221,51 +184,90 @@ describe('ManuscriptShelfPage route state', () => {
     });
 
     expect(await screen.findByRole('article', { name: 'Книга III. Северный суд' })).toBeTruthy();
-    expect(await screen.findByRole('dialog', { name: 'Загрузка книг' })).toBeTruthy();
+    // The upload goes on: «Добавить книги» waits for its end and says so (specs/2026-11-11-ux7-upload.md UP3.5).
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить книги' }).getAttribute('aria-disabled')).toBe('true'));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByText('Не удалось загрузить рукопись.')).toBeNull();
   });
 
-  it('reopens a hidden active queue from the shelf header without queue mutations', async () => {
+  // specs/2026-11-11-ux7-upload.md UP3.2: a volume that did not read waits at its place with its reason, «Заменить файл»
+  // and «Пропустить»; the page sends nothing of its own, and «Пропустить» is the one request.
+  it('shows a volume that waits as its card with its two ways on', async () => {
     let createImportQueue: ReturnType<typeof vi.spyOn> | undefined;
-    let uploadImportQueueItem: ReturnType<typeof vi.spyOn> | undefined;
     let startImportQueue: ReturnType<typeof vi.spyOn> | undefined;
     let cancelImportQueue: ReturnType<typeof vi.spyOn> | undefined;
+    let skipImportQueueItem: ReturnType<typeof vi.spyOn> | undefined;
+    const waiting = runningQueue(draftBookId);
+    waiting.items = [...waiting.items, {
+      ...waiting.items[0]!, id: 'queue-route-item-2', clientItemId: 'client-queue-route-item-2', position: 2,
+      sourceFileName: 'Том 5.epub', bookId: null, importJobId: null, processingStatus: 'failed', preflightStatus: 'invalid',
+      preflightError: { code: 'invalid_epub_container', message: 'EPUB container is invalid.' }, failedStep: 'preflight',
+    }];
     renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [runningQueue(draftBookId)] } as never);
+      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [waiting] } as never);
       createImportQueue = vi.spyOn(api, 'createImportQueue');
-      uploadImportQueueItem = vi.spyOn(api, 'uploadImportQueueItem');
       startImportQueue = vi.spyOn(api, 'startImportQueue');
       cancelImportQueue = vi.spyOn(api, 'cancelImportQueue');
+      skipImportQueueItem = vi.spyOn(api, 'skipImportQueueItem').mockResolvedValue({ ...waiting, status: 'succeeded' } as never);
     });
 
-    const dialog = await screen.findByRole('dialog', { name: 'Загрузка книг' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Скрыть очередь' }));
+    const card = await screen.findByRole('article', { name: 'Том 5.epub' });
+    expect(within(card).getByText('Не загрузилась')).toBeTruthy();
+    expect(within(card).getByText(/^EPUB не читается/u)).toBeTruthy();
+    expect(within(card).getByLabelText('Заменить файл «Том 5.epub»')).toBeTruthy();
+    const line = screen.getByRole('region', { name: 'Загрузка книг' });
+    expect(line.textContent).toContain('«Том 5» ждёт вашего решения');
+    fireEvent.click(within(card).getByRole('button', { name: 'Пропустить' }));
 
-    expect(screen.queryByRole('dialog', { name: 'Загрузка книг' })).toBeNull();
-    const reopen = await screen.findByRole('button', { name: 'Открыть очередь' });
-    fireEvent.click(reopen);
-
-    expect(await screen.findByRole('dialog', { name: 'Загрузка книг' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Открыть очередь' })).toBeNull();
+    await waitFor(() => expect(skipImportQueueItem).toHaveBeenCalledWith(projectId, 'queue-route', 'queue-route-item-2'));
     expect(createImportQueue).not.toHaveBeenCalled();
-    expect(uploadImportQueueItem).not.toHaveBeenCalled();
     expect(startImportQueue).not.toHaveBeenCalled();
     expect(cancelImportQueue).not.toHaveBeenCalled();
   });
 
-  it('reconciles Job and indexing status when a queue poll becomes failed', async () => {
+  // specs/2026-11-10-ux1-shelf.md UXS3.6, UXS3.7: a failed upload found after a reload does not jump out as a red
+  // window; the shelf names it and the author opens it.
+  // specs/2026-11-10-ux1-shelf.md UXS4.1: the only saga, deleted, is found again from the empty shelf.
+  // The window is the shell's (specs/2026-11-10-ux2-shell-core.md SC2.3): the shelf opens it, there is no other.
+  it('offers the deleted sagas on a shelf without a saga, with only their section', async () => {
+    renderShelf('', (api) => {
+      api.setScenario({ actorRole: 'owner', preset: 'normal' });
+      void api.deleteProject('project-white-port');
+    }, true);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Недавно удалённые: 1 сага' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Недавно удалённые' });
+    expect(await within(dialog).findByRole('heading', { name: 'Саги' })).toBeTruthy();
+    expect(within(dialog).queryByRole('heading', { name: 'Книги' })).toBeNull();
+    expect(await within(dialog).findByRole('button', { name: 'Вернуть: Сага «Хроники Белого порта»' })).toBeTruthy();
+  });
+
+  // A queue the earlier rule stopped on a volume is history (specs/2026-11-11-ux7-upload.md UP3.2): no card, no line,
+  // and the upload is open.
+  it('keeps a queue stopped by the earlier rule as history', async () => {
+    renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
+      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [failedQueue(draftBookId, 'job-failed-reload')] } as never);
+    });
+
+    await screen.findByRole('article', { name: 'Книга III. Северный суд' });
+    expect(screen.queryByRole('region', { name: 'Загрузка книг' })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить книги' }).getAttribute('aria-disabled')).toBeNull());
+  });
+
+  it('reconciles Job and indexing status when the upload stops', async () => {
     const jobId = 'job-queue-current';
     const failedJob = importJob(jobId, 'failed');
     const runningJob = { ...importJob(jobId, 'running'), canCancel: true } as ProjectJob;
     let terminal = false;
-    let getJob: ReturnType<typeof vi.spyOn> | undefined;
     let getIndexingStatus: ReturnType<typeof vi.spyOn> | undefined;
-    const view = renderShelf(`?projectId=${projectId}&bookId=${draftBookId}&sourceView=draft`, (api) => {
+    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
       vi.spyOn(api, 'listImportQueues').mockImplementation(async () => ({
-        data: [terminal ? failedQueue(draftBookId, jobId) : runningQueue(draftBookId, jobId)],
+        data: [terminal ? { ...parsingQueue(jobId), status: 'canceled', version: 6 } : parsingQueue(jobId)],
       }) as never);
       const loadJob = api.getJob.bind(api);
-      getJob = vi.spyOn(api, 'getJob').mockImplementation((id) => (
+      vi.spyOn(api, 'getJob').mockImplementation((id) => (
         id === jobId ? Promise.resolve(terminal ? failedJob : runningJob) : loadJob(id)
       ));
       getIndexingStatus = vi.spyOn(api, 'getIndexingStatus').mockImplementation(async (_id, options = {}) => {
@@ -274,11 +276,10 @@ describe('ManuscriptShelfPage route state', () => {
       });
     });
 
-    const card = await screen.findByRole('region', { name: 'Подготовка книги' });
-    await waitFor(() => expect(getJob).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(getIndexingStatus?.mock.calls.length).toBeGreaterThanOrEqual(2));
-    expect(within(card).getByText('Готовим «Том 4.epub» для чата')).toBeTruthy();
-    getJob?.mockClear();
+    // specs/2026-11-10-ux3-saga-state.md SS2.1: while the file of the book is parsed the line names it, without a count.
+    const line = await screen.findByRole('region', { name: 'Чтение саги' });
+    await waitFor(() => expect(getIndexingStatus?.mock.calls.length).toBeGreaterThanOrEqual(1));
+    expect(within(line).getByText('Читаю файл «Том 4.epub»… · спросить можно будет через пару минут')).toBeTruthy();
     getIndexingStatus?.mockClear();
 
     terminal = true;
@@ -289,20 +290,21 @@ describe('ManuscriptShelfPage route state', () => {
       });
     });
 
-    const failedQueueDialog = await screen.findByRole('dialog', { name: 'Загрузка книг' });
-    expect(within(failedQueueDialog).getByText('Очередь остановлена на книге №4')).toBeTruthy();
-    expect(within(failedQueueDialog).getByRole('button', { name: 'Повторить' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Открыть очередь' })).toBeNull();
-    await waitFor(() => expect(getJob).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Загрузка книг' })).toBeNull());
     await waitFor(() => expect(getIndexingStatus).toHaveBeenCalled());
-    await waitFor(() => expect(card.getAttribute('data-tone')).toBe('failed'));
-    expect(within(card).queryByRole('button', { name: 'Отменить обработку' })).toBeNull();
+    // The reading stopped: the same line says so and goes on with «Продолжить»; there is no stop of the author.
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Чтение саги' }).getAttribute('data-tone')).toBe('stalled'));
+    const stalled = screen.getByRole('region', { name: 'Чтение саги' });
+    expect(within(stalled).queryByRole('button', { name: /Остановить|Отменить/u })).toBeNull();
+    expect(within(stalled).getByRole('button', { name: 'Дочитать' })).toBeTruthy();
   });
 
+  // specs/2026-11-11-ux7-upload.md UP2.1, UP2.3: one new file goes at once; two and more stay local in «Порядок томов»
+  // until «Загрузить N книг». Either way the one path is the queue of the server.
   it.each([
-    ['one file', ['Том 5.epub']],
+    ['one file', ['Северный ветер.epub']],
     ['many files', ['Том 5.epub', 'Том 6.fb2']],
-  ])('keeps %s local until transfer starts, then uses only the durable queue', async (_label, fileNames) => {
+  ])('sends %s by the one path of the queue', async (_label, fileNames) => {
     let createImportQueue: ReturnType<typeof vi.spyOn> | undefined;
     let uploadImportQueueItem: ReturnType<typeof vi.spyOn> | undefined;
     let startImportQueue: ReturnType<typeof vi.spyOn> | undefined;
@@ -321,7 +323,7 @@ describe('ManuscriptShelfPage route state', () => {
     });
 
     await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    const input = screen.getByLabelText('Файлы книг: FB2, EPUB или DOCX');
+    const input = screen.getByLabelText('Файлы книг: FB2, EPUB, Word (.docx), RTF, ODT или текст (.txt, .md)');
     expect((input as HTMLInputElement).multiple).toBe(true);
     fireEvent.change(input, {
       target: {
@@ -333,30 +335,20 @@ describe('ManuscriptShelfPage route state', () => {
       },
     });
 
-    const dialog = await screen.findByRole('dialog', { name: 'Загрузка книг' });
-    expect(within(dialog).queryByRole('checkbox')).toBeNull();
-    fileNames.forEach((name) => expect(screen.getByText(name)).toBeTruthy());
-    expect(createImportQueue).not.toHaveBeenCalled();
-    expect(uploadImportQueueItem).not.toHaveBeenCalled();
-    expect(startImportQueue).not.toHaveBeenCalled();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Загрузить' }));
+    if (fileNames.length > 1) {
+      const dialog = await screen.findByRole('dialog', { name: 'Порядок томов' });
+      expect(within(dialog).queryByRole('spinbutton')).toBeNull();
+      fileNames.forEach((name) => expect(within(dialog).getByText(name)).toBeTruthy());
+      expect(createImportQueue).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Загрузить 2 книги' }));
+    } else {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
 
     await waitFor(() => expect(createImportQueue).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(uploadImportQueueItem).toHaveBeenCalledTimes(fileNames.length));
     await waitFor(() => expect(startImportQueue).toHaveBeenCalledTimes(1));
     expect(importBookFile).not.toHaveBeenCalled();
-  });
-
-  it('selects the current queue book before a ready fallback', async () => {
-    renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [runningQueue(draftBookId)] } as never);
-      vi.spyOn(api, 'getIndexingStatus').mockResolvedValue({
-        draft: { exists: true, context: { state: 'processing', currentBook: { bookId }, retryableFailedBook: null } },
-      } as never);
-    });
-    const article = await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    await waitFor(() => expect(article.getAttribute('aria-current')).toBe('true'));
   });
 
   it('renders the first imported book from the authoritative shelf cache update', async () => {
@@ -376,9 +368,9 @@ describe('ManuscriptShelfPage route state', () => {
       ));
       vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [waitingQueue] } as never);
     });
-    await screen.findByText('В саге пока нет книг');
-    const dialog = await screen.findByRole('dialog', { name: 'Загрузка книг' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Скрыть очередь' }));
+    // The volume on its way is a card of the empty shelf (specs/2026-11-11-ux7-upload.md UP3.1).
+    expect(await screen.findByRole('article', { name: 'Том 4.epub' })).toBeTruthy();
+    expect(screen.queryByText('В саге пока нет книг')).toBeNull();
 
     booksVisible = true;
     const books = (await view.api.listBooks(projectId)).data;
@@ -413,87 +405,33 @@ describe('ManuscriptShelfPage route state', () => {
     expect(await screen.findByRole('article', { name: 'Книга III. Северный суд' })).toBeTruthy();
   });
 
-  it('keeps an explicit route book above queue and indexing defaults', async () => {
-    renderShelf(`?projectId=${projectId}&bookId=${bookId}&sourceView=draft`, (api) => {
-      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [runningQueue(draftBookId)] } as never);
-      vi.spyOn(api, 'getIndexingStatus').mockResolvedValue({
-        draft: { exists: true, context: { state: 'processing', currentBook: { bookId: draftBookId }, retryableFailedBook: null } },
-      } as never);
-    });
-
-    const article = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
-    await waitFor(() => expect(article.getAttribute('aria-current')).toBe('true'));
-  });
-
-  it('selects the indexing current book before an active Job book', async () => {
+  // specs/2026-11-10-ux3-saga-state.md SS2.2, SS2.3 (amends UC3 of specs/2026-11-08-deletion-stops-processing.md): the
+  // work left by a deleted book is not the author's — no block «Обработка саги», no stop; the deletion stops it itself.
+  it('shows no work of a deleted book and no stop of the author', async () => {
+    const running = { ...cardsJob('job-cards-orphan', 'running', 'published'), canCancel: true, progress: 0.25 } as ProjectJob;
+    let cancelJob: ReturnType<typeof vi.spyOn> | undefined;
     renderShelf(`?projectId=${projectId}`, (api) => {
+      vi.spyOn(api, 'listBooks').mockResolvedValue({ data: [], meta: { hasMore: false, nextCursor: null } } as never);
       vi.spyOn(api, 'getIndexingStatus').mockResolvedValue({
-        published: { exists: true, context: { state: 'processing', currentBook: { bookId: draftBookId }, retryableFailedBook: null } },
+        published: { exists: true, context: { state: 'ready', currentBook: null, retryableFailedBook: null } },
+        steps: [],
       } as never);
-      vi.spyOn(api, 'listProjectJobs').mockResolvedValue({
-        data: [importJob('job-import-other', 'running', bookId)],
-        meta: { hasMore: false, nextCursor: null },
-      } as never);
+      vi.spyOn(api, 'listProjectJobs').mockResolvedValue({ data: [running], meta: { hasMore: false, nextCursor: null } } as never);
+      cancelJob = vi.spyOn(api, 'cancelJob');
     });
 
-    const article = await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    await waitFor(() => expect(article.getAttribute('aria-current')).toBe('true'));
-  });
-
-  it('selects the exact indexing-step Job book before the preferred ready book', async () => {
-    const job = cardsJob('job-cards-route', 'running');
-    renderShelf(`?projectId=${projectId}`, (api) => {
-      vi.spyOn(api, 'getJob').mockResolvedValue(job);
-      vi.spyOn(api, 'getIndexingStatus').mockResolvedValue({
-        published: {
-          exists: true,
-          context: {
-            state: 'processing',
-            currentBook: { bookId: draftBookId, position: 1, total: 1 },
-            retryableFailedBook: null,
-          },
-        },
-        steps: [{ jobId: job.id, kind: 'cards', progress: null, sourceView: 'published', status: 'running' }],
-      } as never);
-    });
-
-    const article = await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    await waitFor(() => expect(article.getAttribute('aria-current')).toBe('true'));
-  });
-
-  it('opens an exact queue item status deep link', async () => {
-    const queue = runningQueue(draftBookId);
-    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
-      vi.spyOn(api, 'listImportQueues').mockResolvedValue({ data: [queue] } as never);
-    });
-
-    const dialog = await screen.findByRole('dialog', { name: 'Загрузка книг' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Подробнее: Книга III. Северный суд' }));
-
-    expect(view.navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({
-      projectId,
-      bookId: draftBookId,
-    }));
-    expect(view.navigate.mock.lastCall?.[1]).not.toHaveProperty('sourceView');
-  });
-
-  it('selects the exact book when the route changes on the mounted shelf', async () => {
-    const view = renderShelf(`?projectId=${projectId}&bookId=${bookId}&sourceView=published`);
-
-    const publishedBook = await screen.findByRole('article', { name: 'Книга II. Карта приливов' });
-    await waitFor(() => expect(publishedBook.getAttribute('aria-current')).toBe('true'));
-
-    view.rerenderWithRoute(`?projectId=${projectId}&bookId=${draftBookId}&sourceView=draft`);
-
-    const draftBook = await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    await waitFor(() => expect(draftBook.getAttribute('aria-current')).toBe('true'));
-    expect(publishedBook.getAttribute('aria-current')).toBeNull();
+    await screen.findByRole('region', { name: 'Книги саги' });
+    await waitFor(() => expect(screen.queryByText('Проверяем подготовку…')).toBeNull());
+    expect(screen.queryByRole('region', { name: 'Обработка саги' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Чтение саги' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Остановить/u })).toBeNull();
+    expect(cancelJob).not.toHaveBeenCalled();
   });
 
   it('hides the previous project while a changed project route hydrates', async () => {
     let holdProjectList = false;
     let releaseProjectList: (() => void) | undefined;
-    const view = renderShelf(`?projectId=${projectId}&bookId=${draftBookId}&sourceView=draft`, (api) => {
+    const view = renderShelf(`?projectId=${projectId}&sourceView=draft`, (api) => {
       const listProjects = api.listProjects.bind(api);
       vi.spyOn(api, 'listProjects').mockImplementation(async () => {
         if (holdProjectList) {
@@ -507,14 +445,13 @@ describe('ManuscriptShelfPage route state', () => {
     });
 
     await screen.findByRole('article', { name: 'Книга III. Северный суд' });
-    expect(screen.getAllByText('Хроники Белого порта').length).toBeGreaterThan(0);
+    expect(screen.getByText(/^\d+ книг[аи]? · /u)).toBeTruthy();
 
     holdProjectList = true;
     view.rerenderWithRoute(`?projectId=${foreignProjectId}&sourceView=draft`);
 
     expect(screen.queryAllByRole('article')).toHaveLength(0);
-    expect(screen.queryAllByText('Хроники Белого порта')).toHaveLength(0);
-    expect(screen.queryByText(/^Сага ·/)).toBeNull();
+    expect(screen.queryByText(/^\d+ книг[аи]? · /u)).toBeNull();
 
     await waitFor(() => expect(releaseProjectList).toBeTypeOf('function'));
     await act(async () => releaseProjectList?.());
@@ -522,53 +459,7 @@ describe('ManuscriptShelfPage route state', () => {
   });
 });
 
-describe('ManuscriptShelfPage book reading actions', () => {
-  it('opens the first published chapter when the first chapter is draft', async () => {
-    const view = renderShelf(`?projectId=${projectId}&bookId=${bookId}&bookMenu=open&sourceView=published`, (api) => {
-      vi.spyOn(api, 'listChapters').mockResolvedValue({
-        data: [
-          { id: 'chapter-draft-first', title: 'Черновая глава', status: 'draft' },
-          { id: 'chapter-published-second', title: 'Опубликованная глава', status: 'published' },
-        ],
-        meta: { hasMore: false, nextCursor: null },
-      } as never);
-    });
-
-    await screen.findByRole('menu', { name: 'Действия книги' });
-    view.navigate.mockClear();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Открыть чтение' }));
-
-    await waitFor(() => expect(view.navigate).toHaveBeenCalledWith('/manuscript/books', expect.objectContaining({
-      bookId,
-      chapterId: 'chapter-published-second',
-      mode: 'read',
-      projectId,
-    })));
-    expect(view.navigate).not.toHaveBeenCalledWith('/manuscript/books', expect.objectContaining({
-      chapterId: 'chapter-draft-first',
-      mode: 'read',
-    }));
-  });
-
-  it('closes the menu without navigating when no chapter is published', async () => {
-    const view = renderShelf(`?projectId=${projectId}&bookId=${bookId}&bookMenu=open&sourceView=published`, (api) => {
-      vi.spyOn(api, 'listChapters').mockResolvedValue({
-        data: [{ id: 'chapter-draft-only', title: 'Только черновая глава', status: 'draft' }],
-        meta: { hasMore: false, nextCursor: null },
-      } as never);
-    });
-
-    await screen.findByRole('menu', { name: 'Действия книги' });
-    view.navigate.mockClear();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Открыть чтение' }));
-
-    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Действия книги' })).toBeNull());
-    expect(view.navigate).not.toHaveBeenCalledWith('/manuscript/books', expect.objectContaining({ mode: 'read' }));
-    expect(await screen.findByText('В книге пока нет глав.')).toBeTruthy();
-  });
-});
-
-function renderShelf(search: string, configureApi?: (api: ShelfApi) => void) {
+function renderShelf(search: string, configureApi?: (api: ShelfApi) => void, shell = false) {
   const api = createMockApiClient();
   api.setScenario({ actorRole: 'editor', preset: 'normal' });
   vi.spyOn(api, 'getAgentTimeline').mockResolvedValue({ events: [], eof: true, nextCursor: null } as never);
@@ -577,17 +468,15 @@ function renderShelf(search: string, configureApi?: (api: ShelfApi) => void) {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  const page = (nextSearch: string) => (
-    <QueryClientProvider client={queryClient}>
-      <ManuscriptShelfPage
-        api={api}
-        navigate={navigate}
-        onLogout={vi.fn()}
-        route={parseRoute(`http://localhost/manuscript/books${nextSearch}`)}
-        userName="Мира Волкова"
-      />
-    </QueryClientProvider>
-  );
+  const page = (nextSearch: string) => {
+    const route = parseRoute(`http://localhost/manuscript/books${nextSearch}`);
+    const shelf = <ManuscriptShelfPage api={api} navigate={navigate} route={route} />;
+    return (
+      <QueryClientProvider client={queryClient}><ToastsProvider>
+        {shell ? <InShell api={api} navigate={navigate} route={route}>{shelf}</InShell> : shelf}
+      </ToastsProvider></QueryClientProvider>
+    );
+  };
   const result = render(page(search));
 
   return {
@@ -618,6 +507,13 @@ function indexingStatusForJob(job: ProjectJob, kind: 'import' | 'cards') {
   return {
     draft: envelope,
     published: envelope,
+    // The server counts the reading while the text is in work (SS1.1): here the file is still parsed.
+    ...(active ? {
+      preparation: {
+        remainingSeconds: null, letterPromised: false, chaptersRead: 0, chaptersTotal: 0, booksRead: 0, booksTotal: 0,
+        currentBookId: null, askable: false, books: [],
+      },
+    } : {}),
     steps: [{
       bookId: kind === 'import' ? draftBookId : undefined,
       canCancel: job.canCancel,
@@ -679,7 +575,6 @@ function runningQueue(currentBookId: string, importJobId = 'job-import-route'): 
     status: 'running',
     version: 4,
     intendedItemCount: 1,
-    nextBookOrder: 4,
     currentItemId: 'queue-route-item',
     createdAt: '2026-08-20T10:00:00.000Z',
     updatedAt: '2026-08-20T10:00:00.000Z',
@@ -692,8 +587,6 @@ function runningQueue(currentBookId: string, importJobId = 'job-import-route'): 
       sourceFileName: 'Том 4.epub',
       mimeType: 'application/epub+zip',
       sizeBytes: 24,
-      detectedBookOrder: 4,
-      confirmedBookOrder: 4,
       preflightStatus: 'ready',
       preflightError: null,
       processingStatus: 'indexing',
@@ -706,6 +599,12 @@ function runningQueue(currentBookId: string, importJobId = 'job-import-route'): 
     }],
     links: { self: `/projects/${projectId}/import-queues/queue-route`, cancel: null },
   };
+}
+
+/** A queue whose one volume the server reads now: its book is not on the shelf yet. */
+function parsingQueue(importJobId: string): ImportQueue {
+  const queue = runningQueue('', importJobId);
+  return { ...queue, items: queue.items.map((item) => ({ ...item, bookId: null, processingStatus: 'importing', links: { status: null } })) };
 }
 
 function failedQueue(currentBookId: string, importJobId: string): ImportQueue {

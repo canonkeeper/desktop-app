@@ -162,6 +162,18 @@ func (limits Limits) With(key Key, value int64) Limits {
 // ErrNotFound means the writer is not known.
 var ErrNotFound = errors.New("quota: writer not found")
 
+// ErrDemoSaga refuses a write of text into the demo saga (specs/2026-11-09-demo-saga.md DS3.3). The demo saga is out
+// of the limits of its owner because it holds no text of his, so nothing is added to it but its seed. Nothing was
+// written.
+var ErrDemoSaga = errors.New("quota: the demo saga takes no text")
+
+// ErrDemoSeed refuses the seed of the demo saga (DS3.4): the saga is not the demo saga, or it already holds its book
+// or an import of it is going. Nothing was written.
+var ErrDemoSeed = errors.New("quota: the seed is for an empty demo saga")
+
+// DemoSagaCode is the problem code of ErrDemoSaga.
+const DemoSagaCode = "demo_saga.read_only"
+
 // Exceeded refuses an operation that would go over one limit. Nothing was written.
 type Exceeded struct {
 	Key   Key
@@ -256,6 +268,20 @@ type Sources struct {
 	Chapters   int64
 	Characters int64
 }
+
+// Measures are the measures of text a write can grow (specs/2026-11-08-subscription-tiers.md TR2.5): the check after
+// the write refuses only one of them over its limit, so a writer over a limit he does not grow — a lowered limit, a
+// plan that ended — still edits and adds what keeps within the others.
+type Measures uint8
+
+const (
+	MeasureBooks Measures = 1 << iota
+	MeasureChapters
+	MeasureCharacters
+)
+
+// Has says whether the write grows the measure.
+func (measures Measures) Has(measure Measures) bool { return measures&measure != 0 }
 
 // ProjectSources are the sources of one live project the writer owns.
 type ProjectSources struct {

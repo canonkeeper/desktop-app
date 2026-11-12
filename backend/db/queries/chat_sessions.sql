@@ -143,10 +143,11 @@ RETURNING chat.*;
 SELECT chat.*,
        latest_turn.turn_id AS latest_turn_id,
        latest_turn.job_id AS latest_turn_job_id,
-       latest_turn.job_status AS latest_turn_status
+       latest_turn.job_status AS latest_turn_status,
+       latest_turn.created_at AS latest_turn_at
 FROM chat_sessions AS chat
 LEFT JOIN LATERAL (
-  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status
+  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status, turn_row.created_at
   FROM chat_turns AS turn_row
   LEFT JOIN jobs AS turn_job
     ON turn_job.id = turn_row.job_id
@@ -216,10 +217,11 @@ SELECT
   membership.role AS actor_role,
   latest_turn.turn_id AS latest_turn_id,
   latest_turn.job_id AS latest_turn_job_id,
-  latest_turn.job_status AS latest_turn_status
+  latest_turn.job_status AS latest_turn_status,
+  latest_turn.created_at AS latest_turn_at
 FROM chat_sessions AS chat
 LEFT JOIN LATERAL (
-  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status
+  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status, turn_row.created_at
   FROM chat_turns AS turn_row
   LEFT JOIN jobs AS turn_job
     ON turn_job.id = turn_row.job_id

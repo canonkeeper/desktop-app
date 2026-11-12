@@ -2,7 +2,9 @@ import { http } from 'msw';
 import { createNotesHandlers } from './notes-handlers';
 import { createPromoHandlers } from './promo-handlers';
 import { createContactHandlers } from './contact-handlers';
+import { createTierHandlers } from './tier-handlers';
 import { createMockApiClient, type MockRepository } from '../../api/mock/repository';
+import { drawingListQuery } from '../../api/mock/repository/drawings';
 import type { ProjectImageFileQuery } from '../../api/mock/repository/images';
 import { MockApiError, type MockScenarioControl, type MockScenarioPreset } from '../../api/mock/scenarios';
 import type {
@@ -10,6 +12,7 @@ import type {
   GetSagaMapNodeOptions,
   SearchSagaMapOptions,
   GetSagaMapOptions,
+  GetSagaFirstQuestionsOptions,
   ListSagaMapHiddenOptions,
   ImageUploadInput,
   ImportBookInput,
@@ -81,14 +84,6 @@ function createAdminHandlers(repository: MockRepository, csrfState: MswCsrfState
         async () => repository.setAdminWriterIllustrations(oneParam(params.userId), (await readJson(request)) as OperationRequest<'setAdminWriterIllustrations'>),
         undefined,
         security('setAdminWriterIllustrations', request),
-      )),
-    http.get(mswPath('listAdminIllustrationRequests'), ({ request }) =>
-      jsonResponse(() => repository.listAdminIllustrationRequests(), undefined, security('listAdminIllustrationRequests', request))),
-    http.post(mswPath('declineAdminIllustrationRequest'), ({ params, request }) =>
-      jsonResponse(
-        async () => repository.declineAdminIllustrationRequest(oneParam(params.requestId), (await readJson(request)) as OperationRequest<'declineAdminIllustrationRequest'>),
-        undefined,
-        security('declineAdminIllustrationRequest', request),
       )),
     http.get(mswPath('getAdminQuotaDefaults'), ({ request }) =>
       jsonResponse(() => repository.getAdminQuotaDefaults(), undefined, security('getAdminQuotaDefaults', request))),
@@ -190,21 +185,17 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     ...createNotesHandlers(repository, csrfState, idempotencyStore),
     ...createPromoHandlers(repository, csrfState, idempotencyStore),
     ...createContactHandlers(repository, csrfState),
+    ...createTierHandlers(repository, csrfState),
     http.get(mswPath('getCurrentUser'), ({ request }) =>
       jsonResponse(() => repository.getCurrentUser(), undefined, { csrfState, operationId: 'getCurrentUser', request, repository }),
     ),
+    http.get(mswPath('listRecentlyDeleted'), ({ request }) =>
+      jsonResponse(() => repository.listRecentlyDeleted(), undefined, { csrfState, operationId: 'listRecentlyDeleted', request, repository })),
     http.get(mswPath('getAccountQuota'), ({ request }) =>
       jsonResponse(() => repository.getAccountQuota(), undefined, { csrfState, operationId: 'getAccountQuota', request, repository }),
     ),
     http.get(mswPath('getIllustrationAccess'), ({ request }) =>
       jsonResponse(() => repository.getIllustrationAccess(), undefined, { csrfState, operationId: 'getIllustrationAccess', request, repository }),
-    ),
-    http.post(mswPath('createIllustrationAccessRequest'), ({ request }) =>
-      jsonResponse(
-        async () => repository.createIllustrationAccessRequest((await readJson(request)) as OperationRequest<'createIllustrationAccessRequest'>),
-        { status: 201 },
-        { csrfState, operationId: 'createIllustrationAccessRequest', request, repository },
-      ),
     ),
     ...createAdminHandlers(repository, csrfState),
     http.post(mswPath('rotateSession'), ({ request }) =>
@@ -219,6 +210,9 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     ),
     http.get(mswPath('listProjects'), ({ request }) =>
       jsonResponse(() => listProjectsForState(repository, request), undefined, { operationId: 'listProjects', request, repository }),
+    ),
+    http.post(mswPath('openDemoSaga'), ({ request }) =>
+      jsonResponse(() => repository.openDemoSaga(), undefined, { operationId: 'openDemoSaga', request, repository }),
     ),
     http.post(mswPath('createProject'), async ({ request }) =>
       jsonResponse(async () => repository.createProject((await readJson(request)) as OperationRequest<'createProject'>), { status: 201 }, {
@@ -295,12 +289,12 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
         body as Parameters<MockRepository['uploadImportQueueItem']>[2],
         options,
       ), { status: 200 }, { operationId: 'uploadImportQueueItem', request, repository }, () => readImportQueueItemForm(request), idempotencyStore)),
-    http.patch(mswPath('updateImportQueue'), async ({ params, request }) =>
-      jsonResponse(async () => repository.updateImportQueue(
+    http.delete(mswPath('skipImportQueueItem'), ({ params, request }) =>
+      jsonResponse(() => repository.skipImportQueueItem(
         oneParam(params.projectId),
         oneParam(params.queueId),
-        (await readJson(request)) as OperationRequest<'updateImportQueue'>,
-      ), undefined, { operationId: 'updateImportQueue', request, repository })),
+        oneParam(params.itemId),
+      ), undefined, { operationId: 'skipImportQueueItem', request, repository })),
     http.post(mswPath('startImportQueue'), async ({ params, request }) =>
       idempotentJsonResponse((options, body) => repository.startImportQueue(
         oneParam(params.projectId),
@@ -345,6 +339,9 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.get(mswPath('searchSagaMap'), ({ params, request }) => jsonResponse(
       () => repository.searchSagaMap(oneParam(params.projectId), sagaQuery(request) as SearchSagaMapOptions), undefined, { operationId: 'searchSagaMap', request, repository },
     )),
+    http.get(mswPath('getSagaFirstQuestions'), ({ params, request }) => jsonResponse(
+      () => repository.getSagaFirstQuestions(oneParam(params.projectId), sagaQuery(request) as GetSagaFirstQuestionsOptions), undefined, { operationId: 'getSagaFirstQuestions', request, repository },
+    )),
     http.get(mswPath('listSagaMapHidden'), ({ params, request }) => jsonResponse(
       () => repository.listSagaMapHidden(oneParam(params.projectId), sagaQuery(request) as ListSagaMapHiddenOptions), undefined, { operationId: 'listSagaMapHidden', request, repository },
     )),
@@ -380,6 +377,10 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       async () => repository.updateChapterDraftPlan(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'updateChapterDraftPlan'>),
       undefined, { operationId: 'updateChapterDraftPlan', request, repository },
     )),
+    http.post(mswPath('withdrawChapterDraftPlan'), async ({ params, request }) => jsonResponse(
+      async () => repository.withdrawChapterDraftPlan(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'withdrawChapterDraftPlan'>),
+      undefined, { operationId: 'withdrawChapterDraftPlan', request, repository },
+    )),
     http.patch(mswPath('updateChapterDraftMoment'), async ({ params, request }) => jsonResponse(
       async () => repository.updateChapterDraftMoment(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'updateChapterDraftMoment'>),
       undefined, { operationId: 'updateChapterDraftMoment', request, repository },
@@ -407,6 +408,13 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.put(mswPath('setAccountVoice'), async ({ request }) => jsonResponse(
       async () => repository.setAccountVoice((await readJson(request)) as OperationRequest<'setAccountVoice'>),
       undefined, { operationId: 'setAccountVoice', request, repository },
+    )),
+    http.get(mswPath('getAccountLetters'), ({ request }) => jsonResponse(
+      () => repository.getAccountLetters(), undefined, { operationId: 'getAccountLetters', request, repository },
+    )),
+    http.put(mswPath('setAccountLetters'), async ({ request }) => jsonResponse(
+      async () => repository.setAccountLetters((await readJson(request)) as OperationRequest<'setAccountLetters'>),
+      undefined, { operationId: 'setAccountLetters', request, repository },
     )),
     http.patch(mswPath('updateChapterDraft'), async ({ params, request }) => jsonResponse(
       async () => repository.updateChapterDraft(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'updateChapterDraft'>),
@@ -449,6 +457,10 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       (options, body) => repository.loadChapterDraftFile(oneParam(params.projectId), oneParam(params.draftId), body as Parameters<typeof repository.loadChapterDraftFile>[2], options),
       { status: 200 }, { operationId: 'loadChapterDraftFile', request, repository }, () => readChapterForm(request), idempotencyStore,
     )),
+    http.post(mswPath('takeChapterDraftOriginalLook'), async ({ params, request }) => jsonResponse(
+      async () => repository.takeChapterDraftOriginalLook(oneParam(params.projectId), oneParam(params.draftId), await readChapterForm(request) as { file: File }),
+      undefined, { operationId: 'takeChapterDraftOriginalLook', request, repository },
+    )),
     http.post(mswPath('applyChapterDraftNotes'), async ({ params, request }) => jsonResponse(
       async () => repository.applyChapterDraftNotes(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'applyChapterDraftNotes'>),
       undefined, { operationId: 'applyChapterDraftNotes', request, repository },
@@ -480,6 +492,10 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
         ...(query.get('q') ? { q: query.get('q') as string } : {}),
       });
     }, undefined, { operationId: 'listAuthorMaterials', request, repository })),
+    http.post(mswPath('createAuthorMaterial'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.createAuthorMaterial(oneParam(params.projectId), body as OperationRequest<'createAuthorMaterial'>, options),
+      { status: 201 }, { operationId: 'createAuthorMaterial', request, repository }, () => readJson(request), idempotencyStore,
+    )),
     http.put(mswPath('updateAuthorMaterial'), async ({ params, request }) => jsonResponse(
       async () => repository.updateAuthorMaterial(
         oneParam(params.projectId), oneParam(params.materialId), (await readJson(request)) as OperationRequest<'updateAuthorMaterial'>,
@@ -581,19 +597,34 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       (options) => repository.cutoutProjectImage(oneParam(params.projectId), Number(oneParam(params.number)), options),
       { status: 201 }, { operationId: 'cutoutProjectImage', request, repository }, {}, idempotencyStore,
     )),
+    http.post(mswPath('changeProjectImageAngle'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.changeProjectImageAngle(oneParam(params.projectId), Number(oneParam(params.number)), body as OperationRequest<'changeProjectImageAngle'>, options),
+      { status: 201 }, { operationId: 'changeProjectImageAngle', request, repository }, () => readJson(request), idempotencyStore,
+    )),
     http.post(mswPath('chooseProjectImageVariant'), async ({ params, request }) => idempotentJsonResponse(
       (options) => repository.chooseProjectImageVariant(oneParam(params.projectId), Number(oneParam(params.number)), options),
       { status: 200 }, { operationId: 'chooseProjectImageVariant', request, repository }, {}, idempotencyStore,
+    )),
+    // «Нарисовать этот ещё раз» of a variant that did not come out (specs/2026-11-12-ux10-drawing-ops.md DO1).
+    http.post(mswPath('redrawProjectImageVariant'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.redrawProjectImageVariant(oneParam(params.projectId), Number(oneParam(params.number)), body as OperationRequest<'redrawProjectImageVariant'>, options),
+      { status: 200 }, { operationId: 'redrawProjectImageVariant', request, repository }, async () => { const text = await request.clone().text(); return text ? JSON.parse(text) as unknown : {}; }, idempotencyStore,
     )),
     http.post(mswPath('chooseProjectImageLayerVariant'), async ({ params, request }) => idempotentJsonResponse(
       (options) => repository.chooseProjectImageLayerVariant(oneParam(params.projectId), Number(oneParam(params.number)), oneParam(params.layerId), options),
       { status: 200 }, { operationId: 'chooseProjectImageLayerVariant', request, repository }, {}, idempotencyStore,
     )),
-    http.get(mswPath('listDrawings'), ({ params, request }) => jsonResponse(() => {
-      const query = new URL(request.url).searchParams;
-      const limit = query.get('limit');
-      return repository.listDrawings(oneParam(params.projectId), limit === null ? {} : { limit: Number(limit) });
-    }, undefined, { operationId: 'listDrawings', request, repository })),
+    http.get(mswPath('listDrawings'), ({ params, request }) => jsonResponse(
+      () => repository.listDrawings(oneParam(params.projectId), drawingListQuery(new URL(request.url).searchParams)),
+      undefined, { operationId: 'listDrawings', request, repository },
+    )),
+    // Before getDrawing: «facets» is not the id of a drawing.
+    http.get(mswPath('getDrawingsFacets'), ({ params, request }) => jsonResponse(() => {
+      const { q, subject, chapter, look } = drawingListQuery(new URL(request.url).searchParams);
+      return repository.getDrawingsFacets(oneParam(params.projectId), {
+        ...(q === undefined ? {} : { q }), ...(subject === undefined ? {} : { subject }), ...(chapter === undefined ? {} : { chapter }), ...(look === undefined ? {} : { look }),
+      });
+    }, undefined, { operationId: 'getDrawingsFacets', request, repository })),
     http.post(mswPath('createDrawing'), async ({ params, request }) => idempotentJsonResponse(
       (options, body) => repository.createDrawing(oneParam(params.projectId), body as OperationRequest<'createDrawing'>, options),
       { status: 201 }, { operationId: 'createDrawing', request, repository }, () => readJson(request), idempotencyStore,
@@ -605,6 +636,13 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.patch(mswPath('updateDrawing'), async ({ params, request }) => jsonResponse(
       async () => repository.updateDrawing(oneParam(params.projectId), oneParam(params.drawingId), (await readJson(request)) as OperationRequest<'updateDrawing'>),
       undefined, { operationId: 'updateDrawing', request, repository },
+    )),
+    // «Отменить» of a drawing put off until the service of drawings is free (DO2.2).
+    http.post(mswPath('cancelDeferredDrawing'), ({ params, request }) => jsonResponse(
+      () => repository.cancelDeferredDrawing(oneParam(params.projectId), oneParam(params.drawingId)), undefined, { operationId: 'cancelDeferredDrawing', request, repository },
+    )),
+    http.post(mswPath('restoreDrawing'), ({ params, request }) => jsonResponse(
+      () => repository.restoreDrawing(oneParam(params.projectId), oneParam(params.drawingId)), undefined, { operationId: 'restoreDrawing', request, repository },
     )),
     http.delete(mswPath('deleteDrawing'), ({ params, request }) => emptyResponse(
       () => repository.deleteDrawing(oneParam(params.projectId), oneParam(params.drawingId)),
@@ -687,9 +725,14 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
         undefined,
         { operationId: 'setBookCoverFromImage', request, repository },
       )),
+    http.get(mswPath('getBookDrawingCounts'), ({ params, request }) => jsonResponse(
+      () => repository.getBookDrawingCounts(oneParam(params.projectId)),
+      undefined,
+      { operationId: 'getBookDrawingCounts', request, repository },
+    )),
     http.get(mswPath('getBookExport'), ({ params, request }) => binaryResponse(async () => {
-      const format = new URL(request.url).searchParams.get('format') as BookExportFormat;
-      const file = await repository.getBookExport(oneParam(params.bookId), format);
+      const query = new URL(request.url).searchParams;
+      const file = await repository.getBookExport(oneParam(params.bookId), query.get('format') as BookExportFormat, { drawings: query.get('drawings') === 'true' });
       return {
         body: `Файл ${file.fileName}`,
         contentType: 'application/octet-stream',
@@ -727,6 +770,17 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     ),
     http.post(mswPath('restoreBook'), ({ params, request }) =>
       jsonResponse(() => repository.restoreBook(oneParam(params.bookId)), undefined, { operationId: 'restoreBook', request, repository }),
+    ),
+    // «Вернуть прежнюю версию» of a book after its update from a file (specs/2026-11-12-ux10-book-revert.md BR2).
+    http.get(mswPath('previewBookUpdateRevert'), ({ params, request }) =>
+      jsonResponse(() => repository.previewBookUpdateRevert(oneParam(params.bookId)), undefined, { operationId: 'previewBookUpdateRevert', request, repository }),
+    ),
+    http.post(mswPath('revertBookUpdate'), async ({ params, request }) =>
+      jsonResponse(
+        async () => repository.revertBookUpdate(oneParam(params.bookId), (await readJson(request)) as OperationRequest<'revertBookUpdate'>),
+        undefined,
+        { operationId: 'revertBookUpdate', request, repository },
+      ),
     ),
     http.get(mswPath('listChapters'), ({ params, request }) =>
       jsonResponse(() => listChaptersForState(repository, oneParam(params.bookId), request), undefined, { operationId: 'listChapters', request, repository }),

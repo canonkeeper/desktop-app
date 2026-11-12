@@ -264,32 +264,49 @@ func (cluster *Cluster) WorkerURL() string {
 // Bootstrap prepares the database of the product (DA1.3): the roles and the database of init-local.sh with this
 // computer's passwords, the numbered migrations of the site as the administrator, and the runtime grants of
 // bootstrap-local.sh. Every step is repeatable, so an interrupted first start finishes on the next one.
-func (cluster *Cluster) Bootstrap(ctx context.Context) error {
+//
+// The migrations go by what the runner says of the database (specs/2026-11-12-desk-process.md PR3): a database a newer
+// program migrated is refused before anything changes (errNewerSchema); an existing database with migrations pending is
+// copied first and backup names the copy (a failed copy is backupFailed, a migration failed after it migrationFailed);
+// an empty one is migrated without a copy; with nothing pending the runner is not called.
+func (cluster *Cluster) Bootstrap(ctx context.Context) (backup string, err error) {
 	admin, err := pgx.Connect(ctx, cluster.url(adminRole, cluster.secrets.Admin, "postgres", nil))
 	if err != nil {
-		return fmt.Errorf("connect the administrator: %w", err)
+		return "", fmt.Errorf("connect the administrator: %w", err)
 	}
 	defer admin.Close(context.Background())
 	var exists bool
 	if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, databaseName).Scan(&exists); err != nil {
-		return err
+		return "", err
 	}
 	if !exists {
 		if _, err := admin.Exec(ctx, "CREATE DATABASE "+databaseName); err != nil {
-			return err
+			return "", err
 		}
+	}
+	database, err := storedb.Open(ctx, cluster.url(adminRole, cluster.secrets.Admin, databaseName, url.Values{"pool_max_conns": {"2"}}))
+	if err != nil {
+		return "", fmt.Errorf("connect the database: %w", err)
+	}
+	defer database.Close()
+	status, err := storedb.ReadMigrationStatus(ctx, database)
+	if err != nil {
+		return "", fmt.Errorf("read the migrations: %w", err)
+	}
+	if status.Newer {
+		return "", errNewerSchema
 	}
 	for role, password := range map[string]string{productRole: cluster.secrets.Product, workerRole: cluster.secrets.Worker} {
 		if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
-			return err
+			return "", err
 		}
 		if !exists {
 			if _, err := admin.Exec(ctx, "CREATE ROLE "+role+" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"); err != nil {
-				return err
+				return "", err
 			}
 		}
 		if _, err := admin.Exec(ctx, "ALTER ROLE "+role+" PASSWORD "+quoteLiteral(password)); err != nil {
-			return err
+			return "", err
 		}
 	}
 	for _, statement := range []string{
@@ -298,26 +315,31 @@ func (cluster *Cluster) Bootstrap(ctx context.Context) error {
 		"GRANT CONNECT ON DATABASE " + databaseName + " TO " + productRole + ", " + workerRole,
 	} {
 		if _, err := admin.Exec(ctx, statement); err != nil {
-			return err
+			return "", err
 		}
 	}
-	database, err := storedb.Open(ctx, cluster.url(adminRole, cluster.secrets.Admin, databaseName, url.Values{"pool_max_conns": {"2"}}))
-	if err != nil {
-		return fmt.Errorf("connect the database: %w", err)
-	}
-	defer database.Close()
-	if err := storedb.ApplyMigrations(ctx, database); err != nil {
-		return fmt.Errorf("apply migrations: %w", err)
+	if status.Pending > 0 {
+		if status.Last >= 0 {
+			if backup, err = cluster.backup(ctx, status.Last, time.Now()); err != nil {
+				return "", backupFailed{err}
+			}
+		}
+		if err := storedb.ApplyMigrations(ctx, database); err != nil {
+			if backup != "" {
+				return backup, migrationFailed{backup: backup, err: err}
+			}
+			return "", fmt.Errorf("apply migrations: %w", err)
+		}
 	}
 	for _, statement := range []string{
 		"GRANT canonkeeper_product_runtime TO " + productRole,
 		"GRANT canonkeeper_worker_discovery TO " + workerRole,
 	} {
 		if _, err := database.Pool.Exec(ctx, statement); err != nil {
-			return err
+			return backup, err
 		}
 	}
-	return nil
+	return backup, nil
 }
 
 // quoteLiteral quotes a string as an SQL literal; utility statements take no parameters.
@@ -325,10 +347,18 @@ func quoteLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
+// toolTimeout bounds a PostgreSQL program of the start and the stop.
+const toolTimeout = 3 * time.Minute
+
 // tool runs a PostgreSQL program of the bundle with its output in a file, not a pipe: on Windows the server pg_ctl
 // starts inherits the handles of pg_ctl, and waiting for a pipe would never end (S0). The error names the program and
 // the last lines of its output, which name no text of books.
 func (cluster *Cluster) tool(ctx context.Context, name string, args ...string) error {
+	return cluster.run(ctx, toolTimeout, nil, name, args...)
+}
+
+// run is tool with its own time limit and variables added to the environment of the program.
+func (cluster *Cluster) run(ctx context.Context, timeout time.Duration, environment []string, name string, args ...string) error {
 	program := filepath.Join(cluster.bin, name)
 	if runtime.GOOS == "windows" {
 		program += ".exe"
@@ -339,11 +369,11 @@ func (cluster *Cluster) tool(ctx context.Context, name string, args ...string) e
 	}
 	defer os.Remove(output.Name())
 	defer output.Close()
-	toolCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	toolCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	command := exec.CommandContext(toolCtx, program, args...)
 	command.Stdout, command.Stderr = output, output
-	command.Env = toolEnvironment()
+	command.Env = append(toolEnvironment(), environment...)
 	if err := command.Run(); err != nil {
 		raw, _ := os.ReadFile(output.Name())
 		return fmt.Errorf("%w: %s %s: %v: %s", errPostgresTool, name, firstArg(args), err, lastLines(string(raw), 8))

@@ -47,6 +47,7 @@ func (tools *ReadTools) Threads(ctx context.Context, call ToolContext, input Thr
 		return "", argumentError("$.part", "допустимо arcs")
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		saga.about(sagamemory.NamedNames(input.Who).And(sagamemory.NamedWords(input.Query)), nil)
 		scoped := saga.authority.Scope == researchdomain.ScopeBook
 		layer, err := tools.layer.SagaThreads(ctx, saga.authority.ProjectID, scoped || input.Level == "all" || input.Part == "arcs")
 		if err != nil {
@@ -82,10 +83,8 @@ func newThreadMatcher(saga *sagaScope, input ThreadsInput) (*threadMatcher, stri
 	if err != nil {
 		return nil, "", err
 	}
-	glossary := cards.Glossary
-	if saga.authority.Scope == researchdomain.ScopeBook {
-		glossary = sagamemory.BuildGlossary(saga.scopedCards(cards), cards.Names)
-	}
+	glossary := saga.glossaryOf(cards)
+	saga.glossary = glossary
 	entry, ok := glossary.Lookup(who)
 	if !ok {
 		matcher.names = [][]wordPart{searchWords(who)}

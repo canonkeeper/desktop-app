@@ -8,8 +8,8 @@ function renderComposer(session: AccountSession) {
   render(
     <AccountSessionContext.Provider value={session}>
       <ResearchChatComposer
-        active={false} busy={false} canDelete={false} canStop={false} deleteConfirmationOpen={false} deleting={false}
-        onCancelDelete={noop} onConfirmDelete={noop} onDelete={noop} onStop={noop} onSubmit={noop} onTaskChange={noop}
+        above={<p>Осталось 5 из 5 вопросов на сегодня.</p>}
+        active={false} busy={false} onSubmit={noop} onTaskChange={noop}
         recovery={false} stopping={false} taskText=""
       />
     </AccountSessionContext.Provider>,
@@ -21,15 +21,19 @@ describe('ResearchChatComposer email verification', () => {
   it('replaces the question field with the notice for an unverified address', () => {
     renderComposer({ busy: false, emailVerification: { email: 'new-author@example.test', status: 'idle', canSend: true, onSend: vi.fn() } });
 
-    expect(screen.getByText('Подтвердите адрес new-author@example.test')).toBeTruthy();
-    expect(screen.getByText('Мы отправили на него письмо со ссылкой. Пока адрес не подтверждён, задавать вопросы о саге нельзя.')).toBeTruthy();
+    // The words of the line under the top bar, with the same letter (specs/2026-11-10-ux1-shell.md SH4.3).
+    expect(screen.getByText('Подтвердите почту new-author@example.test — и можно будет загружать книги, спрашивать, рисовать и писать.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Отправить письмо ещё раз' })).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Спросить' })).toBeNull();
+    // Nothing is counted for a field that is not there.
+    expect(screen.queryByText('Осталось 5 из 5 вопросов на сегодня.')).toBeNull();
   });
 
   it('shows the question field to a verified writer', () => {
     renderComposer({ busy: false });
     expect(screen.getByRole('textbox')).toBeTruthy();
-    expect(screen.queryByText(/Подтвердите адрес/)).toBeNull();
+    expect(screen.getByText('Осталось 5 из 5 вопросов на сегодня.')).toBeTruthy();
+    expect(screen.queryByText(/Подтвердите почту/)).toBeNull();
   });
 });

@@ -1,9 +1,17 @@
+/* A wide table scrolls inside its own frame, and a shadow at an edge says there is more of it beyond (specs/2026-11-11-
+   ux9-shelf-chat.md SC3.7, J-25): the covers move with the content, the shadows stay at the edges of the frame. */
 .tableScroll {
   max-width: 100%;
   margin: 0 0 8px;
   overflow-x: auto;
-  scrollbar-color: #c5c5c2 transparent;
+  scrollbar-color: var(--ck-scrollbar-native) transparent;
   scrollbar-width: thin;
+  background:
+    linear-gradient(to right, var(--ck-card) 40%, transparent) left center / 24px 100% no-repeat,
+    linear-gradient(to left, var(--ck-card) 40%, transparent) right center / 24px 100% no-repeat,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--ck-foreground) 22%, transparent), transparent) left center / 12px 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--ck-foreground) 22%, transparent), transparent) right center / 12px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 .tableScroll table {

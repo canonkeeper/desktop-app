@@ -89,7 +89,7 @@ func strPtr(value string) *string { return &value }
 func TestListCursor(t *testing.T) {
 	at := webNow()
 	store := listStub{page: domain.Page{Drafts: []domain.Summary{{ID: "a", CreatedAt: at}, {ID: "b", CreatedAt: at}}, HasMore: true, Total: 5}}
-	view, err := List{Store: store}.Execute(context.Background(), webWrite.Actor, "", 0)
+	view, err := List{Store: store}.Execute(context.Background(), webWrite.Actor, "", 0, "")
 	if err != nil || view.NextCursor == "" || view.Total != 5 {
 		t.Fatalf("view = %+v, %v", view, err)
 	}
@@ -97,16 +97,16 @@ func TestListCursor(t *testing.T) {
 	if err != nil || cursor.ID != "b" || !cursor.CreatedAt.Equal(at) {
 		t.Fatalf("cursor = %+v, %v", cursor, err)
 	}
-	if _, err := (List{Store: store}).Execute(context.Background(), webWrite.Actor, "%%%", 0); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := (List{Store: store}).Execute(context.Background(), webWrite.Actor, "%%%", 0, ""); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("a broken cursor: %v", err)
 	}
-	if _, err := (List{Store: store}).Execute(context.Background(), webWrite.Actor, "", maxPageSize+1); !errors.Is(err, domain.ErrInvalid) {
+	if _, err := (List{Store: store}).Execute(context.Background(), webWrite.Actor, "", maxPageSize+1, ""); !errors.Is(err, domain.ErrInvalid) {
 		t.Fatalf("a long page: %v", err)
 	}
 }
 
 type listStub struct{ page domain.Page }
 
-func (stub listStub) ListChapterDrafts(context.Context, Actor, *domain.Cursor, int) (domain.Page, error) {
+func (stub listStub) ListChapterDrafts(context.Context, Actor, *domain.Cursor, int, string) (domain.Page, error) {
 	return stub.page, nil
 }

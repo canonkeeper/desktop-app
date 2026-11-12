@@ -44,7 +44,7 @@ type visionRequestBody struct {
 // streamed text and the spend. It makes one HTTP attempt within 120 s: the caller decides whether
 // to ask again.
 func (port VisionPort) Look(ctx context.Context, instructions, prompt string, image []byte) (string, quota.ModelUsage, error) {
-	if port.client == nil || !port.client.connected() || strings.TrimSpace(prompt) == "" || len(image) == 0 {
+	if port.client == nil || !port.client.Connected() || strings.TrimSpace(prompt) == "" || len(image) == 0 {
 		return "", quota.ModelUsage{}, ErrNotConfigured
 	}
 	payload, err := json.Marshal(visionRequestBody{
@@ -63,7 +63,7 @@ func (port VisionPort) Look(ctx context.Context, instructions, prompt string, im
 		return "", quota.ModelUsage{}, err
 	}
 	defer port.client.gate.release()
-	text, usage, _, err := port.client.once(ctx, payload)
+	text, usage, _, err := port.client.once(ctx, payload, nil)
 	return text, usage, err
 }
 

@@ -122,7 +122,7 @@ WHERE paragraph.chapter_id = $1
 			for index := range paragraphs {
 				paragraphs[index].Variant = library.ParagraphVariantPublished
 			}
-			if err := createLibraryParagraphs(ctx, queries, projectUUID, bookUUID, vector.Project, vector.Book, vector.Chapter, paragraphs); err != nil {
+			if err := createLibraryParagraphs(ctx, tx, projectUUID, bookUUID, vector.Project, vector.Book, chapterParagraphs{generation: vector.Chapter, paragraphs: paragraphs}); err != nil {
 				return err
 			}
 			row := tx.QueryRow(ctx, `

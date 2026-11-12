@@ -5,11 +5,10 @@ import (
 	"errors"
 	"strings"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
 	storedb "canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
-	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -91,25 +90,23 @@ func (s *Store) AddChapterInTx(ctx context.Context, tx pgx.Tx, input library.Add
 		return "", err
 	}
 	order := position + 1
-	queries := sqlc.New(tx)
-	created, err := queries.CreateChapter(ctx, sqlc.CreateChapterParams{
-		ID: chapterID, Title: title, SortOrder: int32(order), CreatedAt: at, ProjectID: projectID, BookID: bookID,
-	})
+	createdRows, err := createLibraryChapters(ctx, tx, projectID, bookID, []newChapterRow{{id: chapterID, title: title, order: order}}, at)
 	if err != nil {
 		return "", err
 	}
+	created := createdRows[0]
 	inputs := make([]library.ParagraphInput, len(input.Paragraphs))
 	for index, paragraph := range input.Paragraphs {
 		inputs[index] = library.ParagraphInput{Markdown: paragraph}
 	}
-	if _, err := writeImportedChapterText(ctx, tx, queries, projectID, bookID, chapterID, projectGeneration, bookGeneration,
+	if _, err := writeImportedChapterText(ctx, tx, projectID, bookID, chapterID, projectGeneration, bookGeneration,
 		created.LifecycleGeneration, created.Revision, created.Revision, title, order, importedParagraphContents(inputs), at); err != nil {
 		return "", err
 	}
 	if err := s.publishBookTextInTx(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, bookTitle); err != nil {
 		return "", err
 	}
-	if err := quotastore.CheckOwnerSourcesInTx(ctx, tx, input.ProjectID); err != nil {
+	if err := s.quota.CheckOwnerSourcesInTx(ctx, tx, input.ProjectID, quota.MeasureChapters|quota.MeasureCharacters); err != nil {
 		return "", err
 	}
 	return chapterID.String(), nil

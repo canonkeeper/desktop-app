@@ -69,7 +69,10 @@ func testRecordValue() domain.Record {
 
 func (stub *storeStub) ListAuthorMemory(_ context.Context, _ service.Actor, filter domain.Filter) (domain.Page, error) {
 	stub.filter = filter
-	return domain.Page{Records: []domain.Record{testRecordValue(), {ID: "other", Kind: domain.KindRejected, Text: "нет", ChapterID: "gone", CreatedAt: time.Unix(1, 0)}}, Total: 5, HasMore: true}, stub.err
+	first := testRecordValue()
+	first.Origin = domain.Origin{Kind: domain.OriginChat, ChatID: "chat-1", Title: "Что Мара знает"}
+	gone := domain.Record{ID: "other", Kind: domain.KindRejected, Text: "нет", ChapterID: "gone", CreatedAt: time.Unix(1, 0), Origin: domain.Origin{Kind: domain.OriginManual}}
+	return domain.Page{Records: []domain.Record{first, gone}, Total: 5, HasMore: true, Shared: true}, stub.err
 }
 
 func (stub *storeStub) CreateAuthorMemory(_ context.Context, command service.CreateCommand) (domain.Record, error) {
@@ -163,9 +166,12 @@ func TestListShowsTheRecordsOfTheProject(t *testing.T) {
 		Data []struct {
 			ID, Kind, Text, Name, Author string
 			Revision                     int
-			Chapter                      *struct{ Key, Title, BookTitle string }
+			Chapter                      *struct{ Key, Label, Title, BookTitle string }
+			ChapterGone                  bool `json:"chapterGone"`
+			Origin                       struct{ Kind, ChatID, Title string }
 		} `json:"data"`
-		Meta struct {
+		Shared bool `json:"shared"`
+		Meta   struct {
 			HasMore    bool    `json:"hasMore"`
 			NextCursor *string `json:"nextCursor"`
 			TotalCount int     `json:"totalCount"`
@@ -179,8 +185,16 @@ func TestListShowsTheRecordsOfTheProject(t *testing.T) {
 		first.Chapter == nil || first.Chapter.Key != "12" || first.Chapter.BookTitle != "Том" {
 		t.Fatalf("record = %+v", first)
 	}
-	if page.Data[1].Chapter != nil {
-		t.Fatalf("a chapter that is gone = %+v", page.Data[1].Chapter)
+	// specs/2026-11-10-ux1-names.md N5.1: the chapter of a record is named for the author beside its key.
+	if first.Chapter.Label != "Книга 1, гл. 12 „Порт“" {
+		t.Fatalf("the place of the chapter = %q", first.Chapter.Label)
+	}
+	if page.Data[1].Chapter != nil || !page.Data[1].ChapterGone || first.ChapterGone {
+		t.Fatalf("a chapter that is gone = %+v", page.Data[1])
+	}
+	// specs/2026-11-10-ux8-memory-records.md MR1.2, MR1.5: where each record came from, and whether the saga is shared.
+	if first.Origin.Kind != "chat" || first.Origin.ChatID != "chat-1" || first.Origin.Title != "Что Мара знает" || page.Data[1].Origin.Kind != "manual" || !page.Shared {
+		t.Fatalf("origins = %+v, %+v, shared %v", first.Origin, page.Data[1].Origin, page.Shared)
 	}
 	if !page.Meta.HasMore || page.Meta.NextCursor == nil || page.Meta.TotalCount != 5 {
 		t.Fatalf("meta = %+v", page.Meta)

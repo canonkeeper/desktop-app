@@ -33,7 +33,7 @@
 .caption {
   width: 100%;
   padding: 24px 14px 14px;
-  color: #fff;
+  color: var(--ck-picture-foreground);
   font-family: var(--ck-font-serif);
   font-size: 17px;
   font-weight: 600;
@@ -41,5 +41,15 @@
 }
 
 .cover[data-has-image='true'] .caption {
-  background: linear-gradient(transparent, rgb(0 0 0 / 70%));
+  background: linear-gradient(transparent, var(--ck-picture-shade));
+}
+
+/* SF4.3: two lines and an ellipsis, under the «⋯» of the card; the whole title is the link's. */
+.captionText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }

@@ -1,12 +1,11 @@
 .deleteDialogScrim {
-  background: rgb(23 24 40 / 45%);
+  background: var(--ck-scrim-strong);
 }
 
-.modal,
-.mobileDrawer {
+.modal {
   background: var(--ck-card);
   color: var(--ck-foreground);
-  box-shadow: 0 24px 60px rgb(0 0 0 / 16%);
+  box-shadow: var(--ck-shadow-dialog);
 }
 
 .sheetHandle,
@@ -31,8 +30,7 @@
   padding: 18px 20px 8px;
 }
 
-.modalHeader h2,
-.drawerHeader h2 {
+.modalHeader h2 {
   margin: 0;
 }
 
@@ -64,37 +62,6 @@
   position: absolute;
   top: 13px;
   right: 14px;
-}
-
-.drawerLayer {
-  position: fixed;
-  z-index: 60;
-  inset: 0;
-  display: flex;
-  align-items: stretch;
-  justify-content: flex-start;
-  background: rgb(23 24 40 / 36%);
-}
-
-.mobileDrawer {
-  display: flex;
-  width: min(320px, 86vw);
-  height: 100%;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-}
-
-.drawerHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.drawerHeader h2 {
-  font-family: var(--ck-font-serif);
-  font-size: 17px;
 }
 
 @media (max-width: 700px) {
@@ -145,10 +112,6 @@
 
   .modalActions button {
     width: 100%;
-  }
-
-  .deleteAction {
-    order: 1;
   }
 
   .cancelAction {

@@ -152,6 +152,45 @@ func (repository *Repository) YieldCards(ctx context.Context, claim jobs.WorkerC
 	return nil
 }
 
+// OthersWait reports whether a cards Job of another project waits for a worker and could be claimed now: it is queued,
+// its time has come, its project runs no cards Job (quota spec R12.4) and, for the published text, the draft text of
+// its project has no Job to index or to card (specs/2026-11-11-cards-once.md CO2.2) — the rules of the claim
+// (migration 0136). The Job of the claim keeps its turn while there is none (specs/2026-11-09-first-session.md, FS6.1).
+func (repository *Repository) OthersWait(ctx context.Context, claim jobs.WorkerClaim) (bool, error) {
+	projectID, _, err := claimIDs(claim)
+	if err != nil {
+		return false, err
+	}
+	var waits bool
+	err = repository.db.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+		  SELECT 1
+		  FROM jobs AS waiting
+		  WHERE waiting.kind='chapter_cards' AND waiting.status='queued' AND waiting.project_id <> $1
+		    AND waiting.governance_payload_state='active' AND waiting.next_attempt_at <= clock_timestamp()
+		    AND NOT EXISTS (
+		      SELECT 1
+		      FROM jobs AS busy
+		      WHERE busy.project_id=waiting.project_id AND busy.kind='chapter_cards' AND busy.id <> waiting.id
+		        AND busy.status IN ('running', 'canceling')
+		        AND busy.updated_at >= clock_timestamp() - interval '15 minutes'
+		    )
+		    AND (
+		      waiting.subject_json->>'sourceView' <> 'published'
+		      OR NOT EXISTS (
+		        SELECT 1
+		        FROM jobs AS draft
+		        WHERE draft.project_id=waiting.project_id AND draft.kind IN ('canon_text_index', 'chapter_cards')
+		          AND draft.subject_json->>'sourceView'='draft' AND draft.status IN ('queued', 'running', 'canceling')
+		          AND draft.governance_payload_state='active'
+		          AND ck_artifact_source_owner_is_readable(draft.artifact_source_owner_id, draft.project_id, 'job', draft.id)
+		      )
+		    )
+		)
+	`, projectID).Scan(&waits)
+	return waits, err
+}
+
 // FinishCards commits the terminal state of the cards Job under its claim, deletes the cards
 // no chapter text matches any more (R2.3) and seals the Job's source owner.
 func (repository *Repository) FinishCards(ctx context.Context, claim jobs.WorkerClaim, outcome service.CardsOutcome) error {

@@ -1,38 +1,134 @@
+/* «Аа» (specs/2026-11-10-ux7-reader.md RD1.4; Pattern/Reader/Appearance, board 40·27). */
 .controls {
+  display: grid;
+  gap: 14px;
+}
+
+.group {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.size {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+.size > button {
+  min-width: 52px;
+  gap: 2px;
+}
+
+.current {
+  display: grid;
+  flex: 1;
+  justify-items: center;
+  color: var(--ck-foreground);
+  font-size: 14px;
+}
+
+.current span {
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.only {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--ck-border);
+  padding-top: 12px;
+}
+
+.onlyWords {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.onlyWords span {
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+/* A switch with a target of 44 px around its track. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: 52px;
   min-height: 44px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
-.controls > button[data-variant] {
-  min-height: 38px;
-  padding-block: 0;
-  font-size: 13px;
+.switch::before {
+  content: '';
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ck-border-strong);
+  transition: background 120ms ease;
 }
 
-.theme {
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-sm);
-  padding: 3px;
+.switch[aria-checked='true']::before {
+  background: var(--ck-primary);
+}
+
+.knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   background: var(--ck-card);
+  transform: translateY(-50%);
+  transition: left 120ms ease;
 }
 
-.theme [role='radio'] {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: var(--ck-radius-xs);
-  font-size: 13px;
+.switch[aria-checked='true'] .knob {
+  left: 23px;
 }
 
-.theme [aria-checked='true'] {
-  background: var(--ck-ink);
-  color: var(--ck-ink-foreground);
-  box-shadow: none;
+.switch:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: 2px;
+  border-radius: var(--ck-radius-sm);
 }
 
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* A finger gets targets of 44 px (specs/2026-11-10-ux2-patterns-refusals.md PR1.4). */
 @media (pointer: coarse) {
-  .controls > button[data-variant] { min-height: 44px; }
+  .controls [role='radio'],
+  .size > button {
+    min-height: 44px;
+  }
+}
+
+/* A phone has one width: the column fills it. */
+@media (max-width: 767px) {
+  .width {
+    display: none;
+  }
 }

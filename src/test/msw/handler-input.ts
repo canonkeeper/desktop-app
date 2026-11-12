@@ -229,6 +229,9 @@ export async function readChapterForm(request: Request) {
   }
   const revision = field('expectedRevision');
   if (revision) fields.expectedRevision = Number(revision);
+  // A chapter attached in a chat comes by its chat and number (CA5.5).
+  const chatId = field('chatId');
+  if (chatId) return { ...fields, chatId, attachment: Number(field('attachment')) };
   const part = extractMultipartFilePart(raw);
   if (part) return { ...fields, file: new File([new Uint8Array(part.body)], Buffer.from(part.name, 'latin1').toString('utf8')) };
   return { ...fields, text: field('text') ?? '' };

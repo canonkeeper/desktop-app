@@ -14,6 +14,7 @@ import { createNotesOperations } from './repository/notes';
 import { createAuthorMaterialOperations } from './repository/author-materials';
 import { createAuthorMemoryOperations } from './repository/author-memory';
 import { createChapterDraftOperations } from './repository/chapter-drafts';
+import { createLettersOperations } from './repository/letters';
 import { createVoiceOperations } from './repository/voice';
 import { createSagaOperations } from './repository/saga';
 import { createQuotaOperations } from './repository/quota';
@@ -26,6 +27,9 @@ import { createIllustrationAccessOperations } from './repository/illustration-ac
 import { createPromoPermissionOperations } from './repository/promo-permissions';
 import { createReadingTestOperations } from './repository/reading-test';
 import { createContactOperations } from './repository/contact';
+import { createTierOperations } from './repository/tiers';
+import { createTierKeyOperations } from './repository/tier-keys';
+import { createTrashOperations } from './repository/trash';
 
 export function createMockApiClient() {
   const context = createMockRepositoryContext();
@@ -50,6 +54,7 @@ export function createMockApiClient() {
     ...createAuthorMemoryOperations(context),
     ...createChapterDraftOperations(context, chat, jobs),
     ...createVoiceOperations(context),
+    ...createLettersOperations(context),
     ...createQuotaOperations(context),
     ...createImageOperations(context),
     ...createImageDrawingOperations(context),
@@ -60,6 +65,9 @@ export function createMockApiClient() {
     ...createPromoPermissionOperations(context),
     ...createReadingTestOperations(context),
     ...createContactOperations(context),
+    ...createTierOperations(context),
+    ...createTierKeyOperations(context),
+    ...createTrashOperations(context),
   } satisfies CanonKeeperApiClient;
 }
 

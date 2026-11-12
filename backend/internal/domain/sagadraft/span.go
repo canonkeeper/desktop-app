@@ -5,11 +5,15 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"canonkeeper/backend/internal/domain/textface"
 )
 
 // A place of the working text (specs/2026-11-04-writing-plain-path.md, P5.5): a quote of it, whatever its spaces, or its
-// first and last phrases, never cutting a block of the model's text apart. A refusal names the field of the call it came
-// from, so that the helper corrects its call in the same turn.
+// first and last phrases, never cutting a block of the model's text apart. A quote is found through the marks of faces:
+// in the text without them, its place given back in the bytes of the text with the marks at its edges outside it
+// (specs/2026-11-08-italic-bold-in-text.md, TF2.2). A refusal names the field of the call it came from, so that the
+// helper corrects its call in the same turn.
 
 // HelperError names what of a call of the helper is refused, at a path of its arguments.
 type HelperError struct {
@@ -34,9 +38,10 @@ type Scene struct {
 	To    string
 }
 
-// SpanIn finds the scene in the text: its place as a note holds it, and where it stands.
+// SpanIn finds the scene in the text: its place as a note holds it — without the marks of faces — and where it stands.
 func (scene Scene) SpanIn(text string) (string, int, int, error) {
 	place, from, to := strings.TrimSpace(scene.Place), strings.TrimSpace(scene.From), strings.TrimSpace(scene.To)
+	place, from, to = WithoutFaces(place), WithoutFaces(from), WithoutFaces(to)
 	switch {
 	case place != "" && (from != "" || to != ""):
 		return "", 0, 0, Refused("$.place", "назовите сцену одним способом: дословной цитатой place или первой и последней фразами from и to")
@@ -80,7 +85,7 @@ func (scene Scene) SpanIn(text string) (string, int, int, error) {
 	if len(ends) > 1 {
 		return "", 0, 0, Refused("$.to", "этот конец стоит после начала сцены %d раз: возьмите фразу длиннее, чтобы она была одна", len(ends))
 	}
-	return text[start:ends[0]], start, ends[0], marksAround("$.from", "$.to", text, start, ends[0])
+	return WithoutFaces(text[start:ends[0]]), start, ends[0], marksAround("$.from", "$.to", text, start, ends[0])
 }
 
 // marksAround refuses a place one of whose ends is inside a block of the helper and the other outside it: the
@@ -106,8 +111,19 @@ func Contains(text, quote string) bool {
 }
 
 // QuotesIn finds a quote in a text, each place once, whatever spaces stand between its words: a place of the size of a
-// chapter, in a pasted text too, is found again as the note holds it (specs/2026-11-04-writing-plain-path.md P5.5).
+// chapter, in a pasted text too, is found again as the note holds it (specs/2026-11-04-writing-plain-path.md P5.5). The
+// marks of faces in the text and in the quote are not read; a place stands in the bytes of the text, the marks of faces
+// at its edges outside it (TF2.2).
 func QuotesIn(text, quote string) [][2]int {
+	view := textface.Faceless(text)
+	places := quotesIn(view.Text, WithoutFaces(quote))
+	for i, place := range places {
+		places[i][0], places[i][1] = view.Range(place[0], place[1])
+	}
+	return places
+}
+
+func quotesIn(text, quote string) [][2]int {
 	words := strings.Fields(quote)
 	if len(words) == 0 {
 		return nil

@@ -24,11 +24,11 @@ func TestPlatformDefaultsHoldForWritersWithoutTheirOwnLimitPostgres(t *testing.T
 	seed.user(quotaWriterA, "own-limit@example.test")
 	seed.user(quotaWriterB, "no-own-limit@example.test")
 	seed.user(quotaAdmin, "admin@example.test")
-	store := New(db)
+	store := New(db, Fence{})
 	ctx := context.Background()
 	effective := func(userID string) quota.Limits {
 		t.Helper()
-		limits, err := EffectiveLimitsInTx(ctx, db.Pool, userID)
+		limits, err := Fence{}.EffectiveLimitsInTx(ctx, db.Pool, userID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestPlatformDefaultsHoldForWritersWithoutTheirOwnLimitPostgres(t *testing.T
 	}
 	changed, err := store.SetPlatformDefaults(ctx, quotaAdmin, []quota.OverrideChange{
 		{Key: quota.KeyChatTurnsPerDay, Value: limit(2)}, {Key: quota.KeyActiveTurns, Value: limit(1)},
-		{Key: quota.KeyAccountCharacters, Value: limit(40_000_000)}, {Key: quota.KeyTrialDrawings, Value: limit(9)},
+		{Key: quota.KeyAccountCharacters, Value: limit(40_000_000)}, {Key: quota.KeyDraftTurnsPerDay, Value: limit(9)},
 	}, seed.now)
 	if err != nil || len(changed) != 4 || changed[0].Before != nil || *changed[0].After != 2 || *changed[3].After != 9 {
 		t.Fatalf("changed = %+v, %v", changed, err)
@@ -60,7 +60,9 @@ func TestPlatformDefaultsHoldForWritersWithoutTheirOwnLimitPostgres(t *testing.T
 		t.Fatalf("writer without his own limit = %+v", platform)
 	}
 	reserve := func(at time.Time) error {
-		return db.WithTx(ctx, func(tx pgx.Tx) error { return ReserveChatTurnInTx(ctx, tx, quotaWriterB, at) })
+		return db.WithTx(ctx, func(tx pgx.Tx) error {
+			return Fence{}.ReserveTurnInTx(ctx, tx, quotaWriterB, quota.KeyChatTurnsPerDay, at)
+		})
 	}
 	for turn := range 2 {
 		if err := reserve(seed.now.Add(time.Duration(turn) * time.Minute)); err != nil {
@@ -78,7 +80,7 @@ func TestPlatformDefaultsHoldForWritersWithoutTheirOwnLimitPostgres(t *testing.T
 	}
 	defaults, err := store.PlatformDefaults(ctx)
 	if err != nil || defaults.UpdatedAt == nil || !defaults.UpdatedAt.Equal(seed.now) || defaults.UpdatedBy != quotaAdmin ||
-		defaults.Values[quota.KeyChatTurnsPerDay] != 2 || defaults.Values[quota.KeyTrialDrawings] != 9 || len(defaults.Values) != 4 {
+		defaults.Values[quota.KeyChatTurnsPerDay] != 2 || defaults.Values[quota.KeyDraftTurnsPerDay] != 9 || len(defaults.Values) != 4 {
 		t.Fatalf("platform defaults = %+v, %v", defaults, err)
 	}
 

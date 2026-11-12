@@ -165,6 +165,38 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 		assertTablePublicPrivilege(t, db.Pool, mapHidden, privilege, false)
 	}
 	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", mapHidden, "SELECT", true)
+	readyWaves := fmt.Sprintf("%s.saga_ready_waves", quoteIdentifier(schema))
+	for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
+		assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", readyWaves, privilege, true)
+		assertTablePrivilege(t, db.Pool, "canonkeeper_worker_discovery", readyWaves, privilege, false)
+		assertTablePublicPrivilege(t, db.Pool, readyWaves, privilege, false)
+	}
+	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", readyWaves, "SELECT", true)
+	// The snapshot of the last update of a book from a file (0142, specs/2026-11-12-ux10-book-revert.md BR1).
+	for _, table := range []string{"book_update_snapshots", "book_update_snapshot_chapters"} {
+		snapshot := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
+		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
+			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", snapshot, privilege, true)
+			assertTablePrivilege(t, db.Pool, "canonkeeper_worker_discovery", snapshot, privilege, false)
+			assertTablePublicPrivilege(t, db.Pool, snapshot, privilege, false)
+		}
+		assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", snapshot, "SELECT", true)
+	}
+	// The marks of the letters by time and the author's switch of the letters of his tier (0126): the runtime reads and
+	// writes them, nobody else (specs/2026-11-10-service-letters.md M3.2, M4.4, M4.5).
+	for table, columns := range map[string][]string{
+		"users":                {"verification_reminder_at", "tier_letters", "last_seen_at"},
+		"subscription_periods": {"ending_letter_at", "ended_letter_at"},
+	} {
+		qualified := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
+		for _, column := range columns {
+			for _, privilege := range []string{"SELECT", "UPDATE"} {
+				assertColumnPrivilege(t, db.Pool, "canonkeeper_product_runtime", qualified, column, privilege, true)
+				assertColumnPrivilege(t, db.Pool, "canonkeeper_worker_discovery", qualified, column, privilege, false)
+				assertColumnPrivilege(t, db.Pool, "canonkeeper_governance_owner", qualified, column, privilege, false)
+			}
+		}
+	}
 	for _, table := range []string{"reading_tests", "reading_test_votes"} {
 		reading := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
@@ -587,6 +619,17 @@ func assertTablePrivilege(t *testing.T, db migrationQueryer, role, table, privil
 	}
 	if got != want {
 		t.Fatalf("table privilege %s/%s/%s = %t, want %t", role, table, privilege, got, want)
+	}
+}
+
+func assertColumnPrivilege(t *testing.T, db migrationQueryer, role, table, column, privilege string, want bool) {
+	t.Helper()
+	var got bool
+	if err := db.QueryRow(context.Background(), "SELECT has_column_privilege($1, $2, $3, $4)", role, table, column, privilege).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("column privilege %s/%s.%s/%s = %t, want %t", role, table, column, privilege, got, want)
 	}
 }
 

@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/deletion"
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/projects"
 	deletionstore "canonkeeper/backend/internal/repository/postgres/deletion"
 	"canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
+	jobstore "canonkeeper/backend/internal/store/jobs"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -174,6 +175,13 @@ func (s *Store) fenceBookDeletion(ctx context.Context, request deletion.SourceDe
 			return err
 		}
 
+		// The work on the book's text stops with it, the import of the book too (deletion-stops-processing UC1).
+		if err := s.jobs.StopDeletedSourceWorkInTx(ctx, tx, jobstore.DeletedSourceWork{
+			ProjectID: request.ProjectID, ProjectGeneration: projectGeneration,
+			Views: revisionViews(revisions), BookID: request.EntityID, At: request.FencedAt,
+		}); err != nil {
+			return err
+		}
 		deletedVector := governance.SourceGenerationVector{
 			ProjectID:         request.ProjectID,
 			ProjectGeneration: governance.LifecycleGeneration(projectGeneration),
@@ -289,6 +297,8 @@ func (s *Store) RestoreBook(ctx context.Context, input library.RestoreBookStoreI
 		if !beforePurge {
 			return library.ErrConflict
 		}
+		// The book comes back to its place on the shelf; a book that took it meanwhile, and the books after it, step one
+		// place on. The keys of the chapters do not depend on the places (specs/2026-11-11-ux7-reorder.md RK1.1).
 		var orderInUse bool
 		if err := tx.QueryRow(ctx, `
 			SELECT EXISTS (
@@ -299,7 +309,9 @@ func (s *Store) RestoreBook(ctx context.Context, input library.RestoreBookStoreI
 			return err
 		}
 		if orderInUse {
-			return library.ErrConflict
+			if err := shiftBooksForInsert(ctx, tx, projectID, bookOrder, time.Now()); err != nil {
+				return err
+			}
 		}
 
 		var restoredGeneration int64
@@ -325,7 +337,7 @@ func (s *Store) RestoreBook(ctx context.Context, input library.RestoreBookStoreI
 		if restoredGeneration != bookGeneration {
 			return library.ErrConflict
 		}
-		if err := quotastore.CheckOwnerSourcesInTx(ctx, tx, projectID.String()); err != nil {
+		if err := s.quota.CheckAdmittedSourcesInTx(ctx, tx, projectID.String(), quota.MeasureBooks|quota.MeasureChapters|quota.MeasureCharacters); err != nil {
 			return err
 		}
 		if err := s.RestoreProjectSourceCatalog(ctx, tx, projectID, projectGeneration); err != nil {
@@ -339,6 +351,11 @@ func (s *Store) RestoreBook(ctx context.Context, input library.RestoreBookStoreI
 			return err
 		}
 		restored = libraryBookFromGetSummarySQL(row)
+		placed := []library.Book{restored}
+		if err := placeBooks(ctx, tx, projectID, placed); err != nil {
+			return err
+		}
+		restored = placed[0]
 		return nil
 	})
 	if err != nil {

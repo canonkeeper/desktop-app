@@ -12,7 +12,7 @@ export { createIdempotencyKey };
 /** How the page names a kind. */
 export const authorMemoryKinds: ReadonlyArray<{ value: AuthorMemoryKind; label: string; hint: string }> = [
   { value: 'plan', label: 'План', hint: 'Что вы задумали. В книге этого ещё нет, и помощник не выдаёт это за случившееся.' },
-  { value: 'correction', label: 'Поправка', hint: 'Ваша поправка к фактам. Важнее карточек, но не текста: при расхождении помощник назовёт оба.' },
+  { value: 'correction', label: 'Поправка', hint: 'Ваша поправка к фактам. Важнее того, что помощник сам вывел из книги, но не самого текста книги: при расхождении он назовёт оба.' },
   { value: 'style_rule', label: 'Правило стиля', hint: 'Как вы пишете и как просите писать.' },
   { value: 'rejected', label: 'Отвергнуто', hint: 'Что вы отвергли: помощник не предложит это снова.' },
 ];

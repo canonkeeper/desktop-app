@@ -1,0 +1,39 @@
+.hints {
+  display: grid;
+  max-width: 640px;
+  gap: 6px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: 14px 12px 10px 16px;
+  background: var(--ck-card);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.head h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 44px;
+  text-align: left;
+  white-space: normal;
+}

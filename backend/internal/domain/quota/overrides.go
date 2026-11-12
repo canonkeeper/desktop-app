@@ -20,10 +20,11 @@ type OverrideChanged struct {
 }
 
 // WriterQuota is what the owner sees of one writer's quotas (UC6 R6.1, admin-panel R3.1): the
-// limits in force with their use and the limits that are not the default.
+// limits in force with their use and the source of each (specs/2026-11-08-subscription-tiers.md TR2.6). The field is
+// not named Sources: Account.Sources, the text of the owned projects, is promoted here.
 type WriterQuota struct {
 	Account
-	Overridden map[Key]bool
+	LimitSources map[Key]Source
 }
 
 // Used is the use of one limit the account counts: the day's questions, uploads, drawings and runs of writing, questions in

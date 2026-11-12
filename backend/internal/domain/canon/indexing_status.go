@@ -45,6 +45,51 @@ type IndexingStatusResponse struct {
 	Published IndexingViewEnvelope  `json:"published"`
 	Draft     *IndexingViewEnvelope `json:"draft,omitempty"`
 	Steps     []IndexingStep        `json:"steps"`
+	// Preparation is there while the saga is read: its published text is in work, or a new book of an open wave is still
+	// to be imported (specs/2026-11-09-first-session.md FS5.1, specs/2026-11-10-ux3-saga-state.md SS1.1).
+	Preparation *IndexingPreparation `json:"preparation,omitempty"`
+	// SagaReady is there for seven days after the saga became ready (FS4.1).
+	SagaReady *IndexingSagaReady `json:"sagaReady,omitempty"`
+}
+
+// IndexingPreparation is how far the reading of the saga is (SS1.1): the chapters of the published text with their
+// retelling and all of them, the books read through and all of them, the first book not read yet — none while the file of
+// a new book is still parsed — each book's count, and whether the search already finds a chapter. Of an open wave it also
+// says the estimate of the chapters left, when there is a pace to draw it from, and whether the reader will be written to
+// when the saga is ready (FS5.2, FS5.6).
+type IndexingPreparation struct {
+	RemainingSeconds *int                      `json:"remainingSeconds"`
+	LetterPromised   bool                      `json:"letterPromised"`
+	ChaptersRead     int                       `json:"chaptersRead"`
+	ChaptersTotal    int                       `json:"chaptersTotal"`
+	BooksRead        int                       `json:"booksRead"`
+	BooksTotal       int                       `json:"booksTotal"`
+	CurrentBookID    *string                   `json:"currentBookId"`
+	Askable          bool                      `json:"askable"`
+	Books            []IndexingPreparationBook `json:"books"`
+	// Waiting is what the reading waits for besides time (specs/2026-11-12-desk-window.md WN3.1): nobody reads the books
+	// until it comes. None while the helper reads — the site never waits.
+	Waiting PreparationWaiting `json:"waiting,omitempty"`
+}
+
+// PreparationWaiting is what a reading of the saga waits for.
+type PreparationWaiting string
+
+// PreparationWaitingHelper: the helper of the build is not connected (the desktop until the author connects one).
+const PreparationWaitingHelper PreparationWaiting = "helper"
+
+// IndexingPreparationBook is the reading of one book with chapters, in the order of the saga.
+type IndexingPreparationBook struct {
+	BookID        string `json:"bookId"`
+	ChaptersRead  int    `json:"chaptersRead"`
+	ChaptersTotal int    `json:"chaptersTotal"`
+}
+
+// IndexingSagaReady is the saga that became ready at At, with what is read of it now (FS4.1).
+type IndexingSagaReady struct {
+	At       time.Time `json:"at"`
+	Books    int       `json:"books"`
+	Chapters int       `json:"chapters"`
 }
 
 // IndexingStatusScope ограничивает checklist одной текущей версией книги.

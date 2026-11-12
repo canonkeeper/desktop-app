@@ -14,6 +14,7 @@ import (
 	"canonkeeper/backend/internal/domain/quota"
 	layerdomain "canonkeeper/backend/internal/domain/sagalayer"
 	memorydomain "canonkeeper/backend/internal/domain/sagamemory"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
@@ -27,10 +28,11 @@ import (
 
 // The case of 05.11 (specs/2026-10-27-update-book-from-file.md, UC3–UC6) on generated files, through the text
 // index, the cards Job and the queue of the thread layer: a book loaded from FB2 gets its cards and threads; then a
-// Word file of the same volume with one word changed, spaces and no-break spaces, a renamed chapter and a chapter
-// with other signs is previewed and loaded. The preview tells what the update does and writes nothing; the update
-// changes one chapter by its words, renames one, carries the card of the signs, builds one new card and leaves the
-// threads alone (R5.1, R3.3).
+// Word file of the same volume with one word changed, spaces and no-break spaces, a renamed chapter, a chapter
+// with other signs and italic and bold where there were none is previewed and loaded. The preview tells what the update
+// does and writes nothing; the update changes one chapter by its words, renames one, carries the card of the signs,
+// gives the same rows of a chapter of the same text its new faces without a revision
+// (specs/2026-11-08-italic-bold-in-text.md TF3.3), builds one new card and leaves the threads alone (R5.1, R3.3).
 func TestLibraryStoreUpdateFromFileChangesWhatTheAuthorChanged(t *testing.T) {
 	runUpdateScenario(t, false)
 }
@@ -146,6 +148,14 @@ func runUpdateScenario(t *testing.T, removal bool) {
 		updateChapters = append(append([]scenarioChapter(nil), scenarioUpdate...), scenarioBook[5])
 	}
 	update := scenarioFile(t, bookexport.FormatDOCX, updateChapters)
+	// specs/2026-11-11-ux9-shelf-chat.md SC1.4: the first chapter took the text of its edit in «Письмо» — the preview says the
+	// file replaces what was written on the site there, and of no other chapter.
+	if _, err := db.Pool.Exec(ctx, `
+		INSERT INTO chapter_drafts (project_id, title, book_id, kind, body, edits_chapter_id, edits_revision, edits_previous_revision, created_by, updated_by)
+		VALUES ($1, 'Глава 1. Утро', $2, 'sketch', 'Правка на сайте.', $3, $4, $4, $5, $5)
+	`, projectID, first.BookID, before["Глава 1. Утро"].id, before["Глава 1. Утро"].revision, userID); err != nil {
+		t.Fatalf("edit of the first chapter: %v", err)
+	}
 	preview := runImport("00000000-0000-4000-8000-000000000964", "scenario-preview", library.ImportModeUpdatePreview, first.BookID, bookexport.FormatDOCX, update)
 	wantCounts := library.FinalizedImport{UnchangedChapters: 3, ChangedChapters: 1, PunctuationChapters: 1, RenamedChapters: 1}
 	if removal {
@@ -172,6 +182,11 @@ func runUpdateScenario(t *testing.T, removal bool) {
 		chapters[3].Order != 6 || chapters[3].Change != jobs.ImportPreviewRemoved || chapters[3].Title != "Глава 6. Записка" {
 		t.Fatalf("preview chapters = %+v", chapters)
 	}
+	for index, chapter := range chapters {
+		if chapter.EditedOnSite != (index == 0) {
+			t.Fatalf("preview chapter %d edited on the site = %v; want only the first, which took its edit", index, chapter.EditedOnSite)
+		}
+	}
 	var previewSubject, scrubbed bool
 	var tombstones, textIndexes int
 	if err := db.Pool.QueryRow(ctx, `
@@ -188,8 +203,9 @@ func runUpdateScenario(t *testing.T, removal bool) {
 	}
 
 	updated := runImport("00000000-0000-4000-8000-000000000965", "scenario-update", library.ImportModeUpdateBook, first.BookID, bookexport.FormatDOCX, update)
-	if got := scenarioCounts(updated); got != wantCounts || updated.Preview != nil {
-		t.Fatalf("update counts = %+v, want %+v without a preview", got, wantCounts)
+	// specs/2026-11-11-ux7-trash.md TB4.1: the update keeps what it changed — the chapters the preview named.
+	if got := scenarioCounts(updated); got != wantCounts || updated.Preview == nil || len(updated.Preview.Chapters) != len(preview.Preview.Chapters) {
+		t.Fatalf("update counts = %+v, want %+v with what it changed", got, wantCounts)
 	}
 	after := scenarioChapters(t, db, first.BookID)
 	words, spaces, renamed, signs, same, removed := after["Глава 1. Утро"], after["Глава 2. Река"], after["Глава 3. Мост"], after["Глава 4. Лагерь"], after["Глава 5. Ночь"], after["Глава 6. Записка"]
@@ -206,6 +222,38 @@ func runUpdateScenario(t *testing.T, removal bool) {
 		t.Fatalf("unchanged chapter = %+v, before %+v", same, before["Глава 5. Ночь"])
 	case removed.id != before["Глава 6. Записка"].id || removed.deleted != removal:
 		t.Fatalf("sixth chapter = %+v; want it in «Недавно удалённые» only when the file lacks it", removed)
+	}
+	// The faces of a chapter of the same text go into markdown of its rows, on the stored spaces; plain_text stays.
+	for _, check := range []struct {
+		chapter string
+		want    []string
+	}{
+		{"Глава 5. Ночь", []string{"draft|Ночью *пошёл* снег.|Ночью пошёл снег.", "published|Ночью *пошёл* снег.|Ночью пошёл снег."}},
+		{"Глава 2. Река", []string{
+			"draft|Вода была тёмной — и быстрой.|Вода была тёмной — и быстрой.", "draft|Кир **молчал** до самого брода.|Кир молчал до самого брода.",
+			"published|Вода была тёмной — и быстрой.|Вода была тёмной — и быстрой.", "published|Кир **молчал** до самого брода.|Кир молчал до самого брода.",
+		}},
+	} {
+		rows, err := db.Pool.Query(ctx, `
+			SELECT paragraph.variant || '|' || paragraph.markdown || '|' || paragraph.plain_text
+			FROM chapter_paragraphs AS paragraph JOIN chapters AS chapter ON chapter.id = paragraph.chapter_id AND chapter.revision = paragraph.revision
+			WHERE chapter.id = $1::uuid ORDER BY paragraph.variant, paragraph."order"
+		`, after[check.chapter].id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, line)
+		}
+		rows.Close()
+		if strings.Join(got, "\n") != strings.Join(check.want, "\n") {
+			t.Fatalf("%s after the update:\n%q\nwant\n%q", check.chapter, got, check.want)
+		}
 	}
 	var carriedFrom []byte
 	if err := db.Pool.QueryRow(ctx, `
@@ -249,10 +297,10 @@ var scenarioBook = []scenarioChapter{
 
 var scenarioUpdate = []scenarioChapter{
 	{"Глава 1. Утро", []string{"Утро выдалось  холодным.", "Отряд из тринадцати человек вышел к реке на рассвете, и никто не оглянулся на лагерь."}},
-	{"Глава 2. Река", []string{"Вода была тёмной — и быстрой. ", "Кир  молчал до самого брода."}},
+	{"Глава 2. Река", []string{"Вода была тёмной — и быстрой. ", "Кир  **молчал** до самого брода."}},
 	{"Глава 3. Мост", []string{"Мост качался под ногами.", "Мила шла последней и считала доски."}},
 	{"Глава 4. Лагерь", []string{"„Стой“, — сказал он…", "Елка у костра горела до утра!"}},
-	{"Глава 5. Ночь", []string{"Ночью пошёл снег."}},
+	{"Глава 5. Ночь", []string{"Ночью *пошёл* снег."}},
 }
 
 type scenarioChapter struct {
@@ -294,8 +342,11 @@ func parsedScenarioChapters(t *testing.T, format bookexport.Format, payload []by
 	for _, chapter := range parsed.Chapters {
 		input := library.FinalizeImportChapterInput{Title: strings.TrimSpace(chapter.Title)}
 		for _, paragraph := range chapter.Paragraphs {
-			if text := strings.TrimSpace(paragraph); text != "" {
-				input.Paragraphs = append(input.Paragraphs, library.ParagraphInput{Kind: library.ParagraphKindParagraph, Order: len(input.Paragraphs) + 1, Markdown: text, Text: &text})
+			runs := textface.Trimmed(paragraph.Runs)
+			if text := strings.TrimSpace(paragraph.Text()); text != "" {
+				input.Paragraphs = append(input.Paragraphs, library.ParagraphInput{
+					Kind: library.ParagraphKindParagraph, Order: len(input.Paragraphs) + 1, Markdown: textface.Markdown(runs), Text: &text,
+				})
 			}
 		}
 		if len(input.Paragraphs) > 0 {

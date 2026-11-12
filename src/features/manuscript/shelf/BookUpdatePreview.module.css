@@ -65,6 +65,15 @@
   margin-top: 2px;
 }
 
+/* Under a finger and below 900 px a chapter with places is a target of 44 px, like a control (specs/2026-11-12-ux12-shell.md
+   SH2.1, L-52): the press takes its whole row. */
+@media (pointer: coarse), (max-width: 899px) {
+  .toggle {
+    min-height: 44px;
+    align-items: center;
+  }
+}
+
 .toggle:focus-visible {
   outline: 2px solid var(--ck-ring, var(--ck-primary));
   outline-offset: 2px;
@@ -110,4 +119,29 @@
   .chapterList {
     max-height: 34vh;
   }
+}
+
+/* What becomes of the notes and the drawings (specs/2026-11-11-ux9-shelf-chat.md SC1.4): quiet lines under the counters. */
+.kept {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* A failure on our side (specs/2026-11-12-ux12-shell.md SH2.3): the reason, then «Повторить» and «Написать нам» in one row. */
+.failure {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.failure p {
+  margin: 0;
+}
+
+.failureActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

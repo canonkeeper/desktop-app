@@ -11,6 +11,7 @@ import (
 	"canonkeeper/backend/internal/store/db"
 	governancestore "canonkeeper/backend/internal/store/governance"
 	jobstore "canonkeeper/backend/internal/store/jobs"
+	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -20,12 +21,21 @@ type Store struct {
 	*storedb.DB
 	canon                   *canonstore.Store
 	jobs                    *jobstore.Store
+	quota                   quotastore.Fence
 	deletionFailpoint       func(string) error
 	importStagingFailpoint  func(string) error
 	importFinalizeFailpoint func(string) error
 }
 
 type Option func(*Store)
+
+// WithQuota gives the store the quota fence of the build (specs/2026-11-08-subscription-tiers.md TR2.4); without it the
+// fence has no plan, as the open core and its tests run.
+func WithQuota(fence quotastore.Fence) Option {
+	return func(store *Store) {
+		store.quota = fence
+	}
+}
 
 func withDeletionFailpoint(failpoint func(string) error) Option {
 	return func(store *Store) {

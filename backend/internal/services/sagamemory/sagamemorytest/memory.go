@@ -90,7 +90,7 @@ func (text *Text) Selection(_ context.Context, projectID, view string) (service.
 	for _, chapter := range text.version.Chapters {
 		selection.Chapters = append(selection.Chapters, service.SelectedChapter{
 			ID: chapter.ID, Revision: chapter.Revision, ContentHash: contentHash(chapter), BookID: chapter.BookID,
-			BookOrder: chapter.BookOrder, BookTitle: chapter.BookTitle, Order: chapter.Order, Title: chapter.Title,
+			BookOrder: chapter.BookOrder, BookKeyNumber: chapter.BookKeyNumber, BookTitle: chapter.BookTitle, Order: chapter.Order, Title: chapter.Title,
 		})
 	}
 	return selection, nil

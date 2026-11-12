@@ -10,7 +10,6 @@ import (
 	"canonkeeper/backend/internal/projects"
 	deletionstore "canonkeeper/backend/internal/repository/postgres/deletion"
 	"canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -38,7 +37,7 @@ func (s *Store) listDeletedProjectsForActor(ctx context.Context, input projects.
 			  membership.id, membership.project_id, membership.user_id,
 			  membership.role, membership.removed_at,
 			  membership.created_at, membership.updated_at,
-			  project.deleted_at, project.purge_after
+			  project.deleted_at, project.purge_after, project.demo
 			FROM projects AS project
 			JOIN project_memberships AS membership ON membership.project_id = project.id
 			LEFT JOIN LATERAL (
@@ -98,6 +97,7 @@ func (s *Store) listDeletedProjectsForActor(ctx context.Context, input projects.
 				&row.MembershipUpdatedAt,
 				&deletedAt,
 				&restoreUntil,
+				&row.Demo,
 			); err != nil {
 				return err
 			}
@@ -204,13 +204,16 @@ func (s *Store) RestoreProject(ctx context.Context, input projects.RestoreProjec
 			RETURNING lifecycle_generation
 		`, projectID, generation.Int64).Scan(&restoredGeneration); errors.Is(err, pgx.ErrNoRows) {
 			return projects.ErrConflict
+		} else if isSecondLiveDemoSaga(err) {
+			// A deleted demo saga does not come back next to a live one (specs/2026-11-09-demo-saga.md DS5.2).
+			return projects.ErrConflict
 		} else if err != nil {
 			return err
 		}
 		if restoredGeneration != generation.Int64 {
 			return projects.ErrConflict
 		}
-		if err := quotastore.CheckRestoredProjectInTx(ctx, tx, projectID.String()); err != nil {
+		if err := s.quota.CheckRestoredProjectInTx(ctx, tx, projectID.String()); err != nil {
 			return err
 		}
 		if err := s.library.RestoreProjectSourceCatalog(ctx, tx, projectID, restoredGeneration); err != nil {

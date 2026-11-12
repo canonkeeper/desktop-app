@@ -28,8 +28,9 @@ func resultFromTurn(turn protocol.Turn) RunResult {
 }
 
 // runFailure — шаг UC4.1 «класс отказа модели»: сопоставляет codexErrorInfo незавершённого хода
-// классу agent.RunFailure по таблице Data (классы Codex 0.165.0 — specs/2026-10-28-codex-0165.md
-// UC4); прочие классы app-server остаются без класса.
+// классу agent.RunFailure по таблице Data (specs/2026-10-28-codex-0165.md UC4; классы Codex 0.167.2,
+// новый в нём inferenceHookDenied — specs/2026-11-12-desk-codex.md); прочие классы app-server
+// остаются без класса.
 func runFailure(info protocol.CodexErrorInfo) agent.RunFailure {
 	if info.HttpConnectionFailed.IsSet() || info.ResponseStreamConnectionFailed.IsSet() ||
 		info.ResponseStreamDisconnected.IsSet() || info.ResponseTooManyFailedAttempts.IsSet() {

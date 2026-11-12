@@ -8,6 +8,8 @@ type Choice = Schema<'ChapterDraftMoment'>['choices'][number];
 
 /** The versions of the plan of a mock draft (specs/2026-11-06-writing-agent.md, WA4), the latest last. */
 const plans = new WeakMap<Draft, Plan[]>();
+/** The version «Писать» approved last (WA4.3): an approved version is never withdrawn (specs/2026-11-11-ux9-writing-b.md WB1.2). */
+const approvals = new WeakMap<Draft, number>();
 /** The author's choices about the pack (WA2.5). */
 const choices = new WeakMap<Draft, Choice[]>();
 
@@ -22,7 +24,7 @@ export function addPlanVersion(draft: Draft, plan: Omit<Plan, 'number' | 'versio
     version.versions = [...versions].reverse().map((item) => ({ number: item.number, origin: item.origin, reason: item.reason, scenes: item.scenes.length }));
   }
   plans.set(draft, versions);
-  draft.plan = { number: added.number, approved: false, stale: false };
+  draft.plan = { number: added.number, approved: false, stale: false, reason: added.reason };
   return clone(added);
 }
 
@@ -43,7 +45,31 @@ export function approvePlan(draft: Draft, number: number) {
   if (plansOf(draft).at(-1)?.number !== number) {
     throw new MockApiError(409, 'A newer version stands.', 'startChapterDraftJob', 'chapter_draft.plan_changed');
   }
-  draft.plan = { number, approved: true, stale: false };
+  draft.plan = { number, approved: true, stale: false, reason: plansOf(draft).at(-1)!.reason };
+  approvals.set(draft, number);
+}
+
+/**
+ * withdrawChapterDraftPlan (specs/2026-11-11-ux9-writing-b.md WB1.2): the latest versions made «отсюда до конца» and not
+ * approved go; the version before them is the latest again, approved as it was. The text does not change.
+ */
+export function withdrawTail(draft: Draft, expected: number) {
+  const versions = plansOf(draft);
+  if (versions.at(-1)?.number !== expected) {
+    throw new MockApiError(409, 'A newer version stands.', 'withdrawChapterDraftPlan', 'chapter_draft.plan_changed');
+  }
+  const approved = approvals.get(draft) ?? 0;
+  let keep = versions.length;
+  while (keep > 0 && versions[keep - 1]!.reason === 'from_here' && versions[keep - 1]!.number !== approved) keep -= 1;
+  if (keep === versions.length) throw new MockApiError(400, 'No plan of a tail waits.', 'withdrawChapterDraftPlan', 'request.validation');
+  const left = versions.slice(0, keep);
+  for (const version of left) {
+    version.versions = [...left].reverse().map((item) => ({ number: item.number, origin: item.origin, reason: item.reason, scenes: item.scenes.length }));
+  }
+  plans.set(draft, left);
+  const back = left.at(-1);
+  if (back) draft.plan = { number: back.number, approved: approved === back.number, stale: false, reason: back.reason };
+  else delete draft.plan;
 }
 
 export const choicesOf = (draft: Draft) => clone(choices.get(draft) ?? []);

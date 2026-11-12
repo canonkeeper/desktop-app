@@ -8,6 +8,7 @@ import { ApiStatusError, createIdempotencyKey, type AgentTimelineEvent } from '.
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { forgetAllTurns } from './answer-ready';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440);
@@ -34,9 +35,9 @@ function renderPanel(api: Api, selectedChatId: string, panel: { illustrationRout
   function SelectedChat() {
     const [chatId, setChatId] = useState(selectedChatId);
     select = setChatId;
-    return <QueryClientProvider client={client}>
+    return <QueryClientProvider client={client}><ToastsProvider>
       <ResearchChatPanel api={api} canCreate {...panel} onOpenSource={vi.fn()} onSelectChatId={setChatId} projectId={projectId} selectedChatId={chatId} sourceView="published" />
-    </QueryClientProvider>;
+    </ToastsProvider></QueryClientProvider>;
   }
   render(<SelectedChat />);
   return { select: (chatId: string) => act(() => select(chatId)) };
@@ -67,7 +68,7 @@ describe('Research Chat corrections', () => {
     expect(field.disabled).toBe(false);
     expect(field.placeholder).toBe('Уточнить по ходу работы…');
     const send = screen.getByRole('button', { name: 'Уточнить' });
-    expect(send).toHaveProperty('disabled', true);
+    expect(send.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByRole('button', { name: 'Остановить' })).toBeTruthy();
     expect(turn).toHaveBeenCalledTimes(1);
 
@@ -119,6 +120,65 @@ describe('Research Chat corrections', () => {
     expect(field.value).toBe('Без дракона');
     expect(screen.queryByText('Будет учтено на следующем шаге')).toBeNull();
   });
+
+  // specs/2026-11-09-quota-accounting.md Q2.3: a correction spends a question, and its refusal is the question's.
+  it('refuses a correction over the questions of the day as a question, keeps the text and reads the quota again', async () => {
+    const api = createMockApiClient();
+    const chat = await newChat(api, 'Обложка');
+    renderPanel(api, chat.id);
+    const field = await ask('Нарисуй обложку') as HTMLTextAreaElement;
+    const quota = vi.spyOn(api, 'getAccountQuota');
+    const reads = quota.mock.calls.length;
+    vi.spyOn(api, 'steerChatTurn').mockRejectedValueOnce(new ApiStatusError(
+      429,
+      { type: 'about:blank', title: 'Too Many Requests', status: 429, code: 'quota.chat_turns_daily', requestId: 'req-quota' },
+      new Response(null, { status: 429, headers: { 'Retry-After': '3600' } }),
+    ));
+
+    fireEvent.change(field, { target: { value: 'Без дракона' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Уточнить' }));
+    // specs/2026-11-10-ux1-chat.md CH3.3: one block above the field, in the words of both kinds of message.
+    const block = await screen.findByRole('alert', { name: /^Вопросы и уточнения на сегодня закончились/u });
+    expect(within(block).getByText('Новые — после 00:00 по Москве.')).toBeTruthy();
+    expect(within(block).getByText('Ответ на ваш вопрос готовится и придёт. Текст уточнения остался в поле.')).toBeTruthy();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(within(block).getByRole('link', { name: 'Написать нам' })).toBeTruthy();
+    expect(field.value).toBe('Без дракона');
+    expect(screen.queryByText(/Спросить снова можно через/u)).toBeNull();
+    await waitFor(() => expect(quota.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  // specs/2026-11-10-ux1-chat.md CH5: a question in the queue has not started — the server would not take a correction.
+  it('does not call for a correction while the question waits in the queue, and takes it once the helper works', async () => {
+    const api = createMockApiClient();
+    const chat = await newChat(api, 'Обложка');
+    let queued = true;
+    const getJob = api.getJob.bind(api);
+    vi.spyOn(api, 'getJob').mockImplementation(async (id) => {
+      const job = await getJob(id);
+      return queued ? { ...job, status: 'queued', queuePosition: 2, canCancel: true } : { ...job, status: 'running', queuePosition: null, canCancel: true };
+    });
+    const steer = vi.spyOn(api, 'steerChatTurn');
+    renderPanel(api, chat.id);
+
+    const field = await ask('Нарисуй обложку') as HTMLTextAreaElement;
+    expect(await screen.findByText('Уточнить можно будет, когда помощник начнёт.', {}, { timeout: 4_000 })).toBeTruthy();
+    expect(field.disabled).toBe(false);
+    expect(field.placeholder).toBe('Уточнение — когда помощник начнёт…');
+    fireEvent.change(field, { target: { value: 'Без дракона' } });
+    expect(screen.getByRole('button', { name: 'Уточнить' }).getAttribute('aria-disabled')).toBe('true');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    fireEvent.submit(field.closest('form')!);
+    expect(steer).not.toHaveBeenCalled();
+
+    queued = false;
+    expect(await screen.findByText(/^Уточнение к идущему ответу — считается как вопрос\./u, {}, { timeout: 4_000 })).toBeTruthy();
+    expect(field.value).toBe('Без дракона');
+    expect(field.placeholder).toBe('Уточнить по ходу работы…');
+    fireEvent.click(screen.getByRole('button', { name: 'Уточнить' }));
+    await waitFor(() => expect(steer).toHaveBeenCalledTimes(1));
+    expect(steer.mock.calls[0]![2]).toEqual({ body: 'Без дракона' });
+  }, 15_000);
 
   it('retries a refused correction with the same key and a changed text with a new one', async () => {
     const api = createMockApiClient();

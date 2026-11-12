@@ -10,8 +10,8 @@ import (
 
 func refsVersion() *sagamemory.Version {
 	return sagamemory.NewVersion("p", "draft", "fp", []sagamemory.Chapter{
-		{ID: "c1", BookID: "b1", BookOrder: 1, Order: 1, Title: "Глава 312. Начало"},
-		{ID: "c2", BookID: "b1", BookOrder: 1, Order: 2, Title: "Пролог"},
+		{ID: "c1", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 1, Title: "Глава 312. Начало"},
+		{ID: "c2", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 2, Title: "Пролог"},
 	})
 }
 
@@ -244,6 +244,21 @@ func TestDue(t *testing.T) {
 	withoutCard[0].Hash = "new"
 	if Due(withoutCard, withoutCardBuilt) {
 		t.Fatal("a chapter without a card yet waits for it")
+	}
+	// specs/2026-11-11-ux7-reorder.md RK2.3: the registry of the threads is gathered volume after volume in the order of
+	// reading; the volumes put in another order make a build due with no new card.
+	movedBuilt := stamps(30)
+	moved := append(append([]Stamp(nil), movedBuilt[20:]...), movedBuilt[:20]...)
+	if !Due(moved, movedBuilt) {
+		t.Fatal("the same cards in another order of the volumes: due")
+	}
+	grown := append(append([]Stamp(nil), movedBuilt...), Stamp{Chapter: "new", Hash: "h", CardVersion: 4})
+	if Due(grown, movedBuilt) {
+		t.Fatal("a new chapter after the others keeps the order of the built ones: one card waits")
+	}
+	gone := append([]Stamp(nil), movedBuilt[1:]...)
+	if Due(gone, movedBuilt) {
+		t.Fatal("a chapter gone keeps the order of the others")
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 )
 
-var errImportUnsupportedEncoding = errors.New("library: import XML declares an encoding that is not supported")
+var errImportUnsupportedEncoding = errors.New("library: import file is in an encoding that is not supported")
 
 // importCharsetReader is the decoding step of UC3.3 (specs/2026-10-28-writer-first-success.md):
 // an XML part that declares an encoding other than UTF-8 — an FB2 from a Russian library is often

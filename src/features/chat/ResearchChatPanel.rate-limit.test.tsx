@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../api/mock';
 import { projectId } from '../../api/mock/repository/fixtures';
 import { ApiStatusError } from '../../shared/api';
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -51,7 +52,7 @@ async function renderRateLimitedPanel(
   render(
     <QueryClientProvider client={new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-    })}>
+    })}><ToastsProvider>
       <ResearchChatPanel
         api={api}
         canCreate
@@ -61,7 +62,7 @@ async function renderRateLimitedPanel(
         selectedChatId={session.id}
         sourceView="published"
       />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   const composer = await screen.findByRole('textbox', { name: 'Вопрос' });
   fireEvent.change(composer, { target: { value: 'Проверь лимит' } });
@@ -92,7 +93,8 @@ describe('Research Chat rate limits', () => {
     expect(screen.getByText('Спросить снова можно через 0:02. Вопрос сохранён.')).toBeTruthy();
     expect(screen.getByText('request-rate-limit')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Спросить снова через 0:02' })).toHaveProperty('disabled', true);
-    expect(composer).toHaveProperty('disabled', true);
+    // The question may be mended while the button counts down (specs/2026-11-11-ux4-after-answer.md AA2.8, Ч-35).
+    expect(composer).toHaveProperty('disabled', false);
 
     expect(await screen.findByRole('button', { name: 'Спросить снова через 0:01' }, { timeout: 1_600 }))
       .toHaveProperty('disabled', true);
@@ -114,29 +116,76 @@ describe('Research Chat rate limits', () => {
     expect(screen.getByRole('button', { name: 'Спросить снова' })).toHaveProperty('disabled', false);
   });
 
-  it('shows a daily quota refusal from the account quota without Retry or a countdown', async () => {
-    const { submit } = await renderRateLimitedPanel(rateLimit('quota.chat_turns_daily', '3600'));
+  // specs/2026-11-10-ux1-chat.md CH3.3: a refusal by the limit is one block above the field, not a block of the feed.
+  it('names a refusal by the questions of the day in one block above the field, without Retry or a countdown', async () => {
+    const { composer, submit } = await renderRateLimitedPanel(rateLimit('quota.chat_turns_daily', '3600'));
     fireEvent.click(submit);
 
-    expect(await screen.findByText(/Сегодня задано 30 вопросов — это дневной лимит/u)).toBeTruthy();
+    // specs/2026-11-10-ux2-patterns-refusals.md PR2.1: the one block — what ended, when it comes back, «Написать нам».
+    const block = await screen.findByRole('alert', { name: /^Вопросы и уточнения на сегодня закончились/u });
+    expect(within(block).getByText(/^Вопросы и уточнения на сегодня закончились( — 30 из 30)?$/u)).toBeTruthy();
+    expect(within(block).getByText('Новые — после 00:00 по Москве.')).toBeTruthy();
+    expect(within(block).getByText('Ваш вопрос остался в поле — задайте его завтра.')).toBeTruthy();
+    expect(within(block).getByRole('link', { name: /^Написать/u })).toBeTruthy();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(block.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(composer).toHaveProperty('value', 'Проверь лимит');
+    expect(composer).toHaveProperty('disabled', false);
+    expect(composer).toHaveProperty('placeholder', 'Вопросы на сегодня закончились');
     expect(screen.queryByRole('button', { name: /попытка|повторить|спросить снова/iu })).toBeNull();
-    expect(document.body.textContent).not.toMatch(/Повторить через|можно через|оплат/iu);
+    expect(screen.getByRole('button', { name: 'Спросить' }).getAttribute('data-variant')).toBe('secondary');
+    expect(document.body.textContent).not.toMatch(/Повторить через|можно через|оплат|Сегодня задано|дневной лимит/iu);
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('shows the active questions refusal with the writer limit', async () => {
-    const { submit } = await renderRateLimitedPanel(rateLimit('quota.active_turns'));
+  it('names the answers being prepared in the same block, without a day', async () => {
+    const { composer, submit } = await renderRateLimitedPanel(rateLimit('quota.active_turns'));
     fireEvent.click(submit);
 
-    expect(await screen.findByText(/Сейчас готовятся ответы на 2 ваших вопроса/u)).toBeTruthy();
+    // The mock author is on «Профи»: 4 answers at once by the grid (specs/2026-11-11-tier-limits.md TL1.1).
+    const block = await screen.findByRole('alert', { name: 'Сейчас готовятся ответы на 4 ваших вопроса' });
+    expect(within(block).getByText('Новый вопрос можно задать, когда один из них будет готов.')).toBeTruthy();
+    expect(within(block).getByText('Ваш вопрос остался в поле.')).toBeTruthy();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(composer).toHaveProperty('placeholder', 'Спросите о своей саге…');
+    expect(screen.getByRole('button', { name: 'Спросить' }).getAttribute('data-variant')).toBe('primary');
     expect(screen.queryByRole('button', { name: /попытка|повторить|спросить снова/iu })).toBeNull();
   });
 
-  it('shows questions left from 80 % of the daily limit', async () => {
+  // CH3.1: a short day is counted at the field from the first question; a long one from 80 % (quota spec R5.3).
+  it('counts the questions left at the field', async () => {
     const { api } = await renderRateLimitedPanel(new TypeError('unused'), async (api) => {
       const quota = await api.getAccountQuota();
       vi.spyOn(api, 'getAccountQuota').mockResolvedValue({ ...quota, chatTurns: { used: 24, limit: 30 } });
     });
-    expect(await screen.findByText('Сегодня осталось 6 вопросов из 30. Счётчик обновится в 00:00 по Москве.')).toBeTruthy();
+    expect((await screen.findByRole('status')).textContent).toBe('Осталось 6 из 30 вопросов на сегодня. Новые — после 00:00 по Москве.');
+    expect(api.getAccountQuota).toHaveBeenCalled();
+  });
+
+  it('counts a day of five questions from its first one', async () => {
+    await renderRateLimitedPanel(new TypeError('unused'), async (api) => {
+      const quota = await api.getAccountQuota();
+      vi.spyOn(api, 'getAccountQuota').mockResolvedValue({ ...quota, chatTurns: { used: 1, limit: 5 } });
+    });
+    expect((await screen.findByRole('status')).textContent).toBe('Осталось 4 из 5 вопросов на сегодня.');
+  });
+
+  // CH3.4: the block stands before the author presses; the page locks nothing by its own count (quota-accounting Q1.5).
+  it('says that nothing is left before the author presses, and still lets the server decide', async () => {
+    const { api, composer, keys, submit } = await renderRateLimitedPanel(new TypeError('unused'), async (api) => {
+      const quota = await api.getAccountQuota();
+      vi.spyOn(api, 'getAccountQuota').mockResolvedValue({ ...quota, chatTurns: { used: 5, limit: 5 } });
+    });
+    const block = await screen.findByRole('note', { name: 'Вопросы и уточнения на сегодня закончились — 5 из 5' });
+    expect(within(block).getByText('Новые — после 00:00 по Москве.')).toBeTruthy();
+    expect(within(block).getByText('Вопрос можно набрать уже сейчас — он сохранится в поле.')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(composer).toHaveProperty('placeholder', 'Вопросы на сегодня закончились');
+    expect(submit).toHaveProperty('disabled', false);
+    expect(submit.getAttribute('data-variant')).toBe('secondary');
+    fireEvent.click(submit);
+    await waitFor(() => expect(keys).toHaveLength(1));
     expect(api.getAccountQuota).toHaveBeenCalled();
   });
 });

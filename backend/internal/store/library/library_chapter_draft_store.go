@@ -110,8 +110,7 @@ WHERE paragraph.chapter_id = $1
 `, chapterUUID, input.Revision, projectUUID, bookUUID, vector.Chapter, vector.Book, vector.Project); err != nil {
 		return library.Chapter{}, err
 	}
-	queries := sqlc.New(tx)
-	if err := createLibraryParagraphs(ctx, queries, projectUUID, bookUUID, vector.Project, vector.Book, vector.Chapter, input.Paragraphs); err != nil {
+	if err := createLibraryParagraphs(ctx, tx, projectUUID, bookUUID, vector.Project, vector.Book, chapterParagraphs{generation: vector.Chapter, paragraphs: input.Paragraphs}); err != nil {
 		return library.Chapter{}, err
 	}
 	row := tx.QueryRow(ctx, `

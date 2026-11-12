@@ -12,9 +12,12 @@ type BookHead struct {
 	CoverVersion int64
 }
 
-// ExportChapter is a chapter with text in the book, without its text.
+// ExportChapter is a chapter with text in the book, without its text: its book and the number of its paragraphs, all of
+// them, as the place of a drawing counts them (specs/2026-11-12-ux10-book-pictures.md BP1.1).
 type ExportChapter struct {
-	ID       string
-	Title    string
-	Revision int64
+	ID         string
+	BookID     string
+	Title      string
+	Revision   int64
+	Paragraphs int
 }

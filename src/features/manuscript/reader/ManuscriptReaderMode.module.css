@@ -1,118 +1,123 @@
+/*
+ * The reader — a screen for the text (specs/2026-11-10-ux7-reader.md; Pattern/Reader/Screen, board 40·24). The theme of
+ * reading paints the whole content of the reader — the field of the text, the margins, the line of the reader, «Содержание»,
+ * the bottom bar of a phone (RD1.5); the top bar and the sections of the shell stay as they are. Its tokens are in
+ * src/styles/reading-themes.css.
+ */
 .workspace {
-  display: grid;
+  position: relative;
+  display: flex;
   width: 100%;
-  height: 100dvh;
-  grid-template-rows: 64px minmax(0, 1fr);
-  overflow: hidden;
-  background: var(--ck-background);
-  color: var(--ck-foreground);
-}
-
-/* The strip of a call has its row under the top bar (specs/2026-11-03-voice-assistant.md V6.5). */
-.workspace:has(> [data-voice-call]) {
-  grid-template-rows: 64px auto minmax(0, 1fr);
-}
-
-.workspace[data-display-size='large'] [role='document'] p {
-  font-size: 20px;
-  line-height: round(nearest, 1.58em, 1px);
-}
-
-/* Темы чтения принадлежат только опубликованной прозе: токены — src/styles/reading-themes.css, здесь фон колонки. */
-.workspace[data-display-theme='sepia'] .readerColumn {
-  background: #f1e7d0;
-}
-
-.workspace[data-display-theme='dark'] .readerColumn {
-  background: #1b1b1d;
-  color: #e7e7e4;
-}
-
-.body,
-.content,
-.readingPane {
-  display: flex;
   min-width: 0;
   min-height: 0;
-}
-
-.content,
-.readingPane {
+  height: 100%;
   flex: 1;
-}
-
-.content {
   overflow: hidden;
-  background: var(--ck-reader-pane);
+  background: var(--ck-reader);
+  color: var(--ck-reader-foreground);
 }
 
-.readingPane {
-  flex-direction: column;
-  background: var(--ck-card);
+/* The one scroll of the reader: the line, the bar of the search and the text move in it. */
+.scroller {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--ck-border-strong) transparent;
+  scrollbar-width: thin;
 }
 
-.notice {
-  margin: 10px 30px 0;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-sm);
-  padding: 10px 12px;
-  background: var(--ck-card);
+/* The line of the reader stays at the top of the scroll; it goes away down and comes back up (RD1.1). */
+.head {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  background: var(--ck-reader);
+  transition: transform 160ms ease;
+}
+
+.head[data-hidden]:not(:focus-within) {
+  transform: translateY(-100%);
+}
+
+.head > .page {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* The column of the text in the width the author chose (RD1.4): 560, 680 or 820 px, the room around it for the margin. */
+.page {
+  width: 100%;
+  max-width: calc(var(--reader-column, 680px) + 48px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.page[data-margin] {
+  max-width: calc(var(--reader-column, 680px) + 48px + 96px);
+  padding-right: calc(24px + 48px);
+  padding-left: calc(24px + 48px);
+}
+
+.thinTitle {
+  display: none;
+}
+
+/*
+ * «Только текст» (RD1.6): the text and a thin line with the title; the line of the reader comes over it while the pointer is
+ * at the top of the screen (the shell reveals its top bar there), on a touch of the thin line and on Tab.
+ */
+.workspace[data-focus] .head {
+  position: sticky;
+}
+
+.workspace[data-focus] .thinTitle {
+  display: block;
+  margin: 0;
+  padding: 6px 24px;
+  overflow: hidden;
   color: var(--ck-muted-foreground);
-  font-size: 13px;
+  font-size: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.readerToasts {
-  bottom: 16px;
+.workspace[data-focus] .barSlot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  transform: translateY(-100%);
+  transition: transform 160ms ease;
 }
 
-.readerColumn {
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-  background: var(--ck-card);
+.workspace[data-focus] .head:focus-within .barSlot,
+.workspace[data-focus] .head:hover .barSlot,
+:global([data-shell][data-revealed]) .workspace[data-focus] .barSlot {
+  transform: none;
 }
 
-@media (max-width: 1439px), (max-height: 760px) {
+@media (max-width: 767px) {
   .workspace {
-    grid-template-rows: 56px minmax(0, 1fr);
+    flex-direction: column;
   }
 
-  .workspace:has(> [data-voice-call]) {
-    grid-template-rows: 56px auto minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 760px) {
-  .workspace {
-    grid-template-rows: 52px minmax(0, 1fr) calc(52px + env(safe-area-inset-bottom));
-    background: var(--ck-reader-pane);
+  .page,
+  .page[data-margin] {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
-  .workspace:has(> [data-voice-call]) {
-    grid-template-rows: 52px auto minmax(0, 1fr) calc(52px + env(safe-area-inset-bottom));
+  /* The signs of notes and drawings take a narrow margin on the right of the text. */
+  .page[data-margin] {
+    padding-right: 48px;
   }
 
-  .notice {
-    margin: 8px 12px 0;
-  }
-
-  .readerToasts {
-    bottom: calc(70px + env(safe-area-inset-bottom));
+  .workspace[data-focus] [data-reader-phone-bar] {
+    display: none;
   }
 }
-
-/* «Править главу» above the text at every width (A8.7). */
-/* Children carry the gap above the row: a row with nothing to show takes no height. */
-.editRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 8px;
-  justify-content: flex-end;
-  padding-inline: 20px;
-}
-
-.editRow > * {
-  margin-top: 12px;
-}
-

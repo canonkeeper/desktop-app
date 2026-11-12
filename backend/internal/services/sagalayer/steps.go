@@ -194,6 +194,9 @@ func (current *run) mapBooks() ([]domain.Book, int, error) {
 	for i, plan := range plans {
 		plan.book.Digest = domain.Digest(stampsOf[plan.book.ID])
 		if book, ok := known[[2]string{plan.book.ID, plan.book.Digest}]; ok {
+			// The answer of a volume is bound to its chapters, not to its place: a volume moved on the shelf keeps it
+			// under its new number (specs/2026-11-11-ux7-reorder.md RK2.3).
+			book.Order = plan.book.Order
 			plan.book, done[i] = book, true
 			continue
 		}

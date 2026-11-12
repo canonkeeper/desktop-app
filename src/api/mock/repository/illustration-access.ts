@@ -2,14 +2,12 @@ import type { OperationId, OperationRequest, OperationResponse, Schema } from '.
 import { MockApiError } from '../scenarios';
 import { clone } from './common';
 import type { MockRepositoryContext } from './context';
-import { spendsImage, type MockAccessRequest, type MockIllustrationRight } from './gallery-state';
+import { spendsImage } from './gallery-state';
 import { mockDefault, moscowDay } from './quota';
+import { mockEffectiveTier, mockPlanSettings } from './tiers';
 
 type IllustrationAccess = Schema<'IllustrationAccess'>;
 type AccessState = Schema<'IllustrationAccessState'>;
-type AccessRequest = Schema<'IllustrationAccessRequest'>;
-
-
 
 const day = 24 * 60 * 60 * 1000;
 
@@ -20,36 +18,45 @@ function nextMoscowMidnight(now: Date) {
   return new Date(Date.parse(`${moscowDay(now)}T00:00:00+03:00`) + day).toISOString();
 }
 
-export function stateOf(right: MockIllustrationRight, now = new Date()): AccessState {
-  if (right.granted === 'blocked') return 'blocked';
-  if (right.granted === 'active' && (right.activeUntil === null || moscowDay(now) <= right.activeUntil)) return 'active';
-  return right.trialLeft > 0 ? 'trial' : 'none';
+/** What a right is made of (specs/2026-11-08-subscription-tiers.md TR6.1). */
+type MockAccess = { blocked: boolean; imagesPerDay: number; trialImages: number; trialUsed: number };
+
+export function trialLeftOf(access: MockAccess) {
+  return Math.max(0, access.trialImages - access.trialUsed);
+}
+
+/** The right as the backend decides it: blocked, by the day while images_per_day is above zero, a trial, none. */
+export function stateOf(access: MockAccess): AccessState {
+  if (access.blocked) return 'blocked';
+  if (access.imagesPerDay > 0) return 'active';
+  return trialLeftOf(access) > 0 ? 'trial' : 'none';
 }
 
 /**
- * The right to illustrations in the mock (specs/2026-10-29-saga-illustrations.md UC11): every
- * account starts with the trial of a new account (five unless the administrator set another), a drawing of an account that may not draw is 403
- * illustrations.locked, the author asks for access and the administrator turns it on or declines.
+ * The right to draw in the mock (specs/2026-11-08-subscription-tiers.md TR6): drawing by the day on the tier in force,
+ * else the trial drawings of the tier; the administrator only blocks it; a drawing of an account that may not draw is
+ * 403 illustrations.locked.
  */
 export function createIllustrationAccess(context: MockRepositoryContext) {
-  const access = () => context.state.gallery.access;
+  const gallery = () => context.state.gallery;
 
-  /** The trial of a new account (R11.1): the platform's trial drawings, else the code's (admin-panel R7.3). */
-  function newAccountTrial() {
-    return mockDefault(context.state.quotaDefaults, 'trial_drawings');
+  /** images_per_day of the author: his tier's, else the platform's, else the code's. */
+  function tierImagesPerDay(userId: string) {
+    return mockPlanSettings(context.state, userId).images_per_day ?? mockDefault(context.state.quotaDefaults, 'images_per_day');
   }
 
-  function rightOf(userId: string): MockIllustrationRight {
-    const rights = access().rights;
-    rights[userId] ??= { granted: 'none', trialLeft: newAccountTrial(), activeUntil: null };
-    return rights[userId]!;
+  function accessOf(userId: string, imagesPerDay = tierImagesPerDay(userId)): MockAccess {
+    return {
+      blocked: Boolean(gallery().access.blocked[userId]), imagesPerDay,
+      trialImages: mockEffectiveTier(context.state, userId).limits.trialImages, trialUsed: context.state.trialImagesUsed[userId] ?? 0,
+    };
   }
 
   /** Drawings and region edits the account started on the Moscow day and did not get back (R13.6). */
   function drawingsToday(userId: string, now = new Date()) {
     const today = moscowDay(now);
     const onToday = (at: string) => moscowDay(new Date(at)) === today;
-    return context.state.gallery.images.reduce((total, image) => total
+    return gallery().images.reduce((total, image) => total
       + (image.createdBy === userId && onToday(image.createdAt) && spendsImage(image) ? 1 : 0)
       + image.layers.filter((layer) => layer.createdBy === userId && onToday(layer.createdAt) && spendsImage(layer)).length, 0);
   }
@@ -57,29 +64,18 @@ export function createIllustrationAccess(context: MockRepositoryContext) {
   /** The images the account uploaded on the Moscow day (image_uploads_per_day, R15.7). */
   function uploadsToday(userId: string, now = new Date()) {
     const today = moscowDay(now);
-    return context.state.gallery.images.filter((image) => image.kind === 'upload' && image.createdBy === userId
+    return gallery().images.filter((image) => image.kind === 'upload' && image.createdBy === userId
       && moscowDay(new Date(image.createdAt)) === today).length;
   }
 
-  function pendingOf(userId: string) {
-    return access().requests.find((request) => request.userId === userId && request.status === 'pending');
-  }
-
-  function publicRequest({ userId: _userId, ...request }: MockAccessRequest): AccessRequest {
-    return clone(request);
-  }
-
   /** The right as the author reads it; the writer card of the admin panel says nothing of uploads, as the backend's. */
-  function viewOf(userId: string, imagesPerDay: number = mockDefault(context.state.quotaDefaults, 'images_per_day'), withUploads = true): IllustrationAccess {
-    const right = rightOf(userId);
-    const pending = pendingOf(userId);
+  function viewOf(userId: string, imagesPerDay = tierImagesPerDay(userId), withUploads = true): IllustrationAccess {
+    const access = accessOf(userId, imagesPerDay);
     const now = new Date();
-    const state = stateOf(right, now);
-    const uploads = context.state.gallery.uploads;
+    const uploads = gallery().uploads;
     return {
-      state, trialLeft: right.trialLeft, activeUntil: state === 'active' ? right.activeUntil : null,
+      state: stateOf(access), trialLeft: trialLeftOf(access),
       images: { used: drawingsToday(userId, now), limit: imagesPerDay }, resetsAt: nextMoscowMidnight(now),
-      request: pending ? publicRequest(pending) : null,
       ...(uploads.enabled && withUploads ? {
         uploads: {
           consentVersion: mockUploadEdition, consented: uploads.consents[userId] === mockUploadEdition,
@@ -89,28 +85,35 @@ export function createIllustrationAccess(context: MockRepositoryContext) {
     };
   }
 
+  function locked(operationId: OperationId) {
+    return new MockApiError(403, 'no right to draw', operationId, 'illustrations.locked');
+  }
+
   /**
-   * The access and quota step of the drawings the web starts (R11.2): the actor needs a trial or
-   * active right; active access counts images_per_day, a trial also spends trial drawings and a
-   * request it cannot cover whole is locked. The first style sketches of a saga without a style
-   * are free once per project. Returns how many of count may start.
+   * The right and quota step of the drawings the web starts (TR6.1): by the day counts images_per_day; a trial spends
+   * trial drawings and a request it cannot cover whole is locked, counted for the day without its check. The first
+   * style sketches of a saga without a style are free once per project. Returns how many of count may start and what
+   * they spent.
    */
-  function reserveDrawings(operationId: OperationId, count: number, free = false) {
+  function reserveDrawings(operationId: OperationId, count: number, free = false): { allowed: number; charge: 'quota' | 'trial' | null } {
     const userId = context.currentPrincipalId();
-    const right = rightOf(userId);
-    const state = stateOf(right);
-    if (state !== 'trial' && state !== 'active') {
-      throw new MockApiError(403, 'no access to illustrations', operationId, 'illustrations.locked');
+    const access = accessOf(userId);
+    const state = stateOf(access);
+    if (state !== 'trial' && state !== 'active') throw locked(operationId);
+    if (free) return { allowed: count, charge: null };
+    if (state === 'trial') {
+      if (trialLeftOf(access) < count) throw locked(operationId);
+      context.state.trialImagesUsed[userId] = access.trialUsed + count;
+      return { allowed: count, charge: 'trial' };
     }
-    if (free) return count;
-    if (state === 'trial' && right.trialLeft < count) {
-      throw new MockApiError(403, 'no access to illustrations', operationId, 'illustrations.locked');
-    }
-    const left = mockDefault(context.state.quotaDefaults, 'images_per_day') - drawingsToday(userId);
+    const left = access.imagesPerDay - drawingsToday(userId);
     if (left < 1) throw new MockApiError(429, 'Daily drawing limit is used up.', operationId, 'quota.images_daily');
-    const allowed = Math.min(left, count);
-    if (state === 'trial') right.trialLeft -= allowed;
-    return allowed;
+    return { allowed: Math.min(left, count), charge: 'quota' };
+  }
+
+  /** A drawing stopped by the provider's limit gives back its trial drawing, never below none used (TR6.2). */
+  function returnTrial(userId: string) {
+    context.state.trialImagesUsed[userId] = Math.max(0, (context.state.trialImagesUsed[userId] ?? 0) - 1);
   }
 
   /**
@@ -118,19 +121,16 @@ export function createIllustrationAccess(context: MockRepositoryContext) {
    * later sets count as drawings; a refused set takes nothing.
    */
   function reserveSketches(operationId: OperationId, projectId: string, count: number) {
-    const gallery = context.state.gallery;
-    const free = !gallery.styles[projectId] && !gallery.styleImages[projectId] && !gallery.access.freeSketches[projectId];
-    const allowed = reserveDrawings(operationId, count, free);
-    if (free) gallery.access.freeSketches[projectId] = true;
-    return allowed;
+    const free = !gallery().styles[projectId] && !gallery().styleImages[projectId] && !gallery().access.freeSketches[projectId];
+    const { allowed } = reserveDrawings(operationId, count, free);
+    if (free) gallery().access.freeSketches[projectId] = true;
+    return { allowed, free };
   }
 
-  /** A drawing button asks only for an author who may draw. */
+  /** A drawing button and the helper ask only for an author who may draw (TR6.3). */
   function requireDrawingRight(operationId: OperationId) {
-    const state = stateOf(rightOf(context.currentPrincipalId()));
-    if (state !== 'trial' && state !== 'active') {
-      throw new MockApiError(403, 'no access to illustrations', operationId, 'illustrations.locked');
-    }
+    const state = stateOf(accessOf(context.currentPrincipalId()));
+    if (state !== 'trial' && state !== 'active') throw locked(operationId);
   }
 
   async function getIllustrationAccess(): Promise<OperationResponse<'getIllustrationAccess', '200'>> {
@@ -139,75 +139,18 @@ export function createIllustrationAccess(context: MockRepositoryContext) {
     return clone(viewOf(context.currentPrincipalId()));
   }
 
-  async function createIllustrationAccessRequest(
-    body: OperationRequest<'createIllustrationAccessRequest'>,
-  ): Promise<OperationResponse<'createIllustrationAccessRequest', '201'>> {
-    const operationId = 'createIllustrationAccessRequest';
-    context.applyOperation(operationId);
-    if (!context.state.session) throw new MockApiError(401, 'authentication required', operationId, 'auth.session_required');
-    const message = body?.message?.trim() || null;
-    if (message !== null && [...message].length > 1000) throw new MockApiError(400, 'validation failed', operationId, 'request.validation');
-    const userId = context.currentPrincipalId();
-    if (stateOf(rightOf(userId)) === 'active') throw new MockApiError(409, 'access to illustrations is already on', operationId, 'illustrations.active');
-    const now = new Date();
-    const pending = pendingOf(userId);
-    if (pending) {
-      if (now.getTime() < Date.parse(pending.sentAt) + day) {
-        throw new MockApiError(429, 'the request was sent less than a day ago', operationId, 'illustrations.request_pending');
-      }
-      pending.sentAt = now.toISOString();
-      if (message) pending.message = message;
-      return publicRequest(pending);
-    }
-    const request: MockAccessRequest = {
-      id: `illustration-request-${access().nextRequest++}`, userId, status: 'pending', message,
-      createdAt: now.toISOString(), sentAt: now.toISOString(), decidedAt: null,
-    };
-    access().requests.push(request);
-    return publicRequest(request);
+  /** «Выключить рисунки» and «Включить обратно» of the admin panel (TR6.4). */
+  function setBlock(operationId: OperationId, userId: string, body: OperationRequest<'setAdminWriterIllustrations'>) {
+    if (body.state !== 'none' && body.state !== 'blocked') throw new MockApiError(400, 'validation failed', operationId, 'request.validation');
+    if (body.state === 'blocked') gallery().access.blocked[userId] = true;
+    else delete gallery().access.blocked[userId];
   }
 
-  /** «Включить», «Выключить», «Вернуть пробные» of the admin panel (R11.6); the pending request is granted with access. */
-  function setRight(operationId: OperationId, userId: string, body: OperationRequest<'setAdminWriterIllustrations'>) {
-    const invalid = () => new MockApiError(400, 'validation failed', operationId, 'request.validation');
-    const today = moscowDay(new Date());
-    if (!['none', 'active', 'blocked'].includes(body.state)) throw invalid();
-    const until = body.until ?? null;
-    if (until !== null && (body.state !== 'active' || !/^\d{4}-\d{2}-\d{2}$/u.test(until) || until < today)) throw invalid();
-    const right = rightOf(userId);
-    right.granted = body.state;
-    right.activeUntil = body.state === 'active' ? until : null;
-    if (body.resetTrial) right.trialLeft = newAccountTrial();
-    const pending = pendingOf(userId);
-    if (pending && stateOf(right) === 'active') {
-      pending.status = 'granted';
-      pending.decidedAt = new Date().toISOString();
-    }
-  }
-
-  function requests() {
-    return [...access().requests].sort((left, right) => (
-      Number(right.status === 'pending') - Number(left.status === 'pending') || right.createdAt.localeCompare(left.createdAt)
-    ));
-  }
-
-  function declineRequest(operationId: OperationId, requestId: string): MockAccessRequest {
-    const request = access().requests.find((item) => item.id === requestId);
-    if (!request) throw new MockApiError(404, 'not found', operationId, 'not_found');
-    if (request.status !== 'pending') throw new MockApiError(409, 'Conflict', operationId, 'conflict');
-    request.status = 'declined';
-    request.decidedAt = new Date().toISOString();
-    return request;
-  }
-
-  return {
-    viewOf, reserveDrawings, reserveSketches, requireDrawingRight, setRight, requests, declineRequest, publicRequest, stateOf,
-    rightOf, getIllustrationAccess, createIllustrationAccessRequest, uploadsToday,
-  };
+  return { viewOf, reserveDrawings, reserveSketches, requireDrawingRight, returnTrial, setBlock, getIllustrationAccess, uploadsToday };
 }
 
-/** getIllustrationAccess and createIllustrationAccessRequest of the mock API. */
+/** getIllustrationAccess of the mock API. */
 export function createIllustrationAccessOperations(context: MockRepositoryContext) {
-  const { getIllustrationAccess, createIllustrationAccessRequest } = createIllustrationAccess(context);
-  return { getIllustrationAccess, createIllustrationAccessRequest };
+  const { getIllustrationAccess } = createIllustrationAccess(context);
+  return { getIllustrationAccess };
 }

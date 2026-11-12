@@ -59,6 +59,12 @@ func (s *Store) CreateImportQueueDraftForActor(ctx context.Context, input librar
 		if !errors.Is(existingErr, pgx.ErrNoRows) {
 			return existingErr
 		}
+		// The books of the queue are checked before any file is sent, with the check its start
+		// repeats (writer-quotas R3.2, amend 08.11): a queue that would not fit leaves no draft
+		// that reopens after a reload and never starts. Uploads are counted only by the start.
+		if err := s.quota.CheckNewBooksInTx(ctx, tx, projectID.String(), int64(len(input.Items)), true); err != nil {
+			return err
+		}
 		row, err := queries.CreateImportQueueRow(ctx, sqlc.CreateImportQueueRowParams{
 			ID: queueID, ProjectID: projectID, CreatedByUserID: actorID, IdempotencyKey: input.IdempotencyKey,
 			RequestFingerprint: input.RequestFingerprint, CreatedAt: storedb.Timestamptz(createdAt),
@@ -75,7 +81,7 @@ func (s *Store) CreateImportQueueDraftForActor(ctx context.Context, input librar
 			if _, err := queries.CreateImportQueueItemRow(ctx, sqlc.CreateImportQueueItemRowParams{
 				ID: itemID, QueueID: row.ID, ProjectID: projectID,
 				ClientItemID: item.ClientItemID, Position: int32(item.Position), SourceFileName: item.SourceFileName,
-				DetectedBookOrder: optionalInt4(item.DetectedBookOrder), CreatedAt: storedb.Timestamptz(createdAt),
+				CreatedAt: storedb.Timestamptz(createdAt),
 			}); err != nil {
 				return err
 			}
@@ -190,14 +196,6 @@ func (s *Store) PutImportQueueItemForActor(ctx context.Context, input library.Pu
 		if sourceFileName == "" {
 			sourceFileName = item.SourceFileName
 		}
-		detected := input.DetectedBookOrder
-		if detected == 0 && item.DetectedBookOrder.Valid {
-			detected = int(item.DetectedBookOrder.Int32)
-		}
-		confirmed := input.ConfirmedBookOrder
-		if confirmed == 0 && item.ConfirmedBookOrder.Valid {
-			confirmed = int(item.ConfirmedBookOrder.Int32)
-		}
 		createdAt := time.Now().UTC().Truncate(time.Microsecond)
 		expiresAt := createdAt.Add(library.ImportUploadRetention)
 		if input.ExpiresAt != nil {
@@ -241,7 +239,6 @@ func (s *Store) PutImportQueueItemForActor(ctx context.Context, input library.Pu
 		rows, err := sqlc.New(tx).UpdateImportQueueItemUpload(ctx, sqlc.UpdateImportQueueItemUploadParams{
 			StorageKey: dbText(input.StorageKey), SourceFileName: sourceFileName, MimeType: dbText(input.MIMEType),
 			SizeBytes: dbInt8(input.SizeBytes), Sha256: dbText(input.SHA256),
-			DetectedBookOrder: optionalInt4(detected), ConfirmedBookOrder: optionalInt4(confirmed),
 			PreflightStatus: status, PreflightErrorJson: input.PreflightErrorJSON, UpdatedAt: storedb.Timestamptz(createdAt),
 			ItemID: itemID, QueueID: queueID, ProjectID: projectID,
 		})
@@ -277,72 +274,6 @@ func (s *Store) PutImportQueueItemForActor(ctx context.Context, input library.Pu
 		}
 	}
 	return library.ImportQueueItem{}, library.ErrNotFound
-}
-
-func (s *Store) SaveImportQueueDraftForActor(ctx context.Context, input library.SaveImportQueueDraftStoreInput) (library.ImportQueue, error) {
-	projectID, actorID, queueID, err := parseQueueReadInput(input.ProjectID, input.ActorUserID, input.QueueID)
-	if err != nil {
-		return library.ImportQueue{}, err
-	}
-	if input.ExpectedVersion < 1 {
-		return library.ImportQueue{}, library.ErrValidation
-	}
-	items := input.Items
-	seenIDs := make(map[string]struct{}, len(items))
-	seenPositions := make(map[int]struct{}, len(items))
-	for index := range items {
-		itemID := items[index].ItemID
-		if itemID == "" || items[index].Position < 1 {
-			return library.ImportQueue{}, library.ErrValidation
-		}
-		if _, ok := seenIDs[itemID]; ok {
-			return library.ImportQueue{}, library.ErrConflict
-		}
-		if _, ok := seenPositions[items[index].Position]; ok {
-			return library.ImportQueue{}, library.ErrConflict
-		}
-		seenIDs[itemID] = struct{}{}
-		seenPositions[items[index].Position] = struct{}{}
-		items[index].ItemID = itemID
-	}
-
-	var queue library.ImportQueue
-	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		if err := lockImportProjectActor(ctx, tx, projectID, actorID); err != nil {
-			return err
-		}
-		locked, err := lockImportQueue(ctx, tx, queueID, projectID)
-		if err != nil {
-			return err
-		}
-		if locked.Version != input.ExpectedVersion || (locked.Status != string(library.ImportQueueUploading) && locked.Status != string(library.ImportQueueDraft)) {
-			return library.ErrConflict
-		}
-		if len(items) > 0 {
-			if err := saveImportQueueItemOrder(ctx, tx, projectID, queueID, items); err != nil {
-				return err
-			}
-		}
-		updated, err := sqlc.New(tx).SaveImportQueueVersion(ctx, sqlc.SaveImportQueueVersionParams{
-			UpdatedAt: storedb.Timestamptz(time.Now().UTC().Truncate(time.Microsecond)), QueueID: queueID, ProjectID: projectID, ExpectedVersion: input.ExpectedVersion,
-		})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return library.ErrConflict
-		}
-		if err != nil {
-			return err
-		}
-		queue = importQueueFromSQL(updated)
-		queue.Items, err = loadImportQueueItems(ctx, tx, queueID, projectID)
-		return err
-	})
-	if err != nil {
-		if isUniqueViolation(err) {
-			return library.ImportQueue{}, library.ErrConflict
-		}
-		return library.ImportQueue{}, mapQueueImportError(err)
-	}
-	return queue, nil
 }
 
 func (s *Store) CancelImportQueueForActor(ctx context.Context, input library.CancelImportQueueStoreInput) (library.ImportQueue, error) {

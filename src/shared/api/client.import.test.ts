@@ -121,6 +121,25 @@ describe('OpenApiCanonKeeperClient', () => {
     });
   });
 
+  // specs/2026-11-10-book-file-kinds.md K1.2: every kind goes with the media type of the end of its name.
+  it.each([
+    ['rukopis.txt', 'text/plain'],
+    ['glava.MD', 'text/markdown'],
+    ['roman.rtf', 'application/rtf'],
+    ['roman.odt', 'application/vnd.oasis.opendocument.text'],
+    ['Том 2.fb2.zip', 'application/zip'],
+  ])('sends %s with the media type of its kind', async (name, type) => {
+    vi.stubGlobal('XMLHttpRequest', MultipartRequest);
+    const api = createCanonKeeperApiClient({
+      baseUrl: 'https://api.example.test/api/v1',
+      fetch: async () => csrfResponse(),
+    });
+
+    await api.importBookFile('project_1', { file: new File(['book'], name, { type: 'application/octet-stream' }) }, { idempotencyKey: `idem-kind-${type}` });
+
+    expect((multipartBody as FormData).get('file')).toMatchObject({ name, type });
+  });
+
   it('treats a successful import response without usable job identity as an unknown outcome', async () => {
     class MalformedMultipartRequest extends MultipartRequest {
       responseText = '{';

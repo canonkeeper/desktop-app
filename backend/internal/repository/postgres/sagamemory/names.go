@@ -122,7 +122,7 @@ func (repository *Repository) QueueLoadedCards(ctx context.Context, projectID st
 		return err
 	}
 	for _, view := range views {
-		if err := repository.QueueCards(ctx, service.TextVersion{ProjectID: projectID, View: view}); err != nil {
+		if _, err := repository.QueueCards(ctx, service.TextVersion{ProjectID: projectID, View: view}); err != nil {
 			return err
 		}
 	}

@@ -368,7 +368,8 @@ func TestRequestLoggerReportsOnlySafeUnexpectedErrorClassification(t *testing.T)
 		cause     string
 		logStatus int
 	}{
-		{name: "canceled", err: errors.Join(context.Canceled, errors.New(secret)), class: "context", cause: "canceled", logStatus: 499},
+		// A cancellation met while the client waits is the server's; the client's own is 499 (client_left_test.go).
+		{name: "canceled", err: errors.Join(context.Canceled, errors.New(secret)), class: "context", cause: "canceled", logStatus: 500},
 		{name: "deadline", err: errors.Join(context.DeadlineExceeded, errors.New(secret)), class: "context", cause: "deadline_exceeded", logStatus: 500},
 		{name: "database", err: requestLogSQLStateError{state: "40P01", message: secret}, class: "database", cause: "40P01", logStatus: 500},
 		{name: "invalid database code", err: requestLogSQLStateError{state: secret, message: secret}, class: "internal", cause: "unclassified", logStatus: 500},

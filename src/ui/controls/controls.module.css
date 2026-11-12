@@ -64,36 +64,105 @@
   min-height: 44px;
 }
 
-.button:hover:not(:disabled) {
+/* A word under its icon where a row has no room for both side by side (Button/Ghost Caption): a target of 44×44, the
+   word in small type (specs/2026-11-10-ux2-patterns-refusals.md PR1.4). */
+.button[data-caption] {
+  min-width: 44px;
+  min-height: 44px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.button[data-caption] .buttonLabel {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled, [aria-disabled='true']) {
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ck-foreground) 12%, transparent);
 }
 
-.primary:hover:not(:disabled) {
+.primary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--ck-primary-hover);
 }
 
-.secondary:hover:not(:disabled) {
+.secondary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--ck-border);
 }
 
-.outline:hover:not(:disabled),
-.ghost:hover:not(:disabled) {
+.outline:hover:not(:disabled, [aria-disabled='true']),
+.ghost:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--ck-secondary);
 }
 
-.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ck-destructive) 90%, black);
+.danger:hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--ck-destructive-hover);
 }
 
-.button:active:not(:disabled),
-.iconButton:active:not(:disabled) {
+.button:active:not(:disabled, [aria-disabled='true']),
+.iconButton:active:not(:disabled, [aria-disabled='true']) {
   transform: translateY(1px);
 }
 
 .button:disabled,
-.iconButton:disabled {
+.iconButton:disabled,
+.button[aria-disabled='true'],
+.iconButton[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* The reason of a closed button (specs/2026-11-10-ux2-patterns-refusals.md PR1.1; board 15·04): a plate under it, light
+   in every theme of reading like the other floating surfaces; below 600 px a line across the window. */
+.reason {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  inset: auto;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 10px 12px;
+  background: var(--ck-popover);
+  box-shadow: var(--ck-shadow-lg);
+  color: var(--ck-popover-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  overflow: visible;
+  text-align: start;
+  white-space: normal;
+}
+
+.reasonAction {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 8px;
+  margin-inline-start: -8px;
+  background: transparent;
+  color: var(--ck-popover-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+}
+
+.reasonAction:hover {
+  background: var(--ck-secondary);
+}
+
+.reasonAction:focus-visible {
+  outline: 1.5px solid var(--ck-ring);
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
 }
 
 .button:focus-visible,
@@ -153,7 +222,7 @@
   height: 44px;
 }
 
-.iconButton:hover:not(:disabled) {
+.iconButton:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--ck-muted);
   color: var(--ck-foreground);
 }
@@ -287,17 +356,65 @@
   text-align: left;
 }
 
-@media (pointer: coarse) {
+/* Under a finger and below 900 px every button is a target of 44 px, whatever size the page chose (PR1.4, П-16): the
+   control chooses, not the page. */
+@media (pointer: coarse), (max-width: 899px) {
   .button,
   .button[data-size],
   .select {
     min-height: 44px;
   }
 
-  .iconButton {
+  .button,
+  .button[data-size] {
+    min-width: 44px;
+  }
+
+  .iconButton,
+  .iconButton[data-size] {
     min-width: 44px;
     min-height: 44px;
   }
+
+  .reasonAction {
+    min-height: 44px;
+  }
+
+  /* A link-action and a box with its word are targets of 44 px too (specs/2026-11-11-ux9-shelf-chat.md SC2.1, W-32): the
+     label of the box — its word and its row — takes the press, the box itself keeps its size. */
+  .linkAction {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .checkbox {
+    min-height: 44px;
+  }
+}
+
+/* An action written as a link inside a line (`LinkAction`, SC2.1): a word of the line in the colour of a link. */
+.linkAction {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ck-link);
+  cursor: pointer;
+  font: inherit;
+  text-align: inherit;
+  text-decoration: none;
+}
+
+.linkAction:hover {
+  text-decoration: underline;
+}
+
+.linkAction:focus-visible {
+  border-radius: var(--ck-radius-xs);
+  outline: 1.5px solid var(--ck-ring);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
 }
 
 .selectMenu {
@@ -349,6 +466,16 @@
 
 .selectOption > svg {
   flex-shrink: 0;
+}
+
+.selectMark {
+  display: inline-block;
+  margin-inline-start: 4px;
+  border-radius: var(--ck-radius-pill);
+  padding: 2px 9px;
+  background: var(--ck-secondary);
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
 }
 
 .input:hover:not(:disabled),

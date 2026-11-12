@@ -84,7 +84,7 @@ func (s *Store) terminalizeCanonTextIndexForClaim(
 			if err != nil {
 				return ErrTextIndexConflict
 			}
-			if err := s.queueChapterCardsInTx(ctx, tx, subject.ProjectID, projectGeneration, subject.SourceView); err != nil {
+			if _, err := s.queueChapterCardsInTx(ctx, tx, subject.ProjectID, projectGeneration, subject.SourceView); err != nil {
 				return err
 			}
 			if subject.SourceView == governance.SourceViewDraft {
@@ -135,19 +135,23 @@ func (s *Store) terminalizeCanonTextIndexForClaim(
 }
 
 // QueueChapterCards queues the cards Job of an indexed text version outside a text index
-// terminal, for cards the version still lacks; a Job already waiting is reused.
-func (s *Store) QueueChapterCards(ctx context.Context, projectID string, sourceView governance.SourceView) error {
+// terminal, for cards the version still lacks; a Job already waiting is reused. It reports whether a Job waits for the
+// version: a build whose helper is not connected queues none (queueChapterCardsInTx).
+func (s *Store) QueueChapterCards(ctx context.Context, projectID string, sourceView governance.SourceView) (bool, error) {
 	id, err := storedb.ParseUUID(projectID)
 	if err != nil {
-		return ErrTextIndexValidation
+		return false, ErrTextIndexValidation
 	}
-	return mapTextIndexError(s.WithTx(ctx, func(tx pgx.Tx) error {
+	queued := false
+	err = mapTextIndexError(s.WithTx(ctx, func(tx pgx.Tx) error {
 		projectGeneration, err := lockCanonTextTerminalProject(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		return s.queueChapterCardsInTx(ctx, tx, projectID, projectGeneration, sourceView)
+		queued, err = s.queueChapterCardsInTx(ctx, tx, projectID, projectGeneration, sourceView)
+		return err
 	}))
+	return queued && err == nil, err
 }
 
 // QueueSagaLayer queues the thread layer Job of a project built from a text version
@@ -174,17 +178,23 @@ func (s *Store) QueueSagaLayer(ctx context.Context, projectID string, sourceView
 	}))
 }
 
-// queueChapterCardsInTx queues the cards Job of the indexed text version (UC2 step 1).
+// queueChapterCardsInTx queues the cards Job of the indexed text version (UC2 step 1) and reports whether one waits. The
+// one rule of a build without its helper (specs/2026-11-12-desk-window.md WN3.4): no cards Job is queued — nobody would
+// read the chapters, and a Job would only end refused; the text is indexed and found all the same, and the catch-up of the
+// missing cards queues it once the helper is there.
 func (s *Store) queueChapterCardsInTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	projectID string,
 	projectGeneration int64,
 	sourceView governance.SourceView,
-) error {
+) (bool, error) {
+	if s.helper != nil && !s.helper.Connected(ctx) {
+		return false, nil
+	}
 	source, err := projectJobSource(projectID, projectGeneration, sourceView)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = jobstore.New(s.DB).UpsertChapterCardsIntent(ctx, tx, jobs.ChapterCardsIntentInput{
 		Subject: jobs.ChapterCardsSubject{
@@ -192,7 +202,7 @@ func (s *Store) queueChapterCardsInTx(
 		},
 		Source: source,
 	})
-	return mapTextIndexError(err)
+	return err == nil, mapTextIndexError(err)
 }
 
 // projectJobSource is the manifest of a system Job over a whole text version: the project at its

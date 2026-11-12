@@ -56,6 +56,8 @@ export function createAuthHandlers(options: AuthHandlersOptions = {}) {
   let sessionActive = true;
   let impersonatedEmail: string | null = null;
   let user = { ...mswUser, emailVerified: options.emailVerified ?? true, documentsAccepted: options.documentsAccepted ?? true };
+  // The other devices the author is signed in on (specs/2026-11-10-ux2-tariff-account.md TA5.2).
+  let otherSessions = 2;
   const authSecurity = (operationId: OperationId, request: Request): MswSecurityContext => ({
     csrfState,
     hasActiveSession: () => sessionActive,
@@ -177,6 +179,24 @@ export function createAuthHandlers(options: AuthHandlersOptions = {}) {
         authSecurity('sendEmailVerification', request),
       ),
     ),
+    // The fix of an unverified address (specs/2026-11-10-ux3-auth.md AU1.8): the session with the new address.
+    http.put(mswPath('changeUnverifiedEmail'), async ({ request }) => {
+      const body = await readJson(request);
+      return jsonResponse(
+        () => {
+          if (user.emailVerified) {
+            throw new MockApiError(409, 'email address is already verified', 'changeUnverifiedEmail', 'auth.email_already_verified');
+          }
+          if (typeof body.email !== 'string' || !/^[^\s@]+@[^\s@]+$/u.test(body.email.trim())) {
+            throw new MockApiError(400, 'validation failed', 'changeUnverifiedEmail', 'request.validation');
+          }
+          user = { ...user, email: normalizedEmail(body.email) };
+          return createAuthSession(user);
+        },
+        undefined,
+        authSecurity('changeUnverifiedEmail', request),
+      );
+    }),
     http.post(mswPath('changePassword'), async ({ request }) => {
       const body = await readJson(request);
       return emptyResponse(() => {
@@ -197,6 +217,28 @@ export function createAuthHandlers(options: AuthHandlersOptions = {}) {
         user = { ...user, documentsAccepted: true };
       }, authSecurity('acceptLegalDocuments', request));
     }),
+    // «Аккаунт» (specs/2026-11-10-ux2-tariff-account.md UC5): the name, the devices and «Выйти на остальных».
+    http.put(mswPath('setAccountName'), async ({ request }) => {
+      const body = await readJson(request);
+      return jsonResponse(
+        () => {
+          const name = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+          if (!name || [...name].length > 120) throw new MockApiError(400, 'validation failed', 'setAccountName', 'request.validation');
+          user = { ...user, displayName: name };
+          return createAuthSession(user);
+        },
+        undefined,
+        authSecurity('setAccountName', request),
+      );
+    }),
+    http.get(mswPath('getAccountSessions'), ({ request }) =>
+      jsonResponse(() => ({ count: 1 + otherSessions }), undefined, authSecurity('getAccountSessions', request))),
+    http.post(mswPath('logoutOtherSessions'), ({ request }) =>
+      jsonResponse(() => {
+        const count = otherSessions;
+        otherSessions = 0;
+        return { count };
+      }, undefined, authSecurity('logoutOtherSessions', request))),
     http.post(mswPath('logoutEverywhere'), ({ request }) =>
       emptyResponse(() => {
         sessionActive = false;
@@ -231,6 +273,20 @@ export function createAuthHandlers(options: AuthHandlersOptions = {}) {
         },
         { headers: sessionHeaders() },
         { csrfState, operationId: 'resetPassword', request },
+      );
+    }),
+    // A live reset link names its address and is not spent (specs/2026-11-10-ux3-auth.md AU4.1).
+    http.post(mswPath('checkPasswordResetLink'), async ({ request }) => {
+      const body = await readJson(request);
+      return jsonResponse(
+        () => {
+          if (body.token !== `mock-password_reset-${user.id}`) {
+            throw new MockApiError(400, 'link is invalid or expired', 'checkPasswordResetLink', 'auth.token_invalid');
+          }
+          return { email: user.email };
+        },
+        undefined,
+        { csrfState, operationId: 'checkPasswordResetLink', request },
       );
     }),
     http.post(mswPath('confirmEmailVerification'), async ({ request }) => {

@@ -26,7 +26,9 @@ var CurrentCardInstructions = CardInstructionsV4
 // instructions, how many only a card of other instructions, and which models wrote them
 // (specs/2026-10-29-chapter-cards-quality.md R1.6, specs/2026-10-29-admin-panel.md R5.3).
 type CardsCoverage struct {
-	ProjectID    string
+	ProjectID string
+	// OwnerID is the owner of the project.
+	OwnerID      string
 	Texts        int64
 	CurrentCards int64
 	OtherCards   int64

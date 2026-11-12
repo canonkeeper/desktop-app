@@ -22,6 +22,9 @@ type BookCoverRoutes func(chi.Router, *auth.Service)
 type NotesRoutes func(chi.Router, *auth.Service)
 type AccountQuotaRoutes func(chi.Router, *auth.Service)
 
+// TrashRoutes mounts listRecentlyDeleted: «Недавно удалённые» of the author (specs/2026-11-11-ux7-trash.md TB1.1).
+type TrashRoutes func(chi.Router, *auth.Service)
+
 // ClientErrorRoutes mounts reportClientError behind the CSRF check; currentUserID names the
 // signed-in user of a request ("" for an anonymous visitor).
 type ClientErrorRoutes func(router chi.Router, csrf func(http.Handler) http.Handler, currentUserID func(*http.Request) string)
@@ -43,6 +46,7 @@ type HTTPDependencies struct {
 	BookCoverRoutes     BookCoverRoutes
 	NotesRoutes         NotesRoutes
 	AccountQuotaRoutes  AccountQuotaRoutes
+	TrashRoutes         TrashRoutes
 	ChapterSearchRoutes func(chi.Router, *auth.Service)
 	ClientErrorRoutes   ClientErrorRoutes
 	// SiteRoutes mount the operations of the build's closed modules after the open ones.
@@ -115,6 +119,9 @@ func newRouter(deps HTTPDependencies) chi.Router {
 	if deps.AccountQuotaRoutes == nil {
 		panic("app: AccountQuotaRoutes is required")
 	}
+	if deps.TrashRoutes == nil {
+		panic("app: TrashRoutes is required")
+	}
 	if deps.ChapterSearchRoutes == nil {
 		panic("app: ChapterSearchRoutes is required")
 	}
@@ -173,6 +180,7 @@ func newRouter(deps HTTPDependencies) chi.Router {
 		deps.BookCoverRoutes(apiRouter, authService)
 		deps.NotesRoutes(apiRouter, authService)
 		deps.AccountQuotaRoutes(apiRouter, authService)
+		deps.TrashRoutes(apiRouter, authService)
 		deps.ChapterSearchRoutes(apiRouter, authService)
 		jobHandlers.Mount(apiRouter)
 		indexingHandlers.Mount(apiRouter)

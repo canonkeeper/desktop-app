@@ -50,8 +50,18 @@ func (userStub) AuthenticateWrite(_ context.Context, cookie, csrf string) (auth.
 
 type storeStub struct {
 	started *service.StartCommand
+	created *service.CreateCommand
 	choices []domain.Choice
 	err     error
+}
+
+func (stub *storeStub) CreateAuthorMaterial(_ context.Context, command service.CreateCommand) (domain.Record, error) {
+	stub.created = &command
+	return domain.Record{ID: testRecord, Draft: command.Draft, SourceKind: domain.SourceManual, Revision: 1, CreatedAt: time.Unix(1, 0), UpdatedAt: time.Unix(1, 0)}, stub.err
+}
+
+func (stub *storeStub) UpdateAuthorMaterial(_ context.Context, _ service.Write, id string, expected int64, draft domain.Draft, _ string) (domain.Record, error) {
+	return domain.Record{ID: id, Draft: draft, SourceKind: domain.SourceManual, Revision: expected + 1}, stub.err
 }
 
 func (stub *storeStub) StartAuthorMaterialsImport(_ context.Context, command service.StartCommand) (domain.Import, error) {
@@ -76,6 +86,8 @@ func router(stub *storeStub) http.Handler {
 	routes := chi.NewRouter()
 	NewHandlers(UseCases{
 		List:      service.List{Store: stub},
+		Create:    service.Create{Store: stub, Now: time.Now},
+		Update:    service.Update{Store: stub},
 		Start:     service.Start{Store: stub, Now: time.Now},
 		GetImport: service.GetImport{Store: stub},
 		Confirm:   service.Confirm{Store: stub},
@@ -170,7 +182,7 @@ func TestStartSaysWhatIsWrongWithAFile(t *testing.T) {
 		"a LibreOffice sheet":    {"навыки.ods", zipOf(t, "mimetype", "application/vnd.oasis.opendocument.spreadsheet"), http.StatusUnprocessableEntity, "author_materials.open_document"},
 		"a PDF":                  {"заметки.pdf", []byte("%PDF-1.7\n"), http.StatusUnprocessableEntity, "author_materials.pdf"},
 		"a picture":              {"карта.docx", []byte("\x89PNG\r\n\x1a\n"), http.StatusUnprocessableEntity, "author_materials.picture"},
-		"a CSV":                  {"навыки.csv", []byte("Ворон;персонаж\n"), http.StatusUnprocessableEntity, "author_materials.plain_text"},
+		"an empty text":          {"навыки.txt", []byte("\n \n"), http.StatusUnprocessableEntity, "author_materials.empty"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			body, contentType := upload(t, testCase.file, testCase.content)
@@ -291,5 +303,104 @@ func TestListAndCurrentAnswerTheContract(t *testing.T) {
 	router(&storeStub{err: errors.New("database down")}).ServeHTTP(response, request(http.MethodGet, "/projects/"+testProject+"/author-material-imports/current", nil, ""))
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("a failure: %d", response.Code)
+	}
+}
+
+// specs/2026-11-10-ux8-memory-records.md MR2.4: a .csv is read as a table, a .txt and a .md as a text.
+func TestStartReadsTextFiles(t *testing.T) {
+	for name, want := range map[string]domain.SourceKind{"навыки.csv": domain.SourceCSV, "мир.txt": domain.SourceText, "мир.md": domain.SourceText} {
+		stub := &storeStub{}
+		body, contentType := upload(t, name, []byte("Имя;Вид\nВорон;персонаж\n"))
+		response := httptest.NewRecorder()
+		router(stub).ServeHTTP(response, request(http.MethodPost, "/projects/"+testProject+"/author-material-imports", body, contentType))
+		if response.Code != http.StatusAccepted || stub.started == nil || stub.started.SourceKind != want || stub.started.SourceName != name {
+			t.Fatalf("%s: %d: %s", name, response.Code, response.Body.String())
+		}
+	}
+}
+
+const createBodyJSON = `{"name":" Ворон ","kind":"character","description":"Наёмник","properties":[{"key":"Ранг","value":"B"}]}`
+
+func createRequest(body string) *http.Request {
+	result := request(http.MethodPost, "/projects/"+testProject+"/author-materials", bytes.NewBufferString(body), "application/json")
+	return result
+}
+
+// MR2.1: a record by hand is written behind the session, the write proof, the origin of the site and an Idempotency-Key; the
+// role and the project are the store's, in the transaction of the write.
+func TestCreateIsFencedAsTheOtherWrites(t *testing.T) {
+	stub := &storeStub{}
+	response := httptest.NewRecorder()
+	router(stub).ServeHTTP(response, createRequest(createBodyJSON))
+	if response.Code != http.StatusCreated || stub.created == nil || stub.created.Draft.Name != "Ворон" || stub.created.Key == "" ||
+		stub.created.OperationID != "author_materials.create.v1" || stub.created.KeyHash == "" {
+		t.Fatalf("create = %d: %s, %+v", response.Code, response.Body.String(), stub.created)
+	}
+	var created struct{ Name, SourceKind string }
+	if json.Unmarshal(response.Body.Bytes(), &created) != nil || created.SourceKind != "manual" || created.Name != "Ворон" {
+		t.Fatalf("the record = %s", response.Body.String())
+	}
+	fenced := map[string]struct {
+		change func(*http.Request)
+		status int
+	}{
+		"without a session":          {func(r *http.Request) { r.Header.Del("Cookie") }, http.StatusUnauthorized},
+		"without the write proof":    {func(r *http.Request) { r.Header.Set("X-CSRF-Token", "wrong") }, http.StatusForbidden},
+		"from another origin":        {func(r *http.Request) { r.Header.Set("Origin", "https://evil.test") }, http.StatusForbidden},
+		"without an Idempotency-Key": {func(r *http.Request) { r.Header.Del("Idempotency-Key") }, http.StatusBadRequest},
+	}
+	for name, item := range fenced {
+		stub := &storeStub{}
+		r := createRequest(createBodyJSON)
+		item.change(r)
+		response := httptest.NewRecorder()
+		router(stub).ServeHTTP(response, r)
+		if response.Code != item.status || stub.created != nil {
+			t.Fatalf("%s: %d, wrote %v", name, response.Code, stub.created != nil)
+		}
+	}
+	for name, body := range map[string]string{
+		"no name":          `{"name":"  ","kind":"character","description":"","properties":[]}`,
+		"an unknown kind":  `{"name":"Ворон","kind":"dragon","description":"","properties":[]}`,
+		"a revision":       `{"name":"Ворон","kind":"character","description":"","properties":[],"expectedRevision":1}`,
+		"a name of a line": `{"name":"Ворон\nЛиса","kind":"character","description":"","properties":[]}`,
+	} {
+		response := httptest.NewRecorder()
+		router(&storeStub{}).ServeHTTP(response, createRequest(body))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s: %d", name, response.Code)
+		}
+	}
+	for err, want := range map[error]struct {
+		status int
+		code   string
+	}{
+		domain.ErrForbidden: {http.StatusForbidden, "forbidden"},
+		domain.ErrNotFound:  {http.StatusNotFound, "not_found"},
+		domain.ErrConflict:  {http.StatusConflict, "conflict"},
+	} {
+		response := httptest.NewRecorder()
+		router(&storeStub{err: err}).ServeHTTP(response, createRequest(createBodyJSON))
+		if response.Code != want.status || code(t, response) != want.code {
+			t.Fatalf("%v: %d: %s", err, response.Code, response.Body.String())
+		}
+	}
+}
+
+// MR2.3: a name another record has is refused in a write and in a change alike, with the record that has it.
+func TestATakenNameNamesItsRecord(t *testing.T) {
+	taken := &storeStub{err: domain.NameTaken{RecordID: testImport}}
+	for name, r := range map[string]*http.Request{
+		"create": createRequest(createBodyJSON),
+		"update": request(http.MethodPut, "/projects/"+testProject+"/author-materials/"+testRecord,
+			bytes.NewBufferString(`{"name":"Ворон","kind":"character","description":"","properties":[],"expectedRevision":2}`), "application/json"),
+	} {
+		response := httptest.NewRecorder()
+		router(taken).ServeHTTP(response, r)
+		var problem struct{ Code, MaterialID string }
+		if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &problem) != nil ||
+			problem.Code != "author_materials.name_taken" || problem.MaterialID != testImport {
+			t.Fatalf("%s: %d: %s", name, response.Code, response.Body.String())
+		}
 	}
 }

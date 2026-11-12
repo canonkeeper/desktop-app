@@ -6,9 +6,12 @@ import (
 
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
+	storedb "canonkeeper/backend/internal/store/db"
 )
 
-func TestImportQueueTerminalFailureBlocksLaterItems(t *testing.T) {
+// specs/2026-11-11-ux7-upload.md UP3.2: a volume that did not read keeps its reason for the author and waits at its place;
+// its queue keeps running and its file goes at once.
+func TestAQueueVolumeThatDidNotReadKeepsItsReasonAndItsQueueRuns(t *testing.T) {
 	tests := []struct {
 		name      string
 		errorCode string
@@ -23,6 +26,13 @@ func TestImportQueueTerminalFailureBlocksLaterItems(t *testing.T) {
 			name:      "exhausted infrastructure failure",
 			errorCode: jobs.RetryExhaustedCode,
 			wantCode:  jobs.RetryExhaustedCode,
+		},
+		{
+			// specs/2026-10-28-writer-quotas-and-fair-queue.md R3.3, specs/2026-11-09-quota-accounting.md Q1.5: a volume
+			// over a limit names the limit, as a single import does, so the author sees which one and his tier.
+			name:      "quota refusal",
+			errorCode: "quota.account_books",
+			wantCode:  "quota.account_books",
 		},
 	}
 	for _, test := range tests {
@@ -42,12 +52,12 @@ func TestImportQueueTerminalFailureBlocksLaterItems(t *testing.T) {
 			if _, err := fixture.db.Pool.Exec(ctx, `
 				INSERT INTO import_queue_items (
 					id, queue_id, project_id, client_item_id, position, source_file_name,
-					storage_key, mime_type, size_bytes, sha256, detected_book_order,
+					storage_key, mime_type, size_bytes, sha256,
 					confirmed_book_order, preflight_status, import_job_id, created_at, updated_at
 				)
 				SELECT gen_random_uuid(), $1, $2, 'terminal-current', 1,
 				       $3::text, upload.storage_key, upload.mime_type, upload.size_bytes,
-				       upload.sha256, 1, 1, 'ready', $4::uuid, clock_timestamp(), clock_timestamp()
+				       upload.sha256, 1, 'ready', $4::uuid, clock_timestamp(), clock_timestamp()
 				FROM import_uploads AS upload
 				WHERE upload.project_id = $2 AND upload.storage_key = $5
 			`, queueID, fixture.projectID,
@@ -78,8 +88,8 @@ func TestImportQueueTerminalFailureBlocksLaterItems(t *testing.T) {
 			`, queueID).Scan(&status, &errorCode, &bodyPresent); err != nil {
 				t.Fatal(err)
 			}
-			if status != string(library.ImportQueueFailed) || errorCode != test.wantCode || bodyPresent {
-				t.Fatalf("queue/code/body = %q/%q/%t, want failed/%q/false", status, errorCode, bodyPresent, test.wantCode)
+			if status != string(library.ImportQueueRunning) || errorCode != test.wantCode || bodyPresent {
+				t.Fatalf("queue/code/body = %q/%q/%t, want running/%q/false", status, errorCode, bodyPresent, test.wantCode)
 			}
 			if _, err := newWorkerClaimAuthorityForTest(fixture.db).ClaimNextQueuedJobForWorker(ctx, []jobs.Kind{jobs.KindImport}); err != jobs.ErrNotFound {
 				t.Fatalf("later queue claim error = %v, want exact ErrNotFound", err)
@@ -88,12 +98,15 @@ func TestImportQueueTerminalFailureBlocksLaterItems(t *testing.T) {
 	}
 }
 
-func TestImportFailureCancelsQueuedImportSuffix(t *testing.T) {
+// UP3.2: the volumes after a volume that did not read are not canceled: they stay queued with their files and their
+// uploads, and the queue takes them by itself.
+func TestAFailedVolumeLeavesTheVolumesAfterItQueued(t *testing.T) {
 	ctx := context.Background()
 	db, projectID, actorID, proof := newImportQueueStartFixture(t, "b3a")
 	store := New(db)
 	queue := startReadyImportQueue(t, store, projectID, actorID, proof, "import-failure-suffix", 1, 2, 3)
-	decision, err := newWorkerClaimAuthorityForTest(db).ClaimNextQueuedJobForWorker(ctx, []jobs.Kind{jobs.KindImport})
+	claims := newWorkerClaimAuthorityForTest(db)
+	decision, err := claims.ClaimNextQueuedJobForWorker(ctx, []jobs.Kind{jobs.KindImport})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,8 +122,8 @@ func TestImportFailureCancelsQueuedImportSuffix(t *testing.T) {
 	if err := db.Pool.QueryRow(ctx, `SELECT status FROM import_queues WHERE project_id=$1 AND id=$2`, projectID, queue.ID).Scan(&queueStatus); err != nil {
 		t.Fatal(err)
 	}
-	if queueStatus != string(library.ImportQueueFailed) {
-		t.Fatalf("queue status = %s, want failed", queueStatus)
+	if queueStatus != string(library.ImportQueueRunning) {
+		t.Fatalf("queue status = %s, want running", queueStatus)
 	}
 	for index, item := range queue.Items {
 		var jobStatus, requestStatus string
@@ -126,12 +139,30 @@ func TestImportFailureCancelsQueuedImportSuffix(t *testing.T) {
 		`, projectID, item.ImportJobID).Scan(&jobStatus, &requestStatus, &bodyPresent); err != nil {
 			t.Fatal(err)
 		}
-		wantJob, wantRequest := string(jobs.StatusCanceled), string(jobs.StatusCanceled)
+		wantJob, wantRequest, wantBody := string(jobs.StatusQueued), "pending", true
 		if index == 0 {
-			wantJob, wantRequest = string(jobs.StatusFailed), string(jobs.StatusFailed)
+			wantJob, wantRequest, wantBody = string(jobs.StatusFailed), string(jobs.StatusFailed), false
 		}
-		if jobStatus != wantJob || requestStatus != wantRequest || bodyPresent {
-			t.Fatalf("item %d state = %s/%s/body:%t, want %s/%s/body:false", index+1, jobStatus, requestStatus, bodyPresent, wantJob, wantRequest)
+		if jobStatus != wantJob || requestStatus != wantRequest || bodyPresent != wantBody {
+			t.Fatalf("item %d state = %s/%s/body:%t, want %s/%s/body:%t", index+1, jobStatus, requestStatus, bodyPresent, wantJob, wantRequest, wantBody)
 		}
 	}
+	// Every volume counts its upload, as at the start (specs/2026-11-09-quota-accounting.md Q5.1: no volume is left unreached).
+	if uploads := uploadsOfTheDay(t, db, actorID); uploads != 3 {
+		t.Fatalf("uploads after a volume did not read = %d, want 3", uploads)
+	}
+	next, err := claims.ClaimNextQueuedJobForWorker(ctx, []jobs.Kind{jobs.KindImport})
+	if err != nil || next.Claim.JobID != queue.Items[1].ImportJobID {
+		t.Fatalf("claim after the first volume did not read = %+v, %v; want volume 2", next.Claim, err)
+	}
+}
+
+// uploadsOfTheDay is what the writer spent of imports_per_day, over all days.
+func uploadsOfTheDay(t *testing.T, db *storedb.DB, userID any) int64 {
+	t.Helper()
+	var uploads int64
+	if err := db.Pool.QueryRow(context.Background(), `SELECT COALESCE(sum(imports), 0) FROM writer_usage_days WHERE user_id = $1`, userID).Scan(&uploads); err != nil {
+		t.Fatal(err)
+	}
+	return uploads
 }

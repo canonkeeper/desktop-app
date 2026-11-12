@@ -39,17 +39,18 @@ type ImportQueue struct {
 }
 
 type ImportQueueItem struct {
-	ID                  string
-	QueueID             string
-	ProjectID           string
-	ClientItemID        string
-	Position            int
-	SourceFileName      string
-	StorageKey          string
-	MIMEType            string
-	SizeBytes           int64
-	SHA256              string
-	DetectedBookOrder   int
+	ID             string
+	QueueID        string
+	ProjectID      string
+	ClientItemID   string
+	Position       int
+	SourceFileName string
+	StorageKey     string
+	MIMEType       string
+	SizeBytes      int64
+	SHA256         string
+	// ConfirmedBookOrder is the place the volume takes after the books of the shelf, given at the start of its queue by
+	// its position (specs/2026-11-11-ux7-upload.md UP2.3).
 	ConfirmedBookOrder  int
 	PreflightStatus     string
 	PreflightErrorJSON  []byte
@@ -61,6 +62,8 @@ type ImportQueueItem struct {
 	QueueVersion        int64
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	// SkippedAt — the author took the volume out of the upload with «Пропустить» (specs/2026-11-11-ux7-upload.md UP3.2).
+	SkippedAt *time.Time
 }
 
 type CreateImportQueueDraftStoreInput struct {
@@ -73,11 +76,10 @@ type CreateImportQueueDraftStoreInput struct {
 }
 
 type CreateImportQueueItemStoreInput struct {
-	ID                string
-	ClientItemID      string
-	Position          int
-	SourceFileName    string
-	DetectedBookOrder int
+	ID             string
+	ClientItemID   string
+	Position       int
+	SourceFileName string
 }
 
 type GetImportQueueStoreInput struct {
@@ -106,23 +108,37 @@ type PutImportQueueItemStoreInput struct {
 	FileBytes          []byte
 	PreflightStatus    string
 	PreflightErrorJSON []byte
-	DetectedBookOrder  int
-	ConfirmedBookOrder int
 	ExpiresAt          *time.Time
 }
 
-type SaveImportQueueDraftStoreInput struct {
-	ProjectID       string
-	QueueID         string
-	ActorUserID     string
-	ExpectedVersion int64
-	Items           []SaveImportQueueItemStoreInput
+// ReplaceImportQueueItemStoreInput is «Заменить файл» of a volume that did not read (UP3.2): its new file, checked as
+// every file of a queue is, and the request its new import Job is admitted by.
+type ReplaceImportQueueItemStoreInput struct {
+	ProjectID          string
+	QueueID            string
+	ItemID             string
+	ActorUserID        string
+	StorageKey         string
+	SourceFileName     string
+	MIMEType           string
+	SizeBytes          int64
+	SHA256             string
+	FileBytes          []byte
+	PreflightStatus    string
+	PreflightErrorJSON []byte
+	IdempotencyKey     string
+	RequestMethod      string
+	RequestPath        string
+	RequestFingerprint string
+	SessionWriteProof  auth.SessionWriteProof
 }
 
-type SaveImportQueueItemStoreInput struct {
-	ItemID             string
-	Position           int
-	ConfirmedBookOrder int
+// SkipImportQueueItemStoreInput is «Пропустить» of a volume that did not read (UP3.2).
+type SkipImportQueueItemStoreInput struct {
+	ProjectID   string
+	QueueID     string
+	ItemID      string
+	ActorUserID string
 }
 
 type CancelImportQueueStoreInput struct {

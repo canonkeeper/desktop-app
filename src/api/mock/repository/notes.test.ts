@@ -83,6 +83,31 @@ describe('Notes V2 mock contract', () => {
     expect(query.query).toBe('  НАЗВАНИЕ ');
   });
 
+  it('keeps the quote apart, names the place and keeps the own thoughts under a saga (specs/2026-11-11-ux7-notes.md NT1.2, NT1.3, NT2.4, NT3.2)', async () => {
+    const { context, api } = setup();
+    const fixture = context.state.personalNotes[0]!;
+    if (fixture.source?.kind !== 'chapter') throw new Error('missing chapter note fixture');
+    const { locator } = fixture.source;
+    const words = 'Белая пыль над портом';
+    const quoted = await api.createPersonalNote({ body: '', source: { kind: 'chapter', quote: words, locator } }, { idempotencyKey: 'idem-note-quote-only' });
+    expect(quoted).toMatchObject({ body: '', source: { quote: words } });
+    await expect(api.createPersonalNote({ body: ' ' }, { idempotencyKey: 'idem-note-own-blank' })).rejects.toMatchObject({ status: 422 });
+    const own = await api.createPersonalNote({ body: 'Своя мысль' }, { idempotencyKey: 'idem-note-own' });
+    await expect(api.updatePersonalNote(own.id, { body: '', expectedRevision: 1 })).rejects.toMatchObject({ status: 422 });
+    await expect(api.updatePersonalNote(quoted.id, { body: '', expectedRevision: 1 })).resolves.toMatchObject({ body: '', revision: 2 });
+    const saga = await api.listNotes({ projectId: locator.projectId });
+    expect(saga.data.map((entry) => entry.id).sort()).toEqual([quoted.id, own.id, fixture.id].sort());
+    const entry = saga.data.find((item) => item.id === quoted.id)!;
+    expect(entry).toMatchObject({ preview: '', quote: words, projectTitle: expect.any(String), place: expect.stringMatching(/^Книга \d+, гл\. /u) });
+    expect((await api.listNotes({ query: 'пыль над' })).data.map((item) => item.id)).toEqual([quoted.id]);
+    await expect(api.resolvePersonalNoteSource(quoted.id)).resolves.toMatchObject({ state: 'current', place: entry.place });
+    context.state.chapters = context.state.chapters.filter((chapter) => chapter.id !== locator.chapterId);
+    const gone = (await api.listNotes({ projectId: locator.projectId, source: 'chapter' })).data.find((item) => item.id === quoted.id)!;
+    expect(gone).toMatchObject({ quote: words, projectTitle: entry.projectTitle });
+    expect(gone).not.toHaveProperty('place');
+    await expect(api.resolvePersonalNoteSource(quoted.id)).resolves.toEqual({ state: 'unavailable' });
+  });
+
   it.each([
     { query: 'я'.repeat(201) }, { type: 'note' }, { source: 'other' }, { bookId: 'book-02' }, { projectId: 2 }, { limit: 0 }, { extra: 'field' }, null, [],
   ])('rejects invalid query input %j', async (input) => {

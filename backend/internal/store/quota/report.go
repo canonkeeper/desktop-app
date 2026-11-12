@@ -26,7 +26,7 @@ type Writer struct {
 }
 
 // WriterByEmail finds the account of an address (addresses are stored lower case).
-func WriterByEmail(ctx context.Context, db querier, email string) (Writer, error) {
+func WriterByEmail(ctx context.Context, db Querier, email string) (Writer, error) {
 	var writer Writer
 	err := db.QueryRow(ctx, `SELECT id::text, email FROM users WHERE email = $1`,
 		strings.ToLower(strings.TrimSpace(email))).Scan(&writer.ID, &writer.Email)
@@ -60,7 +60,7 @@ type UsageRow struct {
 // UsageReport is the operator's report (R9.2): per writer — or per writer and project — the
 // questions and uploads since the first day, model spend by source and the text they own; and
 // the last reading of the provider's usage window. No question, answer or book text is read.
-func UsageReport(ctx context.Context, db querier, since time.Time, byProject bool) ([]UsageRow, *quota.LimitSample, error) {
+func UsageReport(ctx context.Context, db Querier, since time.Time, byProject bool) ([]UsageRow, *quota.LimitSample, error) {
 	day := since.Format(time.DateOnly)
 	rows := map[[2]string]*UsageRow{}
 	row := func(userID, projectID string) *UsageRow {
@@ -174,7 +174,7 @@ func UsageReport(ctx context.Context, db querier, since time.Time, byProject boo
 	return report, sample, err
 }
 
-func lastLimitSample(ctx context.Context, db querier) (*quota.LimitSample, error) {
+func lastLimitSample(ctx context.Context, db Querier) (*quota.LimitSample, error) {
 	var sample quota.LimitSample
 	var limitID *string
 	var window *int64

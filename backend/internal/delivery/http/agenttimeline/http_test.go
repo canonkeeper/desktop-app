@@ -271,7 +271,7 @@ func TestLiveStreamWritesContextUsageWithoutSnapshotRead(t *testing.T) {
 
 func mountedTimeline(timeline Timeline, current CurrentUserService, access JobAccessService) http.Handler {
 	router := chi.NewRouter()
-	NewHandlers(timeline, current, access, []string{timelineTestOrigin}).Mount(router)
+	NewHandlers(timeline, &placesStub{}, current, access, []string{timelineTestOrigin}).Mount(router)
 	return router
 }
 
@@ -339,7 +339,7 @@ func TestLiveStreamWaitsForRootThread(t *testing.T) {
 			ID: "assistant-1:0", Kind: domain.EventAssistant, JobID: "job-1", TurnID: "turn-1", ItemID: "assistant-1", Text: "Ответ",
 		}}},
 	}
-	handlers := NewHandlers(timeline, currentUserStub{user: auth.User{ID: "user-1"}},
+	handlers := NewHandlers(timeline, &placesStub{}, currentUserStub{user: auth.User{ID: "user-1"}},
 		jobAccessStub{job: jobs.Job{ID: "job-1", ProjectID: "project-1", Status: jobs.StatusRunning}}, []string{timelineTestOrigin})
 	handlers.bindingPollInterval = time.Millisecond
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -369,7 +369,7 @@ func TestLiveStreamWaitsForRootThread(t *testing.T) {
 func TestLiveStreamHoldsJobEndedWithoutThread(t *testing.T) {
 	timeline := &pendingTimelineStub{pendingUpdates: 1 << 30}
 	current := &switchableUserStub{user: auth.User{ID: "user-1"}}
-	handlers := NewHandlers(timeline, current,
+	handlers := NewHandlers(timeline, &placesStub{}, current,
 		jobAccessStub{job: jobs.Job{ID: "job-1", ProjectID: "project-1", Status: jobs.StatusFailed}}, []string{timelineTestOrigin})
 	handlers.bindingPollInterval = time.Millisecond
 	handlers.authorizationLeaseDuration = 50 * time.Millisecond

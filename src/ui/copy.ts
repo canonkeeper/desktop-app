@@ -7,10 +7,6 @@ type ProjectCounts = {
 const integerFormatter = new Intl.NumberFormat('ru-RU');
 const compactFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 
-export function formatBookLabel(book: { displayNumber?: string | null; title: string }): string {
-  return book.displayNumber ? `Книга ${book.displayNumber}` : book.title;
-}
-
 export function formatReaderChapterTitle(displayNumber: string, title: string) {
   const ordinal = `Глава ${displayNumber}.`;
   const prefix = `${ordinal} `;
@@ -47,9 +43,10 @@ export function formatCount(value: number, one: string, few: string, many: strin
 
 const sizeFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
 
-/** A file size in megabytes with a decimal comma: «1,2 МБ». */
+/** A file size with a decimal comma: «1,2 МБ»; below 0,1 МБ in kilobytes, «4 КБ» — never «0,0 МБ» (pass on TEST 11.11). */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 0.1 * 1024 * 1024) return `${integerFormatter.format(Math.round(bytes / 1024))} КБ`;
   return `${sizeFormatter.format(bytes / 1024 / 1024)} МБ`;
 }
 

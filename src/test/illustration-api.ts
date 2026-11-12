@@ -31,13 +31,24 @@ type Repository = ReturnType<typeof createMockApiClient>;
 type Access = Awaited<ReturnType<Repository['getIllustrationAccess']>>;
 
 /**
- * Shows the signed-in author another right than the mock keeps — active, blocked — while the
- * drawings themselves still go through the mock's own trial (the mock's admin writers are other
- * accounts than its signed-in author).
+ * Shows the signed-in author another right than the mock keeps — blocked, none — while the drawings themselves still go
+ * through the mock's own right (the mock's admin writers are other accounts than its signed-in author).
  */
 export function overrideIllustrationAccess(repository: Repository, patch: Partial<Access>) {
   const read = repository.getIllustrationAccess.bind(repository);
   return vi.spyOn(repository, 'getIllustrationAccess').mockImplementation(async () => ({ ...(await read()), ...patch }));
+}
+
+/**
+ * Ends every period of the signed-in author, the pilot on «Профи» of the mock: he is on «Бесплатно» with its trial
+ * drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+ */
+export async function putOnFree(repository: Pick<Repository, 'getCurrentUser' | 'getAccountPlan' | 'endAdminWriterPeriod'>) {
+  const user = await repository.getCurrentUser();
+  const plan = await repository.getAccountPlan();
+  for (const period of plan.periods) {
+    if (period.endsAt === null || Date.parse(period.endsAt) > Date.now()) await repository.endAdminWriterPeriod(user.id, period.id);
+  }
 }
 
 /** Spends the trial drawings of the signed-in author on variants of drawing 1: the right becomes none. */

@@ -38,9 +38,14 @@ const (
 	reasonResources = "resources"
 	reasonPostgres  = "postgres"
 	reasonDatabase  = "database"
-	reasonAuthor    = "local_author"
-	reasonListen    = "listen"
-	reasonBackend   = "backend"
+	// specs/2026-11-12-desk-process.md PR3.3, PR3.4: the copy before the migrations failed; a migration failed after
+	// the copy; the database holds a migration newer than the program knows.
+	reasonBackup      = "backup"
+	reasonMigrate     = "migrate"
+	reasonNewerSchema = "newer_schema"
+	reasonAuthor      = "local_author"
+	reasonListen      = "listen"
+	reasonBackend     = "backend"
 )
 
 // Timeouts of the stop: the chat turns are canceled, the core stops its HTTP, workers and Codex, then PostgreSQL.
@@ -70,10 +75,11 @@ func (store *keys) set(id string, value *string) {
 }
 
 // Run is the life of the backend (DA1.6): start from the shell → data directory → PostgreSQL (the one a crash left
-// stops first) → migrations → local author → HTTP on 127.0.0.1 → ready with the port and the first code. Then it answers
-// open-code and secret until shutdown, a closed stdin or ctx ends it, and stops: the chat turns of the author are
-// canceled the standard way, the core stops taking Jobs and stops its HTTP, workers and Codex — the other running Jobs
-// go back to the queue — and PostgreSQL stops fast. A step that fails sends fatal with its reason.
+// stops first) → the copy and the migrations of a new version → local author → HTTP on 127.0.0.1 on the remembered port
+// → ready with the port and the first code. Then it answers open-code and secret until shutdown, a closed stdin or ctx
+// ends it, and stops: the chat turns of the author are canceled the standard way, the core stops taking Jobs and stops
+// its HTTP, workers and Codex — the other running Jobs go back to the queue — and PostgreSQL stops fast. A step that
+// fails sends fatal with its reason.
 func Run(ctx context.Context, options Options) error {
 	channel := newControl(options.In, options.Control)
 	start, err := channel.receive()
@@ -82,6 +88,13 @@ func Run(ctx context.Context, options Options) error {
 	}
 	if err != nil || start.Type != messageStart {
 		return fail(channel, reasonStart, errors.New("desktop: the first message is not start"))
+	}
+	// PR2.2: a path of the shell of Windows loses its prefix \\?\ before any use.
+	if start.DataDir, err = plainPath(start.DataDir); err != nil {
+		return fail(channel, reasonDataDir, err)
+	}
+	if start.Resources, err = plainPath(start.Resources); err != nil {
+		return fail(channel, reasonResources, err)
 	}
 	if start.DataDir == "" {
 		if start.DataDir, err = DefaultDataDir(); err != nil {
@@ -92,6 +105,7 @@ func Run(ctx context.Context, options Options) error {
 	if err := data.Prepare(); err != nil {
 		return fail(channel, reasonDataDir, err)
 	}
+	unfinished := removeUnfinishedBackups(data.Backups())
 	if !filepath.IsAbs(start.Resources) {
 		return fail(channel, reasonResources, errors.New("desktop: the resources of the bundle must be an absolute path"))
 	}
@@ -105,6 +119,9 @@ func Run(ctx context.Context, options Options) error {
 		options.Logs(logFile)
 	}
 	logger := log.New(logFile, "", log.LstdFlags|log.LUTC)
+	if unfinished != nil {
+		logger.Printf(`{"event":"desktop_unfinished_backup_not_removed","error":%q}`, unfinished.Error())
+	}
 	providerKeys := &keys{}
 	for id, value := range start.Secrets {
 		providerKeys.set(id, &value)
@@ -125,24 +142,45 @@ func Run(ctx context.Context, options Options) error {
 			logger.Printf(`{"event":"desktop_postgres_stop_failed","error":%q}`, err.Error())
 		}
 	}()
-	if err := cluster.Bootstrap(ctx); err != nil {
-		return failLogged(channel, logger, reasonDatabase, err)
+	backup, err := cluster.Bootstrap(ctx)
+	if backup != "" {
+		// PR3.1, PR3.2, DT13.6: the copy is named in the log of the run; it and the newest one before it stay, whether the
+		// migrations went through or failed — a migration that fails start after start makes no third copy.
+		logger.Printf(`{"event":"desktop_backup_made","backup":%q}`, backup)
+		if err := pruneBackups(data.Backups(), backupsKept, backup); err != nil {
+			logger.Printf(`{"event":"desktop_backups_not_pruned","error":%q}`, err.Error())
+		}
+	}
+	if err != nil {
+		return failWith(channel, logger, bootstrapFailure(err), err)
 	}
 	authorID, err := openLocalAuthor(ctx, cluster.ProductURL())
 	if err != nil {
 		return failLogged(channel, logger, reasonAuthor, err)
 	}
-	// DA3.1: only 127.0.0.1, on the port the system chose; never 0.0.0.0, :: or localhost.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// PR1: the window listens on the port settings.json remembers, only on 127.0.0.1.
+	saved, err := loadSettings(data.Settings(), time.Now())
+	if err != nil {
+		return failLogged(channel, logger, reasonDataDir, err)
+	}
+	listener, err := systemWindowPorts.open(saved.port)
 	if err != nil {
 		return failLogged(channel, logger, reasonListen, err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
+	portChanged, err := saved.keep(port)
+	if err != nil {
+		_ = listener.Close()
+		return failLogged(channel, logger, reasonDataDir, err)
+	}
+	if portChanged {
+		logger.Printf(`{"event":"desktop_window_port_changed","port":%d}`, port)
+	}
 
 	codes := domain.NewOpenCodes(time.Now)
 	desktop := &build{host: listener.Addr().String(), authorID: authorID, codes: codes, files: webFiles()}
 	desktop.ready = func() {
-		if err := channel.send(ControlMessage{Type: messageReady, Port: port, Code: codes.Issue()}); err != nil {
+		if err := channel.send(ControlMessage{Type: messageReady, Port: port, PortChanged: portChanged, Code: codes.Issue()}); err != nil {
 			logger.Print(`{"event":"desktop_ready_not_sent"}`)
 		}
 	}
@@ -250,7 +288,7 @@ func prepareLocalAuthor(ctx context.Context, db *storedb.DB) (string, error) {
 	return service.PrepareLocalAuthor{
 		Authors:  authors,
 		Users:    auth.NewService(authors, auth.NewSecureIDGenerator(), auth.SystemClock{}),
-		Defaults: quotastore.New(db),
+		Defaults: quotastore.New(db, quotastore.Fence{}),
 		Now:      time.Now,
 	}.Execute(ctx)
 }
@@ -262,6 +300,12 @@ func fail(channel *control, reason string, err error) error {
 }
 
 func failLogged(channel *control, logger *log.Logger, reason string, err error) error {
-	logger.Printf(`{"event":"desktop_fatal","reason":%q,"error":%q}`, reason, err.Error())
-	return fail(channel, reason, err)
+	return failWith(channel, logger, ControlMessage{Type: messageFatal, Reason: reason}, err)
+}
+
+// failWith sends a fatal that names more than its reason: the copy of a failed migration.
+func failWith(channel *control, logger *log.Logger, fatal ControlMessage, err error) error {
+	logger.Printf(`{"event":"desktop_fatal","reason":%q,"backup":%q,"error":%q}`, fatal.Reason, fatal.Backup, err.Error())
+	_ = channel.send(fatal)
+	return err
 }

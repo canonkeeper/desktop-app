@@ -101,6 +101,61 @@ describe('Overlay', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
+  // The owner, 12.11: «Версии текста» of «Письмо» could not be closed — the line of the list he pressed gave way to the
+  // opened version, the focus fell to <body>, and Escape went past the window.
+  it('takes Escape and Tab back when its focused part left the page, the top window only', () => {
+    function Swap({ onDismiss }: { onDismiss: () => void }) {
+      const [opened, setOpened] = useState(false);
+      return (
+        <Dialog label="Версии текста" onDismiss={onDismiss}>
+          {opened
+            ? <p><button type="button">Все версии</button></p>
+            : <ul><li><button onClick={() => setOpened(true)} type="button">Версия 2</button></li></ul>}
+        </Dialog>
+      );
+    }
+    const onDismiss = vi.fn();
+    const view = render(<Swap onDismiss={onDismiss} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Версия 2' }));
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document.body, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Все версии' }));
+    act(() => (document.activeElement as HTMLElement).blur());
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    // With the focus inside, the window takes the key itself, once.
+    screen.getByRole('button', { name: 'Все версии' }).focus();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Все версии' }), { key: 'Escape' });
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+    view.unmount();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves Escape from <body> to the upper window and to nobody while it may not be dismissed', () => {
+    const lower = vi.fn();
+    const upper = vi.fn();
+    function Two({ busy }: { busy: boolean }) {
+      return (
+        <>
+          <Dialog label="Нижнее" onDismiss={lower}><button type="button">Нижняя кнопка</button></Dialog>
+          <Dialog canDismiss={!busy} label="Верхнее" onDismiss={upper}><button type="button">Верхняя кнопка</button></Dialog>
+        </>
+      );
+    }
+    const view = render(<Two busy />);
+    act(() => (document.activeElement as HTMLElement).blur());
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(upper).not.toHaveBeenCalled();
+    expect(lower).not.toHaveBeenCalled();
+    view.rerender(<Two busy={false} />);
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(upper).toHaveBeenCalledTimes(1);
+    expect(lower).not.toHaveBeenCalled();
+  });
+
   it('makes background inert, focuses a non-destructive action and obeys the dismiss gate', () => {
     const onDismiss = vi.fn();
     const outside = document.createElement('div');

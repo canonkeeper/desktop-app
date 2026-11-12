@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path"
 	"slices"
 	"strings"
 
@@ -22,11 +21,12 @@ type CreateImportQueueInput struct {
 	Items             []CreateImportQueueItemInput
 }
 
+// CreateImportQueueItemInput is a volume of the upload by its file and its row: the order of the rows is the order of
+// the volumes (specs/2026-11-11-ux7-upload.md UP2.3).
 type CreateImportQueueItemInput struct {
-	ClientItemID      string
-	Position          int
-	SourceFileName    string
-	DetectedBookOrder int
+	ClientItemID   string
+	Position       int
+	SourceFileName string
 }
 
 type GetImportQueueInput struct {
@@ -50,19 +50,19 @@ type UploadImportQueueItemInput struct {
 	MIMEType          string
 	Content           []byte
 	IdempotencyKey    string
+	RequestMethod     string
+	RequestPath       string
 	SessionWriteProof auth.SessionWriteProof
 }
 
-type SaveImportQueueDraftInput struct {
+// SkipImportQueueItemInput is «Пропустить» of a volume that did not read (specs/2026-11-11-ux7-upload.md UP3.2).
+type SkipImportQueueItemInput struct {
 	ProjectID         string
 	QueueID           string
+	ItemID            string
 	ActorUserID       string
-	ExpectedVersion   int64
 	SessionWriteProof auth.SessionWriteProof
-	Items             []SaveImportQueueItemInput
 }
-
-type SaveImportQueueItemInput = SaveImportQueueItemStoreInput
 
 type StartImportQueueInput struct {
 	ProjectID         string
@@ -87,7 +87,8 @@ type ImportQueueProjectionStore interface {
 	GetImportQueueForActor(context.Context, GetImportQueueStoreInput) (ImportQueue, error)
 	ListImportQueuesForActor(context.Context, ListImportQueuesStoreInput) ([]ImportQueue, error)
 	PutImportQueueItemForActor(context.Context, PutImportQueueItemStoreInput) (ImportQueueItem, error)
-	SaveImportQueueDraftForActor(context.Context, SaveImportQueueDraftStoreInput) (ImportQueue, error)
+	ReplaceImportQueueItemFileForActor(context.Context, ReplaceImportQueueItemStoreInput) (ImportQueue, error)
+	SkipImportQueueItemForActor(context.Context, SkipImportQueueItemStoreInput) (ImportQueue, error)
 	CancelImportQueueForActor(context.Context, CancelImportQueueStoreInput) (ImportQueue, error)
 }
 
@@ -114,7 +115,7 @@ func (s *Service) CreateImportQueue(ctx context.Context, input CreateImportQueue
 	positions := make([]int, 0, len(input.Items))
 	clientIDs := make(map[string]struct{}, len(input.Items))
 	for _, item := range input.Items {
-		if item.ClientItemID == "" || item.SourceFileName == "" || item.Position < 1 || item.DetectedBookOrder < 0 {
+		if item.ClientItemID == "" || item.SourceFileName == "" || item.Position < 1 {
 			return ImportQueue{}, ErrValidation
 		}
 		if _, exists := clientIDs[item.ClientItemID]; exists {
@@ -180,7 +181,9 @@ func (s *Service) UploadImportQueueItem(ctx context.Context, input UploadImportQ
 	if err != nil {
 		return ImportQueueItem{}, err
 	}
-	if queue.Status != ImportQueueUploading && queue.Status != ImportQueueDraft {
+	// A queue being prepared takes the files of its volumes; a running one takes a new file only for a volume that did
+	// not read — «Заменить файл» (UP3.2) — and the store checks that the volume waits.
+	if queue.Status != ImportQueueUploading && queue.Status != ImportQueueDraft && queue.Status != ImportQueueRunning {
 		return ImportQueueItem{}, ErrConflict
 	}
 	item, found := findImportQueueItem(queue, input.ItemID)
@@ -192,7 +195,7 @@ func (s *Service) UploadImportQueueItem(ctx context.Context, input UploadImportQ
 	replayKey := strings.Join([]string{input.ActorUserID, input.ProjectID, input.QueueID, input.ItemID, idempotencyKey}, "\x00")
 	storageKey := "import/queue/" + sha256Hex([]byte(replayKey))
 	sourceFileName := sanitizedImportSourceFileName(input.FileName)
-	mimeType, _ := validatedImportMIMEType(input.MIMEType)
+	mimeType, _ := validatedImportMIMEType(ImportFileKind(sourceFileName), input.MIMEType)
 	if item.StorageKey == storageKey {
 		if item.SHA256 == fileSHA256 && item.SizeBytes == int64(len(content)) &&
 			item.MIMEType == mimeType && item.SourceFileName == sourceFileName {
@@ -205,12 +208,34 @@ func (s *Service) UploadImportQueueItem(ctx context.Context, input UploadImportQ
 	if err != nil {
 		return ImportQueueItem{}, err
 	}
+	if queue.Status == ImportQueueRunning {
+		if strings.ToUpper(strings.TrimSpace(input.RequestMethod)) != http.MethodPost || strings.TrimSpace(input.RequestPath) == "" {
+			return ImportQueueItem{}, ErrValidation
+		}
+		replaced, err := s.importQueues.ReplaceImportQueueItemFileForActor(ctx, ReplaceImportQueueItemStoreInput{
+			ProjectID: input.ProjectID, QueueID: input.QueueID, ItemID: input.ItemID, ActorUserID: input.ActorUserID,
+			StorageKey: storageKey, SourceFileName: sourceFileName, MIMEType: mimeType,
+			SizeBytes: int64(len(content)), SHA256: fileSHA256, FileBytes: content,
+			PreflightStatus: preflightStatus, PreflightErrorJSON: preflightError,
+			IdempotencyKey: idempotencyKey, RequestMethod: http.MethodPost, RequestPath: strings.TrimSpace(input.RequestPath),
+			RequestFingerprint: sha256Hex([]byte(strings.Join([]string{input.ProjectID, input.QueueID, input.ItemID, fileSHA256}, "\x00"))),
+			SessionWriteProof:  input.SessionWriteProof,
+		})
+		if err != nil {
+			return ImportQueueItem{}, err
+		}
+		item, found = findImportQueueItem(replaced, input.ItemID)
+		if !found {
+			return ImportQueueItem{}, ErrNotFound
+		}
+		item.QueueVersion = replaced.Version
+		return item, nil
+	}
 	item, err = s.importQueues.PutImportQueueItemForActor(ctx, PutImportQueueItemStoreInput{
 		ProjectID: input.ProjectID, QueueID: input.QueueID, ItemID: input.ItemID, ActorUserID: input.ActorUserID,
 		ExpectedVersion: queue.Version, StorageKey: storageKey, SourceFileName: sourceFileName,
 		MIMEType: mimeType, SizeBytes: int64(len(content)), SHA256: fileSHA256, FileBytes: content,
 		PreflightStatus: preflightStatus, PreflightErrorJSON: preflightError,
-		DetectedBookOrder: item.DetectedBookOrder, ConfirmedBookOrder: item.ConfirmedBookOrder,
 	})
 	if err != nil {
 		return ImportQueueItem{}, err
@@ -218,7 +243,9 @@ func (s *Service) UploadImportQueueItem(ctx context.Context, input UploadImportQ
 	return item, nil
 }
 
-func (s *Service) SaveImportQueueDraft(ctx context.Context, input SaveImportQueueDraftInput) (ImportQueue, error) {
+// SkipImportQueueItem is «Пропустить» of a volume that did not read: it leaves the upload, the volumes after it are
+// not held back, and the queue ends once the others are on the shelf (specs/2026-11-11-ux7-upload.md UP3.2).
+func (s *Service) SkipImportQueueItem(ctx context.Context, input SkipImportQueueItemInput) (ImportQueue, error) {
 	if err := s.requireImportQueueStore(); err != nil {
 		return ImportQueue{}, err
 	}
@@ -228,20 +255,8 @@ func (s *Service) SaveImportQueueDraft(ctx context.Context, input SaveImportQueu
 	if !input.SessionWriteProof.Valid() {
 		return ImportQueue{}, ErrForbidden
 	}
-	queue, err := s.GetImportQueue(ctx, GetImportQueueInput{ProjectID: input.ProjectID, QueueID: input.QueueID, ActorUserID: input.ActorUserID})
-	if err != nil {
-		return ImportQueue{}, err
-	}
-	nextOrder, err := s.store.NextBookOrder(ctx, input.ProjectID)
-	if err != nil {
-		return ImportQueue{}, err
-	}
-	if err := validateImportQueueSave(queue, input, nextOrder); err != nil {
-		return ImportQueue{}, err
-	}
-	return s.importQueues.SaveImportQueueDraftForActor(ctx, SaveImportQueueDraftStoreInput{
-		ProjectID: input.ProjectID, QueueID: input.QueueID, ActorUserID: input.ActorUserID,
-		ExpectedVersion: input.ExpectedVersion, Items: input.Items,
+	return s.importQueues.SkipImportQueueItemForActor(ctx, SkipImportQueueItemStoreInput{
+		ProjectID: input.ProjectID, QueueID: input.QueueID, ItemID: input.ItemID, ActorUserID: input.ActorUserID,
 	})
 }
 
@@ -307,8 +322,7 @@ func createImportQueueStoreItems(items []CreateImportQueueItemInput) []CreateImp
 	result := make([]CreateImportQueueItemStoreInput, 0, len(items))
 	for _, item := range items {
 		result = append(result, CreateImportQueueItemStoreInput{
-			ClientItemID: item.ClientItemID, Position: item.Position,
-			SourceFileName: item.SourceFileName, DetectedBookOrder: item.DetectedBookOrder,
+			ClientItemID: item.ClientItemID, Position: item.Position, SourceFileName: item.SourceFileName,
 		})
 	}
 	return result
@@ -339,12 +353,9 @@ func preflightImportQueueItem(fileName, mimeType string, content []byte, fileSHA
 	if int64(len(content)) > MaxImportFileSizeBytes {
 		return "", nil, ErrImportFileTooLarge
 	}
-	normalizedMIMEType, err := validatedImportMIMEType(mimeType)
-	if err != nil {
-		return importQueueInvalidPreflight("import.unsupported_media_type", "Import file type is not supported.")
-	}
-	extension := strings.ToLower(path.Ext(sourceFileName))
-	if !allowedImportExtensionSet[extension] {
+	extension := ImportFileKind(sourceFileName)
+	normalizedMIMEType, err := validatedImportMIMEType(extension, mimeType)
+	if err != nil || extension == "" {
 		return importQueueInvalidPreflight("import.unsupported_media_type", "Import file type is not supported.")
 	}
 	if err := validateImportExtensionMIMEContent(extension, normalizedMIMEType, content); err != nil {
@@ -379,41 +390,4 @@ func importQueueInvalidPreflight(code, message string) (string, []byte, error) {
 		return "", nil, ErrValidation
 	}
 	return ImportQueueItemInvalid, encoded, nil
-}
-
-func validateImportQueueSave(queue ImportQueue, input SaveImportQueueDraftInput, nextOrder int) error {
-	if queue.Status != ImportQueueUploading && queue.Status != ImportQueueDraft {
-		return ErrConflict
-	}
-	if input.ExpectedVersion != queue.Version || len(input.Items) != len(queue.Items) {
-		return ErrConflict
-	}
-	itemIDs := make(map[string]struct{}, len(queue.Items))
-	for _, item := range queue.Items {
-		if item.PreflightStatus != ImportQueueItemReady || item.StorageKey == "" {
-			return ErrConflict
-		}
-		itemIDs[item.ID] = struct{}{}
-	}
-	positions := make([]int, 0, len(input.Items))
-	orders := make([]int, 0, len(input.Items))
-	for _, item := range input.Items {
-		if _, exists := itemIDs[item.ItemID]; !exists || item.Position < 1 || item.ConfirmedBookOrder < 1 {
-			return ErrValidation
-		}
-		delete(itemIDs, item.ItemID)
-		positions = append(positions, item.Position)
-		orders = append(orders, item.ConfirmedBookOrder)
-	}
-	if len(itemIDs) != 0 {
-		return ErrValidation
-	}
-	slices.Sort(positions)
-	slices.Sort(orders)
-	for index, position := range positions {
-		if position != index+1 || orders[index] != nextOrder+index {
-			return ErrValidation
-		}
-	}
-	return nil
 }

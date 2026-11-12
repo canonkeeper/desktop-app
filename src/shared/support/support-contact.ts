@@ -8,7 +8,7 @@ export const supportEmail = 'support@canonkeeper.ru';
 export function supportMailHref(code: string | null | undefined, pathname: string): string {
   const page = pathname.split(/[?#]/)[0] || '/';
   const supportCode = code?.trim();
-  const subject = supportCode ? `Canon Keeper: ошибка ${supportCode}` : 'Canon Keeper: вопрос';
+  const subject = supportCode ? `CanonKeeper: ошибка ${supportCode}` : 'CanonKeeper: вопрос';
   const body = supportCode
     ? `Код для поддержки: ${supportCode}\r\nСтраница: ${page}\r\n\r\nЧто вы делали, когда появилась ошибка:\r\n`
     : `Страница: ${page}\r\n`;

@@ -6,6 +6,8 @@ import styles from './controls.module.css';
 export type SelectOption<T extends string> = {
   disabled?: boolean;
   label: string;
+  /** A short mark after the label in the list, as «Пример» of the demo saga. */
+  mark?: string;
   value: T;
 };
 
@@ -182,7 +184,7 @@ export function Select<T extends string>({
                 role="option"
                 tabIndex={index === activeIndex && !option.disabled ? 0 : -1}
               >
-                <span>{option.label}</span>
+                <span>{option.label}{option.mark ? <>{' '}<span className={styles.selectMark}>{option.mark}</span></> : null}</span>
                 {option.value === value ? <Check aria-hidden="true" size={14} /> : null}
               </li>
             ))}

@@ -1017,6 +1017,7 @@ func (s *memoryStoreForTest) CreateProjectWithOwnerMembership(_ context.Context,
 		ID:                input.ProjectID,
 		Title:             input.Title,
 		Description:       input.Description,
+		Demo:              input.Demo,
 		BookCount:         0,
 		ChapterCount:      0,
 		WordCount:         0,
@@ -1037,6 +1038,15 @@ func (s *memoryStoreForTest) GetProject(_ context.Context, actorUserID, projectI
 		return ProjectRecord{}, ErrNotFound
 	}
 	return project, nil
+}
+
+func (s *memoryStoreForTest) DemoProject(_ context.Context, ownerUserID string) (ProjectRecord, error) {
+	for _, project := range s.projectsByID {
+		if project.Demo && project.DeletedAt == nil && project.CurrentMembership.UserID == ownerUserID && project.CurrentMembership.Role == RoleOwner {
+			return project, nil
+		}
+	}
+	return ProjectRecord{}, ErrNotFound
 }
 
 func (s *memoryStoreForTest) UpdateProject(_ context.Context, input UpdateProjectStoreInput) (ProjectRecord, error) {

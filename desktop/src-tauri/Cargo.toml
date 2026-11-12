@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The shell of the CanonKeeper desktop app (specs/2026-11-12-desk-shell.md SH1.1): the window crate here, the logic
+# without the window in crates/core, which builds and tests on any machine without the libraries of the WebView.
+[workspace]
+members = ["crates/core"]
+resolver = "2"
+
+[package]
+name = "canonkeeper-desktop"
+version = "0.1.0"
+description = "CanonKeeper"
+license = "AGPL-3.0-only"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+canonkeeper-desktop-core = { path = "crates/core" }
+tauri = { version = "2.12.5", features = [] }
+tauri-plugin-single-instance = "2.5.5"
+open = { version = "5.3.0", features = ["shellexecute-on-windows"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

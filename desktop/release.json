@@ -1,0 +1,23 @@
+{
+  "about": "What the installers bring from outside, pinned by sha256 (specs/2026-11-12-desk-shell.md SH4.2): the package of codex-app-server of the Codex fork for each target — of the version backend/go.mod pins, nothing else is taken — and the source archive of PostgreSQL the set is built from (desktop/postgres). A mismatch is a refusal.",
+  "codex": {
+    "repository": "Dirard/codex",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "tag": "rust-v0.167.2",
+        "asset": "codex-package-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "56b4a05672e1fb0d7556527ed3f415cfe2f9405f556a34c3b1758b157ea9b6f0"
+      },
+      "x86_64-pc-windows-msvc": {
+        "tag": "rust-v0.167.2",
+        "asset": "codex-package-x86_64-pc-windows-msvc.zip",
+        "sha256": "ae39f0107775c3a503c76fa9e81c6fee3bb3fc3e611552b293da22c31e0c9714"
+      }
+    }
+  },
+  "postgres": {
+    "version": "18.6",
+    "source": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2",
+    "sha256": "555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f"
+  }
+}

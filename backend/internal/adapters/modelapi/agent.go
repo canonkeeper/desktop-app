@@ -124,7 +124,7 @@ type functionCall struct{ callID, name, arguments string }
 // round is one call of a turn with the retries and the gate of Complete; it answers the output items.
 func (port Port) round(ctx context.Context, payload []byte) ([]json.RawMessage, quota.ModelUsage, error) {
 	client := port.client
-	if !client.connected() {
+	if !client.Connected() {
 		return nil, quota.ModelUsage{}, ErrNotConfigured
 	}
 	var usage quota.ModelUsage

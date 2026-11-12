@@ -40,8 +40,10 @@ describe('dialog surface', () => {
   const roots = sources(join(root, 'src')).flatMap(contentRoots);
 
   it('finds the dialogs whose content is the surface', () => {
-    // The open sections alone have six such dialogs (specs/2026-11-07-desktop-app.md DA16.5): the scan finds them.
-    expect(roots.length).toBeGreaterThanOrEqual(5);
+    // The open sections alone have such dialogs (specs/2026-11-07-desktop-app.md DA16.5): the scan finds them. The questions
+    // of the shelf went to the one confirmation (specs/2026-11-10-ux2-patterns-actions.md UC2), which draws the kit's card or
+    // a sheet; the windows of the upload, of «Обновить книгу из файла» and of «Недавно удалённые» stay.
+    expect(roots.length).toBeGreaterThanOrEqual(3);
     for (const found of roots) expect(found.css, `${found.file}: the root class of the content`).toBeDefined();
   });
 

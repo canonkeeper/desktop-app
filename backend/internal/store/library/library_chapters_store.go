@@ -29,7 +29,6 @@ func (s *Store) CreateChapterWithDraft(ctx context.Context, input library.Create
 	}
 	var chapter sqlc.Chapter
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		queries := sqlc.New(tx)
 		var bookTitle string
 		vector, err := lockCurrentBookSource(ctx, tx, projectUUID, bookUUID)
 		if err != nil {
@@ -63,7 +62,7 @@ func (s *Store) CreateChapterWithDraft(ctx context.Context, input library.Create
 		if err != nil {
 			return err
 		}
-		if err := createLibraryParagraphs(ctx, queries, projectUUID, bookUUID, vector.Project, vector.Book, 1, input.Paragraphs); err != nil {
+		if err := createLibraryParagraphs(ctx, tx, projectUUID, bookUUID, vector.Project, vector.Book, chapterParagraphs{generation: 1, paragraphs: input.Paragraphs}); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `SELECT title FROM books WHERE project_id = $1 AND id = $2`, projectUUID, bookUUID).Scan(&bookTitle); err != nil {

@@ -50,6 +50,7 @@ func TestReconcileUsesOnlyExactClaimsAndBoundedGlobalPolicies(t *testing.T) {
 		counts: map[string]int64{
 			"RevokeExpiredSessions":         2,
 			"MarkRetentionDeadlineBreaches": 5,
+			"RemoveExpiredBookUpdates":      3,
 		},
 		coordinatorOutcomes: []deletion.RunOutcome{deletion.RunCompleted},
 	}
@@ -62,6 +63,7 @@ func TestReconcileUsesOnlyExactClaimsAndBoundedGlobalPolicies(t *testing.T) {
 	want := Summary{
 		ExpiredSessionsRevoked:            2,
 		RetentionDeadlineBreachesRecorded: 5,
+		ExpiredBookUpdatesRemoved:         3,
 		SourceHardPurgesEnqueued:          1,
 		DeletionProofsGarbageCollected:    1,
 		DeletionTargetsReconciled:         1,
@@ -70,7 +72,7 @@ func TestReconcileUsesOnlyExactClaimsAndBoundedGlobalPolicies(t *testing.T) {
 		t.Fatalf("summary = %#v, want %#v", summary, want)
 	}
 	wantCalls := []string{
-		"RevokeExpiredSessions", "MarkRetentionDeadlineBreaches",
+		"RevokeExpiredSessions", "MarkRetentionDeadlineBreaches", "RemoveExpiredBookUpdates",
 		"ExpireStaleImportQueues", "ReconcileImportUploads", "ReconcileTerminalImportQueueJobs",
 		"ClaimNextSourceHardPurgeForWorker", "EnqueueSourceHardPurgeForClaim",
 		"ClaimNextDeletionAuditGCForWorker", "GarbageCollectDeletionProofForClaim",
@@ -230,6 +232,10 @@ func (store *fakeGovernedRetention) RevokeExpiredSessions(ctx context.Context) (
 
 func (store *fakeGovernedRetention) MarkRetentionDeadlineBreaches(ctx context.Context) (int64, error) {
 	return store.record(ctx, "MarkRetentionDeadlineBreaches")
+}
+
+func (store *fakeGovernedRetention) RemoveExpiredBookUpdates(ctx context.Context) (int64, error) {
+	return store.record(ctx, "RemoveExpiredBookUpdates")
 }
 
 func (store *fakeGovernedRetention) ExpireStaleImportQueues(ctx context.Context) (int64, error) {

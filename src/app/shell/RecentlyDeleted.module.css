@@ -1,0 +1,166 @@
+.backdrop {
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+  background: var(--ck-scrim);
+}
+
+.dialog {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  width: min(520px, 100vw);
+  height: 100vh;
+  overflow: auto;
+  padding: 24px;
+  background: var(--ck-popover);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-panel);
+}
+
+.sheetHandle {
+  display: none;
+}
+
+.toasts:empty {
+  display: none;
+}
+
+.header,
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.header h2,
+.header p,
+.section h3,
+.more {
+  margin: 0;
+}
+
+.header h2 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.header p,
+.more {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.sections {
+  display: grid;
+  gap: 20px;
+}
+
+.section {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.section h3 {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  align-items: center;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 10px 12px;
+  background: var(--ck-card);
+}
+
+.copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.copy strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.copy span {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.restore {
+  flex: 0 0 auto;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 13px 14px;
+  background: var(--ck-color-error);
+  color: var(--ck-color-error-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.notice > div {
+  display: grid;
+  gap: 2px;
+}
+
+@media (max-width: 700px) {
+  .backdrop {
+    align-items: end;
+  }
+
+  .backdrop > [role='dialog'] {
+    width: 100%;
+  }
+
+  .dialog {
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - 64px);
+    border-radius: 18px 18px 0 0;
+    padding: 0 16px 24px;
+  }
+
+  .sheetHandle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    margin: 9px auto 4px;
+    background: var(--ck-border-strong);
+  }
+
+  .row {
+    gap: 10px;
+  }
+}

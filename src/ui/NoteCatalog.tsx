@@ -1,18 +1,26 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { formatCount, pluralize } from './copy';
 import { Button } from './controls/Button';
-import { Skeleton } from './feedback/Skeleton';
+import { SkeletonArea } from './feedback/Skeleton';
 import styles from './NoteCatalog.module.css';
 
+/**
+ * A row of the catalog of notes (specs/2026-11-11-ux7-notes.md NT1.3): the line of the note — its thought or the beginning
+ * of its cited words — and, under it, its place and the date.
+ */
 export interface NoteCatalogItem {
   key: string;
-  title: string;
-  preview: string;
-  type: string;
-  source: string;
+  line: string;
+  place: string;
   updatedAt: string;
 }
 export interface NoteCatalogHandle { focus: (key: string) => void }
+
+/** «19 сент., 18:40» — the day and the time of the last change of a note. */
+function noteDate(value: string) {
+  const date = new Date(value);
+  return `${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}, ${date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+}
 
 export function NoteCatalog({ items, totalCount, selectedKey, onSelect, hasMore = false, loadingMore = false, loadError = false, onLoadMore, ref }: {
   items: NoteCatalogItem[];
@@ -106,22 +114,20 @@ export function NoteCatalog({ items, totalCount, selectedKey, onSelect, hasMore 
   }
 
   return <div className={`${styles.catalog} ${compact ? styles.compact : ''}`}>
-    <div aria-hidden="true" className={styles.columns}><span>ЗАМЕТКА</span><span className={styles.type}>ТИП</span><span className={styles.source}>ИСТОЧНИК</span><span>ИЗМЕНЕНА ↓</span></div>
     <div className={styles.viewport} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false); }} onFocus={() => setFocusWithin(true)} onScroll={rememberScroll} ref={viewportRef}>
       <div aria-label="Список заметок" className={styles.window} role="listbox" style={{ height: items.length * rowHeight }}>
         {[...visible].sort((a, b) => a - b).map((index) => {
           const item = items[index];
           if (!item) return null;
           return <Button aria-posinset={index + 1} aria-selected={selectedKey === item.key} aria-setsize={totalCount} className={styles.row} data-note-key={item.key} id={`${prefix}-${index}`} key={item.key} onClick={() => onSelect(item.key)} onFocus={() => setFocusKey(item.key)} onKeyDown={(event) => move(event, index)} role="option" style={{ top: index * rowHeight, height: rowHeight }} tabIndex={index === tabIndex ? 0 : -1} variant="ghost">
-            <span className={styles.summary}><span className={styles.title}>{item.title}</span><span className={styles.preview}>{item.preview}</span><span className={styles.compactSource}>{item.type} · {item.source}</span></span>
-            <span className={styles.type}>{item.type}</span><span className={styles.source}>{item.source}</span>
-            <time className={styles.date} dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}<br />{new Date(item.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</time>
+            <span className={styles.summary}><span className={styles.title}>{item.line}</span>
+              <span className={styles.meta}>{item.place} · <time dateTime={item.updatedAt}>{noteDate(item.updatedAt)}</time></span></span>
           </Button>;
         })}
       </div>
       <div className={styles.tail}>
         {loadError ? <><span role="status">Не удалось загрузить ещё заметки</span><Button onClick={onLoadMore} size="touch" variant="outline">Повторить</Button></>
-          : loadingMore ? <span role="status"><Skeleton style={{ width: 28, height: 8 }} />Загружаем заметки…</span>
+          : loadingMore ? <SkeletonArea count={2} shape="rows" style={{ width: '100%' }} />
             : !hasMore ? <span role="status">{pluralize(totalCount, 'Показана', 'Показаны все', 'Показаны все')} {formatCount(totalCount, 'заметка', 'заметки', 'заметок')}</span> : null}
       </div>
     </div>

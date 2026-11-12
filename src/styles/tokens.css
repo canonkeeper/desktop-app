@@ -1,82 +1,4 @@
 :root {
-  --ck-background: #fbfbfa;
-  --ck-card: #ffffff;
-  --ck-card-foreground: #18181b;
-  --ck-popover: #ffffff;
-  --ck-popover-foreground: #18181b;
-  --ck-input: #ffffff;
-  --ck-sidebar: #f5f5f4;
-  --ck-sidebar-accent: #eaeae8;
-  --ck-sidebar-accent-foreground: #18181b;
-  --ck-sidebar-border: #e7e7e4;
-  --ck-sidebar-primary: #18181b;
-  --ck-sidebar-primary-foreground: #fafafa;
-  --ck-sidebar-ring: #71717a;
-  --ck-reader: #ffffff;
-  --ck-reader-pane: #f7f7f6;
-  --ck-user-bubble: #f3f3f1;
-  --ck-chat-user-message: #5442c5;
-  /* The saga map: the categories of its nodes, its links and what a hovered node leaves aside. */
-  --ck-map-character: #6d4fc4;
-  --ck-map-place: #009e73;
-  --ck-map-faction: #d55e00;
-  --ck-map-item: #3a9fd9;
-  --ck-map-link: #a1a1aa;
-  --ck-map-link-weak: #d4d4d8;
-  --ck-map-dim: #e4e4e7;
-  --ck-agent-focus: #f7f7f8;
-  --ck-agent-focus-foreground: #4b5563;
-  --ck-auth-brand: #1e1b4b;
-  --ck-auth-brand-muted: #a5a3cf;
-
-  --ck-foreground: #18181b;
-  --ck-foreground-strong: #111114;
-  --ck-muted-foreground: #5F6673;
-  --ck-subtle-foreground: #636b77;
-  --ck-disabled-foreground: #9ca3af;
-  --ck-sidebar-foreground: #5F6673;
-  --ck-reader-foreground: #1f2933;
-
-  --ck-accent: #ededeb;
-  --ck-accent-foreground: #18181b;
-  --ck-secondary: #f1f1ef;
-  --ck-secondary-foreground: #18181b;
-  --ck-muted: #f2f3f0;
-
-  --ck-border: #e7e7e4;
-  --ck-border-strong: #dadad6;
-
-  --ck-primary: #4f46e5;
-  --ck-link: #4f46e5;
-  --ck-primary-hover: #4338ca;
-  --ck-primary-foreground: #ffffff;
-  --ck-ring: #4f46e5;
-  --ck-focus-shadow: #4f46e566;
-  --ck-ink: #18181b;
-  --ck-ink-foreground: #ffffff;
-
-  --ck-citation: #eef2ff;
-  --ck-citation-foreground: #4f46e5;
-  --ck-source-active: #eef0fb;
-  --ck-highlight: #fef3c7;
-  --ck-highlight-foreground: #1f2933;
-  --ck-indexing: #fdf1d6;
-  --ck-indexing-foreground: #8a6a0a;
-  --ck-destructive: #dc2626;
-  --ck-destructive-text: #dc2626;
-  --ck-destructive-foreground: #ffffff;
-  --ck-color-success: #dcfce7;
-  --ck-color-success-foreground: #15803d;
-  --ck-color-warning: #fef3c7;
-  --ck-color-warning-foreground: #8a6a0a;
-  --ck-color-error: #fee2e2;
-  --ck-color-error-foreground: #b91c1c;
-  --ck-color-info: #eef2ff;
-  --ck-color-info-foreground: #4f46e5;
-
-  --ck-reader-sepia: #faf3e2;
-  --ck-reader-dark: #232326;
-
   --ck-radius-none: 0;
   --ck-radius-xs: 6px;
   --ck-radius-sm: 8px;
@@ -117,18 +39,330 @@
   --ck-space-7: 48px;
   --ck-space-8: 64px;
 
-  --ck-shadow-sm: 0 1px 2px rgb(23 24 40 / 10%);
-  --ck-shadow-md: 0 8px 20px -6px rgb(23 17 10 / 14%);
-  --ck-shadow-lg: 0 10px 28px -8px rgb(23 17 10 / 18%);
-  --ck-scrim: #17182859;
-
   --ck-ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
   --ck-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ck-ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ck-duration-fast: 130ms;
   --ck-duration-base: 200ms;
   --ck-duration-slow: 280ms;
+}
+
+/*
+ * The colours (specs/2026-11-12-ux11-dark-core.md TH2): the light set of the site, and of a sheet of text whose background
+ * the author chose light or sepia on any site (the sepia of reading-themes.css changes some of them after). Every colour
+ * here has its dark value in the set below; ui/theme-tokens.test.ts holds that.
+ */
+:root,
+[data-reading-theme='light'],
+[data-reading-theme='sepia'] {
+  color-scheme: light;
+  --ck-background: #fbfbfa;
+  --ck-card: #ffffff;
+  --ck-card-foreground: #18181b;
+  --ck-popover: #ffffff;
+  --ck-popover-foreground: #18181b;
+  --ck-input: #ffffff;
+  --ck-sidebar: #f5f5f4;
+  --ck-sidebar-accent: #eaeae8;
+  --ck-sidebar-accent-foreground: #18181b;
+  --ck-sidebar-border: #e7e7e4;
+  --ck-sidebar-primary: #18181b;
+  --ck-sidebar-primary-foreground: #fafafa;
+  --ck-sidebar-ring: #71717a;
+  --ck-reader: #ffffff;
+  --ck-reader-pane: #f7f7f6;
+  --ck-user-bubble: #f3f3f1;
+  --ck-chat-user-message: #5442c5;
+  --ck-chat-user-message-foreground: #ffffff;
+  /* The saga map: the categories of its nodes, its links and what a hovered node leaves aside. */
+  --ck-map-character: #6d4fc4;
+  --ck-map-place: #009e73;
+  --ck-map-faction: #d55e00;
+  --ck-map-item: #3a9fd9;
+  --ck-map-link: #a1a1aa;
+  --ck-map-link-weak: #d4d4d8;
+  --ck-map-dim: #e4e4e7;
+  --ck-agent-focus: #f7f7f8;
+  --ck-agent-focus-foreground: #4b5563;
+  --ck-auth-brand: #1e1b4b;
+  --ck-auth-brand-muted: #a5a3cf;
+  /* The words on the panel of the brand of the sign-in: light on its indigo in both themes. */
+  --ck-auth-brand-foreground: #ffffff;
+
+  --ck-foreground: #18181b;
+  --ck-foreground-strong: #111114;
+  --ck-muted-foreground: #5F6673;
+  --ck-subtle-foreground: #636b77;
+  --ck-disabled-foreground: #9ca3af;
+  --ck-sidebar-foreground: #5F6673;
+  --ck-reader-foreground: #1f2933;
+
+  --ck-accent: #ededeb;
+  --ck-accent-foreground: #18181b;
+  --ck-secondary: #f1f1ef;
+  --ck-secondary-foreground: #18181b;
+  --ck-muted: #f2f3f0;
+
+  --ck-border: #e7e7e4;
+  --ck-border-strong: #dadad6;
+
+  --ck-primary: #4f46e5;
+  --ck-link: #4f46e5;
+  --ck-primary-hover: #4338ca;
+  --ck-primary-foreground: #ffffff;
+  --ck-ring: #4f46e5;
+  --ck-focus-shadow: #4f46e566;
+  --ck-ink: #18181b;
+  --ck-ink-foreground: #ffffff;
+
+  --ck-citation: #eef2ff;
+  --ck-citation-foreground: #4f46e5;
+  --ck-source-active: #eef0fb;
+  --ck-highlight: #fef3c7;
+  --ck-highlight-foreground: #1f2933;
+  --ck-indexing: #fdf1d6;
+  --ck-indexing-foreground: #8a6a0a;
+  --ck-destructive: #dc2626;
+  /* «Удалить» under the pointer: the colour of the button 10 % darker. */
+  --ck-destructive-hover: #c62222;
+  --ck-destructive-text: #dc2626;
+  --ck-destructive-foreground: #ffffff;
+  --ck-color-success: #dcfce7;
+  --ck-color-success-foreground: #15803d;
+  --ck-color-warning: #fef3c7;
+  --ck-color-warning-foreground: #8a6a0a;
+  --ck-color-error: #fee2e2;
+  --ck-color-error-foreground: #b91c1c;
+  --ck-color-info: #eef2ff;
+  --ck-color-info-foreground: #4f46e5;
+
+  --ck-reader-sepia: #faf3e2;
+  --ck-reader-dark: #232326;
 
   --ck-disabled: #ececef;
   --ck-control-hover-border: #c9c9c4;
+  --ck-scrollbar-native: #c5c5c2;
+
+  --ck-shadow-sm: 0 1px 2px rgb(23 24 40 / 10%);
+  --ck-shadow-md: 0 8px 20px -6px rgb(23 17 10 / 14%);
+  --ck-shadow-lg: 0 10px 28px -8px rgb(23 17 10 / 18%);
+  /* A window over the page: a dialog, a popover. */
+  --ck-shadow-xl: 0 18px 48px rgb(0 0 0 / 14%);
+  /* A panel that comes in from the right over the page. */
+  --ck-shadow-panel: -12px 0 36px rgb(17 17 20 / 12%);
+  --ck-scrim: #17182859;
+
+  /*
+   * The scene of «Сменить ракурс» (specs/2026-11-12-ux11-dark-sections.md DS1): a working ground of the page, dark on a
+   * dark site; the orange path and the blue view of the camera stay orange and blue. The camera's faces are shaded in
+   * src/features/drawing/scene.ts from the bases --ck-angle-camera, -lens and -glass.
+   */
+  --ck-angle-ground: #e2e2e2;
+  --ck-angle-floor: #f4f4f4;
+  --ck-angle-grid: #d0d0d0;
+  --ck-angle-ring: #afafaf;
+  --ck-angle-shadow: #c4c4c4;
+  --ck-angle-now: #969696;
+  --ck-angle-hint: #505050;
+  --ck-angle-now-word: #5a5a5a;
+  --ck-angle-path: #d66e1e;
+  --ck-angle-view: #285cd6;
+  --ck-angle-outline: #1e1e1e;
+  --ck-angle-rim: #3c3c3c;
+  --ck-angle-card: #808080;
+  --ck-angle-camera: #3458c8;
+  --ck-angle-lens: #46464e;
+  --ck-angle-glass: #78aaeb;
+
+  /* A book of the shelf under the pointer, a window of the shelf, the bar of an answer at the bottom of the screen, the
+     strong scrim under a window of the shelf (DS2.3); the dot of the step under way; the shadow of a name on the map. */
+  --ck-shadow-lift: 0 16px 34px rgb(0 0 0 / 10%);
+  --ck-shadow-dialog: 0 24px 60px rgb(0 0 0 / 16%);
+  --ck-shadow-bar: 0 -8px 20px -14px rgb(23 17 10 / 22%);
+  --ck-scrim-strong: rgb(23 24 40 / 45%);
+  --ck-progress-dot: #a5b4fc;
+  --ck-map-plate-shadow: #000000;
+
+  /*
+   * Over a picture (specs/2026-11-12-ux11-dark-sections.md DS2): a mark, a label, a line, a button and the window of a
+   * picture are painted by this family, the same in both themes — the picture is the same on a light and a dark site and a
+   * mark must read on any picture. A plate names its words too: nothing over a picture takes its words from the theme.
+   */
+  --ck-picture-foreground: #ffffff;
+  --ck-picture-plate: rgb(24 24 27 / 86%);
+  --ck-picture-plate-faint: rgb(24 24 27 / 40%);
+  --ck-picture-plate-quiet: rgb(63 63 70 / 86%);
+  --ck-picture-plate-info: rgb(30 64 175 / 90%);
+  --ck-picture-plate-error: rgb(153 27 27 / 94%);
+  --ck-picture-plate-dim: #00000040;
+  --ck-picture-plate-light: rgb(255 255 255 / 88%);
+  --ck-picture-plate-light-foreground: #18181b;
+  --ck-picture-shade: rgb(0 0 0 / 70%);
+  --ck-picture-mark-shadow: rgb(0 0 0 / 0.45);
+  --ck-picture-accent: #4f46e5;
+  --ck-picture-link: #c7d2fe;
+  --ck-picture-warning: #fbbf24;
+  --ck-picture-success: #34d399;
+  --ck-picture-error: #f87171;
+  --ck-picture-border: rgb(255 255 255 / 18%);
+  --ck-picture-hover: rgb(255 255 255 / 12%);
+  --ck-picture-scrim: rgb(10 10 12 / 72%);
+  --ck-picture-stage: #19191c;
+  --ck-picture-stage-raised: #26262a;
+  --ck-picture-stage-foreground: #f4f4f5;
+  --ck-picture-stage-muted: #c4c4cb;
+  --ck-picture-stage-hint: #d4d4d8;
+  --ck-picture-stage-subtle: #a1a1aa;
+}
+
+/*
+ * The dark set (TH2.1, TH2.3): the site whose theme is dark (`data-theme` on <html>, src/shared/theme/site-theme.ts) and a
+ * sheet of text whose background is dark on any site — one set of values, so the text on a dark site is the same dark as
+ * the shell around it. A shadow under a window is darker here, a light one would glow.
+ */
+:root[data-theme='dark'],
+[data-reading-theme='dark'] {
+  color-scheme: dark;
+  --ck-background: #1b1b1d;
+  --ck-card: #232326;
+  --ck-card-foreground: #f4f4f2;
+  --ck-popover: #232326;
+  --ck-popover-foreground: #f4f4f2;
+  --ck-input: #232326;
+  --ck-sidebar: #1f1f22;
+  --ck-sidebar-accent: #2e2e33;
+  --ck-sidebar-accent-foreground: #f4f4f2;
+  --ck-sidebar-border: #38383d;
+  --ck-sidebar-primary: #e7e7e4;
+  --ck-sidebar-primary-foreground: #1b1b1d;
+  --ck-sidebar-ring: #8b8b94;
+  --ck-reader: #232326;
+  --ck-reader-pane: #1b1b1d;
+  --ck-user-bubble: #2a2a2e;
+  --ck-chat-user-message: #5442c5;
+  --ck-chat-user-message-foreground: #ffffff;
+  --ck-map-character: #a08ff0;
+  --ck-map-place: #3cc49a;
+  --ck-map-faction: #f08a40;
+  --ck-map-item: #6cbcf0;
+  --ck-map-link: #6b6b74;
+  --ck-map-link-weak: #3d3d44;
+  --ck-map-dim: #2e2e33;
+  --ck-agent-focus: #26262a;
+  --ck-agent-focus-foreground: #b4b4bc;
+  --ck-auth-brand: #1e1b4b;
+  --ck-auth-brand-muted: #a5a3cf;
+  --ck-auth-brand-foreground: #ffffff;
+
+  --ck-foreground: #f4f4f2;
+  --ck-foreground-strong: #ffffff;
+  --ck-muted-foreground: #a8a8b0;
+  --ck-subtle-foreground: #9A9AA3;
+  --ck-disabled-foreground: #77777f;
+  --ck-sidebar-foreground: #a8a8b0;
+  --ck-reader-foreground: #e7e7e4;
+
+  --ck-accent: #2e2e33;
+  --ck-accent-foreground: #f4f4f2;
+  --ck-secondary: #2e2e33;
+  --ck-secondary-foreground: #f4f4f2;
+  --ck-muted: #2e2e33;
+
+  --ck-border: #38383d;
+  --ck-border-strong: #4a4a51;
+
+  /* Light on dark: the same indigo reads as text on every dark background and carries dark words as a button. */
+  --ck-primary: #a5b4fc;
+  --ck-link: #A5B4FC;
+  --ck-primary-hover: #c7d2fe;
+  --ck-primary-foreground: #1b1b1d;
+  --ck-ring: #a5b4fc;
+  --ck-focus-shadow: #a5b4fc66;
+  --ck-ink: #e7e7e4;
+  --ck-ink-foreground: #1b1b1d;
+
+  --ck-citation: #2a2a45;
+  --ck-citation-foreground: #a5b4fc;
+  --ck-source-active: #2c2c40;
+  --ck-highlight: #4a4326;
+  --ck-highlight-foreground: #fde68a;
+  --ck-indexing: #3a3014;
+  --ck-indexing-foreground: #e7c35a;
+  --ck-destructive: #dc2626;
+  --ck-destructive-hover: #b91c1c;
+  --ck-destructive-text: #F87171;
+  --ck-destructive-foreground: #ffffff;
+  --ck-color-success: #14322a;
+  --ck-color-success-foreground: #4cc9a0;
+  --ck-color-warning: #3a3014;
+  --ck-color-warning-foreground: #e7c35a;
+  --ck-color-error: #3a1a1a;
+  --ck-color-error-foreground: #f87171;
+  --ck-color-info: #25253a;
+  --ck-color-info-foreground: #A5B4FC;
+
+  --ck-reader-sepia: #faf3e2;
+  --ck-reader-dark: #232326;
+
+  --ck-disabled: #2e2e33;
+  --ck-control-hover-border: #5a5a62;
+  --ck-scrollbar-native: #4a4a51;
+
+  --ck-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --ck-shadow-md: 0 8px 20px -6px rgb(0 0 0 / 55%);
+  --ck-shadow-lg: 0 10px 28px -8px rgb(0 0 0 / 60%);
+  --ck-shadow-xl: 0 18px 48px rgb(0 0 0 / 50%);
+  --ck-shadow-panel: -12px 0 36px rgb(0 0 0 / 45%);
+  --ck-scrim: #0000008c;
+
+  --ck-angle-ground: #141416;
+  --ck-angle-floor: #26262a;
+  --ck-angle-grid: #3a3a40;
+  --ck-angle-ring: #6b6b74;
+  --ck-angle-shadow: #18181b;
+  --ck-angle-now: #7d7d86;
+  --ck-angle-hint: #a8a8b0;
+  --ck-angle-now-word: #b4b4bc;
+  --ck-angle-path: #d66e1e;
+  --ck-angle-view: #6b93f2;
+  --ck-angle-outline: #c4c4cc;
+  --ck-angle-rim: #9a9aa3;
+  --ck-angle-card: #808080;
+  --ck-angle-camera: #5b82f0;
+  --ck-angle-lens: #8a8a96;
+  --ck-angle-glass: #a6cdf8;
+
+  --ck-shadow-lift: 0 16px 34px rgb(0 0 0 / 45%);
+  --ck-shadow-dialog: 0 24px 60px rgb(0 0 0 / 55%);
+  --ck-shadow-bar: 0 -8px 20px -14px rgb(0 0 0 / 60%);
+  --ck-scrim-strong: rgb(0 0 0 / 70%);
+  --ck-progress-dot: #a5b4fc;
+  --ck-map-plate-shadow: #000000;
+
+  /* Over a picture: the same as in the light set. */
+  --ck-picture-foreground: #ffffff;
+  --ck-picture-plate: rgb(24 24 27 / 86%);
+  --ck-picture-plate-faint: rgb(24 24 27 / 40%);
+  --ck-picture-plate-quiet: rgb(63 63 70 / 86%);
+  --ck-picture-plate-info: rgb(30 64 175 / 90%);
+  --ck-picture-plate-error: rgb(153 27 27 / 94%);
+  --ck-picture-plate-dim: #00000040;
+  --ck-picture-plate-light: rgb(255 255 255 / 88%);
+  --ck-picture-plate-light-foreground: #18181b;
+  --ck-picture-shade: rgb(0 0 0 / 70%);
+  --ck-picture-mark-shadow: rgb(0 0 0 / 0.45);
+  --ck-picture-accent: #4f46e5;
+  --ck-picture-link: #c7d2fe;
+  --ck-picture-warning: #fbbf24;
+  --ck-picture-success: #34d399;
+  --ck-picture-error: #f87171;
+  --ck-picture-border: rgb(255 255 255 / 18%);
+  --ck-picture-hover: rgb(255 255 255 / 12%);
+  --ck-picture-scrim: rgb(10 10 12 / 72%);
+  --ck-picture-stage: #19191c;
+  --ck-picture-stage-raised: #26262a;
+  --ck-picture-stage-foreground: #f4f4f5;
+  --ck-picture-stage-muted: #c4c4cb;
+  --ck-picture-stage-hint: #d4d4d8;
+  --ck-picture-stage-subtle: #a1a1aa;
 }

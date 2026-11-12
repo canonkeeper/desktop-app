@@ -31,7 +31,7 @@ func (repository *Repository) CardsCoverage(ctx context.Context) ([]domain.Cards
 	coverage := make([]domain.CardsCoverage, len(rows))
 	for i, row := range rows {
 		coverage[i] = domain.CardsCoverage{
-			ProjectID: storedb.UUIDString(row.ProjectID), Texts: row.Texts, CurrentCards: row.CurrentCards,
+			ProjectID: storedb.UUIDString(row.ProjectID), OwnerID: storedb.UUIDString(row.OwnerUserID), Texts: row.Texts, CurrentCards: row.CurrentCards,
 			OtherCards: row.OtherCards, Models: row.Models,
 		}
 	}
@@ -48,15 +48,17 @@ type CardsSnapshotParagraph struct {
 // CardsSnapshotChapter is one chapter of a text version with what the cards Job gives the model:
 // the book and chapter it is, its place in the version and its paragraphs.
 type CardsSnapshotChapter struct {
-	ProjectID   string                   `json:"projectId"`
-	View        string                   `json:"view"`
-	ChapterID   string                   `json:"chapterId"`
-	ContentHash string                   `json:"contentHash"`
-	BookOrder   int                      `json:"bookOrder"`
-	BookTitle   string                   `json:"bookTitle"`
-	Order       int                      `json:"order"`
-	Title       string                   `json:"title"`
-	Paragraphs  []CardsSnapshotParagraph `json:"paragraphs"`
+	ProjectID   string `json:"projectId"`
+	View        string `json:"view"`
+	ChapterID   string `json:"chapterId"`
+	ContentHash string `json:"contentHash"`
+	BookOrder   int    `json:"bookOrder"`
+	// BookKeyNumber is the number of the book in the chapter keys the cards Job gives the model (RK1.1).
+	BookKeyNumber int                      `json:"bookKeyNumber"`
+	BookTitle     string                   `json:"bookTitle"`
+	Order         int                      `json:"order"`
+	Title         string                   `json:"title"`
+	Paragraphs    []CardsSnapshotParagraph `json:"paragraphs"`
 }
 
 // CardsSnapshot visits every chapter of every text version the cards Job builds (of the given
@@ -105,7 +107,7 @@ func (repository *Repository) CardsSnapshot(ctx context.Context, projectIDs []st
 			}
 			chapter := CardsSnapshotChapter{
 				ProjectID: version.ProjectID, View: version.View, ChapterID: selected.ID, ContentHash: selected.ContentHash,
-				BookOrder: selected.BookOrder, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
+				BookOrder: selected.BookOrder, BookKeyNumber: selected.BookKeyNumber, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
 				Paragraphs: make([]CardsSnapshotParagraph, len(rows)),
 			}
 			for i, row := range rows {

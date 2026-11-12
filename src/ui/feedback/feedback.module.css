@@ -166,35 +166,6 @@
   appearance: auto;
 }
 
-.emptyState {
-  display: grid;
-  max-width: 340px;
-  place-items: center;
-  gap: 12px;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-lg);
-  padding: 32px;
-  background: var(--ck-card);
-  color: var(--ck-foreground);
-  text-align: center;
-}
-
-.emptyState strong {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.emptyState p {
-  margin: 0;
-  color: var(--ck-muted-foreground);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.emptyIcon {
-  color: var(--ck-subtle-foreground);
-}
-
 /* The toasts stand at the top: in the place of notices above the page, in its flow, so they cover nothing (the owner
    04.11: «Ответ готов» covered the field and «Отправить» at the bottom); a page without that place keeps them fixed
    at its top. */
@@ -261,6 +232,15 @@
   font-weight: 500;
 }
 
+/* The description of the Toast master: what the message is about, under it. */
+.toastDetail {
+  display: block;
+  margin-top: 2px;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+}
+
 /* «Подтвердите адрес»: the warning alert with an icon, text and the resend action. */
 .emailNotice {
   display: flex;
@@ -291,6 +271,35 @@
   align-self: center;
 }
 
+/* The line under the top bar (specs/2026-11-10-ux1-shell.md SH4.2): one line of the colour of a warning across the page. */
+.emailStrip {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 8px 28px;
+  background: var(--ck-color-warning);
+  color: var(--ck-foreground);
+  font-size: 14px;
+}
+
+.emailStrip .emailNoticeIcon {
+  margin-top: 0;
+  color: var(--ck-color-warning-foreground);
+}
+
+.emailStrip .emailNoticeBody strong {
+  font-weight: 500;
+}
+
+@media (max-width: 760px) {
+  .emailStrip {
+    padding: 10px 14px;
+  }
+}
+
 .supportReference {
   display: inline-flex;
   flex-wrap: wrap;
@@ -313,6 +322,60 @@
   text-underline-offset: 2px;
 }
 
+/* «Написать нам» of the line of a code opens the window: a word of the line, not a box (specs/2026-11-10-ux2-contact.md CT1.2). */
+button.supportLink {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
 .supportLink:hover {
   color: var(--ck-foreground);
+}
+
+/* The one block of an error (specs/2026-11-10-ux2-patterns-refusals.md PR3.1; board 15·05, Pattern/Common/Error Block):
+   the place of the content, the title of the section above it stays. */
+.errorBlock {
+  display: flex;
+  gap: 10px;
+  border: 1px solid var(--ck-destructive);
+  border-radius: var(--ck-radius-md);
+  padding: 12px 14px;
+  background: var(--ck-color-error);
+  color: var(--ck-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.errorIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ck-color-error-foreground);
+}
+
+.errorBody {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.errorBody p {
+  margin: 0;
+}
+
+.errorTitle {
+  color: var(--ck-color-error-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.errorActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 4px;
 }

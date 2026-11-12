@@ -1,14 +1,23 @@
 .hint {
   margin: 0;
-  padding: 6px 26px 0;
+  padding: 6px 26px 4px;
   background: var(--ck-card);
   color: var(--ck-muted-foreground);
   font-size: 13px;
   line-height: 18px;
 }
 
+/* The one block of a refusal by a limit, as wide as the field under it (specs/2026-11-10-ux1-chat.md CH3.3). */
+.limit {
+  margin: 8px 26px;
+}
+
 @media (max-width: 1100px) {
   .hint {
     padding-inline: 16px;
+  }
+
+  .limit {
+    margin-inline: 16px;
   }
 }

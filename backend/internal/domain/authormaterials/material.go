@@ -23,7 +23,17 @@ var (
 	ErrEmpty = errors.New("author materials: empty file")
 	// ErrTooLarge is a file over the limits of an import.
 	ErrTooLarge = errors.New("author materials: file too large")
+	// ErrNameTaken is a name another record of the project has: one name is one record
+	// (specs/2026-11-10-ux8-memory-records.md MR2.1, MR2.3).
+	ErrNameTaken = errors.New("author materials: the name is taken")
 )
+
+// NameTaken is ErrNameTaken naming the record that has the name, so the page offers to open it.
+type NameTaken struct{ RecordID string }
+
+func (NameTaken) Error() string { return ErrNameTaken.Error() }
+
+func (NameTaken) Unwrap() error { return ErrNameTaken }
 
 // Kind is what a record describes.
 type Kind string
@@ -53,7 +63,12 @@ type SourceKind string
 const (
 	SourceXLSX SourceKind = "xlsx"
 	SourceDOCX SourceKind = "docx"
+	// SourceCSV is a table of one sheet in a text file (MR2.4).
+	SourceCSV SourceKind = "csv"
+	// SourceText is a pasted text or a text file: .txt or .md (MR2.4).
 	SourceText SourceKind = "text"
+	// SourceManual is a record the author wrote on the page (MR2.1).
+	SourceManual SourceKind = "manual"
 )
 
 // The limits of a record (R9.1), the same as the checks of its table.

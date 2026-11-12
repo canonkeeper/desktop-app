@@ -4,9 +4,9 @@ import { followRoute, type RouteNavigate } from '../../shared/navigation/app-rou
 import styles from './PublicHeader.module.css';
 
 interface PublicHeaderProps {
-  /** The page's own links beside the brand. */
-  children: ReactNode;
-  /** Where «Canon Keeper» leads. */
+  /** The page's own links beside the brand; a page of no address has none. */
+  children?: ReactNode;
+  /** Where «CanonKeeper» leads. */
   homePath: string;
   navigate: RouteNavigate;
 }
@@ -17,7 +17,7 @@ export function PublicHeader({ children, homePath, navigate }: PublicHeaderProps
     <header className={styles.header}>
       <a className={styles.logo} href={homePath} onClick={followRoute(navigate, homePath)}>
         <Feather aria-hidden="true" size={20} />
-        <span>Canon Keeper</span>
+        <span>CanonKeeper</span>
       </a>
       {children}
     </header>

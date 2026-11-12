@@ -1,0 +1,19 @@
+/* The one block of the state of the saga on the shelf (specs/2026-11-10-ux3-saga-state.md SS2.1, SS2.4). */
+.sagaState {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.quiet {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.refusal {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: 13px;
+}

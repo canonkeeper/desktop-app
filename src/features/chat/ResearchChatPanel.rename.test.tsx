@@ -6,6 +6,8 @@ import { createMockApiClient } from '../../api/mock';
 import { projectId } from '../../api/mock/repository/fixtures';
 import { ApiStatusError, createIdempotencyKey } from '../../shared/api';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
+import { AccountSessionContext } from '../../shared/session/account-session';
 
 afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => { vi.stubGlobal('innerWidth', 1440); vi.stubGlobal('innerHeight', 900); });
@@ -16,6 +18,8 @@ async function chat(api: ReturnType<typeof createMockApiClient>, title = 'Пож
   }, { idempotencyKey: createIdempotencyKey('createChatSession') });
 }
 
+const onOpenContact = vi.fn();
+
 function renderPanel(
   api: ReturnType<typeof createMockApiClient>,
   selectedChatId: string,
@@ -25,7 +29,8 @@ function renderPanel(
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
   function SelectedChat() {
     const [chatId, setChatId] = useState(selectedChatId);
-    return <QueryClientProvider client={client}>
+    // The lines of a result stand above the account of the page, as in the app: the area of the toasts is outside it.
+    return <QueryClientProvider client={client}><ToastsProvider><AccountSessionContext.Provider value={{ busy: false, onOpenContact }}>
       <ResearchChatPanel
         api={api}
         canCreate={canCreate}
@@ -35,7 +40,7 @@ function renderPanel(
         selectedChatId={chatId}
         sourceView="published"
       />
-    </QueryClientProvider>;
+    </AccountSessionContext.Provider></ToastsProvider></QueryClientProvider>;
   }
   render(<SelectedChat />);
   return onSelectChatId;
@@ -200,9 +205,14 @@ describe('Research Chat rename', () => {
     fireEvent.change(input, { target: { value: 'Черновик сохраняется' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(await screen.findByText(/Сервис временно недоступен/u)).toBeTruthy();
+    expect(await screen.findByText(/Сервис сейчас перегружен, попробуйте через минуту/u)).toBeTruthy();
     expect((screen.getByRole('textbox', { name: 'Название чата' }) as HTMLInputElement).value)
       .toBe('Черновик сохраняется');
+    // «Написать нам» of the line opens the window of the site with the code, not a letter of the mail program
+    // (specs/2026-11-12-ux12-shell.md SH2.3; the area of the lines lies above the account of the page).
+    onOpenContact.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Написать нам' }));
+    expect(onOpenContact).toHaveBeenCalledWith(expect.objectContaining({ code: 'rename-503', topic: 'bug' }));
   });
 
   it('uses an Action Sheet for a coarse pointer', async () => {

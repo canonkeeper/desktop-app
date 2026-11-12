@@ -38,16 +38,20 @@ func TestTheFirstStartCreatesOneVerifiedAuthorWithTheLargestLimitsPostgres(t *te
 	if found, ok, err := authstore.New(db).UserIDByEmail(ctx, service.LocalAuthorEmail); err != nil || !ok || found != authorID || users() != 1 {
 		t.Fatalf("local author = %q %v %v, users %d; want the one author %q", found, ok, err, users(), authorID)
 	}
-	defaults, err := quotastore.New(db).PlatformDefaults(ctx)
+	defaults, err := quotastore.New(db, quotastore.Fence{}).PlatformDefaults(ctx)
 	if err != nil || defaults.UpdatedAt == nil || defaults.UpdatedBy != authorID {
 		t.Fatalf("platform defaults = %+v, %v", defaults, err)
 	}
-	for _, key := range quota.DefaultKeys() {
+	for _, key := range quota.Keys() {
 		if defaults.Values[key] != key.Max() {
 			t.Errorf("platform default %s = %d, want %d", key, defaults.Values[key], key.Max())
 		}
 	}
-	limits, err := quotastore.EffectiveLimitsInTx(ctx, db.Pool, authorID)
+	// The desktop has no plan (specs/2026-11-08-subscription-tiers.md TR2.3): its fence is the open core's own.
+	if (&build{}).extension(nil).Plans != nil {
+		t.Fatal("the desktop build puts a plan into the quota fence")
+	}
+	limits, err := (quotastore.Fence{}).EffectiveLimitsInTx(ctx, db.Pool, authorID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +75,7 @@ func TestTheFirstStartCreatesOneVerifiedAuthorWithTheLargestLimitsPostgres(t *te
 	if err != nil || again != authorID || users() != 1 {
 		t.Fatalf("second start = %q, %v, users %d", again, err, users())
 	}
-	if after, err := quotastore.New(db).PlatformDefaults(ctx); err != nil || !after.UpdatedAt.Equal(*defaults.UpdatedAt) {
+	if after, err := quotastore.New(db, quotastore.Fence{}).PlatformDefaults(ctx); err != nil || !after.UpdatedAt.Equal(*defaults.UpdatedAt) {
 		t.Fatalf("the second start changed the defaults: %+v, %v", after, err)
 	}
 	if _, err := sessions.CurrentUser(ctx, session.CookieValue); !errors.Is(err, auth.ErrUnauthenticated) {

@@ -26,11 +26,16 @@ type ControlMessage struct {
 	ID      string            `json:"id,omitempty"`
 	Value   *string           `json:"value,omitempty"`
 	// Port and GatewayPort are the listeners of the backend (ready); Code opens the window once (ready, open-code).
+	// PortChanged says the window is on another address than at the previous start: the page finds the storage of its
+	// origin empty (ready; specs/2026-11-12-desk-process.md PR1.2, PR1.4).
 	Port        int    `json:"port,omitempty"`
+	PortChanged bool   `json:"portChanged,omitempty"`
 	GatewayPort int    `json:"gatewayPort,omitempty"`
 	Code        string `json:"code,omitempty"`
-	// Reason says why the backend stops, without content (fatal).
+	// Reason says why the backend stops, without content (fatal); Backup names the copy of backups/ made before a
+	// migration that failed (fatal migrate; specs/2026-11-12-desk-process.md PR3.3) — its name, not its content.
 	Reason string `json:"reason,omitempty"`
+	Backup string `json:"backup,omitempty"`
 }
 
 const (

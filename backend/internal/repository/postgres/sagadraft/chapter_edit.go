@@ -3,10 +3,12 @@ package sagadraft
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	domain "canonkeeper/backend/internal/domain/sagadraft"
+	"canonkeeper/backend/internal/domain/textface"
 	"canonkeeper/backend/internal/library"
 	service "canonkeeper/backend/internal/services/sagadraft"
 	storedb "canonkeeper/backend/internal/store/db"
@@ -19,9 +21,12 @@ import (
 // maxChapterText is the limit of the working text of a draft (chapter_drafts_chapter_check).
 const maxChapterText = 400000
 
-// chapterText is the text of a chapter of the book as the working text of a draft: a paragraph a line, an empty line
-// between them.
-func chapterText(paragraphs []string) string { return strings.Join(paragraphs, "\n\n") }
+// addedRevision is the revision of the book text a chapter added from a draft begins at: the draft's text stands there.
+const addedRevision = 1
+
+// chapterText is the text of a chapter of the book as the working text of a draft: a paragraph a line with its italic
+// and bold in marks, an empty line between them (specs/2026-11-08-italic-bold-in-text.md TF3.2).
+func chapterText(paragraphs []string) string { return textface.FromBook(paragraphs) }
 
 // editedChapterInTx reads a chapter of the book for its edit; a deleted one is domain.ErrChapterGone.
 func (repository *Repository) editedChapterInTx(ctx context.Context, tx pgx.Tx, projectID, chapterID string, revision int64) (library.EditedChapter, error) {
@@ -58,6 +63,26 @@ func (repository *Repository) OpenChapterEdit(ctx context.Context, write service
 		switch {
 		case err == nil:
 			opened, err = GetInTx(ctx, queries, project, existing)
+			return err
+		case !errors.Is(err, pgx.ErrNoRows):
+			return err
+		}
+		// The chapter a draft added is edited in that draft (specs/2026-11-11-ux5-writing-path.md WP4.3): it keeps its text,
+		// versions and helper and stands on the revision of the book that holds its text — the one it put there; a chapter
+		// the book changed since says so, as for any edit.
+		added, err := queries.ChapterDraftThatAddedChapter(ctx, sqlc.ChapterDraftThatAddedChapterParams{ProjectID: project, ChapterID: chapterUUID})
+		switch {
+		case err == nil:
+			stands := chapter.Revision
+			if !slices.Equal(textface.Book(added.Body), chapter.Paragraphs) && chapter.Revision > 1 {
+				stands = addedRevision
+			}
+			if err := queries.ReopenAddedChapterDraft(ctx, sqlc.ReopenAddedChapterDraftParams{
+				ProjectID: project, ID: added.ID, ChapterID: chapterUUID, EditsRevision: int8Of(stands), Title: chapter.Title, Actor: actor,
+			}); err != nil {
+				return err
+			}
+			opened, err = GetInTx(ctx, queries, project, added.ID)
 			return err
 		case !errors.Is(err, pgx.ErrNoRows):
 			return err
@@ -113,8 +138,9 @@ func (repository *Repository) ReopenChapterFromBook(ctx context.Context, write s
 	return reopened, err
 }
 
-// ReplaceChapterFromDraft puts the working text of an edit, without the marks of what the helper wrote, in the place of
-// its chapter in the book, at the next revision and under the title the author confirmed (A8.7). The chapter must still
+// ReplaceChapterFromDraft puts the working text of an edit, without the marks of what the helper wrote and with its
+// italic and bold, in the place of its chapter in the book, at the next revision and under the title the author
+// confirmed (A8.7). The chapter must still
 // stand at the revision the draft took: one changed since is domain.ErrChapterChanged, one deleted domain.ErrChapterGone.
 func (repository *Repository) ReplaceChapterFromDraft(ctx context.Context, write service.Write, draftID string, expected int64, title string) (domain.Draft, error) {
 	var replaced domain.Draft
@@ -129,8 +155,7 @@ func (repository *Repository) ReplaceChapterFromDraft(ctx context.Context, write
 		if err := editable(draft, expected); err != nil {
 			return err
 		}
-		text := domain.WithoutMarks(draft.Text)
-		paragraphs := domain.Paragraphs(text)
+		paragraphs := textface.Book(draft.Text)
 		if len(paragraphs) == 0 {
 			return domain.ErrNoText
 		}

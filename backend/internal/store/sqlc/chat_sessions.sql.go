@@ -160,10 +160,11 @@ SELECT
   membership.role AS actor_role,
   latest_turn.turn_id AS latest_turn_id,
   latest_turn.job_id AS latest_turn_job_id,
-  latest_turn.job_status AS latest_turn_status
+  latest_turn.job_status AS latest_turn_status,
+  latest_turn.created_at AS latest_turn_at
 FROM chat_sessions AS chat
 LEFT JOIN LATERAL (
-  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status
+  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status, turn_row.created_at
   FROM chat_turns AS turn_row
   LEFT JOIN jobs AS turn_job
     ON turn_job.id = turn_row.job_id
@@ -238,6 +239,7 @@ type GetReadableChatSessionRow struct {
 	LatestTurnID                pgtype.UUID        `json:"latest_turn_id"`
 	LatestTurnJobID             pgtype.UUID        `json:"latest_turn_job_id"`
 	LatestTurnStatus            pgtype.Text        `json:"latest_turn_status"`
+	LatestTurnAt                pgtype.Timestamptz `json:"latest_turn_at"`
 }
 
 func (q *Queries) GetReadableChatSession(ctx context.Context, arg GetReadableChatSessionParams) (GetReadableChatSessionRow, error) {
@@ -267,6 +269,7 @@ func (q *Queries) GetReadableChatSession(ctx context.Context, arg GetReadableCha
 		&i.LatestTurnID,
 		&i.LatestTurnJobID,
 		&i.LatestTurnStatus,
+		&i.LatestTurnAt,
 	)
 	return i, err
 }
@@ -275,10 +278,11 @@ const listReadableChatSessions = `-- name: ListReadableChatSessions :many
 SELECT chat.id, chat.project_id, chat.source_view, chat.scope, chat.book_id, chat.title, chat.thread_id, chat.deleted_at, chat.purge_after, chat.created_at, chat.updated_at, chat.lifecycle_epoch, chat.saved_assignment, chat.agent_generation, chat.thread_input_tokens, chat.thread_cached_input_tokens, chat.thread_output_tokens, chat.thread_reasoning_output_tokens, chat.kind,
        latest_turn.turn_id AS latest_turn_id,
        latest_turn.job_id AS latest_turn_job_id,
-       latest_turn.job_status AS latest_turn_status
+       latest_turn.job_status AS latest_turn_status,
+       latest_turn.created_at AS latest_turn_at
 FROM chat_sessions AS chat
 LEFT JOIN LATERAL (
-  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status
+  SELECT turn_row.id AS turn_id, turn_row.job_id, turn_job.status AS job_status, turn_row.created_at
   FROM chat_turns AS turn_row
   LEFT JOIN jobs AS turn_job
     ON turn_job.id = turn_row.job_id
@@ -379,6 +383,7 @@ type ListReadableChatSessionsRow struct {
 	LatestTurnID                pgtype.UUID        `json:"latest_turn_id"`
 	LatestTurnJobID             pgtype.UUID        `json:"latest_turn_job_id"`
 	LatestTurnStatus            pgtype.Text        `json:"latest_turn_status"`
+	LatestTurnAt                pgtype.Timestamptz `json:"latest_turn_at"`
 }
 
 func (q *Queries) ListReadableChatSessions(ctx context.Context, arg ListReadableChatSessionsParams) ([]ListReadableChatSessionsRow, error) {
@@ -424,6 +429,7 @@ func (q *Queries) ListReadableChatSessions(ctx context.Context, arg ListReadable
 			&i.LatestTurnID,
 			&i.LatestTurnJobID,
 			&i.LatestTurnStatus,
+			&i.LatestTurnAt,
 		); err != nil {
 			return nil, err
 		}

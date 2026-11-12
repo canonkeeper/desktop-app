@@ -1,114 +1,82 @@
+/* The text of a chapter (RD1.1; Pattern/Reader/Text): the column of the width the author chose, the signs on its margin. */
 .readerCore {
   position: relative;
-  display: flex;
-  min-height: 0;
-  height: 100%;
-  flex-direction: column;
-  background: var(--ck-reader);
   color: var(--ck-reader-foreground);
+  outline: none;
 }
 
-.readerHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--ck-border);
-  padding: 18px 30px;
-}
-
-.readerHeader p {
-  margin: 0 0 8px;
-  color: var(--ck-muted-foreground);
-  font-family: var(--ck-font-mono);
-  font-size: 11px;
-}
-
-.readerHeader h2 {
-  margin: 0;
+.title {
+  margin: 28px 0 20px;
   color: var(--ck-foreground-strong);
   font-family: var(--ck-font-serif);
-  font-size: 23px;
+  font-size: calc(var(--reader-text-size, 18px) * 1.45);
   font-weight: 600;
-  line-height: round(nearest, 1.12em, 1px);
+  line-height: 1.2;
+}
+
+.title:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: 4px;
 }
 
 .readerBody {
   min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 24px 24px 40px;
-  scrollbar-color: #c5c5c2 transparent;
-  scrollbar-width: thin;
 }
 
-.footer {
-  display: flex;
-  height: 48px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  border-top: 1px solid var(--ck-border);
-  padding: 0 30px;
-  color: var(--ck-muted-foreground);
-  font-size: 13px;
+/* The text follows the size of «Аа» in seven steps (RD1.4). */
+.readerBody p[data-paragraph-id] {
+  max-width: none;
+  font-size: var(--reader-text-size, 18px);
+  line-height: round(nearest, 1.5em, 1px);
 }
 
-@media (max-width: 1100px) {
-  .readerBody {
-    padding: 20px 24px 32px;
-  }
-
-  .footer {
-    padding-inline: 24px;
-  }
-}
-
-@media (max-width: 760px) {
-  .readerHeader,
-  .footer {
-    display: none;
-  }
-
-  .readerBody {
-    padding: 18px 20px 34px;
-  }
-
-}
-
-@media (max-width: 1439px), (max-height: 760px) {
-  .readerCore { overflow: auto; scrollbar-color: #c5c5c2 transparent; scrollbar-width: thin; }
-  .readerHeader { display: flex; flex-shrink: 0; border: 0; padding: 16px 24px 0; }
-  .readerBody { overflow: visible; flex: 0 0 auto; padding-top: 16px; }
-  .footer { display: none; }
-}
-
-/* The drawings of the chapter (illustrations R8.9): thumbnails beside the paragraphs they show. */
-.readerBody[data-drawing-margin] { padding-right: 104px; }
-
-.drawnParagraph {
+.paragraphRow {
   position: relative;
-  max-width: 720px;
-  margin: 0 auto;
 }
 
-.paragraphDrawings {
+/* The signs of notes and drawings stand on the margin, beside the first line of the paragraph (RD3.3). */
+.margin {
   position: absolute;
-  top: 2px;
-  left: calc(100% + 16px);
+  top: 0;
+  left: calc(100% + 12px);
   display: grid;
-  gap: 10px;
-  width: 64px;
+  gap: 4px;
 }
 
-@media (max-width: 760px) {
-  .readerBody[data-drawing-margin] { padding-right: 20px; }
+.mark {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0;
+  background: transparent;
+  color: var(--ck-link);
+  cursor: pointer;
+}
 
-  .paragraphDrawings {
-    position: static;
-    display: flex;
-    width: auto;
-    margin: -6px 0 14px;
+.mark:hover {
+  background: var(--ck-secondary);
+}
+
+.mark:focus-visible {
+  outline: 2px solid var(--ck-ring);
+}
+
+@media (pointer: coarse) {
+  .mark {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 767px) {
+  .title {
+    margin: 16px 0 14px;
+  }
+
+  .margin {
+    left: calc(100% + 2px);
   }
 }

@@ -8,6 +8,7 @@ import { createAppRoute } from '../../shared/navigation/app-route';
 import type { MapCanvasProps } from './MapCanvas';
 import { HiddenPanel } from './HiddenPanel';
 import { SagaMap } from './SagaMap';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 // WebGL is not in jsdom: the canvas is a stand-in that shows what it would draw.
 vi.mock('./MapCanvas', () => ({
@@ -32,9 +33,9 @@ function renderMap(query: Record<string, string> = {}, sourceView: SourceView = 
   const navigate = vi.fn();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}><ToastsProvider>
       <SagaMap api={api} canEdit navigate={navigate} projectId={projectId} route={createAppRoute('/saga', { projectId, ...query })} sourceView={sourceView} />
-    </QueryClientProvider>,
+    </ToastsProvider></QueryClientProvider>,
   );
   return { api, navigate };
 }
@@ -53,9 +54,9 @@ describe('«Карта саги»', () => {
     await waitFor(() => expect(canvas().dataset.nodes).toBe('мара,сава,гильдия смотрителей,белый порт,кинжал мары,северная пристань'));
     expect(canvas().dataset.links).toBe('3');
     const filters = screen.getByRole('group', { name: 'Что показывать' });
-    expect(within(filters).getByRole('button', { name: /Персонажи\s*2/u }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(filters).getByRole('button', { name: /Герои\s*2/u }).getAttribute('aria-pressed')).toBe('true');
     expect(within(filters).getByRole('button', { name: /Места\s*2/u })).toBeTruthy();
-    expect(screen.getByText('На карте 6 из 6')).toBeTruthy();
+    expect(screen.getByText('Показаны все: 6')).toBeTruthy();
     expect(screen.getByText('Вся сага')).toBeTruthy();
     expect(within(screen.getByRole('list', { name: 'Узлы на карте' })).getAllByRole('button')).toHaveLength(6);
   });
@@ -128,10 +129,13 @@ describe('«Карта саги»', () => {
 
   it('moves the graph with the scale at once and keeps the chapter in the URL after a pause', async () => {
     const { navigate } = renderMap();
-    const slider = await screen.findByRole('slider', { name: 'К главе' });
+    const slider = await screen.findByRole('slider', { name: 'Сага на момент главы' });
     fireEvent.change(slider, { target: { value: '0' } });
     expect(canvas().dataset.nodes).toBe('мара,сава,белый порт,кинжал мары,северная пристань');
-    expect(screen.getByText(/К главе .* · Том 1/u)).toBeTruthy();
+    // specs/2026-11-10-ux1-names.md N4.2: the scale names the chapter by its place, never by its key.
+    expect(screen.getByText('Книга 1, гл. 1 „Туманный берег“')).toBeTruthy();
+    expect(slider.getAttribute('aria-valuetext')).toBe('Книга 1, гл. 1 „Туманный берег“');
+    expect(document.body.textContent).not.toMatch(/b\d+c\d+|¶/u);
     await waitFor(() => expect(lastNavigation(navigate)).toEqual({ options: { replace: true }, path: '/saga', query: { projectId, to: 'b1c1' } }));
   });
 
@@ -149,7 +153,8 @@ describe('«Карта саги»', () => {
     expect(await within(card).findByText('Также: Северянка')).toBeTruthy();
     expect(within(card).getByText('в 4 главах')).toBeTruthy();
     const links = within(card).getByRole('region', { name: 'Связи' });
-    expect(within(links).getByText('вместе в 1 событии')).toBeTruthy();
+    // specs/2026-11-11-ux9-shelf-chat.md SC3.5 (W-5C): the links in the words of the author.
+    expect(within(links).getByText('Вместе в 1 событии')).toBeTruthy();
     expect(within(within(links).getByRole('list', { name: 'Вместе: Сава' })).getByText(/Сава дарит Маре старый кинжал/u)).toBeTruthy();
     fireEvent.click(within(links).getByRole('button', { name: 'Подробнее: Сава' }));
     expect(within(links).getByRole('list', { name: 'Главы: Сава' })).toBeTruthy();
@@ -159,10 +164,16 @@ describe('«Карта саги»', () => {
     const events = within(card).getByRole('region', { name: 'События' });
     fireEvent.click(within(events).getAllByRole('link')[0]!);
     expect(lastNavigation(navigate).path).toBe('/manuscript/books');
+    // The reader offers «← К карте: Мара» back to the card (specs/2026-11-10-ux2-patterns-states.md PS4.1).
+    expect(lastNavigation(navigate).options).toEqual({ from: { section: 'saga', name: 'Мара' } });
 
-    fireEvent.click(within(card).getByRole('button', { name: 'Спросить о нём' }));
-    expect(navigate).toHaveBeenLastCalledWith('/chat', { projectId }, { chatQuestion: 'Расскажи о «Мара»: кто или что это, ключевые события и связи по книге.' });
-    fireEvent.click(within(card).getByRole('button', { name: 'Показать окружение' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Спросить в чате' }));
+    // SC3.5 (W-5E, П-13): the question needs no case of the name, and the chat offers «← К карте: Мара».
+    expect(navigate).toHaveBeenLastCalledWith('/chat', { projectId }, {
+      chatQuestion: 'Расскажи про героя: Мара — кто это, главные события и с кем связан по книге.', from: { section: 'saga', name: 'Мара' },
+    });
+    expect(within(card).getByRole('region', { name: 'Что изменилось' })).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: 'Показать, с кем связан' }));
     expect(lastNavigation(navigate).query).toEqual({ projectId, node: 'мара', focus: 'мара' });
     fireEvent.click(within(card).getByRole('button', { name: 'Закрыть карточку' }));
     expect(lastNavigation(navigate).query).toEqual({ projectId });
@@ -191,11 +202,12 @@ describe('«Карта саги»', () => {
     expect(within(card).getByRole('heading', { level: 2, name: 'Мара' })).toBeTruthy();
     expect(within(card).getByText('персонаж')).toBeTruthy();
     expect(within(card).getByText('в 4 главах')).toBeTruthy();
-    expect(within(card).getByRole('status', { name: 'Загрузка карточки' })).toBeTruthy();
+    // The card loads in the form of its rows, announced as busy (PS3.1).
+    expect(card.querySelector('[data-loading][aria-busy="true"]')).toBeTruthy();
     expect(within(card).queryByRole('region', { name: 'Связи' })).toBeNull();
     release();
     expect(await within(card).findByRole('region', { name: 'Связи' })).toBeTruthy();
-    expect(within(card).queryByRole('status', { name: 'Загрузка карточки' })).toBeNull();
+    expect(card.querySelector('[data-loading]')).toBeNull();
     expect(within(card).getByText('в 4 главах')).toBeTruthy();
   });
 
@@ -205,9 +217,9 @@ describe('«Карта саги»', () => {
     wideScreen();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const page = (node?: string) => (
-      <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}><ToastsProvider>
         <SagaMap api={api} canEdit navigate={vi.fn()} projectId={projectId} route={createAppRoute('/saga', { projectId, ...(node ? { node } : {}) })} sourceView="draft" />
-      </QueryClientProvider>
+      </ToastsProvider></QueryClientProvider>
     );
     const { rerender } = render(page('мара'));
     await within(await screen.findByRole('complementary', { name: 'Карточка: Мара' })).findByRole('region', { name: 'Связи' });
@@ -230,8 +242,8 @@ describe('«Карта саги»', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       renderMap({}, 'draft', api);
-      expect(await screen.findByText('Карта готовится')).toBeTruthy();
-      expect(screen.queryByText('Карта появится, когда книга будет подготовлена')).toBeNull();
+      expect(await screen.findByText('Карта собирается — страница обновится сама')).toBeTruthy();
+      expect(screen.queryByText(/Карта появится/u)).toBeNull();
       await act(async () => { await vi.advanceTimersByTimeAsync(5_100); });
       await waitFor(() => expect(screen.getByRole('group', { name: 'Что показывать' })).toBeTruthy());
       expect(read).toHaveBeenCalledTimes(2);
@@ -250,10 +262,13 @@ describe('«Карта саги»', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       renderMap({}, 'draft', api);
-      expect(await screen.findByText('Карта обновляется: новое появится само.')).toBeTruthy();
+      // One line of the long work, with no term the server did not give (PS3.3).
+      const work = await screen.findByRole('region', { name: 'Карта обновляется' });
+      expect(within(work).getByText('можно уйти — новое появится на карте само')).toBeTruthy();
+      expect(within(work).queryByRole('progressbar')).toBeNull();
       expect(canvas().dataset.nodes).toContain('мара');
       await act(async () => { await vi.advanceTimersByTimeAsync(5_100); });
-      await waitFor(() => expect(screen.queryByText('Карта обновляется: новое появится само.')).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Карта обновляется' })).toBeNull());
       expect(read).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -293,18 +308,18 @@ describe('«Карта саги»', () => {
     const card = vi.spyOn(api, 'getSagaMapNode').mockResolvedValue({ ...mara, material: record });
     const update = vi.spyOn(api, 'updateAuthorMaterial').mockResolvedValue({ ...record, description: 'Новое описание', revision: 2 });
     renderMap({ node: 'мара' }, 'draft', api);
-    const block = await screen.findByRole('region', { name: 'По материалам автора' });
+    const block = await screen.findByRole('region', { name: 'По вашим материалам' });
     expect(within(block).getByText('Старое описание')).toBeTruthy();
     const map = vi.spyOn(api, 'getSagaMap');
-    fireEvent.click(within(block).getByRole('button', { name: 'Править' }));
+    fireEvent.click(within(block).getByRole('button', { name: 'Изменить' }));
     const dialog = screen.getByRole('dialog', { name: 'Изменить запись' });
     fireEvent.change(within(dialog).getByLabelText('Описание'), { target: { value: 'Новое описание' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() => expect(within(screen.getByRole('region', { name: 'По материалам автора' })).getByText('Новое описание')).toBeTruthy());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'По вашим материалам' })).getByText('Новое описание')).toBeTruthy());
     expect(card).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(map).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(within(screen.getByRole('region', { name: 'По материалам автора' })).getByRole('button', { name: 'Править' }));
+    fireEvent.click(within(screen.getByRole('region', { name: 'По вашим материалам' })).getByRole('button', { name: 'Изменить' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Изменить запись' })).getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[1]![2]).toMatchObject({ expectedRevision: 2 });
@@ -316,10 +331,11 @@ describe('«Карта саги»', () => {
     vi.spyOn(api, 'getSagaMapNode').mockResolvedValue({ ...mara, material: record });
     vi.spyOn(api, 'deleteAuthorMaterial').mockResolvedValue(undefined);
     const { navigate } = renderMap({ node: 'мара' }, 'draft', api);
-    const block = await screen.findByRole('region', { name: 'По материалам автора' });
-    fireEvent.click(within(block).getByRole('button', { name: 'Удалить' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Удалить запись' })).getByRole('button', { name: 'Удалить' }));
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'По материалам автора' })).toBeNull());
+    const block = await screen.findByRole('region', { name: 'По вашим материалам' });
+    fireEvent.click(within(block).getByRole('button', { name: 'Действия записи' }));
+    fireEvent.click(within(block).getByRole('menuitem', { name: 'Удалить запись…' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: /Удалить запись/u })).getByRole('button', { name: 'Удалить запись' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'По вашим материалам' })).toBeNull());
     expect(screen.getByRole('complementary', { name: 'Карточка: Мара' })).toBeTruthy();
     expect(navigate).not.toHaveBeenCalled();
     cleanup();
@@ -327,23 +343,44 @@ describe('«Карта саги»', () => {
     const own = { ...mara, first: null, mentions: 0, links: [], events: [], changes: [], eventsTotal: 0, changesTotal: 0, material: record };
     vi.spyOn(api, 'getSagaMapNode').mockResolvedValue(own);
     const second = renderMap({ node: 'мара' }, 'draft', api);
-    const only = await screen.findByRole('region', { name: 'По материалам автора' });
-    fireEvent.click(within(only).getByRole('button', { name: 'Удалить' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Удалить запись' })).getByRole('button', { name: 'Удалить' }));
+    const only = await screen.findByRole('region', { name: 'По вашим материалам' });
+    fireEvent.click(within(only).getByRole('button', { name: 'Действия записи' }));
+    fireEvent.click(within(only).getByRole('menuitem', { name: 'Удалить запись…' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: /Удалить запись/u })).getByRole('button', { name: 'Удалить запись' }));
     await waitFor(() => expect(lastNavigation(second.navigate).query).toEqual({ projectId }));
   });
 
-  it('says when the cards cover a part of the saga, and offers the books while there are none', async () => {
+  // specs/2026-11-10-ux3-saga-state.md SS3.2: the map says what the helper has read, by the counts and the time of the
+  // shelf, without «карточки глав» and the shelf; it leads to the books while nothing is read.
+  it('says when the helper has read a part of the saga, and leads to the books while nothing is read', async () => {
     renderMap({}, 'published');
-    expect(await screen.findByText(/Карточки построены для 1 из 2 глав/u)).toBeTruthy();
+    expect(await screen.findByText('Помощник прочитал 1 из 2 глав — карта дополняется сама')).toBeTruthy();
     cleanup();
 
     const api = createMockApiClient();
     vi.spyOn(api, 'getSagaMap').mockResolvedValue({ revision: 'r', coverage: { chapters: 3, withCards: 0 }, chapters: [], hero: null, nodesTotal: 0, nodes: [], links: [] });
+    vi.spyOn(api, 'getIndexingStatus').mockResolvedValue({
+      published: { exists: true, context: { state: 'processing', currentBook: { bookId: 'book-01', position: 1, total: 1 }, retryableFailedBook: null } },
+      steps: [],
+      preparation: {
+        remainingSeconds: 240, letterPromised: false, chaptersRead: 0, chaptersTotal: 12, booksRead: 0, booksTotal: 1,
+        currentBookId: 'book-01', askable: true, books: [{ bookId: 'book-01', chaptersRead: 0, chaptersTotal: 12 }],
+      },
+    });
     const { navigate } = renderMap({}, 'draft', api);
-    expect(await screen.findByText('Карта появится, когда книга будет подготовлена')).toBeTruthy();
+    expect(await screen.findByText('Карта появится, когда помощник прочитает книгу')).toBeTruthy();
+    expect(await screen.findByText('Прочитано 0 из 12 глав · осталось ≈ 4 мин')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/карточк|полк/iu);
     fireEvent.click(screen.getByRole('button', { name: 'К книгам' }));
     expect(navigate).toHaveBeenCalledWith('/manuscript/books', { projectId });
+  });
+
+  it('says plainly that the map has nobody yet', async () => {
+    const api = createMockApiClient();
+    vi.spyOn(api, 'getSagaMap').mockResolvedValue({ revision: 'r', coverage: { chapters: 3, withCards: 3 }, chapters: [], hero: null, nodesTotal: 0, nodes: [], links: [] });
+    renderMap({}, 'draft', api);
+    expect(await screen.findByText('На карте пока никого нет')).toBeTruthy();
+    expect(screen.getByText('Героев и мест, которые встречаются хотя бы в двух главах, помощник не нашёл.')).toBeTruthy();
   });
 
   // R11.2, R11.3: the author edits the map and takes off what is plainly not needed.
@@ -352,22 +389,23 @@ describe('«Карта саги»', () => {
     const card = await screen.findByRole('complementary', { name: 'Карточка: Мара' });
     const links = await within(card).findByRole('region', { name: 'Связи' });
     expect(within(within(links).getByRole('list', { name: 'Вместе: Сава' })).getByRole('link')).toBeTruthy();
-    fireEvent.click(within(links).getByRole('button', { name: 'Это не связь: Сава' }));
-    expect(await screen.findByText('Это не связь: Мара — Сава')).toBeTruthy();
+    fireEvent.click(within(links).getByRole('button', { name: 'Убрать связь: Сава' }));
+    expect(await screen.findByText('Связь Мара — Сава убрана с карты')).toBeTruthy();
     await waitFor(() => expect(within(links).queryByRole('button', { name: 'Сава' })).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Отменить' }));
     expect(await within(links).findByRole('button', { name: 'Сава' })).toBeTruthy();
-    expect(screen.queryByText('Это не связь: Мара — Сава')).toBeNull();
+    expect(screen.queryByText('Связь Мара — Сава убрана с карты')).toBeNull();
   });
 
-  it('takes a node off the map, finds it in «Убранное» and returns it by one press', async () => {
+  it('takes a node off the map, finds it in «Убранное с карты» and returns it by one press', async () => {
     const api = createMockApiClient();
     const { navigate } = renderMap({ node: 'гильдия смотрителей' }, 'draft', api);
     const card = await screen.findByRole('complementary');
     fireEvent.click(await within(card).findByRole('button', { name: 'Убрать с карты: Гильдия смотрителей' }));
-    expect(await screen.findByText('Убрано с карты: Гильдия смотрителей')).toBeTruthy();
+    expect(await screen.findByText('Фракция «Гильдия смотрителей» убрана с карты')).toBeTruthy();
     await waitFor(() => expect(canvas().dataset.nodes).not.toContain('гильдия'));
-    expect(await within(card).findByText(/Вы убрали это с карты/u)).toBeTruthy();
+    // The route of the test stays: the card the page closed reads as the card of a node off the map.
+    expect(await within(card).findByText('Убрано с карты. Поиск и карточка остаются')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: /Убранное/u }));
     expect(lastNavigation(navigate).query).toMatchObject({ removed: 'open' });
     fireEvent.click(within(card).getByRole('button', { name: 'Вернуть на карту: Гильдия смотрителей' }));
@@ -381,21 +419,46 @@ describe('«Карта саги»', () => {
     wideScreen();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const view = render(
-      <QueryClientProvider client={queryClient}>
-        <HiddenPanel api={api} canEdit={false} decisions={{ hideLink: vi.fn(), hideNode: vi.fn(), pending: false, restore: vi.fn(), toasts: { dismiss: vi.fn(), push: vi.fn(), queue: [] } }} onOpen={vi.fn()} projectId={projectId} sourceView="published" />
-      </QueryClientProvider>,
+      <QueryClientProvider client={queryClient}><ToastsProvider>
+        <HiddenPanel api={api} canEdit={false} decisions={{ hideLink: vi.fn(), hideNode: vi.fn(), pending: false, restore: vi.fn() }} onOpen={vi.fn()} projectId={projectId} sourceView="published" />
+      </ToastsProvider></QueryClientProvider>,
     );
     expect(await screen.findByText('Мара — Сава')).toBeTruthy();
-    expect(screen.getByText('это не связь')).toBeTruthy();
+    expect(screen.getByText('связь убрана')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Вернуть/u })).toBeNull();
     view.unmount();
     await api.restoreSagaMapItem(projectId, hidden.id);
     expect((await api.listSagaMapHidden(projectId, { sourceView: 'published' })).items).toEqual([]);
   });
 
-  it('opens what the helper remembers', async () => {
+  // specs/2026-11-10-ux2-memory-page.md MP1.5: one link «Что помнит помощник» to the part of the materials, no panel of the map.
+  it('links to what the helper remembers instead of a panel of the materials', async () => {
     const { navigate } = renderMap();
-    fireEvent.click(await screen.findByRole('button', { name: 'Что помнит помощник' }));
-    expect(navigate).toHaveBeenCalledWith('/memory', { projectId });
+    const link = await screen.findByRole('link', { name: 'Что помнит помощник' });
+    expect(link.getAttribute('href')).toBe(`/memory?projectId=${projectId}&part=materials`);
+    expect(screen.queryByRole('button', { name: /Материалы/u })).toBeNull();
+    fireEvent.click(link);
+    expect(navigate).toHaveBeenCalledWith('/memory', { projectId, part: 'materials' });
+  });
+
+  it('keeps «Убранное» and «Что помнит помощник» in «⋯» on a phone', async () => {
+    const api = createMockApiClient();
+    await api.hideSagaMapItem(projectId, 'draft', { nodeKey: 'мара', otherKey: 'сава' });
+    const navigate = vi.fn();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      addEventListener: () => undefined, matches: true, media: query, removeEventListener: () => undefined,
+    }));
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastsProvider>
+        <SagaMap api={api} canEdit navigate={navigate} projectId={projectId} route={createAppRoute('/saga', { projectId })} sourceView="draft" />
+      </ToastsProvider></QueryClientProvider>,
+    );
+    const more = await screen.findByRole('button', { name: 'Ещё' });
+    expect(screen.queryByRole('link', { name: 'Что помнит помощник' })).toBeNull();
+    fireEvent.click(more);
+    const menu = screen.getByRole('menu', { name: 'Ещё' });
+    await waitFor(() => expect(within(menu).getByRole('menuitem', { name: /^Убранное/u })).toBeTruthy());
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Что помнит помощник' }));
+    expect(navigate).toHaveBeenCalledWith('/memory', { projectId, part: 'materials' });
   });
 });

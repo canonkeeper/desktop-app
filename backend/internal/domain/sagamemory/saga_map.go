@@ -56,8 +56,10 @@ func MapCategoryOf(kind string) (MapCategory, bool) {
 const (
 	// maxMapNodes bounds the nodes of a map, most chapters first.
 	maxMapNodes = 600
-	// mapSmallSaga is how many cards a saga needs before a node needs two chapters.
-	mapSmallSaga = 20
+	// mapTwoChapters is how many cards a saga needs before a node is named in two chapters and a node of two needs a reason
+	// (specs/2026-11-10-map-nodes.md MN1.1, MN1.2): in a story of 17 chapters a name of one chapter, and one of two without a
+	// reason, is a word the book passes by — the porters, a banker, a country on the way.
+	mapTwoChapters = 8
 	// weakLinkChapters is how many chapters two nodes stand beside each other before that is a link.
 	weakLinkChapters = 3
 	// weakLinksPerNode is how many of its strongest weak links a node keeps.
@@ -75,6 +77,8 @@ type MapNode struct {
 	Category MapCategory
 	// Material marks a record of the author the book does not know (R9.5): it has no chapters.
 	Material bool
+	// Authored marks a name of the book the author has a record of (MN1.3): it is no word the book passes by, at any chapters.
+	Authored bool
 }
 
 // MapLink links two nodes (Source < Target, node indexes): Events are the chapters of the events both take part in, one
@@ -90,30 +94,36 @@ type MapLink struct {
 	Material bool
 }
 
-// Map is the graph of a saga: Hero is the node of the main character, -1 without one; Candidates is how
-// many entries qualified before the bound.
+// Map is the graph of a saga: Hero is the node of the main character, -1 without one; Total is how many nodes the map draws
+// without the bound (MN1.6): above it, the nodes past the bound are counted without a reason looked for.
 type Map struct {
-	Nodes      []MapNode
-	Links      []MapLink
-	Hero       int
-	Candidates int
+	Nodes []MapNode
+	Links []MapLink
+	Hero  int
+	Total int
 
 	nodeOf map[*GlossaryEntry]int
 }
 
 // BuildMap builds the graph of the saga from its cards (UC1 «построить граф»): the entries of the map
-// categories mentioned in two chapters (one in a saga of fewer than 20 cards), at most 600 by chapters;
-// the pairs of every event's participants and of every card's nodes; a weak link stays when it is
-// among the 8 strongest of one of its ends.
-func BuildMap(set *CardSet) *Map {
+// categories mentioned in two chapters (one in a saga of fewer than 8 cards) and those the author's
+// materials have a record of, at most 600 by chapters; the pairs of every event's participants and of
+// every card's nodes; a weak link stays when it is among the 8 strongest of one of its ends.
+func BuildMap(set *CardSet, materials []MapMaterial) *Map {
 	minChapters := 1
-	if len(set.Cards) >= mapSmallSaga {
+	if len(set.Cards) >= mapTwoChapters {
 		minChapters = 2
+	}
+	authored := make(map[*GlossaryEntry]bool, len(materials))
+	for _, material := range materials {
+		if entry, ok := set.Glossary.Lookup(material.Name); ok {
+			authored[entry] = true
+		}
 	}
 	var nodes []MapNode
 	for _, entry := range set.Glossary.Entries {
-		if category, ok := MapCategoryOf(entry.Type); ok && len(entry.Chapters) >= minChapters {
-			nodes = append(nodes, MapNode{Entry: entry, Category: category})
+		if category, ok := MapCategoryOf(entry.Type); ok && (len(entry.Chapters) >= minChapters || authored[entry]) {
+			nodes = append(nodes, MapNode{Entry: entry, Category: category, Authored: authored[entry]})
 		}
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
@@ -123,7 +133,7 @@ func BuildMap(set *CardSet) *Map {
 		}
 		return left.Name < right.Name
 	})
-	m := &Map{Hero: -1, Candidates: len(nodes), nodeOf: map[*GlossaryEntry]int{}}
+	m := &Map{Hero: -1, Total: len(nodes), nodeOf: map[*GlossaryEntry]int{}}
 	m.Nodes = nodes[:min(len(nodes), maxMapNodes)]
 	nodesOfChapter := map[int][]int{}
 	for i, node := range m.Nodes {
@@ -258,17 +268,24 @@ func (m *Map) AddChanges(changes map[[2]*GlossaryEntry][]int) {
 	})
 }
 
-// PrunedLink is a link of a node PruneLone took off the map: the cards at its ends still name the two apart.
+// PrunedLink is a link of a node PruneWithoutReason took off the map: the cards at its ends still name the two apart.
 type PrunedLink struct {
 	Link           MapLink
 	Source, Target MapNode
 }
 
-// PruneLone takes off the map the nodes of one chapter without an honest link (R11.4): in a small saga they are the letter,
-// the acquaintance and the contract of a hero mentioned once. Search and the cards still have them. A saga of one or two cards
-// keeps them: that is all it has.
-func (m *Map) PruneLone(cards int) []PrunedLink {
-	if cards < mapFewCards {
+// PruneWithoutReason takes off the map the nodes of few chapters without an honest link to another node (R11.4, MN1.2): from
+// 3 cards those of one chapter, from 8 those of two — the letter, the acquaintance, the country a hero passes through. Search
+// and the cards still have them. A node of three chapters and more stays without a reason, and so does what the author wrote
+// about; a saga of one or two cards keeps all: that is all it has. One pass: two nodes linked to each other stay both.
+func (m *Map) PruneWithoutReason(cards int) []PrunedLink {
+	var few int
+	switch {
+	case cards >= mapTwoChapters:
+		few = 2
+	case cards >= mapFewCards:
+		few = 1
+	default:
 		return nil
 	}
 	honest := make([]bool, len(m.Nodes))
@@ -281,7 +298,7 @@ func (m *Map) PruneLone(cards int) []PrunedLink {
 	original := slices.Clone(m.Nodes)
 	kept := make([]MapNode, 0, len(m.Nodes))
 	for i, node := range original {
-		if len(node.Entry.Chapters) == 1 && !node.Material && !honest[i] {
+		if len(node.Entry.Chapters) <= few && !node.Material && !node.Authored && !honest[i] {
 			index[i] = -1
 			delete(m.nodeOf, node.Entry)
 			continue
@@ -303,6 +320,7 @@ func (m *Map) PruneLone(cards int) []PrunedLink {
 		link.Source, link.Target = index[link.Source], index[link.Target]
 		links = append(links, link)
 	}
+	m.Total -= len(original) - len(kept)
 	m.Nodes, m.Links = kept, links
 	return pruned
 }

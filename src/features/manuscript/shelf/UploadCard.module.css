@@ -1,0 +1,96 @@
+.card {
+  display: grid;
+  height: 100%;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+  padding: 10px;
+}
+
+.card[data-state='failed'] {
+  border-color: var(--ck-color-warning);
+}
+
+.cover {
+  display: grid;
+  height: 132px;
+  place-items: center;
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-secondary);
+  color: var(--ck-muted-foreground);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-card);
+  padding: 8px 12px;
+}
+
+.row[data-state='failed'] {
+  border-color: var(--ck-color-warning);
+}
+
+.row .reason,
+.row .actions,
+.row .progress {
+  grid-column: 2 / -1;
+}
+
+.name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  margin: 0;
+  color: var(--ck-color-warning-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.file {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 0 10px;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.file:focus-within {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+@media (pointer: coarse) {
+  .file {
+    min-height: 44px;
+  }
+}

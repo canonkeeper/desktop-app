@@ -122,6 +122,18 @@ func TestLibraryStoreFinalizeImportUpdatesBookInPlace(t *testing.T) {
 	if second.UnchangedChapters != 1 || second.ChangedChapters != 1 || second.RenamedChapters != 1 || second.AddedChapters != 1 || second.RemovedChapters != 1 {
 		t.Fatalf("update counters = %+v, want unchanged 1, changed 1, renamed 1, added 1, removed 1", second)
 	}
+	// specs/2026-11-11-ux7-trash.md TB4.1: the update keeps what it changed, chapter by chapter, for «Что изменилось».
+	if second.Preview == nil || len(second.Preview.Chapters) != 4 || second.Preview.NewCards != 2 {
+		t.Fatalf("what the update changed = %+v", second.Preview)
+	}
+	changes := map[string]string{}
+	for _, changed := range second.Preview.Chapters {
+		changes[changed.Title] = changed.Change
+	}
+	if changes["Глава 2"] != jobs.ImportPreviewWords || changes["Глава третья"] != jobs.ImportPreviewRenamed ||
+		changes["Глава 4"] != jobs.ImportPreviewAdded || changes["Глава 5"] != jobs.ImportPreviewRemoved {
+		t.Fatalf("the chapters the update changed = %+v", second.Preview.Chapters)
+	}
 
 	after := rows(first.BookID)
 	same, edited, renamed, added, removed := after["Глава 1"], after["Глава 2"], after["Глава третья"], after["Глава 4"], after["Глава 5"]

@@ -78,17 +78,23 @@ func TestDraftTextIndexReleasesImportQueueWithoutCards(t *testing.T) {
 
 func claimDraftTextIndexForTest(t *testing.T, db *storedb.DB, projectID string) (jobs.WorkerClaim, jobs.CanonTextIndexSubject) {
 	t.Helper()
+	return claimTextIndexForTest(t, db, projectID, governance.SourceViewDraft)
+}
+
+func claimTextIndexForTest(t *testing.T, db *storedb.DB, projectID string, view governance.SourceView) (jobs.WorkerClaim, jobs.CanonTextIndexSubject) {
+	t.Helper()
 	var jobID string
 	var revision uint64
+	var incarnation int64
 	if err := db.Pool.QueryRow(context.Background(), `
 		UPDATE jobs SET status='running', claim_incarnation=claim_incarnation+1, claimed_at=clock_timestamp(), updated_at=clock_timestamp()
-		WHERE project_id=$1 AND kind='canon_text_index' AND status='queued' AND subject_json->>'sourceView'='draft'
-		RETURNING id::text, (subject_json->>'catalogRevision')::bigint
-	`, projectID).Scan(&jobID, &revision); err != nil {
+		WHERE project_id=$1 AND kind='canon_text_index' AND status='queued' AND subject_json->>'sourceView'=$2
+		RETURNING id::text, (subject_json->>'catalogRevision')::bigint, claim_incarnation
+	`, projectID, string(view)).Scan(&jobID, &revision, &incarnation); err != nil {
 		t.Fatal(err)
 	}
-	return jobs.WorkerClaim{ProjectID: projectID, JobID: jobID, ClaimIncarnation: 1}, jobs.CanonTextIndexSubject{
-		Type: jobs.KindCanonTextIndex, ProjectID: projectID, SourceView: governance.SourceViewDraft, CatalogRevision: revision,
+	return jobs.WorkerClaim{ProjectID: projectID, JobID: jobID, ClaimIncarnation: incarnation}, jobs.CanonTextIndexSubject{
+		Type: jobs.KindCanonTextIndex, ProjectID: projectID, SourceView: view, CatalogRevision: revision,
 	}
 }
 

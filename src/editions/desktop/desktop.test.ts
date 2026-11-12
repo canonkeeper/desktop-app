@@ -14,7 +14,7 @@ describe('the desktop edition', () => {
   });
 
   it('names the open sections in its menu', () => {
-    expect(edition.sections).toEqual(['manuscript', 'reader', 'chat', 'saga', 'notes']);
+    expect(edition.sections).toEqual(['manuscript', 'saga', 'memory', 'chat', 'notes', 'deleted']);
   });
 
   it('has no account of its own', () => {

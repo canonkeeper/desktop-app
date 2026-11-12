@@ -34,15 +34,18 @@ func runtimeTestBinary(t *testing.T) string {
 	return binary
 }
 
-func runtimeTestProfile(t *testing.T) string {
+// runtimeTestProfile is the repository profile of one flow: codex-homes/<flow>.
+func runtimeTestProfile(t *testing.T, flow string) string {
 	t.Helper()
-	profile, err := filepath.Abs("../../../../codex-homes/research-chat")
+	profile, err := filepath.Abs(filepath.Join("../../../../codex-homes", flow))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return profile
 }
 
+// The binary and the SDK go only as a pair: the strict handshake checks the initialize digests of the runtime, so a
+// binary of another release fails here (specs/2026-11-12-desk-codex.md CX1.3).
 func TestRuntimeProfileInitializesWithPinnedSDK(t *testing.T) {
 	binary := runtimeTestBinary(t)
 	root := t.TempDir()
@@ -50,7 +53,7 @@ func TestRuntimeProfileInitializesWithPinnedSDK(t *testing.T) {
 	defer cancel()
 	client, err := NewClient(ctx, ClientConfig{
 		CodexPath: binary, CWD: root,
-		RepositoryHome:  runtimeTestProfile(t),
+		RepositoryHome:  runtimeTestProfile(t, "research-chat"),
 		CodexHome:       filepath.Join(root, "codex-home"),
 		CodexSQLiteHome: filepath.Join(root, "sqlite"),
 		PrivateHome:     filepath.Join(root, "home"),
@@ -62,7 +65,7 @@ func TestRuntimeProfileInitializesWithPinnedSDK(t *testing.T) {
 	defer client.Close()
 	runtime, err := client.runtime(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the pinned SDK refused the runtime %s: %v", binary, err)
 	}
 	metadata := runtime.sdk.Metadata()
 	if metadata.Compatibility != sdk.CompatibilityStrict || metadata.CompatibilityOverrideActive || metadata.ProtocolMode != sdk.ProtocolModeExperimental {
@@ -93,6 +96,10 @@ type stubRequest struct {
 	Model       string
 	Effort      string
 	CallOutputs []int // characters of each function_call_output the model reads back
+	// Instructions are the instructions field and the text of each developer or system message, as sent.
+	Instructions []string
+	// Declarations are the tools field and every additional_tools item, as sent.
+	Declarations []json.RawMessage
 }
 
 const stubAnswer = "Меч упомянут в главе 3."
@@ -106,11 +113,12 @@ func (model *stubModel) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	var body struct {
-		Model     string            `json:"model"`
-		Input     []json.RawMessage `json:"input"`
-		Tools     []json.RawMessage `json:"tools"`
-		Parallel  bool              `json:"parallel_tool_calls"`
-		Reasoning struct {
+		Model        string            `json:"model"`
+		Instructions string            `json:"instructions"`
+		Input        []json.RawMessage `json:"input"`
+		Tools        []json.RawMessage `json:"tools"`
+		Parallel     bool              `json:"parallel_tool_calls"`
+		Reasoning    struct {
 			Effort string `json:"effort"`
 		} `json:"reasoning"`
 	}
@@ -124,12 +132,17 @@ func (model *stubModel) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		Lite: request.Header.Get("X-Openai-Internal-Codex-Responses-Lite") != "",
 	}
 	declarations := append([]json.RawMessage(nil), body.Tools...)
+	if body.Instructions != "" {
+		recorded.Instructions = append(recorded.Instructions, body.Instructions)
+	}
 	lastType := ""
 	for _, item := range body.Input {
 		var typed struct {
-			Type   string            `json:"type"`
-			Tools  []json.RawMessage `json:"tools"`
-			Output json.RawMessage   `json:"output"`
+			Type    string            `json:"type"`
+			Role    string            `json:"role"`
+			Content json.RawMessage   `json:"content"`
+			Tools   []json.RawMessage `json:"tools"`
+			Output  json.RawMessage   `json:"output"`
 		}
 		_ = json.Unmarshal(item, &typed)
 		lastType = typed.Type
@@ -142,8 +155,20 @@ func (model *stubModel) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			recorded.CallOutputs = append(recorded.CallOutputs, len([]rune(text)))
 		case "message":
 			recorded.CallOutputs = nil
+			if typed.Role == "developer" || typed.Role == "system" {
+				var parts []struct {
+					Text string `json:"text"`
+				}
+				_ = json.Unmarshal(typed.Content, &parts)
+				var text strings.Builder
+				for _, part := range parts {
+					text.WriteString(part.Text)
+				}
+				recorded.Instructions = append(recorded.Instructions, text.String())
+			}
 		}
 	}
+	recorded.Declarations = declarations
 	for _, declaration := range declarations {
 		recorded.collect(declaration, "")
 	}
@@ -155,29 +180,48 @@ func (model *stubModel) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	id := fmt.Sprintf("resp-%d", len(model.requests))
 	model.mu.Unlock()
 
-	events := []map[string]any{{"type": "response.created", "response": map[string]any{"id": id}}}
+	output := stubSearchEvents(id)
 	if lastType == "function_call_output" {
-		message := map[string]any{
-			"type": "message", "role": "assistant", "id": "msg-" + id, "phase": "final_answer",
-			"content": []map[string]any{{"type": "output_text", "text": stubAnswer}},
-		}
-		events = append(events,
-			map[string]any{"type": "response.output_item.added", "item": message},
-			map[string]any{"type": "response.output_text.delta", "delta": stubAnswer},
-			map[string]any{"type": "response.output_item.done", "item": message},
-		)
-	} else {
-		for index, query := range []string{"меч", "щит"} {
-			events = append(events, map[string]any{"type": "response.output_item.done", "item": map[string]any{
-				"type": "function_call", "call_id": fmt.Sprintf("call-%s-%d", id, index), "name": "search",
-				"namespace": "saga", "arguments": fmt.Sprintf(`{"queries":[%q]}`, query),
-			}})
-		}
+		output = stubMessageEvents(id, stubAnswer)
 	}
+	streamStubResponse(writer, id, output, stubInputTokens)
+}
+
+// stubInputTokens are the input tokens the stub reports for a request: far below any limit of compaction.
+const stubInputTokens = 100
+
+// stubSearchEvents are the output of a reply that calls two saga searches at once.
+func stubSearchEvents(id string) []map[string]any {
+	events := make([]map[string]any, 0, 2)
+	for index, query := range []string{"меч", "щит"} {
+		events = append(events, map[string]any{"type": "response.output_item.done", "item": map[string]any{
+			"type": "function_call", "call_id": fmt.Sprintf("call-%s-%d", id, index), "name": "search",
+			"namespace": "saga", "arguments": fmt.Sprintf(`{"queries":[%q]}`, query),
+		}})
+	}
+	return events
+}
+
+// stubMessageEvents are the output of a reply that answers with the text.
+func stubMessageEvents(id, text string) []map[string]any {
+	message := map[string]any{
+		"type": "message", "role": "assistant", "id": "msg-" + id, "phase": "final_answer",
+		"content": []map[string]any{{"type": "output_text", "text": text}},
+	}
+	return []map[string]any{
+		{"type": "response.output_item.added", "item": message},
+		{"type": "response.output_text.delta", "delta": text},
+		{"type": "response.output_item.done", "item": message},
+	}
+}
+
+// streamStubResponse streams one response of the stub: created, its output, completed with the usage it reports.
+func streamStubResponse(writer http.ResponseWriter, id string, output []map[string]any, inputTokens int) {
+	events := append([]map[string]any{{"type": "response.created", "response": map[string]any{"id": id}}}, output...)
 	events = append(events, map[string]any{"type": "response.completed", "response": map[string]any{
 		"id": id, "usage": map[string]any{
-			"input_tokens": 100, "input_tokens_details": nil, "output_tokens": 10,
-			"output_tokens_details": nil, "total_tokens": 110,
+			"input_tokens": inputTokens, "input_tokens_details": nil, "output_tokens": 10,
+			"output_tokens_details": nil, "total_tokens": inputTokens + 10,
 		},
 	}})
 	writer.Header().Set("Content-Type", "text/event-stream")
@@ -226,6 +270,12 @@ func (model *stubModel) snapshot() []stubRequest {
 // runtimeStubConfig is the chat configuration of scripts/codex-lb.mjs with the stub as provider.
 func runtimeStubConfig(t *testing.T, binary, root, modelURL string) ClientConfig {
 	t.Helper()
+	return runtimeFlowConfig(t, "research-chat", binary, root, modelURL)
+}
+
+// runtimeFlowConfig is the configuration of scripts/codex-lb.mjs for the app-server of one flow, the stub as provider.
+func runtimeFlowConfig(t *testing.T, flow, binary, root, modelURL string) ClientConfig {
+	t.Helper()
 	t.Setenv("CODEX_LB_API_KEY", "stub-key")
 	workspace := filepath.Join(root, "workspace")
 	if err := os.MkdirAll(workspace, 0o700); err != nil {
@@ -233,7 +283,7 @@ func runtimeStubConfig(t *testing.T, binary, root, modelURL string) ClientConfig
 	}
 	return ClientConfig{
 		CodexPath: binary, CWD: workspace,
-		RepositoryHome:  runtimeTestProfile(t),
+		RepositoryHome:  runtimeTestProfile(t, flow),
 		CodexHome:       filepath.Join(root, "codex-home"),
 		CodexSQLiteHome: filepath.Join(root, "sqlite"),
 		PrivateHome:     filepath.Join(root, "home"),
@@ -382,17 +432,7 @@ func TestRuntimeRunsResumesAndDeletesChatAgainstStubModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var kinds []string
-	for _, event := range snapshot.Events {
-		kind := string(event.Kind)
-		if event.Tool != nil {
-			kind += ":" + event.Tool.Namespace + "." + event.Tool.Name
-		}
-		if event.Outcome != "" {
-			kind += ":" + string(event.Outcome)
-		}
-		kinds = append(kinds, kind)
-	}
+	kinds := timelineKinds(snapshot.Events)
 	search := []string{"user", "tool_result:saga.search:completed", "tool_result:saga.search:completed", "assistant", "turn_outcome:completed"}
 	if want := slices.Concat(search, search); !slices.Equal(kinds, want) {
 		t.Fatalf("timeline = %v, want %v", kinds, want)
@@ -404,6 +444,22 @@ func TestRuntimeRunsResumesAndDeletesChatAgainstStubModel(t *testing.T) {
 	if _, err := client.ThreadItems(ctx, root); err == nil {
 		t.Fatal("deleted chat thread is still readable")
 	}
+}
+
+// timelineKinds names each event of the feed by its kind, the saga tool it shows and its outcome.
+func timelineKinds(events []agenttimeline.Event) []string {
+	kinds := make([]string, 0, len(events))
+	for _, event := range events {
+		kind := string(event.Kind)
+		if event.Tool != nil {
+			kind += ":" + event.Tool.Namespace + "." + event.Tool.Name
+		}
+		if event.Outcome != "" {
+			kind += ":" + string(event.Outcome)
+		}
+		kinds = append(kinds, kind)
+	}
+	return kinds
 }
 
 // A new chat binds its root right after thread/start; app-server writes the thread's history

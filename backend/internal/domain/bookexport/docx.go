@@ -3,6 +3,8 @@ package bookexport
 import (
 	"io"
 	"strconv"
+
+	"canonkeeper/backend/internal/domain/textface"
 )
 
 const xmlDeclaration = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n"
@@ -34,12 +36,12 @@ const docxStyles = xmlDeclaration + `<w:styles xmlns:w="http://schemas.openxmlfo
 const docxSection = `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>` +
 	`<w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>`
 
-func writeDOCX(writer io.Writer, book Book) error {
+func writeDOCX(writer io.Writer, book *bookFile) error {
 	pack := newPack(writer, book.Date)
 	if err := pack.part("[Content_Types].xml", func(out *output) error {
 		out.raw(xmlDeclaration + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
 			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>`)
-		if book.Cover != nil {
+		if book.Cover != nil || len(book.pictures) > 0 {
 			out.raw(`<Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="png" ContentType="image/png"/>`)
 		}
 		out.raw(`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
@@ -68,11 +70,21 @@ func writeDOCX(writer io.Writer, book Book) error {
 	if err := pack.markup("word/styles.xml", docxStyles); err != nil {
 		return err
 	}
+	// The pictures go into the file one at a time before the relations name them: one that cannot be read has none
+	// (specs/2026-11-12-ux10-book-pictures.md BP2.2, BP2.4).
+	if err := book.readPictures(func(picture *placed, image Image) error {
+		return pack.stored("word/media/"+picture.fileName(), image.Content)
+	}); err != nil {
+		return err
+	}
 	if err := pack.part("word/_rels/document.xml.rels", func(out *output) error {
 		out.raw(xmlDeclaration + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
 			`<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
 		if book.Cover != nil {
-			out.raw(`<Relationship Id="rIdCover" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + book.Cover.fileName() + `"/>`)
+			out.raw(`<Relationship Id="rIdCover" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + coverFileName(*book.Cover) + `"/>`)
+		}
+		for _, picture := range book.pictured() {
+			out.raw(`<Relationship Id="` + docxPictureRelation(picture) + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + picture.fileName() + `"/>`)
 		}
 		out.raw(`</Relationships>`)
 		return nil
@@ -80,7 +92,7 @@ func writeDOCX(writer io.Writer, book Book) error {
 		return err
 	}
 	if book.Cover != nil {
-		if err := pack.stored("word/media/"+book.Cover.fileName(), book.Cover.Content); err != nil {
+		if err := pack.stored("word/media/"+coverFileName(*book.Cover), book.Cover.Content); err != nil {
 			return err
 		}
 	}
@@ -90,25 +102,54 @@ func writeDOCX(writer io.Writer, book Book) error {
 	return pack.zip.Close()
 }
 
-func writeDOCXBody(out *output, book Book) error {
+func docxPictureRelation(picture *placed) string { return "rIdPicture" + strconv.Itoa(picture.number) }
+
+func writeDOCXBody(out *output, book *bookFile) error {
 	out.raw(xmlDeclaration + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
 		`xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
 		`xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>`)
 	titleProperties := `<w:pStyle w:val="Title"/>`
 	if book.Cover != nil {
-		writeDOCXCover(out, book)
+		width, height := docxCoverExtent(*book.Cover)
+		writeDOCXDrawing(out, `<w:ind w:firstLine="0"/><w:jc w:val="center"/>`, 1, "cover", coverFileName(*book.Cover), "rIdCover",
+			coverDescription(book.Title), width, height)
 		titleProperties += `<w:pageBreakBefore/>`
 	}
 	writeDOCXParagraph(out, titleProperties, book.Title)
 	writeDOCXParagraph(out, `<w:pStyle w:val="BookAuthor"/>`, book.Author)
 	for chapter, title := range book.Chapters {
 		writeDOCXParagraph(out, `<w:pStyle w:val="Heading1"/>`, title)
-		paragraphs, err := book.Text(chapter)
+		blocks, err := book.chapter(chapter)
 		if err != nil {
 			return err
 		}
-		for _, paragraph := range paragraphs {
-			writeDOCXParagraph(out, "", paragraph)
+		for _, block := range blocks {
+			if picture := block.picture; picture != nil {
+				// A drawing is a paragraph of its own without a word: the import of this very file leaves it out (BP2.3).
+				width, height := docxPictureExtent(picture.width, picture.height)
+				writeDOCXDrawing(out, `<w:spacing w:before="240" w:after="240"/><w:ind w:firstLine="0"/><w:jc w:val="center"/>`,
+					1+picture.number, picture.id(), picture.fileName(),
+					docxPictureRelation(picture), picture.name(), width, height)
+				continue
+			}
+			out.raw(`<w:p>`)
+			for _, run := range textface.FromMarkdown(block.paragraph) {
+				out.raw(`<w:r>`)
+				if run.Bold || run.Italic {
+					out.raw(`<w:rPr>`)
+					if run.Bold {
+						out.raw(`<w:b/><w:bCs/>`)
+					}
+					if run.Italic {
+						out.raw(`<w:i/><w:iCs/>`)
+					}
+					out.raw(`</w:rPr>`)
+				}
+				out.raw(`<w:t xml:space="preserve">`)
+				out.text(run.Text)
+				out.raw(`</w:t></w:r>`)
+			}
+			out.raw(`</w:p>`)
 		}
 	}
 	out.raw(docxSection + `</w:body></w:document>`)
@@ -125,18 +166,19 @@ func writeDOCXParagraph(out *output, properties, text string) {
 	out.raw(`</w:t></w:r></w:p>`)
 }
 
-// writeDOCXCover puts the cover alone on the first page, with a description a screen reader says.
-func writeDOCXCover(out *output, book Book) {
-	width, height := docxCoverExtent(*book.Cover)
+// writeDOCXDrawing puts a picture alone in its paragraph, with a description a screen reader says: the cover alone on the
+// first page, a drawing of the book between the paragraphs of its chapter.
+func writeDOCXDrawing(out *output, properties string, id int, name, fileName, relation, description string, width, height int64) {
 	extent := `cx="` + strconv.FormatInt(width, 10) + `" cy="` + strconv.FormatInt(height, 10) + `"`
-	out.raw(`<w:p><w:pPr><w:ind w:firstLine="0"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing>` +
-		`<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent ` + extent + `/><wp:docPr id="1" name="cover" descr="`)
-	out.text(coverDescription(book.Title))
+	number := strconv.Itoa(id)
+	out.raw(`<w:p><w:pPr>` + properties + `</w:pPr><w:r><w:drawing>` +
+		`<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent ` + extent + `/><wp:docPr id="` + number + `" name="` + name + `" descr="`)
+	out.text(description)
 	out.raw(`"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
 		`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
 		`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-		`<pic:nvPicPr><pic:cNvPr id="1" name="` + book.Cover.fileName() + `"/><pic:cNvPicPr/></pic:nvPicPr>` +
-		`<pic:blipFill><a:blip r:embed="rIdCover"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+		`<pic:nvPicPr><pic:cNvPr id="` + number + `" name="` + fileName + `"/><pic:cNvPicPr/></pic:nvPicPr>` +
+		`<pic:blipFill><a:blip r:embed="` + relation + `"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
 		`<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext ` + extent + `/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
 		`</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`)
 }
@@ -149,10 +191,25 @@ const (
 )
 
 // docxCoverExtent fits a cover into the text area of a page and keeps its shape.
-func docxCoverExtent(cover Cover) (width, height int64) {
+func docxCoverExtent(cover Image) (width, height int64) {
 	width, height = docxCoverMaxWidth, docxCoverMaxWidth*int64(cover.Height)/int64(cover.Width)
 	if height > docxCoverMaxHeight {
 		width, height = docxCoverMaxHeight*int64(cover.Width)/int64(cover.Height), docxCoverMaxHeight
 	}
 	return width, height
+}
+
+// docxPixel is a pixel of a picture at 96 dots to an inch, in the units of Word.
+const docxPixel = 9525
+
+// docxPictureExtent keeps a drawing at its own size and makes one larger than the text area of a page fit it, in its shape.
+func docxPictureExtent(pixelsWide, pixelsHigh int) (width, height int64) {
+	width, height = int64(pixelsWide)*docxPixel, int64(pixelsHigh)*docxPixel
+	if width > docxCoverMaxWidth {
+		width, height = docxCoverMaxWidth, height*docxCoverMaxWidth/width
+	}
+	if height > docxCoverMaxHeight {
+		width, height = width*docxCoverMaxHeight/height, docxCoverMaxHeight
+	}
+	return max(width, 1), max(height, 1)
 }

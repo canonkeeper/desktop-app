@@ -2,8 +2,8 @@
   box-sizing: border-box;
 }
 
+/* `color-scheme` comes with the set of colours of the theme (tokens.css). */
 html {
-  color-scheme: light;
   color: var(--ck-foreground);
   background: var(--ck-background);
   font-family: var(--ck-font-sans);
@@ -25,6 +25,13 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--ck-primary);
   outline-offset: 2px;
+}
+
+/* The heading and the content a change of the page brings the focus to (specs/2026-11-10-ux1-shell.md SH2.2) are not
+   controls: the reader of the screen names them, the next Tab goes on from them, and no frame is drawn around them. */
+[data-page-heading]:focus:not([data-voice-here]),
+[data-page-content]:focus:not([data-voice-here]) {
+  outline: none;
 }
 
 /* The part of the page the voice is talking of (specs/2026-11-05-voice-full-access.md A5a.4). */
@@ -53,6 +60,17 @@ summary,
     box-shadow var(--ck-duration-fast) var(--ck-ease-out),
     transform var(--ck-duration-fast) var(--ck-ease-out),
     opacity var(--ck-duration-fast) var(--ck-ease-out);
+}
+
+/*
+ * While the theme of the site or the background of the text changes, nothing animates its colours: the new colours stand
+ * in one frame (specs/2026-11-12-ux11-dark-core.md TH3.3), or for 130 ms a word would keep the colour of the old theme over
+ * the background of the new one. src/shared/theme/switching.ts sets the mark on <html> for two frames.
+ */
+[data-theme-switching] *,
+[data-theme-switching] *::before,
+[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

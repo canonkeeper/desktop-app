@@ -39,6 +39,10 @@ type Assignment struct {
 	// (specs/2026-11-07-chat-attach-chapter.md CA1.4): its number in the chat, title, paragraphs and words, signed. Its
 	// text is never here: the model reads it with saga.attachment.
 	Attachment *AssignmentAttachment `json:"attachment,omitempty"`
+	// Button marks a question a button of the page sent with its words, not the author typing them
+	// (specs/2026-11-04-writing-plain-path.md P5.6): the feed shows it as a line of the press
+	// (specs/2026-11-11-ux9-writing-b.md WB3.3).
+	Button bool `json:"button,omitempty"`
 }
 
 // PublicQuestion is what the timeline shows of a question or a correction: its text and the images
@@ -49,6 +53,8 @@ type PublicQuestion struct {
 	Correction bool
 	FirstPhoto int
 	Attachment *PublicAttachment
+	// Button: a button of the page sent the question (WB3.3).
+	Button bool
 }
 
 // PublicAssignmentQuestion exposes only the actor's question and the images attached to it, never
@@ -73,7 +79,7 @@ func PublicAssignmentQuestion(input string) (PublicQuestion, bool) {
 	if assignment.Scope == ScopeProject && assignment.BookRef == "" || assignment.Scope == ScopeBook && assignment.BookRef == "book" {
 		question := PublicQuestion{
 			Text: assignment.Question, Images: assignment.AttachedImages,
-			Correction: assignment.Correction, FirstPhoto: assignment.FirstPhoto,
+			Correction: assignment.Correction, FirstPhoto: assignment.FirstPhoto, Button: assignment.Button && !assignment.Correction,
 		}
 		if header := assignment.Attachment; header != nil {
 			question.Attachment = &PublicAttachment{Number: header.Number, Title: header.Title, Words: header.Words}

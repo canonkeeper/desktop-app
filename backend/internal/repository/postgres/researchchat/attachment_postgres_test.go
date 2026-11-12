@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/domain/chapterfile"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/jobs"
@@ -39,7 +40,12 @@ func TestTheChapterOfAQuestionIsKeptWithItsTurnNumberedInItsChat(t *testing.T) {
 	ctx := context.Background()
 	repository := chats.repository
 	chat := chats.chat()
-	first := &researchdomain.Attachment{Title: "Глава 634", FileName: "634.docx", Format: "docx", Paragraphs: []string{"Кайл шёл.", "Ольм отстал."}, Words: 4}
+	// The parse whole, with the look of the Word file, for the proofreading started from the chat (CA5.5).
+	parse := &chapterfile.Document{Format: chapterfile.FormatDOCX, Paragraphs: []chapterfile.Paragraph{
+		{Runs: []chapterfile.Run{{Text: "Кайл "}, {Text: "шёл", Italic: true, Props: "<w:i/>"}, {Text: "."}}, Props: `<w:ind w:firstLine="567"/>`},
+		{Runs: []chapterfile.Run{{Text: "Ольм отстал."}}},
+	}, Layout: &chapterfile.Layout{Styles: "<w:styles/>"}}
+	first := &researchdomain.Attachment{Title: "Глава 634", FileName: "634.docx", Format: "docx", Paragraphs: []string{"Кайл шёл.", "Ольм отстал."}, Words: 4, Document: parse}
 
 	job, err := chats.askWithChapter(chat, "chapter-1", first, chats.now)
 	if err != nil {
@@ -49,6 +55,9 @@ func TestTheChapterOfAQuestionIsKeptWithItsTurnNumberedInItsChat(t *testing.T) {
 	if err != nil || read.Number != 1 || read.Title != "Глава 634" || read.FileName != "634.docx" || read.Format != "docx" ||
 		!reflect.DeepEqual(read.Paragraphs, first.Paragraphs) || read.Words != 4 || read.CreatedAt.IsZero() {
 		t.Fatalf("the attachment = %+v, %v", read, err)
+	}
+	if kept, err := repository.ChatAttachmentDocument(ctx, submitTurnProjectID, chat.ID, 1); err != nil || !reflect.DeepEqual(kept, parse) {
+		t.Fatalf("the parse of the attachment = %+v, %v", kept, err)
 	}
 	// The worker takes the turn: its run carries the header of the chapter, never its text.
 	claim := claimQueuedResearchTurnForTest(t, chats.db)
@@ -84,6 +93,10 @@ func TestTheChapterOfAQuestionIsKeptWithItsTurnNumberedInItsChat(t *testing.T) {
 	latest, err := repository.ChatAttachment(ctx, submitTurnProjectID, chat.ID, 0)
 	if err != nil || latest.Number != 2 || latest.Title != "" || latest.FileName != "" || latest.Format != "text" {
 		t.Fatalf("the latest attachment = %+v, %v", latest, err)
+	}
+	// An attachment without a parse (a text, or one kept before the parse was) reads none.
+	if kept, err := repository.ChatAttachmentDocument(ctx, submitTurnProjectID, chat.ID, 2); err != nil || kept != nil {
+		t.Fatalf("the parse of an attachment without one = %+v, %v", kept, err)
 	}
 	if again, err := repository.ChatAttachment(ctx, submitTurnProjectID, chat.ID, 1); err != nil || again.Title != "Глава 634" {
 		t.Fatalf("the first attachment by number = %+v, %v", again, err)

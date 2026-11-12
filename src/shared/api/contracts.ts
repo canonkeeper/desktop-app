@@ -7,6 +7,8 @@ export type OperationManifestRoute = (typeof operationManifest)[OperationId];
 export type BookExportFormat = NonNullable<OperationParameters<'getBookExport'>['query']>['format'];
 /** A file the browser is about to save, with the name the server gave it. */
 export type DownloadedFile = { blob: Blob; fileName: string };
+/** The drawings the author put in the book go into its file (specs/2026-11-12-ux10-book-pictures.md BP2.1). */
+export type BookExportOptions = { drawings?: boolean };
 
 export function getOperationManifestEntries(): ReadonlyArray<readonly [OperationId, OperationManifestRoute]> {
   return Object.entries(operationManifest) as Array<[OperationId, OperationManifestRoute]>;
@@ -176,6 +178,7 @@ export type ListSagaGlossaryOptions = SagaReadOptions<'listSagaGlossary'>;
 export type GetSagaMapOptions = SagaReadOptions<'getSagaMap'>;
 export type GetSagaMapNodeOptions = SagaReadOptions<'getSagaMapNode'>;
 export type SearchSagaMapOptions = SagaReadOptions<'searchSagaMap'>;
+export type GetSagaFirstQuestionsOptions = SagaReadOptions<'getSagaFirstQuestions'>;
 export type ListSagaMapHiddenOptions = SagaReadOptions<'listSagaMapHidden'>;
 export type GetSagaContentsOptions = SagaReadOptions<'getSagaContents'>;
 export type ListAuthorMemoryOptions = CursorListOptions<'listAuthorMemory'>;
@@ -184,11 +187,15 @@ export type ListAuthorMaterialsOptions = CursorListOptions<'listAuthorMaterials'
 export type AuthorMaterialsImportInput = { file: File; text?: undefined } | { file?: undefined; text: string };
 /** A chapter of the author for the proofreading (specs/2026-11-07-writing-proofread.md, PR2): one file or one text. */
 export type ChapterFileInput = { file: File; text?: undefined } | { file?: undefined; text: string };
+/** A chapter for the proofreading: a file, a text, or a chapter attached in a chat by its number (CA5.5). */
+export type ProofreadChapterInput = ChapterFileInput | { chatId: string; attachment: number; file?: undefined; text?: undefined };
 export type ListChapterDraftsOptions = CursorListOptions<'listChapterDrafts'>;
 export type GetAgentTimelineOptions = OperationQueryParameters<'getAgentTimeline'> & Pick<ApiRequestOptions, 'signal'>;
 export type ListChatSessionsOptions = CursorListOptions<'listChatSessions'>;
 export type ListProjectImagesOptions = CursorListOptions<'listProjectImages'>;
 export type ListDrawingsOptions = CursorListOptions<'listDrawings'>;
+/** What narrows the list of drawings, for its counts (specs/2026-11-10-drawings-list-server.md DL2.1). */
+export type GetDrawingsFacetsOptions = OperationQueryParameters<'getDrawingsFacets'> & Pick<ApiRequestOptions, 'signal'>;
 export type RemoveProjectImageReferenceQuery = OperationQueryParameters<'removeProjectImageReference'>;
 export type ListAdminDaysOptions = OperationQueryParameters<'listAdminDays'> & Pick<ApiRequestOptions, 'signal'>;
 
@@ -205,10 +212,22 @@ export interface CanonKeeperApiClient {
   confirmEmailVerification(body: OperationRequest<'confirmEmailVerification'>): Promise<OperationResponse<'confirmEmailVerification', '200'>>;
   requestPasswordReset(body: OperationRequest<'requestPasswordReset'>): Promise<OperationResponse<'requestPasswordReset', '202'>>;
   resetPassword(body: OperationRequest<'resetPassword'>): Promise<OperationResponse<'resetPassword', '200'>>;
+  /** Fixes the unverified address of the signed-in writer (specs/2026-11-10-ux3-auth.md AU1.8). */
+  changeUnverifiedEmail(body: OperationRequest<'changeUnverifiedEmail'>): Promise<OperationResponse<'changeUnverifiedEmail', '200'>>;
+  /** The address of a live reset link, nothing spent (AU4.1). */
+  checkPasswordResetLink(body: OperationRequest<'checkPasswordResetLink'>): Promise<OperationResponse<'checkPasswordResetLink', '200'>>;
   changePassword(body: OperationRequest<'changePassword'>): Promise<void>;
   logoutEverywhere(): Promise<void>;
+  /** The name of the author on «Аккаунт» (specs/2026-11-10-ux2-tariff-account.md TA5.1). */
+  setAccountName(body: OperationRequest<'setAccountName'>): Promise<OperationResponse<'setAccountName', '200'>>;
+  /** How many devices the author is signed in on (TA5.2). */
+  getAccountSessions(options?: ApiRequestOptions): Promise<OperationResponse<'getAccountSessions', '200'>>;
+  /** «Выйти на остальных» (TA5.3). */
+  logoutOtherSessions(): Promise<OperationResponse<'logoutOtherSessions', '200'>>;
   acceptLegalDocuments(body: OperationRequest<'acceptLegalDocuments'>): Promise<void>;
   getAccountQuota(options?: ApiRequestOptions): Promise<OperationResponse<'getAccountQuota', '200'>>;
+  /** «Недавно удалённые» of the author over all his sagas (specs/2026-11-11-ux7-trash.md TB1.1). */
+  listRecentlyDeleted(): Promise<OperationResponse<'listRecentlyDeleted', '200'>>;
   listAdminWriters(options?: ApiRequestOptions): Promise<OperationResponse<'listAdminWriters', '200'>>;
   getAdminWriter(userId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getAdminWriter', '200'>>;
   setAdminWriterQuota(userId: string, body: OperationRequest<'setAdminWriterQuota'>): Promise<OperationResponse<'setAdminWriterQuota', '200'>>;
@@ -217,8 +236,6 @@ export interface CanonKeeperApiClient {
   listAdminDays(options?: ListAdminDaysOptions): Promise<OperationResponse<'listAdminDays', '200'>>;
   getAdminServiceStatus(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminServiceStatus', '200'>>;
   setAdminWriterIllustrations(userId: string, body: OperationRequest<'setAdminWriterIllustrations'>): Promise<OperationResponse<'setAdminWriterIllustrations', '200'>>;
-  listAdminIllustrationRequests(options?: ApiRequestOptions): Promise<OperationResponse<'listAdminIllustrationRequests', '200'>>;
-  declineAdminIllustrationRequest(requestId: string, body: OperationRequest<'declineAdminIllustrationRequest'>): Promise<OperationResponse<'declineAdminIllustrationRequest', '200'>>;
   // «Связаться с нами» (specs/2026-11-07-contacts.md).
   getContacts(options?: ApiRequestOptions): Promise<OperationResponse<'getContacts', '200'>>;
   getAdminContacts(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminContacts', '200'>>;
@@ -232,6 +249,24 @@ export interface CanonKeeperApiClient {
   getAdminFeedbackThread(threadId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getAdminFeedbackThread', '200'>>;
   replyAdminFeedback(threadId: string, body: OperationRequest<'replyAdminFeedback'>): Promise<OperationResponse<'replyAdminFeedback', '201'>>;
   setAdminFeedbackStatus(threadId: string, body: OperationRequest<'setAdminFeedbackStatus'>): Promise<OperationResponse<'setAdminFeedbackStatus', '200'>>;
+  // The tiers of the site (specs/2026-11-08-subscription-tiers.md).
+  listSubscriptionTiers(options?: ApiRequestOptions): Promise<OperationResponse<'listSubscriptionTiers', '200'>>;
+  getAccountPlan(options?: ApiRequestOptions): Promise<OperationResponse<'getAccountPlan', '200'>>;
+  /** The letters of the site the author chose to get (FS3.2 of the spec «Сага готова», specs/2026-11-09). */
+  getAccountLetters(options?: ApiRequestOptions): Promise<OperationResponse<'getAccountLetters', '200'>>;
+  setAccountLetters(body: OperationRequest<'setAccountLetters'>): Promise<OperationResponse<'setAccountLetters', '200'>>;
+  listAdminSubscriptionTiers(options?: ApiRequestOptions): Promise<OperationResponse<'listAdminSubscriptionTiers', '200'>>;
+  setAdminSubscriptionTier(tier: Schema<'SubscriptionTierCode'>, body: OperationRequest<'setAdminSubscriptionTier'>): Promise<OperationResponse<'setAdminSubscriptionTier', '200'>>;
+  grantAdminWriterTier(userId: string, body: OperationRequest<'grantAdminWriterTier'>): Promise<OperationResponse<'grantAdminWriterTier', '201'>>;
+  endAdminWriterPeriod(userId: string, periodId: string): Promise<OperationResponse<'endAdminWriterPeriod', '200'>>;
+  // The keys of the tiers: the author's check and redemption, the administrator's batches (TR4, TR5). The file of a batch
+  // is the one time its keys leave the server.
+  checkSubscriptionKey(body: OperationRequest<'checkSubscriptionKey'>): Promise<OperationResponse<'checkSubscriptionKey', '200'>>;
+  redeemSubscriptionKey(body: OperationRequest<'redeemSubscriptionKey'>): Promise<OperationResponse<'redeemSubscriptionKey', '200'>>;
+  listAdminKeyBatches(options?: ApiRequestOptions): Promise<OperationResponse<'listAdminKeyBatches', '200'>>;
+  createAdminKeyBatch(body: OperationRequest<'createAdminKeyBatch'>): Promise<DownloadedFile>;
+  revokeAdminKeyBatch(batchId: string): Promise<OperationResponse<'revokeAdminKeyBatch', '200'>>;
+  resetAdminWriterTrials(userId: string, body: OperationRequest<'resetAdminWriterTrials'>): Promise<OperationResponse<'resetAdminWriterTrials', '200'>>;
   getAdminQuotaDefaults(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminQuotaDefaults', '200'>>;
   setAdminQuotaDefaults(body: OperationRequest<'setAdminQuotaDefaults'>): Promise<OperationResponse<'setAdminQuotaDefaults', '200'>>;
   getAdminPromoSagas(userId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getAdminPromoSagas', '200'>>;
@@ -247,7 +282,6 @@ export interface CanonKeeperApiClient {
   answerPromoLink(body: OperationRequest<'answerPromoLink'>): Promise<OperationResponse<'answerPromoLink', '200'>>;
   revokePromoLink(body: OperationRequest<'revokePromoLink'>): Promise<OperationResponse<'revokePromoLink', '200'>>;
   getIllustrationAccess(options?: ApiRequestOptions): Promise<OperationResponse<'getIllustrationAccess', '200'>>;
-  createIllustrationAccessRequest(body: OperationRequest<'createIllustrationAccessRequest'>): Promise<OperationResponse<'createIllustrationAccessRequest', '201'>>;
   login(body: OperationRequest<'loginUser'>): Promise<OperationResponse<'loginUser', '200'>>;
   logout(): Promise<void>;
   reportClientError(body: OperationRequest<'reportClientError'>): Promise<void>;
@@ -269,6 +303,8 @@ export interface CanonKeeperApiClient {
   updateProject(projectId: string, body: OperationRequest<'updateProject'>): Promise<OperationResponse<'updateProject', '200'>>;
   deleteProject(projectId: string): Promise<void>;
   restoreProject(projectId: string): Promise<OperationResponse<'restoreProject', '200'>>;
+  /** «Попробовать на примере» of the site (specs/2026-11-09-demo-saga.md DS1): the demo saga of the author, made when he has none. */
+  openDemoSaga(): Promise<OperationResponse<'openDemoSaga', '200'>>;
   listProjectMembers(projectId: string, options?: CursorListOptions<'listProjectMembers'>): Promise<OperationResponse<'listProjectMembers', '200'>>;
   updateProjectMemberRole(projectId: string, memberId: string, body: OperationRequest<'updateProjectMemberRole'>): Promise<OperationResponse<'updateProjectMemberRole', '200'>>;
   removeProjectMember(projectId: string, memberId: string): Promise<void>;
@@ -284,16 +320,19 @@ export interface CanonKeeperApiClient {
   updateBook(bookId: string, body: OperationRequest<'updateBook'>): Promise<OperationResponse<'updateBook', '200'>>;
   deleteBook(bookId: string): Promise<void>;
   restoreBook(bookId: string): Promise<OperationResponse<'restoreBook', '200'>>;
+  previewBookUpdateRevert(bookId: string): Promise<OperationResponse<'previewBookUpdateRevert', '200'>>;
+  revertBookUpdate(bookId: string, body: OperationRequest<'revertBookUpdate'>): Promise<OperationResponse<'revertBookUpdate', '200'>>;
   uploadBookCover(bookId: string, file: File, options?: BookCoverUploadOptions): Promise<OperationResponse<'uploadBookCover', '200'>>;
   deleteBookCover(bookId: string): Promise<OperationResponse<'deleteBookCover', '200'>>;
-  getBookExport(bookId: string, format: BookExportFormat): Promise<DownloadedFile>;
+  getBookExport(bookId: string, format: BookExportFormat, options?: BookExportOptions): Promise<DownloadedFile>;
+  getBookDrawingCounts(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getBookDrawingCounts', '200'>>;
   setBookCoverFromImage(bookId: string, imageNumber: number): Promise<OperationResponse<'setBookCoverFromImage', '200'>>;
   getImportConstraints(projectId: string): Promise<OperationResponse<'getImportConstraints', '200'>>;
   createImportQueue(projectId: string, body: OperationRequest<'createImportQueue'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'createImportQueue', '201'>>;
   listImportQueues(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'listImportQueues', '200'>>;
   getImportQueue(projectId: string, queueId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getImportQueue', '200'>>;
   uploadImportQueueItem(projectId: string, queueId: string, input: ImportQueueItemUploadInput, options: ImportBookRequestOptions): Promise<OperationResponse<'uploadImportQueueItem', '200'>>;
-  updateImportQueue(projectId: string, queueId: string, body: OperationRequest<'updateImportQueue'>): Promise<OperationResponse<'updateImportQueue', '200'>>;
+  skipImportQueueItem(projectId: string, queueId: string, itemId: string): Promise<OperationResponse<'skipImportQueueItem', '200'>>;
   startImportQueue(projectId: string, queueId: string, body: OperationRequest<'startImportQueue'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'startImportQueue', '202'>>;
   cancelImportQueue(projectId: string, queueId: string): Promise<OperationResponse<'cancelImportQueue', '200'>>;
   importBookFile(projectId: string, input: ImportBookInput, options: ImportBookRequestOptions): Promise<OperationResponse<'importBookFile', '202'>>;
@@ -303,11 +342,13 @@ export interface CanonKeeperApiClient {
   getSagaMap(projectId: string, options: GetSagaMapOptions): Promise<OperationResponse<'getSagaMap', '200'>>;
   getSagaMapNode(projectId: string, options: GetSagaMapNodeOptions): Promise<OperationResponse<'getSagaMapNode', '200'>>;
   searchSagaMap(projectId: string, options: SearchSagaMapOptions): Promise<OperationResponse<'searchSagaMap', '200'>>;
+  getSagaFirstQuestions(projectId: string, options: GetSagaFirstQuestionsOptions): Promise<OperationResponse<'getSagaFirstQuestions', '200'>>;
   listSagaMapHidden(projectId: string, options: ListSagaMapHiddenOptions): Promise<OperationResponse<'listSagaMapHidden', '200'>>;
   hideSagaMapItem(projectId: string, sourceView: SourceView, body: OperationRequest<'hideSagaMapItem'>): Promise<OperationResponse<'hideSagaMapItem', '201'>>;
   restoreSagaMapItem(projectId: string, hiddenId: string): Promise<void>;
   getSagaContents(projectId: string, options: GetSagaContentsOptions): Promise<OperationResponse<'getSagaContents', '200'>>;
   listAuthorMaterials(projectId: string, options?: ListAuthorMaterialsOptions): Promise<OperationResponse<'listAuthorMaterials', '200'>>;
+  createAuthorMaterial(projectId: string, body: OperationRequest<'createAuthorMaterial'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'createAuthorMaterial', '201'>>;
   updateAuthorMaterial(projectId: string, materialId: string, body: OperationRequest<'updateAuthorMaterial'>): Promise<OperationResponse<'updateAuthorMaterial', '200'>>;
   deleteAuthorMaterial(projectId: string, materialId: string, expectedRevision: number): Promise<void>;
   startAuthorMaterialsImport(projectId: string, input: AuthorMaterialsImportInput, options: RequiredIdempotencyOptions): Promise<OperationResponse<'startAuthorMaterialsImport', '202'>>;
@@ -324,6 +365,7 @@ export interface CanonKeeperApiClient {
   getChapterDraftPlan(projectId: string, draftId: string, options?: { number?: number } & Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getChapterDraftPlan', '200'>>;
   getChapterDraftMoment(projectId: string, draftId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getChapterDraftMoment', '200'>>;
   updateChapterDraftPlan(projectId: string, draftId: string, body: OperationRequest<'updateChapterDraftPlan'>): Promise<OperationResponse<'updateChapterDraftPlan', '200'>>;
+  withdrawChapterDraftPlan(projectId: string, draftId: string, body: OperationRequest<'withdrawChapterDraftPlan'>): Promise<OperationResponse<'withdrawChapterDraftPlan', '200'>>;
   updateChapterDraftMoment(projectId: string, draftId: string, body: OperationRequest<'updateChapterDraftMoment'>): Promise<OperationResponse<'updateChapterDraftMoment', '200'>>;
   listChapterDraftVersions(projectId: string, draftId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'listChapterDraftVersions', '200'>>;
   getChapterDraftVersion(projectId: string, draftId: string, number: number, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getChapterDraftVersion', '200'>>;
@@ -341,8 +383,9 @@ export interface CanonKeeperApiClient {
   updateChapterDraftNote(projectId: string, draftId: string, noteId: string, body: OperationRequest<'updateChapterDraftNote'>): Promise<OperationResponse<'updateChapterDraftNote', '200'>>;
   submitDraftTurn(projectId: string, draftId: string, body: OperationRequest<'submitDraftTurn'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'submitDraftTurn', '202'>>;
   /** The proofreading of a chapter of the author (specs/2026-11-07-writing-proofread.md, PR2, PR4.4, PR6). */
-  startChapterProofread(projectId: string, input: ChapterFileInput & { title?: string; bookId?: string; afterChapterId?: string }, options: RequiredIdempotencyOptions): Promise<OperationResponse<'startChapterProofread', '201'>>;
+  startChapterProofread(projectId: string, input: ProofreadChapterInput & { title?: string; bookId?: string; afterChapterId?: string }, options: RequiredIdempotencyOptions): Promise<OperationResponse<'startChapterProofread', '201'>>;
   loadChapterDraftFile(projectId: string, draftId: string, input: ChapterFileInput & { expectedRevision: number }, options: RequiredIdempotencyOptions): Promise<OperationResponse<'loadChapterDraftFile', '200'>>;
+  takeChapterDraftOriginalLook(projectId: string, draftId: string, input: { file: File }): Promise<OperationResponse<'takeChapterDraftOriginalLook', '200'>>;
   applyChapterDraftNotes(projectId: string, draftId: string, body: OperationRequest<'applyChapterDraftNotes'>): Promise<OperationResponse<'applyChapterDraftNotes', '200'>>;
   getChapterDraftExport(projectId: string, draftId: string): Promise<DownloadedFile>;
   getProjectVoice(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getProjectVoice', '200'>>;
@@ -360,14 +403,20 @@ export interface CanonKeeperApiClient {
   getProjectIllustrationStyle(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getProjectIllustrationStyle', '200'>>;
   updateProjectIllustrationStyle(projectId: string, body: OperationRequest<'updateProjectIllustrationStyle'>): Promise<OperationResponse<'updateProjectIllustrationStyle', '200'>>;
   cutoutProjectImage(projectId: string, number: number, options: RequiredIdempotencyOptions): Promise<OperationResponse<'cutoutProjectImage', '201'>>;
+  changeProjectImageAngle(projectId: string, number: number, body: OperationRequest<'changeProjectImageAngle'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'changeProjectImageAngle', '201'>>;
   createProjectImageVariant(projectId: string, number: number, body: OperationRequest<'createProjectImageVariant'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'createProjectImageVariant', '201'>>;
   chooseProjectImageVariant(projectId: string, number: number, options: RequiredIdempotencyOptions): Promise<OperationResponse<'chooseProjectImageVariant', '200'>>;
+  redrawProjectImageVariant(projectId: string, number: number, body: OperationRequest<'redrawProjectImageVariant'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'redrawProjectImageVariant', '200'>>;
+  downloadProjectImage(projectId: string, number: number): Promise<DownloadedFile>;
   chooseProjectImageLayerVariant(projectId: string, number: number, layerId: string, options: RequiredIdempotencyOptions): Promise<OperationResponse<'chooseProjectImageLayerVariant', '200'>>;
   listDrawings(projectId: string, options?: ListDrawingsOptions): Promise<OperationResponse<'listDrawings', '200'>>;
+  getDrawingsFacets(projectId: string, options?: GetDrawingsFacetsOptions): Promise<OperationResponse<'getDrawingsFacets', '200'>>;
   createDrawing(projectId: string, body: OperationRequest<'createDrawing'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'createDrawing', '201'>>;
   getDrawing(projectId: string, drawingId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getDrawing', '200'>>;
   updateDrawing(projectId: string, drawingId: string, body: OperationRequest<'updateDrawing'>): Promise<OperationResponse<'updateDrawing', '200'>>;
   deleteDrawing(projectId: string, drawingId: string): Promise<void>;
+  restoreDrawing(projectId: string, drawingId: string): Promise<OperationResponse<'restoreDrawing', '200'>>;
+  cancelDeferredDrawing(projectId: string, drawingId: string): Promise<OperationResponse<'cancelDeferredDrawing', '200'>>;
   drawDrawing(projectId: string, drawingId: string, body: OperationRequest<'drawDrawing'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'drawDrawing', '201'>>;
   submitDrawingTurn(projectId: string, drawingId: string, body: OperationRequest<'submitDrawingTurn'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'submitDrawingTurn', '202'>>;
   enlargeProjectImage(projectId: string, number: number, options: RequiredIdempotencyOptions): Promise<OperationResponse<'enlargeProjectImage', '201'>>;

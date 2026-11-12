@@ -21,6 +21,9 @@ type IllustrationJobInput struct {
 	Subject       jobs.IllustrationSubject
 	CreatorUserID string
 	CreatedAt     time.Time
+	// StartsAt is when the Job may start (specs/2026-11-12-ux10-drawing-ops.md DO2.1): zero — at once; later — a drawing
+	// put off until the service of drawings is free, which the claim does not take before it.
+	StartsAt time.Time
 }
 
 // CreateIllustrationJobInTx queues the Job drawing one image in the caller's transaction
@@ -28,8 +31,12 @@ type IllustrationJobInput struct {
 // nobody cancels. Its source owner names only the project, so deleting a book or a chat leaves
 // the drawing alone; deleting the project removes it.
 func (s *Store) CreateIllustrationJobInTx(ctx context.Context, tx pgx.Tx, input IllustrationJobInput) (jobs.Job, error) {
-	if s == nil || tx == nil || input.CreatedAt.IsZero() || input.Subject.Type != jobs.KindIllustration {
+	if s == nil || tx == nil || input.CreatedAt.IsZero() || input.Subject.Type != jobs.KindIllustration || input.StartsAt.Before(input.CreatedAt) && !input.StartsAt.IsZero() {
 		return jobs.Job{}, jobs.ErrValidation
+	}
+	startsAt := input.StartsAt
+	if startsAt.IsZero() {
+		startsAt = input.CreatedAt
 	}
 	subjectJSON, err := jobs.EncodeSubject(jobs.KindIllustration, input.Subject)
 	if err != nil {
@@ -79,7 +86,7 @@ func (s *Store) CreateIllustrationJobInTx(ctx context.Context, tx pgx.Tx, input 
 		Kind: governance.ArtifactJob, SourceView: governance.AbsentSourceView(), Refs: refs, Manifest: manifest,
 	}, func(ctx context.Context, tx pgx.Tx, artifactOwnerID pgtype.UUID) error {
 		row, err := sqlc.New(tx).CreateIllustrationJob(ctx, sqlc.CreateIllustrationJobParams{
-			ID: jobID, SubjectJson: subjectJSON, CreatorUserID: creatorID,
+			ID: jobID, SubjectJson: subjectJSON, CreatorUserID: creatorID, NextAttemptAt: storedb.Timestamptz(startsAt),
 			CreatedAt: storedb.Timestamptz(input.CreatedAt), ArtifactSourceOwnerID: artifactOwnerID, ProjectID: projectID,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {

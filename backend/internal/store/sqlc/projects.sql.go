@@ -114,6 +114,7 @@ INSERT INTO projects (
   owner_user_id,
   name,
   description,
+  demo,
   lifecycle_generation,
   created_at,
   updated_at
@@ -122,11 +123,12 @@ INSERT INTO projects (
   $2,
   $3,
   $4,
-  1,
   $5,
-  $5
+  1,
+  $6,
+  $6
 )
-RETURNING id, owner_user_id, name, description,
+RETURNING id, owner_user_id, name, description, demo,
           0::integer AS book_count,
           0::integer AS chapter_count,
           0::integer AS word_count,
@@ -138,6 +140,7 @@ type CreateProjectParams struct {
 	OwnerUserID pgtype.UUID        `json:"owner_user_id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
+	Demo        bool               `json:"demo"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -146,6 +149,7 @@ type CreateProjectRow struct {
 	OwnerUserID  pgtype.UUID        `json:"owner_user_id"`
 	Name         string             `json:"name"`
 	Description  string             `json:"description"`
+	Demo         bool               `json:"demo"`
 	BookCount    int32              `json:"book_count"`
 	ChapterCount int32              `json:"chapter_count"`
 	WordCount    int32              `json:"word_count"`
@@ -160,6 +164,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 		arg.OwnerUserID,
 		arg.Name,
 		arg.Description,
+		arg.Demo,
 		arg.CreatedAt,
 	)
 	var i CreateProjectRow
@@ -168,6 +173,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Description,
+		&i.Demo,
 		&i.BookCount,
 		&i.ChapterCount,
 		&i.WordCount,
@@ -425,6 +431,7 @@ SELECT
   p.owner_user_id,
   p.name,
   p.description,
+  p.demo,
   project_counts.book_count,
   project_counts.chapter_count,
   project_counts.word_count,
@@ -470,6 +477,7 @@ type GetProjectForActorRow struct {
 	OwnerUserID         pgtype.UUID        `json:"owner_user_id"`
 	Name                string             `json:"name"`
 	Description         string             `json:"description"`
+	Demo                bool               `json:"demo"`
 	BookCount           int32              `json:"book_count"`
 	ChapterCount        int32              `json:"chapter_count"`
 	WordCount           int32              `json:"word_count"`
@@ -493,6 +501,7 @@ func (q *Queries) GetProjectForActor(ctx context.Context, arg GetProjectForActor
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Description,
+		&i.Demo,
 		&i.BookCount,
 		&i.ChapterCount,
 		&i.WordCount,
@@ -1148,6 +1157,7 @@ WITH updated_project AS (
     p.owner_user_id,
     p.name,
     p.description,
+    p.demo,
     p.revision,
     p.created_at,
     p.updated_at,
@@ -1164,6 +1174,7 @@ SELECT
   updated_project.owner_user_id,
   updated_project.name,
   updated_project.description,
+  updated_project.demo,
   project_counts.book_count,
   project_counts.chapter_count,
   project_counts.word_count,
@@ -1207,6 +1218,7 @@ type UpdateProjectForActorRow struct {
 	OwnerUserID         pgtype.UUID        `json:"owner_user_id"`
 	Name                string             `json:"name"`
 	Description         string             `json:"description"`
+	Demo                bool               `json:"demo"`
 	BookCount           int32              `json:"book_count"`
 	ChapterCount        int32              `json:"chapter_count"`
 	WordCount           int32              `json:"word_count"`
@@ -1236,6 +1248,7 @@ func (q *Queries) UpdateProjectForActor(ctx context.Context, arg UpdateProjectFo
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Description,
+		&i.Demo,
 		&i.BookCount,
 		&i.ChapterCount,
 		&i.WordCount,

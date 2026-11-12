@@ -45,6 +45,14 @@
   font-weight: 600;
 }
 
+/* «Новый чат» in the head of the column, beside the heading of the page (specs/2026-11-11-ux2-polish.md PL2.1). */
+.newChatButton[data-in-row] {
+  width: auto;
+  margin-left: auto;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .newChatButton svg {
   color: var(--ck-link);
 }
@@ -80,10 +88,52 @@
 }
 
 .newChatButton span,
-.sessionSelect span {
+.sessionTitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The name of a chat over its date and state (specs/2026-11-11-ux4-after-answer.md AA3.1): the date stands in the lower
+   part of the button and lets its press through. */
+.sessionRow > .sessionSelect {
+  grid-area: 1 / 1;
+  align-items: start;
+  padding-bottom: 24px;
+}
+
+.sessionRow > .sessionMeta {
+  grid-area: 1 / 1;
+  align-self: end;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 8px 7px 32px;
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The days of the list: «Сегодня · Вчера · На этой неделе · Раньше». */
+.group {
+  display: grid;
+  gap: 2px;
+}
+
+.groupLabel {
+  margin: 8px 8px 2px;
+  color: var(--ck-muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 14px;
+}
+
+.search {
+  margin: 4px 0;
 }
 
 /* A chat whose turn works carries the pulse of the live status after its title (R2.2). */
@@ -120,19 +170,35 @@
 }
 
 .sessionRow:hover .sessionActions,
-.sessionRow:focus-within .sessionActions {
+.sessionRow:focus-within .sessionActions,
+.sessionRow[data-selected] .sessionActions,
+.sessionActions[data-touch],
+.sessionActions[aria-expanded='true'] {
   opacity: 1;
 }
 
+/* On a phone «⋯» of every row stands always (AA3.3). */
+@media (pointer: coarse) {
+  .sessionActions {
+    opacity: 1;
+  }
+}
+
+/* The new name takes the whole row; Enter and leaving the field keep it, Esc leaves the old one (AA3.4, Ч-61). */
 .renameRow {
   display: grid;
   width: 100%;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   border-radius: 9px;
   padding: 4px;
   background: var(--ck-muted);
+}
+
+.renameActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .renameRow > div {
@@ -141,10 +207,10 @@
 }
 
 .renameInput {
-  height: 28px;
-  min-height: 28px;
-  padding: 0 7px;
-  font-size: 12px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
 }
 
 .renameAction {
@@ -190,10 +256,6 @@
   background: var(--ck-muted);
 }
 
-.sessionMenu .dangerAction {
-  color: var(--ck-destructive-text);
-}
-
 .sessionSheet header {
   padding: 14px 12px 10px;
   border-bottom: 1px solid var(--ck-border);
@@ -218,7 +280,7 @@
     padding: 10px;
     border-right: 0;
     border-bottom: 1px solid var(--ck-border);
-    scrollbar-color: #c5c5c2 transparent;
+    scrollbar-color: var(--ck-scrollbar-native) transparent;
     scrollbar-width: thin;
   }
 
@@ -263,4 +325,12 @@
   .sessionSelect {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.menuReason {
+  margin: 4px 2px 0;
+  max-width: 196px;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
 }

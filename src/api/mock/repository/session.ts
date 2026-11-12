@@ -1,5 +1,5 @@
 import type { OperationRequest, OperationResponse } from '../../../shared/api';
-import { clone, normalizedEmail, rejectUnknownKeys } from './common';
+import { clone, normalizedEmail, now, rejectUnknownKeys } from './common';
 import type { MockRepositoryContext } from './context';
 import { mockPassword } from './fixtures';
 import { MockApiError } from '../scenarios';
@@ -19,6 +19,15 @@ function validateRegisterRequest(body: OperationRequest<'registerUser'>) {
     throw new MockApiError(400, 'Registration password is invalid.', 'registerUser', 'validation_failed');
   }
 }
+const loginFailureLimit = 5;
+const loginLockMinutes = 15;
+/** The address of the writer of the fixtures: registering or moving to it is refused as taken. */
+const takenEmail = 'mira@example.com';
+/** The local author of the desktop app (backend/internal/services/desktop LocalAuthorEmail, LocalAuthorName). */
+const desktopAuthor = {
+  id: 'user-local', email: 'local@desktop.invalid', emailVerified: true, documentsAccepted: true, displayName: 'Автор', avatarUrl: null, createdAt: now,
+};
+
 /** Mock links carry a deterministic value: `mock-<purpose>-<userId>`. */
 export function mockAccountToken(purpose: 'email_verification' | 'password_reset', userId: string) {
   return `mock-${purpose}-${userId}`;
@@ -77,6 +86,8 @@ export function createSessionOperations(context: MockRepositoryContext) {
     }
     context.state.user = { ...context.state.user, emailVerified: true };
     context.state.session = { user: context.state.user };
+    // A new password opens the sign-in from any address (R2.2.3).
+    context.state.loginFailures = {};
     return clone(context.state.session);
   }
 
@@ -89,13 +100,50 @@ export function createSessionOperations(context: MockRepositoryContext) {
     return { status: 'verified' };
   }
 
+  // The server's window of failed sign-ins (AU3.3): five per email, each refusal says what is left, then 429 for the window.
   async function login(body: OperationRequest<'loginUser'>): Promise<OperationResponse<'loginUser', '200'>> {
     context.applyOperation('loginUser');
-    if (normalizedEmail(body.email) !== normalizedEmail(context.state.user.email) || body.password !== mockPassword) {
-      throw new MockApiError(401, 'invalid credentials', 'loginUser', 'auth.invalid_credentials');
+    const email = normalizedEmail(body.email);
+    const failures = context.state.loginFailures[email] ?? 0;
+    if (failures >= loginFailureLimit) {
+      throw new MockApiError(429, 'rate limit exceeded', 'loginUser', 'rate_limit.exceeded', { retryAfter: loginLockMinutes * 60 });
     }
+    if (email !== normalizedEmail(context.state.user.email) || body.password !== mockPassword) {
+      context.state.loginFailures[email] = failures + 1;
+      throw new MockApiError(401, 'invalid credentials', 'loginUser', 'auth.invalid_credentials', {
+        fields: { attemptsLeft: loginFailureLimit - failures - 1, lockMinutes: loginLockMinutes },
+      });
+    }
+    delete context.state.loginFailures[email];
     context.state.session = { user: context.state.user };
     return clone(context.state.session);
+  }
+
+  // The fix of an unverified address (AU1.8): the session with the new address; the address of the fixture writer is taken.
+  async function changeUnverifiedEmail(body: OperationRequest<'changeUnverifiedEmail'>): Promise<OperationResponse<'changeUnverifiedEmail', '200'>> {
+    context.applyOperation('changeUnverifiedEmail');
+    rejectUnknownKeys('changeUnverifiedEmail', body, ['email']);
+    if (!context.state.session) throw new MockApiError(401, 'authentication required', 'changeUnverifiedEmail', 'auth.session_required');
+    if (context.state.session.user.emailVerified) {
+      throw new MockApiError(409, 'email address is already verified', 'changeUnverifiedEmail', 'auth.email_already_verified');
+    }
+    const email = normalizedEmail(body.email);
+    if (!/^[^\s@]+@[^\s@]+$/u.test(email)) throw new MockApiError(400, 'validation failed', 'changeUnverifiedEmail', 'request.validation');
+    if (email === takenEmail && email !== normalizedEmail(context.state.user.email)) {
+      throw new MockApiError(409, 'email is already registered', 'changeUnverifiedEmail', 'auth.email_taken');
+    }
+    setUser({ ...context.state.user, email });
+    return clone({ user: context.state.user });
+  }
+
+  // A live reset link names its address (AU4.1).
+  async function checkPasswordResetLink(body: OperationRequest<'checkPasswordResetLink'>): Promise<OperationResponse<'checkPasswordResetLink', '200'>> {
+    context.applyOperation('checkPasswordResetLink');
+    rejectUnknownKeys('checkPasswordResetLink', body, ['token']);
+    if (body.token !== mockAccountToken('password_reset', context.state.user.id)) {
+      throw new MockApiError(400, 'link is invalid or expired', 'checkPasswordResetLink', 'auth.token_invalid');
+    }
+    return { email: context.state.user.email };
   }
 
   async function rotateSession(): Promise<OperationResponse<'rotateSession', '200'>> {
@@ -155,6 +203,41 @@ export function createSessionOperations(context: MockRepositoryContext) {
     setUser({ ...context.state.user, documentsAccepted: true });
   }
 
+  /** The name of «Аккаунт» by the rule of the registration (specs/2026-11-10-ux2-tariff-account.md TA5.1). */
+  async function setAccountName(body: OperationRequest<'setAccountName'>): Promise<OperationResponse<'setAccountName', '200'>> {
+    context.applyOperation('setAccountName');
+    rejectUnknownKeys('setAccountName', body, ['displayName']);
+    const session = ownSession('setAccountName');
+    const displayName = body.displayName.trim();
+    if (!displayName || [...displayName].length > 120) throw new MockApiError(400, 'validation failed', 'setAccountName', 'request.validation');
+    setUser({ ...context.state.user, displayName });
+    return clone({ user: { ...session.user, displayName } });
+  }
+
+  /** «Вы вошли на N устройствах» (TA5.2): this session and the others. */
+  async function getAccountSessions(): Promise<OperationResponse<'getAccountSessions', '200'>> {
+    context.applyOperation('getAccountSessions');
+    if (!context.state.session) throw new MockApiError(401, 'authentication required', 'getAccountSessions', 'auth.session_required');
+    return { count: 1 + context.state.otherSessions };
+  }
+
+  /** «Выйти на остальных» (TA5.3): the other sessions end, this one stays. */
+  async function logoutOtherSessions(): Promise<OperationResponse<'logoutOtherSessions', '200'>> {
+    context.applyOperation('logoutOtherSessions');
+    ownSession('logoutOtherSessions');
+    const count = context.state.otherSessions;
+    context.state.otherSessions = 0;
+    return { count };
+  }
+
+  /** The session of the author himself: none is 401, the work of an administrator as him 409. */
+  function ownSession(operationId: 'setAccountName' | 'logoutOtherSessions') {
+    const session = context.state.session;
+    if (!session) throw new MockApiError(401, 'authentication required', operationId, 'auth.session_required');
+    if (session.user.impersonation) throw new MockApiError(409, 'impersonation is active', operationId, 'auth.impersonation_conflict');
+    return session;
+  }
+
   async function logoutEverywhere(): Promise<void> {
     context.applyOperation('logoutEverywhere');
     context.state.session = null;
@@ -167,6 +250,33 @@ export function createSessionOperations(context: MockRepositoryContext) {
 
   async function reportClientError(_body: OperationRequest<'reportClientError'>): Promise<void> {
     context.applyOperation('reportClientError');
+  }
+
+  /**
+   * The computer of the desktop app (specs/2026-11-12-desk-window.md WN4.1): its local author — verified, nothing to
+   * accept — no saga of anyone yet, and no helper. The sagas of the fixtures are of the site's writer.
+   */
+  function startDesktop() {
+    context.reset();
+    // The app has no helper until the author connects one (specs/2026-11-12-desk-window.md WN3.5).
+    context.setScenario({ ...context.getScenario(), helperMissing: true });
+    context.state.user = { ...desktopAuthor };
+    context.state.projects = [];
+    context.state.deletedProjects = [];
+    context.state.deletedBooks = [];
+    context.state.deletedChapters = [];
+    context.state.invitations = [];
+    context.state.personalNotes = [];
+  }
+
+  /** openDesktopSession (specs/2026-11-07-desktop-app.md DA3.3): a code of the shell opens the session of the local author. */
+  async function openDesktopSession(body: { code?: unknown } | undefined): Promise<OperationResponse<'openDesktopSession', '200'>> {
+    context.applyOperation('openDesktopSession');
+    if (typeof body?.code !== 'string' || body.code === '') {
+      throw new MockApiError(400, 'invalid request body', 'openDesktopSession', 'validation.failed');
+    }
+    context.state.session = { user: context.state.user };
+    return clone(context.state.session);
   }
 
   async function getCurrentUser(): Promise<OperationResponse<'getCurrentUser', '200'>> {
@@ -187,6 +297,8 @@ export function createSessionOperations(context: MockRepositoryContext) {
     confirmEmailVerification,
     requestPasswordReset,
     resetPassword,
+    changeUnverifiedEmail,
+    checkPasswordResetLink,
     login,
     rotateSession,
     startImpersonation,
@@ -194,8 +306,13 @@ export function createSessionOperations(context: MockRepositoryContext) {
     logout,
     changePassword,
     logoutEverywhere,
+    setAccountName,
+    getAccountSessions,
+    logoutOtherSessions,
     acceptLegalDocuments,
     reportClientError,
+    startDesktop,
+    openDesktopSession,
     getCurrentUser,
   };
 }

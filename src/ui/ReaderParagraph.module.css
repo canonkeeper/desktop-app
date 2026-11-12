@@ -50,8 +50,22 @@
   margin-bottom: 16px;
   border-radius: var(--ck-radius-sm);
   padding: 14px;
-  background: #eef2ff;
-  color: #1f2933;
+  background: var(--ck-citation);
+  color: var(--ck-reader-foreground);
   box-shadow: inset 3px 0 var(--ck-primary);
 }
 .passage > .paragraph { width: 100%; margin: 0; }
+
+/* The words found in the book (specs/2026-11-10-ux7-reader.md RD2.1): every place lit, the current one stronger. */
+.found {
+  border-radius: 2px;
+  padding: 0;
+  background: var(--ck-highlight);
+  color: var(--ck-highlight-foreground);
+}
+
+.found[data-find-current] {
+  background: var(--ck-ink);
+  color: var(--ck-ink-foreground);
+  box-shadow: 0 0 0 2px var(--ck-ink);
+}

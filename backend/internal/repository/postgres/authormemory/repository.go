@@ -73,13 +73,54 @@ func (repository *Repository) ListAuthorMemory(ctx context.Context, actor servic
 	}
 	var page domain.Page
 	err = repository.db.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, err := roleInTx(ctx, sqlc.New(tx), project, user); err != nil {
+		queries := sqlc.New(tx)
+		role, err := roleInTx(ctx, queries, project, user)
+		if err != nil {
 			return err
 		}
-		page, err = ListInTx(ctx, tx, actor.ProjectID, filter)
-		return err
+		if page, err = ListInTx(ctx, tx, actor.ProjectID, filter); err != nil {
+			return err
+		}
+		members, err := queries.CountAuthorMemoryMembers(ctx, project)
+		if err != nil {
+			return err
+		}
+		page.Shared = members > 1
+		return withOrigins(ctx, queries, project, projects.CanMutateProject(role), page.Records)
 	})
 	return page, err
+}
+
+// withOrigins says where each record came from (specs/2026-11-10-ux8-memory-records.md MR1.5) by the session of the turn
+// of its Job; editor says whether the reader sees the chats of the draft text version.
+func withOrigins(ctx context.Context, queries *sqlc.Queries, project pgtype.UUID, editor bool, records []domain.Record) error {
+	var jobs []pgtype.UUID
+	for _, record := range records {
+		if record.JobID != "" {
+			job, err := storedb.ParseUUID(record.JobID)
+			if err != nil {
+				return err
+			}
+			jobs = append(jobs, job)
+		}
+	}
+	conversations := map[string]*domain.Conversation{}
+	if len(jobs) > 0 {
+		rows, err := queries.ListAuthorMemoryConversations(ctx, sqlc.ListAuthorMemoryConversationsParams{Editor: editor, ProjectID: project, JobIds: jobs})
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			conversations[storedb.UUIDString(row.JobID)] = &domain.Conversation{
+				SessionKind: row.SessionKind, ChatID: storedb.UUIDString(row.ChatID), ChatTitle: row.ChatTitle, DraftTitle: row.DraftTitle,
+				Alive: row.Alive, Visible: row.Visible,
+			}
+		}
+	}
+	for index := range records {
+		records[index].Origin = domain.OriginOf(records[index].JobID, conversations[records[index].JobID])
+	}
+	return nil
 }
 
 // ListInTx reads a page of the records of a project. The caller has checked who reads them.
@@ -115,7 +156,7 @@ func ListInTx(ctx context.Context, tx pgx.Tx, projectID string, filter domain.Fi
 		page.Total = row.TotalCount
 		page.Records = append(page.Records, recordOf(sqlc.GetAuthorMemoryRow{
 			ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Body: row.Body, ChapterID: row.ChapterID, Name: row.Name,
-			Revision: row.Revision, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, AuthorName: row.AuthorName,
+			Revision: row.Revision, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, JobID: row.JobID, AuthorName: row.AuthorName,
 		}))
 	}
 	if len(page.Records) > filter.Limit {
@@ -133,6 +174,10 @@ func recordOf(row sqlc.GetAuthorMemoryRow) domain.Record {
 	if row.ChapterID.Valid {
 		record.ChapterID = storedb.UUIDString(row.ChapterID)
 	}
+	if row.JobID.Valid {
+		record.JobID = storedb.UUIDString(row.JobID)
+	}
+	record.Origin = domain.OriginOf(record.JobID, nil)
 	return record
 }
 
@@ -296,7 +341,12 @@ func (repository *Repository) UpdateAuthorMemory(ctx context.Context, write serv
 		}); err != nil {
 			return err
 		}
-		record, err = getInTx(ctx, queries, project, id)
+		if record, err = getInTx(ctx, queries, project, id); err != nil {
+			return err
+		}
+		records := []domain.Record{record}
+		err = withOrigins(ctx, queries, project, true, records)
+		record = records[0]
 		return err
 	})
 	return record, err

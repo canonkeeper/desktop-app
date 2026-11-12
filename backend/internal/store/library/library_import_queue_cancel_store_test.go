@@ -143,6 +143,10 @@ func TestCancelRunningImportQueueCancelsQueuedJobsAndKeepsRunningWorkerBody(t *t
 	if _, err := newWorkerClaimAuthorityForTest(db).ClaimNextQueuedJobForWorker(ctx, []jobs.Kind{jobs.KindImport}); !errors.Is(err, jobs.ErrNotFound) {
 		t.Fatalf("claim after queue cancel error = %v, want exact ErrNotFound", err)
 	}
+	// specs/2026-11-09-quota-accounting.md Q5.1: the author stopped the queue, so it keeps every upload it spent.
+	if uploads := uploadsOfTheDay(t, db, actorID); uploads != int64(len(queue.Items)) {
+		t.Fatalf("uploads after the author canceled the queue = %d, want %d", uploads, len(queue.Items))
+	}
 }
 
 func TestCancelFailedImportQueuePreservesSucceededJobAndBook(t *testing.T) {

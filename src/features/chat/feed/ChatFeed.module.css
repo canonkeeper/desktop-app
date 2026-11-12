@@ -36,7 +36,7 @@
   border-radius: var(--ck-radius-lg);
   padding: 10px 14px;
   background: var(--ck-chat-user-message);
-  color: var(--ck-primary-foreground);
+  color: var(--ck-chat-user-message-foreground);
   font-size: var(--ck-font-size-body);
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -47,12 +47,16 @@
   white-space: pre-wrap;
 }
 
-/* A long question shows its first lines until the author opens it. */
+/* A long question shows its first lines until the author opens it; the question of a running turn three (CW2.1). */
 .question .folded {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 6;
   display: -webkit-box;
   overflow: hidden;
+}
+
+.question .folded[data-lines='3'] {
+  -webkit-line-clamp: 3;
 }
 
 .questionToggle {
@@ -150,40 +154,64 @@
   margin-top: var(--ck-space-2);
 }
 
-/* The status of a live turn stays at the top of the chat while its steps grow below. */
-.status {
+/*
+ * The question and the status of a running turn stay pinned over its work while its lines grow below
+ * (specs/2026-11-10-ux4-chat-waiting.md CW2.1, CW2.2).
+ */
+.liveHead {
   position: sticky;
   z-index: 1;
   top: 0;
   display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-2);
+  border-bottom: 1px solid var(--ck-border);
+  padding-block: var(--ck-space-2);
+  background: var(--ck-card);
+}
+
+.status {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-label);
+  line-height: 1.45;
+}
+
+.statusLine {
+  display: flex;
+  min-width: 0;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin: 0 0 var(--ck-space-1);
-  padding-block: var(--ck-space-2);
-  background: var(--ck-card);
-  color: var(--ck-foreground);
+  margin: 0;
 }
 
-.status strong {
+.statusLine strong {
   min-width: 0;
-  overflow: hidden;
+  flex: 1 1 12rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+/* The time lines up with the activity, under the pulse. */
+.statusLine:nth-child(2) {
+  padding-left: 18px;
+}
+
+.statusStop {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .statusMeta {
+  min-width: 0;
+  flex: 1 1 14rem;
   color: var(--ck-muted-foreground);
   font-variant-numeric: tabular-nums;
-}
-
-.statusActions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
 }
 
 .pulse {
@@ -198,6 +226,31 @@
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+/* «… ещё N раньше» over the last lines of a running turn (CW2.3). */
+.earlier {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  margin: 0 0 var(--ck-space-2);
+  border: 0;
+  border-radius: var(--ck-radius-xs);
+  padding: 4px 6px;
+  background: none;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+  font: inherit;
+}
+
+.earlier:hover {
+  background: var(--ck-secondary);
+  color: var(--ck-foreground);
+}
+
+.earlier:focus-visible {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
 }
 
 /* Steps hang on a thin rail; each step is a remark of the agent and the actions after it. */
@@ -307,11 +360,6 @@
   animation: spin 1s linear infinite;
 }
 
-.action[data-status='error'] .actionIcon,
-.action[data-status='error'] .actionDetail {
-  color: var(--ck-color-error-foreground);
-}
-
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -366,6 +414,31 @@
   white-space: nowrap;
 }
 
+/* What the helper remembered in the turn: under its answer, outside the folded work (specs/2026-11-10-ux1-chat.md CH4). */
+.remembered {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.remembered li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 2px 8px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-label);
+  line-height: 1.45;
+}
+
+.remembered li > :nth-child(n + 3) {
+  grid-column: 2;
+}
+
 .answer {
   min-width: 0;
   color: var(--ck-foreground);
@@ -378,12 +451,40 @@
 }
 
 .outcome {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin: 0;
-  color: var(--ck-color-error-foreground);
+  color: var(--ck-muted-foreground);
   font-size: var(--ck-font-size-label);
+}
+
+/* A turn the author stopped: what happened, the count as it is and «Повторить вопрос» — no alarm (CW2.8). */
+.stopped {
+  display: flex;
+  gap: 10px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 12px 14px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  line-height: 1.5;
+}
+
+.stoppedIcon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--ck-muted-foreground);
+}
+
+.stoppedBody {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 4px;
+}
+
+.stoppedBody p {
+  margin: 0;
+  color: var(--ck-muted-foreground);
 }
 
 .notice,
@@ -488,6 +589,10 @@
 }
 
 @media (max-width: 760px) {
+  .earlier {
+    min-height: 44px;
+  }
+
   .column {
     gap: var(--ck-space-5);
     padding: var(--ck-space-4) var(--ck-space-4) var(--ck-space-5);
@@ -503,4 +608,22 @@
   .action[data-status='running'] .actionIcon {
     animation: none;
   }
+}
+
+/* A short break of the stream under the status of the running turn (specs/2026-11-11-ux4-after-answer.md AA2.6). */
+.liveNote {
+  margin: 4px 0 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+/* A press of a button of the page in the feed of a helper (specs/2026-11-11-ux9-writing-b.md WB3.3): a quiet line of what
+   happened, not the author's bubble. */
+.pressed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
 }

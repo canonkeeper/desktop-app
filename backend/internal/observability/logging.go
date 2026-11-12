@@ -116,20 +116,33 @@ func (logger *requestLogger) writeRequest(
 	if route.OperationID == "" && report.panic != nil {
 		route = RouteInfo{OperationID: "unmatchedRoute", PathTemplate: "/"}
 	}
-	status := stats.statusCode()
-	if report.status != 0 {
-		status = report.status
+	status, class, cause := stats.statusCode(), report.class, report.cause
+	if clientDropped(r.Context(), status, report) {
+		status, class, cause = statusClientClosedRequest, governance.RequestErrorContext, governance.RequestErrorCanceled
 	}
 	entry, err := newRequestLogEntry(requestID, r.Method, route, status, logger.now().Sub(start))
 	if err != nil {
 		return
 	}
-	entry.ErrorClass, entry.ErrorCause = report.class, report.cause
+	entry.ErrorClass, entry.ErrorCause = class, cause
 	entry.UserID, entry.Client, entry.VoiceCall = report.userID, report.client, report.voice
 	if report.panic != nil {
 		entry.Panic, entry.Stack = governance.PanicText(report.panic.Value), governance.PanicText(report.panic.Stack)
 	}
 	logger.write(entry)
+}
+
+// statusClientClosedRequest is the status of the line of a request its client dropped, as nginx writes it.
+const statusClientClosedRequest = 499
+
+// clientDropped says the request failed because its client left: the context of the request itself is cancelled — the
+// server does that when the client closes the connection, and neither its graceful stop nor a timeout does — and the
+// handler answered 5xx into the closed connection. Such a line is the client's 499, whatever error the cancelled read
+// gave and whether the handler reported it (specs/2026-10-28-production-monitoring.md R5). A panic and a timeout the
+// handler reported stay failures of the server; so does an error, a cancellation included, met while the client waits.
+func clientDropped(request context.Context, status int, report *requestReport) bool {
+	return status >= http.StatusInternalServerError && request.Err() == context.Canceled &&
+		report.panic == nil && report.cause != governance.RequestErrorDeadlineExceeded
 }
 
 type requestIDContextKey struct{}
@@ -152,7 +165,6 @@ type requestReportContextKey struct{}
 type requestReport struct {
 	class  governance.RequestErrorClass
 	cause  governance.RequestErrorCause
-	status int
 	panic  *PanicError
 	userID governance.ResourceID
 	client governance.ClientAddress
@@ -223,9 +235,6 @@ func ReportUnexpectedError(ctx context.Context, err error) {
 		return
 	}
 	report.class, report.cause = ClassifyError(err)
-	if report.cause == governance.RequestErrorCanceled {
-		report.status = 499
-	}
 }
 
 func (logger *requestLogger) resolveRequestID(inbound string) governance.RequestID {

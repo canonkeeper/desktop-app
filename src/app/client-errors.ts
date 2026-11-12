@@ -100,9 +100,24 @@ export function shouldReloadAfterChunkFailure(storage: SessionStore | undefined,
   }
 }
 
+type ReportedSurface = ClientErrorReport['surface'];
+
+/**
+ * The surfaces a report names — those of reportClientError, the contract of the desktop too; a page of the site beyond
+ * them («Тариф», «Аккаунт») is reported as unknown.
+ */
+const reportedSurfaces: ReadonlySet<string> = new Set([
+  'admin', 'auth', 'chat', 'compare', 'drawing', 'home', 'legal', 'manuscript', 'memory', 'notes',
+  'promo', 'promo-link', 'saga', 'unknown', 'writing',
+] satisfies ReportedSurface[]);
+
+function reportedSurface(surface: string): ReportedSurface {
+  return reportedSurfaces.has(surface) ? surface as ReportedSurface : 'unknown';
+}
+
 function buildReport(kind: ClientErrorKind, error: unknown, environment: ClientErrorEnvironment): ClientErrorReport {
   const name = error instanceof Error && namePattern.test(error.name) ? error.name : error instanceof Error ? 'Error' : 'NonError';
-  const surface = createAppRoute(environment.pathname, new URLSearchParams()).surface;
+  const surface = reportedSurface(createAppRoute(environment.pathname, new URLSearchParams()).surface);
   const report: ClientErrorReport = {
     kind,
     name,
@@ -149,4 +164,13 @@ function browserEnvironment(): ClientErrorEnvironment {
     entryScript: entry?.src ?? '',
     userAgent: navigator.userAgent,
   };
+}
+
+/**
+ * The code for support of an error of a page (specs/2026-11-11-ux9-account.md AC3.2): what its report says — the class and
+ * the top place in the build, else the build — so support finds the line of `client_error` by it. No text of the error.
+ */
+export function clientErrorCode(error: unknown, environment: ClientErrorEnvironment = browserEnvironment()) {
+  const report = buildReport('render', error, environment);
+  return `${report.name}:${report.frames?.[0] ?? report.build}`.slice(0, 64);
 }

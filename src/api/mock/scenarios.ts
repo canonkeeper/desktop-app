@@ -33,6 +33,17 @@ export interface MockScenarioControl {
    */
   drawingLimit?: { retryAt: string | null };
   verifiedEmail?: string;
+  /**
+   * The helper of the build is not connected — the desktop app until the author connects one
+   * (specs/2026-11-12-desk-window.md WN3.5): no cards Job is queued, and the reading of a saga waits for the helper.
+   */
+  helperMissing?: boolean;
+}
+
+/** What a refusal carries besides its code: fields of the problem and the Retry-After of a 429. */
+export interface MockProblemExtras {
+  fields?: { attemptsLeft?: number; lockMinutes?: number; materialId?: string };
+  retryAfter?: number;
 }
 
 export class MockApiError extends ApiStatusError {
@@ -41,6 +52,7 @@ export class MockApiError extends ApiStatusError {
     message: string,
     readonly operationId: OperationId,
     readonly code?: string,
+    readonly extras: MockProblemExtras = {},
   ) {
     super(
       status,
@@ -51,8 +63,9 @@ export class MockApiError extends ApiStatusError {
         status,
         title: message,
         type: 'about:blank',
+        ...extras.fields,
       },
-      new Response(null, { status }),
+      new Response(null, { status, headers: extras.retryAfter === undefined ? undefined : { 'Retry-After': String(extras.retryAfter) } }),
     );
     this.name = 'MockApiError';
   }
@@ -74,6 +87,7 @@ const protectedOperations = new Set<OperationId>([
   'listNotes', 'createPersonalNote', 'getPersonalNote', 'updatePersonalNote', 'deletePersonalNote', 'resolvePersonalNoteSource',
   'getCurrentUser',
   'getAccountQuota',
+  'listRecentlyDeleted',
   'listAdminWriters', 'getAdminWriter', 'setAdminWriterQuota', 'blockAdminWriter', 'unblockAdminWriter', 'listAdminDays', 'getAdminServiceStatus',
   'getAdminQuotaDefaults', 'setAdminQuotaDefaults',
   // «Связаться с нами» (specs/2026-11-07-contacts.md): the reads of an author and the admin part; a guest writes.
@@ -82,13 +96,18 @@ const protectedOperations = new Set<OperationId>([
   'getAdminPromoSagas', 'createAdminPromoPermission', 'listAdminPromoPermissions', 'takeAdminPromoFragment', 'getAdminPromoIllustration',
   'listPromoPermissions', 'answerPromoPermission', 'revokePromoPermission',
   'sendEmailVerification',
+  'changeUnverifiedEmail',
   'changePassword',
   'logoutEverywhere',
+  'setAccountName',
+  'getAccountSessions',
+  'logoutOtherSessions',
   'acceptLegalDocuments',
   'logoutUser',
   'listProjects',
   'getProject',
   'createProject',
+  'openDemoSaga',
   'updateProject',
   'deleteProject',
   'listBooks',
@@ -102,7 +121,7 @@ const protectedOperations = new Set<OperationId>([
   'listImportQueues',
   'getImportQueue',
   'uploadImportQueueItem',
-  'updateImportQueue',
+  'skipImportQueueItem',
   'startImportQueue',
   'cancelImportQueue',
   'listProjectJobs',
@@ -124,6 +143,7 @@ const protectedOperations = new Set<OperationId>([
   'acceptProjectInvitation',
   'cancelProjectInvitation',
   'listAuthorMaterials',
+  'createAuthorMaterial',
   'updateAuthorMaterial',
   'deleteAuthorMaterial',
   'startAuthorMaterialsImport',
@@ -148,10 +168,13 @@ const protectedOperations = new Set<OperationId>([
   'updateChapterDraftNote',
   'startChapterProofread',
   'loadChapterDraftFile',
+  'takeChapterDraftOriginalLook',
   'applyChapterDraftNotes',
   'getChapterDraftExport',
   'getProjectVoice',
   'setAccountVoice',
+  'getAccountLetters',
+  'setAccountLetters',
   'listProjectImages',
   'getProjectImage',
   'getProjectImageFile',

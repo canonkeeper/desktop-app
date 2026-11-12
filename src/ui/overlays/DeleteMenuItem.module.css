@@ -1,0 +1,50 @@
+/* The line that sets the deletion apart from the ordinary items of a menu (П-17). */
+.rule {
+  flex: none;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--ck-border);
+}
+
+/* The look of the items of the menus of the kit, in the colour of a deletion. */
+.item {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Above the rules of the menus that paint their buttons: a deletion is red in each of them. */
+.item[data-delete-item] {
+  color: var(--ck-destructive-text);
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--ck-muted);
+}
+
+.item:disabled,
+.item[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.item[data-size='touch'] {
+  min-height: 44px;
+}
+
+@media (pointer: coarse) {
+  .item {
+    min-height: 44px;
+  }
+}

@@ -7,7 +7,6 @@ import (
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -26,27 +25,15 @@ func (s *Store) NextBookOrder(ctx context.Context, projectID string) (int, error
 	return validatedNextBookOrder(ctx, s.Pool, projectUUID)
 }
 
+// validatedNextBookOrder is the stored order of a new book: after the live books of the shelf
+// (specs/2026-11-11-ux7-upload.md UP2.3). The place a deleted book keeps for its return is not filled: the new book
+// stands last, as the author sees it, and a book returned to a taken place moves the others on.
 func validatedNextBookOrder(ctx context.Context, queryer bookOrderQueryer, projectID pgtype.UUID) (int, error) {
 	var count, distinctCount, nextOrder int64
 	if err := queryer.QueryRow(ctx, `
-		WITH active_orders AS MATERIALIZED (
-			SELECT "order"
-			FROM books
-			WHERE project_id = $1 AND deleted_at IS NULL
-		), next_order AS (
-			SELECT candidate
-			FROM generate_series(
-				1,
-				COALESCE((SELECT MAX("order") FROM active_orders), 0) + 1
-			) AS gap(candidate)
-			WHERE NOT EXISTS (
-				SELECT 1 FROM active_orders WHERE "order" = candidate
-			)
-			ORDER BY candidate
-			LIMIT 1
-		)
-		SELECT COUNT(*), COUNT(DISTINCT "order"), (SELECT candidate FROM next_order)
-		FROM active_orders
+		SELECT COUNT(*), COUNT(DISTINCT "order"), COALESCE(MAX("order"), 0) + 1
+		FROM books
+		WHERE project_id = $1 AND deleted_at IS NULL
 	`, projectID).Scan(&count, &distinctCount, &nextOrder); err != nil {
 		return 0, err
 	}
@@ -65,7 +52,7 @@ func (s *Store) CreateBook(ctx context.Context, input library.CreateBookStoreInp
 	if err != nil {
 		return library.Book{}, library.ErrNotFound
 	}
-	create := func(tx pgx.Tx, order int) (sqlc.Book, error) {
+	create := func(tx pgx.Tx, order int) (sqlc.CreateBookRow, error) {
 		row, err := sqlc.New(tx).CreateBook(ctx, sqlc.CreateBookParams{
 			ID:            bookID,
 			Title:         input.Title,
@@ -77,11 +64,11 @@ func (s *Store) CreateBook(ctx context.Context, input library.CreateBookStoreInp
 			ProjectID:     projectUUID,
 		})
 		if err != nil {
-			return sqlc.Book{}, err
+			return sqlc.CreateBookRow{}, err
 		}
-		return sqlc.Book(row), nil
+		return row, nil
 	}
-	var row sqlc.Book
+	var row sqlc.CreateBookRow
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := lockBookOrderProject(ctx, tx, projectUUID); err != nil {
 			return err
@@ -89,7 +76,7 @@ func (s *Store) CreateBook(ctx context.Context, input library.CreateBookStoreInp
 		if err := ensureNoActiveImportQueueReservation(ctx, tx, projectUUID); err != nil {
 			return err
 		}
-		if err := quotastore.CheckNewBooksInTx(ctx, tx, projectUUID.String(), 1, false); err != nil {
+		if err := s.quota.CheckNewBooksInTx(ctx, tx, projectUUID.String(), 1, false); err != nil {
 			return err
 		}
 		if input.AfterBookID.Present {
@@ -146,7 +133,8 @@ func (s *Store) CreateBook(ctx context.Context, input library.CreateBookStoreInp
 	if err != nil {
 		return library.Book{}, err
 	}
-	return s.GetBook(ctx, input.ProjectID, row.ID.String())
+	// A new book has no update from a file to tell.
+	return s.getBook(ctx, input.ProjectID, row.ID.String(), false)
 }
 
 func (s *Store) ListBooks(ctx context.Context, input library.ListBooksStoreInput) ([]library.Book, error) {
@@ -181,6 +169,12 @@ func (s *Store) ListBooks(ctx context.Context, input library.ListBooksStoreInput
 	books := make([]library.Book, 0, len(rows))
 	for _, row := range rows {
 		books = append(books, libraryBookFromListSummarySQL(row))
+	}
+	if err := placeBooks(ctx, s.Pool, projectUUID, books); err != nil {
+		return nil, err
+	}
+	if err := updateBooks(ctx, s.Pool, projectUUID, books); err != nil {
+		return nil, err
 	}
 	return books, nil
 }
@@ -265,7 +259,12 @@ func (s *Store) listDeletedBooks(ctx context.Context, input library.ListBooksSto
 	return books, err
 }
 
+// GetBook reads a live book of the project with its place on the shelf and its last update from a file.
 func (s *Store) GetBook(ctx context.Context, projectID, bookID string) (library.Book, error) {
+	return s.getBook(ctx, projectID, bookID, true)
+}
+
+func (s *Store) getBook(ctx context.Context, projectID, bookID string, withUpdate bool) (library.Book, error) {
 	projectUUID, err := storedb.ParseUUID(projectID)
 	if err != nil {
 		return library.Book{}, library.ErrNotFound
@@ -281,5 +280,14 @@ func (s *Store) GetBook(ctx context.Context, projectID, bookID string) (library.
 	if err != nil {
 		return library.Book{}, err
 	}
-	return libraryBookFromGetSummarySQL(row), nil
+	book := []library.Book{libraryBookFromGetSummarySQL(row)}
+	if err := placeBooks(ctx, s.Pool, projectUUID, book); err != nil {
+		return library.Book{}, err
+	}
+	if withUpdate {
+		if err := updateBooks(ctx, s.Pool, projectUUID, book); err != nil {
+			return library.Book{}, err
+		}
+	}
+	return book[0], nil
 }

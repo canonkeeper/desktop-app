@@ -5,6 +5,7 @@ package quotastore
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -14,18 +15,32 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// querier is what a transaction and a pool share; reads run in either.
-type querier interface {
+// Querier is what a transaction and a pool share; reads run in either.
+type Querier interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-// EffectiveLimitsInTx returns the writer's limits in force (R1.1; admin-panel R7.2): his own
-// value, else the platform default, else the code's, by quota.Resolve. One query reads both rows,
-// so the quota checks pay no second round trip; nothing is cached, and a new own value or default
-// is read by the next operation of any process without a restart (R6.3).
-func EffectiveLimitsInTx(ctx context.Context, db querier, userID string) (quota.Limits, error) {
+// Plans is the writer's plan the fence puts between his own limits and the platform's
+// (specs/2026-11-08-subscription-tiers.md TR2.3). The fence declares it and a build implements it: it reads the
+// writer's plan in the fence's own transaction, keeps its own clock and answers with the keys the plan sets — none
+// when the writer has no plan. The open core knows nothing of what makes a plan.
+type Plans interface {
+	PlanSettingsInTx(ctx context.Context, db Querier, userID string) (quota.Settings, error)
+}
+
+// Fence is the quota fence of a build (TR2.4): every limit is read and checked through it. Without Plans — the
+// desktop, a test — the limits are the writer's own, the platform's and the code's, as before plans.
+type Fence struct {
+	Plans Plans
+}
+
+// EffectiveLimitsInTx returns the writer's limits in force (R1.1; admin-panel R7.2; TR2.2): his own value, else his
+// plan's, else the platform default, else the code's, by quota.Resolve. One query reads his own row and the platform's,
+// so the quota checks pay no second round trip for them; nothing is cached, and a new own value, plan or default is
+// read by the next operation of any process without a restart (R6.3).
+func (fence Fence) EffectiveLimitsInTx(ctx context.Context, db Querier, userID string) (quota.Limits, error) {
 	keys := quota.Keys()
 	values := make([]*int64, 2*len(keys))
 	targets := make([]any, len(values))
@@ -42,7 +57,19 @@ func EffectiveLimitsInTx(ctx context.Context, db querier, userID string) (quota.
 	if err != nil {
 		return quota.Limits{}, err
 	}
-	return quota.Resolve(settingsOf(keys, values[:len(keys)]), settingsOf(keys, values[len(keys):])), nil
+	plan, err := fence.planInTx(ctx, db, userID)
+	if err != nil {
+		return quota.Limits{}, err
+	}
+	return quota.Resolve(settingsOf(keys, values[:len(keys)]), plan, settingsOf(keys, values[len(keys):])), nil
+}
+
+// planInTx is the writer's plan, none without Plans.
+func (fence Fence) planInTx(ctx context.Context, db Querier, userID string) (quota.Settings, error) {
+	if fence.Plans == nil {
+		return nil, nil
+	}
+	return fence.Plans.PlanSettingsInTx(ctx, db, userID)
 }
 
 // limitColumns lists the columns of the keys of one row as bigint, in the order of the keys.
@@ -65,13 +92,31 @@ func settingsOf(keys []quota.Key, values []*int64) quota.Settings {
 	return settings
 }
 
-// ReserveChatTurnInTx is the quota step of UC2 «Вопросы чата: за сутки и одновременно». It runs
-// in the createChatTurn transaction only for a new idempotency key, after the session fence:
-// the writer's day row is incremented first (the row lock makes a second submission of the same
-// writer wait for this transaction, R2.3), then the writer's active turns in every project are
-// counted. A refusal leaves nothing behind once the caller rolls back.
-func ReserveChatTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	limits, err := countChatTurnInTx(ctx, tx, actorUserID, at)
+// dailyColumns are the columns of writer_usage_days that count the daily limits of a writer
+// (specs/2026-11-09-quota-accounting.md Q1.2): one unit of an action is one more in its column for the Moscow day it
+// started on. The columns are named here only, so they are safe to splice.
+var dailyColumns = map[quota.Key]string{
+	quota.KeyChatTurnsPerDay:     "chat_turns",
+	quota.KeyImportsPerDay:       "imports",
+	quota.KeyImagesPerDay:        "images",
+	quota.KeyImageUploadsPerDay:  "image_uploads",
+	quota.KeyChapterDraftsPerDay: "chapter_drafts",
+	quota.KeyDrawingTurnsPerDay:  "drawing_turns",
+	quota.KeyDraftTurnsPerDay:    "draft_turns",
+	quota.KeyDraftRewritesPerDay: "draft_rewrites",
+}
+
+// ErrNotDaily means a key that no day counts: a caller's mistake, never a refusal of the writer.
+var ErrNotDaily = errors.New("quota: not a daily limit")
+
+// ReserveTurnInTx is the quota step of a new turn of the chat or of a helper (UC2; specs/2026-11-02-image-workshop.md
+// IW8.2; specs/2026-11-02-writer-workshop.md W1.5): the turn counts one unit of its key for the writer's Moscow day —
+// the day row is incremented first, so its lock makes a second submission of the same writer wait for this
+// transaction (R2.3) — and then the writer's active turns in every project are counted: the questions of the chat and
+// the turns of the helpers keep active_turns together, as they go to one model. A refusal leaves nothing behind once
+// the caller rolls back.
+func (fence Fence) ReserveTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, at time.Time) error {
+	limits, err := fence.reserveDailyInTx(ctx, tx, actorUserID, key, 1, at)
 	if err != nil {
 		return err
 	}
@@ -85,174 +130,68 @@ func ReserveChatTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at 
 	return nil
 }
 
-// ReserveDrawingTurnInTx is the quota step of a turn of the helper of the drawing workshop
-// (specs/2026-11-02-image-workshop.md IW8.2): it counts the turn for its writer's Moscow day apart from the
-// questions of the chat and refuses one over drawing_turns_per_day; the turns of the helper and the questions of
-// the chat keep active_turns together, as they go to one model.
-func ReserveDrawingTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	return reserveHelperTurnInTx(ctx, tx, actorUserID, at, quota.KeyDrawingTurnsPerDay, "drawing_turns")
+// ReserveDailyInTx counts count units of a daily limit for the writer's Moscow day of at in the caller's transaction
+// and refuses the units over the limit (Q1.2): a drawing, an upload, a run of the writing agent, a correction of a
+// running turn. The day row lock serialises the units of one writer; the caller rolls back on a refusal.
+func (fence Fence) ReserveDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, count int64, at time.Time) error {
+	_, err := fence.reserveDailyInTx(ctx, tx, actorUserID, key, count, at)
+	return err
 }
 
-// ReserveDraftTurnInTx is the quota step of a turn of the helper of the chapter workshop
-// (specs/2026-11-02-writer-workshop.md W1.5): the same as a turn of the drawing helper, counted against
-// draft_turns_per_day.
-func ReserveDraftTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	return reserveHelperTurnInTx(ctx, tx, actorUserID, at, quota.KeyDraftTurnsPerDay, "draft_turns")
-}
-
-// reserveHelperTurnInTx counts a turn of a helper in its own column of the writer's day; the column is one of the
-// two constants above, so it is safe to splice.
-func reserveHelperTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time, key quota.Key, column string) error {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	var turns int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, `+column+`)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET `+column+` = usage.`+column+` + 1
-		RETURNING usage.`+column+`
-	`, actorUserID, moscowDate(at)).Scan(&turns); err != nil {
-		return err
-	}
-	if limit := limits.Value(key); turns > limit {
-		return quota.DailyExceeded(key, limit, at)
-	}
-	active, err := activeTurns(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	if active >= limits.ActiveTurns {
-		return &quota.Exceeded{Key: quota.KeyActiveTurns, Limit: limits.ActiveTurns}
-	}
-	return nil
-}
-
-// countChatTurnInTx counts a chat turn for its writer's Moscow day and refuses one over the limit.
-func countChatTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) (quota.Limits, error) {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
+func (fence Fence) reserveDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, count int64, at time.Time) (quota.Limits, error) {
+	limits, err := fence.EffectiveLimitsInTx(ctx, tx, actorUserID)
 	if err != nil {
 		return quota.Limits{}, err
 	}
-	var turns int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, chat_turns)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET chat_turns = usage.chat_turns + 1
-		RETURNING usage.chat_turns
-	`, actorUserID, moscowDate(at)).Scan(&turns); err != nil {
+	used, err := countDailyInTx(ctx, tx, actorUserID, key, count, at)
+	if err != nil {
 		return quota.Limits{}, err
 	}
-	if turns > limits.ChatTurnsPerDay {
-		return quota.Limits{}, quota.DailyExceeded(quota.KeyChatTurnsPerDay, limits.ChatTurnsPerDay, at)
+	if limit := limits.Value(key); used > limit {
+		return quota.Limits{}, quota.DailyExceeded(key, limit, at)
 	}
 	return limits, nil
 }
 
-// ReserveImageInTx is the quota step of a drawing (specs/2026-10-29-saga-illustrations.md R5.1):
-// it counts the drawing for its writer's Moscow day in the caller's transaction and refuses one
-// over images_per_day; the caller rolls back on a refusal.
-func ReserveImageInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	var images int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, images)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET images = usage.images + 1
-		RETURNING usage.images
-	`, actorUserID, moscowDate(at)).Scan(&images); err != nil {
-		return err
-	}
-	if images > limits.ImagesPerDay {
-		return quota.DailyExceeded(quota.KeyImagesPerDay, limits.ImagesPerDay, at)
-	}
-	return nil
-}
-
-// ReserveImageUploadInTx is the quota step of an upload into the saga gallery
-// (specs/2026-10-29-saga-illustrations.md R15.7): it counts the upload for its writer's Moscow day
-// in the caller's transaction and refuses one over image_uploads_per_day; the caller rolls back on
-// a refusal.
-func ReserveImageUploadInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	var uploads int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, image_uploads)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET image_uploads = usage.image_uploads + 1
-		RETURNING usage.image_uploads
-	`, actorUserID, moscowDate(at)).Scan(&uploads); err != nil {
-		return err
-	}
-	if uploads > limits.ImageUploadsPerDay {
-		return quota.DailyExceeded(quota.KeyImageUploadsPerDay, limits.ImageUploadsPerDay, at)
-	}
-	return nil
-}
-
-// ReserveChapterDraftInTx is the quota step of a run of a plan or a chapter
-// (specs/2026-11-01-writer-assistant-index.md, R7.6): it counts the run for its writer's Moscow day in the
-// caller's transaction and refuses one over chapter_drafts_per_day; the caller rolls back on a refusal.
-func ReserveChapterDraftInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	var runs int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, chapter_drafts)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET chapter_drafts = usage.chapter_drafts + 1
-		RETURNING usage.chapter_drafts
-	`, actorUserID, moscowDate(at)).Scan(&runs); err != nil {
-		return err
-	}
-	if runs > limits.ChapterDraftsPerDay {
-		return quota.DailyExceeded(quota.KeyChapterDraftsPerDay, limits.ChapterDraftsPerDay, at)
-	}
-	return nil
-}
-
-// ReserveDraftRewriteInTx counts a rewrite of a selection or a check of the seams of the writing agent for its writer's
-// Moscow day and refuses one over draft_rewrites_per_day (specs/2026-11-06-writing-agent.md, WA5.13).
-func ReserveDraftRewriteInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	limits, err := EffectiveLimitsInTx(ctx, tx, actorUserID)
-	if err != nil {
-		return err
-	}
-	var rewrites int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO writer_usage_days AS usage (user_id, day, draft_rewrites)
-		VALUES ($1::uuid, $2::date, 1)
-		ON CONFLICT (user_id, day) DO UPDATE SET draft_rewrites = usage.draft_rewrites + 1
-		RETURNING usage.draft_rewrites
-	`, actorUserID, moscowDate(at)).Scan(&rewrites); err != nil {
-		return err
-	}
-	if rewrites > limits.DraftRewritesPerDay {
-		return quota.DailyExceeded(quota.KeyDraftRewritesPerDay, limits.DraftRewritesPerDay, at)
-	}
-	return nil
-}
-
-// ReleaseImageInTx gives back the drawing ReserveImageInTx counted for its writer's Moscow day of at
-// (specs/2026-10-29-saga-illustrations.md R13.6) in the caller's transaction, never below zero.
-func ReleaseImageInTx(ctx context.Context, tx pgx.Tx, actorUserID string, at time.Time) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE writer_usage_days SET images = images - 1
-		WHERE user_id = $1::uuid AND day = $2::date AND images > 0
-	`, actorUserID, moscowDate(at))
+// CountDailyInTx counts units of a daily limit without its check: a drawing a trial of the writer's tier pays for
+// (specs/2026-11-08-subscription-tiers.md TR6.1) shows in the day's drawings, and ReleaseDailyInTx gives it back the
+// same way.
+func (fence Fence) CountDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, count int64, at time.Time) error {
+	_, err := countDailyInTx(ctx, tx, actorUserID, key, count, at)
 	return err
 }
 
-func activeTurns(ctx context.Context, db querier, userID string) (int64, error) {
+func countDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, count int64, at time.Time) (int64, error) {
+	column, daily := dailyColumns[key]
+	if !daily || count < 0 {
+		return 0, ErrNotDaily
+	}
+	var used int64
+	err := tx.QueryRow(ctx, `
+		INSERT INTO writer_usage_days AS usage (user_id, day, `+column+`)
+		VALUES ($1::uuid, $2::date, $3)
+		ON CONFLICT (user_id, day) DO UPDATE SET `+column+` = usage.`+column+` + EXCLUDED.`+column+`
+		RETURNING usage.`+column+`
+	`, actorUserID, moscowDate(at), count).Scan(&used)
+	return used, err
+}
+
+// ReleaseDailyInTx gives back count units of a daily limit counted for the writer's Moscow day of at — the day the
+// work started on, never the day it ended — in the caller's transaction, never below zero (Q1.4): the work did not
+// reach the author through no fault of his.
+func (fence Fence) ReleaseDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID string, key quota.Key, count int64, at time.Time) error {
+	column, daily := dailyColumns[key]
+	if !daily || count < 0 {
+		return ErrNotDaily
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE writer_usage_days SET `+column+` = GREATEST(`+column+` - $3, 0)
+		WHERE user_id = $1::uuid AND day = $2::date AND `+column+` > 0
+	`, actorUserID, moscowDate(at), count)
+	return err
+}
+
+func activeTurns(ctx context.Context, db Querier, userID string) (int64, error) {
 	var active int64
 	err := db.QueryRow(ctx, `
 		SELECT count(*)

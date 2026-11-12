@@ -6,7 +6,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/openai/codex/sdk/go v0.165.4
+	github.com/openai/codex/sdk/go v0.167.2
 	golang.org/x/crypto v0.53.0
 	golang.org/x/image v0.45.0
 	golang.org/x/text v0.41.0
@@ -19,4 +19,4 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 )
 
-replace github.com/openai/codex/sdk/go v0.165.4 => github.com/Dirard/codex/sdk/go v0.165.4
+replace github.com/openai/codex/sdk/go v0.167.2 => github.com/Dirard/codex/sdk/go v0.167.2

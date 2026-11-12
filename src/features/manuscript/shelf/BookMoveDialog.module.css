@@ -1,0 +1,128 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.header,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header {
+  justify-content: space-between;
+}
+
+.header h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The places of the book (board 30·42): one line a place, the chosen one lit; the place it stands at is said, dimmed. */
+.places {
+  display: flex;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.places legend {
+  margin: 0 0 10px;
+  padding: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+}
+
+.place {
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px 10px;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.place:hover {
+  background: var(--ck-muted);
+}
+
+.place[data-chosen] {
+  background: var(--ck-source-active);
+}
+
+.place[data-current] {
+  color: var(--ck-muted-foreground);
+  cursor: default;
+}
+
+.place[data-current]:hover {
+  background: transparent;
+}
+
+.place:has(.radio:focus-visible) {
+  box-shadow: var(--ck-focus-shadow);
+}
+
+/* The native radio stays for the keyboard, the screen reader and the voice; the line is its look. */
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.check {
+  flex: 0 0 auto;
+  color: var(--ck-primary);
+}
+
+.drag {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+
+/* What a kind of a file of a book is for, beside its name (specs/2026-11-11-ux9-shelf-chat.md SC1.5). */
+.hint {
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+}
+
+/* The line of the size of a file with drawings under its choice (specs/2026-11-12-ux10-book-pictures.md BP3.3): small. */
+.fine {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/deletion"
+	"canonkeeper/backend/internal/domain/shelf"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/projectaccess"
@@ -821,6 +822,13 @@ func (s *memoryStoreForTest) bookWithSummary(book Book) Book {
 	}
 	book.ChapterCount = chapterCount
 	book.WordCount = wordCount
+	var living []shelf.Book
+	for id, other := range s.books {
+		if _, deleted := s.deletedBooks[id]; !deleted && other.ProjectID == book.ProjectID {
+			living = append(living, shelf.Book{ID: id, Order: other.Order})
+		}
+	}
+	book.Place = shelf.Places(living)[book.ID]
 	return book
 }
 

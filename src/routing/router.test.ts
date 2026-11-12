@@ -5,8 +5,9 @@ import { createElement } from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../api/mock';
 import { draftBookId, projectId } from '../api/mock/repository/fixtures';
-import { canonicalProductRoutes, createAppRoute } from '../shared/navigation/app-route';
-import { CanonKeeperRouterProvider, createCanonKeeperRouter } from './router';
+import { createAppRoute } from '../shared/navigation/app-route';
+import { sectionTable } from '../ui/saga-sections';
+import { backFromOfStep, CanonKeeperRouterProvider, createCanonKeeperRouter, routeOfLocation } from './router';
 
 function createTestRouter(path = '/manuscript/books') {
   const history = createMemoryHistory({ initialEntries: [path] });
@@ -35,22 +36,20 @@ afterEach(() => {
 
 describe('CanonKeeper TanStack Router', () => {
   it('registers standalone Notes and retains only bounded filter route state', async () => {
-    const router = createTestRouter('/notes?type=note&source=chat&projectId=p&bookId=b&query=private');
+    const router = createTestRouter('/notes?type=note&source=chat&projectId=p&bookId=b&note=n&query=private');
     await router.load();
     expect(router.state.location.pathname).toBe('/notes');
     const route = createAppRoute(router.state.location.pathname, new URLSearchParams(router.state.location.searchStr));
-    expect(Object.fromEntries(route.query)).toEqual({ source: 'chat', projectId: 'p', bookId: 'b' });
+    // The saga of the notes is the saga of the shell; the filters and the open note are the address (specs/2026-11-11-ux7-notes.md).
+    expect(Object.fromEntries(route.query)).toEqual({ source: 'chat', projectId: 'p', bookId: 'b', note: 'n' });
+    expect(Object.fromEntries(createAppRoute('/notes', { sagas: 'all', bookId: 'b' }).query)).toEqual({ sagas: 'all' });
   });
 
-  it('exposes exactly the canonical product navigation routes', () => {
-    expect(canonicalProductRoutes()).toEqual([
-      { label: 'Мои книги', path: '/manuscript/books' },
-      { label: 'Чат', path: '/chat' },
-      { label: 'Карта саги', path: '/saga' },
-      { label: 'Письмо', path: '/writing' },
-      { label: 'Рисование', path: '/drawing' },
-      { label: 'Галерея', path: '/gallery' },
-      { label: 'Заметки', path: '/notes' },
+  // specs/2026-11-10-ux2-shell-core.md SC2.1: every page of the menu is a route of its own section.
+  it('routes every page of the table of the sections to its section', () => {
+    expect(sectionTable.filter((entry) => entry.path).map((entry) => [entry.section, createAppRoute(entry.path!).surface])).toEqual([
+      ['manuscript', 'manuscript'], ['saga', 'saga'], ['memory', 'memory'], ['chat', 'chat'], ['writing', 'writing'],
+      ['drawing', 'drawing'], ['notes', 'notes'],
     ]);
   });
 
@@ -70,10 +69,10 @@ describe('CanonKeeper TanStack Router', () => {
   // specs/2026-11-04-saga-map.md R6.2: the keys of the saga map; the keys of the old reference tabs are dropped.
   it('keeps only the saga map keys in the /saga URL', () => {
     const route = createAppRoute('/saga', new URLSearchParams(
-      'projectId=p&sourceView=draft&node=%D0%BC%D0%B8%D1%80%D0%BE%D0%BD&focus=x&to=617&hide=place,item&chatId=c&tab=hero&character=y',
+      'projectId=p&sourceView=draft&node=%D0%BC%D0%B8%D1%80%D0%BE%D0%BD&focus=x&to=617&hide=place,item&only=new&chatId=c&tab=hero&character=y',
     ));
     expect(route.surface).toBe('saga');
-    expect(Object.fromEntries(route.query)).toEqual({ projectId: 'p', node: 'мирон', focus: 'x', to: '617', hide: 'place,item' });
+    expect(Object.fromEntries(route.query)).toEqual({ projectId: 'p', node: 'мирон', focus: 'x', to: '617', hide: 'place,item', only: 'new' });
   });
 
   it('ignores legacy Chat bookId while preserving the selected history', () => {
@@ -138,6 +137,71 @@ describe('CanonKeeper TanStack Router', () => {
     expect(route.query.get('expectedRevision')).toBe('1');
   });
 
+  // «Иллюстрированная книга» is opened by a link and survives a reload (specs/2026-11-10-ux1-drawing.md DX4.1): the
+  // router reads ?illustrated=1 as a number and keeps it one, so the address the page reads stays illustrated=1.
+  it('keeps «Иллюстрированная книга» of a chapter opened by its address', async () => {
+    const router = createTestRouter('/manuscript/books?projectId=project-white-port&bookId=book-02&mode=read&chapterId=chapter-12&illustrated=1');
+    await router.load();
+    const validated = router.buildLocation({ to: router.latestLocation.pathname, search: true, params: true, hash: true, state: true, _includeValidateSearch: true } as never);
+    expect(validated.searchStr).toContain('illustrated=1');
+    const route = createAppRoute(validated.pathname, new URLSearchParams(validated.searchStr));
+    expect(route.query.get('illustrated')).toBe('1');
+    expect(route.query.get('chapterId')).toBe('chapter-12');
+    // Any other value is not the switch.
+    const other = createTestRouter('/manuscript/books?projectId=project-white-port&mode=read&illustrated=2');
+    await other.load();
+    const dropped = other.buildLocation({ to: other.latestLocation.pathname, search: true, params: true, hash: true, state: true, _includeValidateSearch: true } as never);
+    expect(dropped.searchStr).not.toContain('illustrated');
+    expect(dropped.searchStr).toContain('mode=read');
+  });
+
+  // specs/2026-11-10-ux1-drawing.md DX2.8, specs/2026-11-10-ux2-tariff-account.md TA3.6: «Тариф» of a refusal remembers
+  // where the author came from in the history state of its entry, never in the address; another page and an unknown place
+  // carry none.
+  it('carries the place an author came to «Тариф» from in the history state', async () => {
+    const history = createMemoryHistory({ initialEntries: ['/drawing?projectId=project-white-port'] });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createCanonKeeperRouter({ api: createMockApiClient(), queryClient }, history);
+    history.push('/tariff', { returnPlace: 'drawing' } as never);
+    await router.load();
+    expect(history.location.search).toBe('');
+    expect(routeOfLocation(router.state.location)).toMatchObject({ surface: 'tariff', returnPlace: 'drawing' });
+    history.push('/tariff', { returnPlace: 'https://example.com' } as never);
+    await router.load();
+    expect(routeOfLocation(router.state.location).returnPlace).toBeUndefined();
+    history.push('/account', { returnPlace: 'drawing' } as never);
+    await router.load();
+    expect(routeOfLocation(router.state.location).returnPlace).toBeUndefined();
+  });
+
+  // specs/2026-11-10-ux2-patterns-states.md PS4.2: where the author came from lives in the history state of the entry, never
+  // in the address; an unknown section is no way back.
+  it('carries the section an author came from by a link in the history state', async () => {
+    const history = createMemoryHistory({ initialEntries: ['/chat?projectId=project-white-port'] });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createCanonKeeperRouter({ api: createMockApiClient(), queryClient }, history);
+    history.push('/manuscript/books?projectId=project-white-port&mode=read', { from: { section: 'chat', name: 'Кто такой Сава?' } } as never);
+    await router.load();
+    expect(history.location.search).not.toContain('from');
+    expect(routeOfLocation(router.state.location).from).toEqual({ section: 'chat', name: 'Кто такой Сава?' });
+    history.push('/manuscript/books?projectId=project-white-port', { from: { section: 'https://example.com' } } as never);
+    await router.load();
+    expect(routeOfLocation(router.state.location).from).toBeUndefined();
+    history.push('/saga?projectId=project-white-port');
+    await router.load();
+    expect(routeOfLocation(router.state.location).from).toBeUndefined();
+  });
+
+  // PS4.1, PS4.3: a step from a section carries it; a page that replaces its own address keeps it; the menu drops it.
+  it('keeps the way back on a replace of the address and drops it on a step of the menu', () => {
+    const chat = { section: 'chat' as const, name: 'Кто такой Сава?' };
+    expect(backFromOfStep({ from: chat }, undefined)).toEqual(chat);
+    expect(backFromOfStep({ replace: true }, chat)).toEqual(chat);
+    expect(backFromOfStep(undefined, chat)).toBeUndefined();
+    expect(backFromOfStep({ replace: true, from: null }, chat)).toBeUndefined();
+    expect(backFromOfStep({ from: null }, chat)).toBeUndefined();
+  });
+
   it('отбрасывает версию текста из маршрута рукописи', () => {
     for (const sourceView of ['published', 'draft', 'private']) {
       const route = createAppRoute('/manuscript/books', new URLSearchParams(`projectId=project-white-port&sourceView=${sourceView}&prompt=private`));
@@ -176,9 +240,9 @@ describe('CanonKeeper TanStack Router', () => {
       createElement(CanonKeeperRouterProvider, { router }),
     ));
 
-    expect(await screen.findByText('Книги ещё не загружены или не подготовлены')).toBeTruthy();
+    expect(await screen.findByText('Здесь будут вопросы о вашей саге')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Черновик|Опубликован/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'К книгам' }));
+    fireEvent.click(screen.getByRole('link', { name: 'к книгам' }));
     await waitFor(() => expect(history.location.pathname).toBe('/manuscript/books'));
     expect(history.location.href).not.toContain('sourceView=');
     expect(history.length).toBe(3);
@@ -231,7 +295,7 @@ describe('CanonKeeper TanStack Router', () => {
     expect(route.query.get('returnTo')).toBe('/manuscript/books');
     expect(route.query.has('prompt')).toBe(false);
     expect(router.state.location.pathname).toBe('/auth/login');
-    expect(canonicalProductRoutes().map((item) => item.path)).not.toContain('/auth/login');
+    expect(sectionTable.map((item) => item.path)).not.toContain('/auth/login');
   });
 
   it('keeps only same-origin product return targets', () => {

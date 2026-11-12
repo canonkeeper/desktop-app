@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
@@ -58,10 +57,8 @@ func (tools *ReadTools) Entity(ctx context.Context, call ToolContext, input Enti
 		if err != nil {
 			return "", err
 		}
-		glossary := cards.Glossary
-		if saga.authority.Scope == researchdomain.ScopeBook {
-			glossary = sagamemory.BuildGlossary(saga.scopedCards(cards), cards.Names)
-		}
+		glossary := saga.glossaryOf(cards)
+		saga.about(sagamemory.NamedNames(name), glossary)
 		records, err := tools.projectMaterials(ctx, saga.authority.ProjectID)
 		if err != nil {
 			return "", err
@@ -266,6 +263,7 @@ func (tools *ReadTools) Timeline(ctx context.Context, call ToolContext, input Ti
 	}
 	query := sagamemory.Normalize(strings.TrimSpace(input.Query))
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		saga.about(sagamemory.NamedWords(input.Query), nil)
 		from, to, err := saga.chapterRange(input.From, input.To)
 		if err != nil {
 			return "", err

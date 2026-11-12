@@ -82,15 +82,6 @@ type ImportStore interface {
 	CreateImportStagingForActor(context.Context, CreateImportStagingForActorInput) (jobs.Job, error)
 }
 
-type ImportQueueStore interface {
-	CreateImportQueueDraftForActor(context.Context, CreateImportQueueDraftStoreInput) (ImportQueue, error)
-	GetImportQueueForActor(context.Context, GetImportQueueStoreInput) (ImportQueue, error)
-	ListImportQueuesForActor(context.Context, ListImportQueuesStoreInput) ([]ImportQueue, error)
-	PutImportQueueItemForActor(context.Context, PutImportQueueItemStoreInput) (ImportQueueItem, error)
-	SaveImportQueueDraftForActor(context.Context, SaveImportQueueDraftStoreInput) (ImportQueue, error)
-	CancelImportQueueForActor(context.Context, CancelImportQueueStoreInput) (ImportQueue, error)
-}
-
 type FinalizeImportChapterInput struct {
 	Title      string
 	Paragraphs []ParagraphInput

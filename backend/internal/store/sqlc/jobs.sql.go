@@ -631,9 +631,9 @@ SELECT
   $1, project.id, 'illustration', 'queued', '{}'::jsonb,
   $2::jsonb, NULL, NULL, $3, false,
   'interactive', 0, 3, $4, $5,
-  'active', $4, $4
+  'active', $6, $6
 FROM projects AS project
-WHERE project.id = $6 AND project.deleted_at IS NULL
+WHERE project.id = $7 AND project.deleted_at IS NULL
 RETURNING jobs.id, jobs.project_id, jobs.kind, jobs.status, jobs.progress_json, jobs.result_json, jobs.error_json, jobs.claimed_at, jobs.started_at, jobs.completed_at, jobs.cancel_requested_at, jobs.expires_at, jobs.created_at, jobs.updated_at, jobs.claim_incarnation, jobs.artifact_source_owner_id, jobs.governance_payload_state, jobs.subject_json, jobs.creator_user_id, jobs.can_cancel, jobs.queue_class, jobs.retry_count, jobs.max_attempts, jobs.next_attempt_at, jobs.creator_request_id
 `
 
@@ -641,8 +641,9 @@ type CreateIllustrationJobParams struct {
 	ID                    pgtype.UUID        `json:"id"`
 	SubjectJson           []byte             `json:"subject_json"`
 	CreatorUserID         pgtype.UUID        `json:"creator_user_id"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	NextAttemptAt         pgtype.Timestamptz `json:"next_attempt_at"`
 	ArtifactSourceOwnerID pgtype.UUID        `json:"artifact_source_owner_id"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	ProjectID             pgtype.UUID        `json:"project_id"`
 }
 
@@ -651,8 +652,9 @@ func (q *Queries) CreateIllustrationJob(ctx context.Context, arg CreateIllustrat
 		arg.ID,
 		arg.SubjectJson,
 		arg.CreatorUserID,
-		arg.CreatedAt,
+		arg.NextAttemptAt,
 		arg.ArtifactSourceOwnerID,
+		arg.CreatedAt,
 		arg.ProjectID,
 	)
 	var i Job

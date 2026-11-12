@@ -63,8 +63,8 @@ func (useCase PrepareLocalAuthor) Execute(ctx context.Context) (string, error) {
 	if userID == "" {
 		return "", errors.New("desktop: the local author has no id")
 	}
-	changes := make([]quota.OverrideChange, 0, len(quota.DefaultKeys()))
-	for _, key := range quota.DefaultKeys() {
+	changes := make([]quota.OverrideChange, 0, len(quota.Keys()))
+	for _, key := range quota.Keys() {
 		largest := key.Max()
 		changes = append(changes, quota.OverrideChange{Key: key, Value: &largest})
 	}

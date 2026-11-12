@@ -83,6 +83,37 @@ func TestCompleteRetriesRateLimitAndRejectsClientErrors(t *testing.T) {
 	}
 }
 
+// specs/2026-11-12-ux10-scene-stream.md ST1.1: Stream hands the text of the answer so far to its portions as the deltas
+// come, and "" at the start of each HTTP attempt, so what a broken attempt gave goes; the answer is the one Complete gives.
+func TestStreamHandsThePortionsAndStartsAgainOnARetry(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			// The first attempt breaks after a delta: the stream ends before its completion.
+			fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Обры\"}\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Кира \"}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"шла\"}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{}}\n\n")
+	}))
+	defer server.Close()
+	client, _ := New(Config{BaseURL: server.URL, Model: "m", WritingModel: "w"})
+	client.pause = func(int) time.Duration { return 0 }
+	var portions []string
+	text, usage, err := client.Prose().Stream(t.Context(), "", "x", func(sofar string) { portions = append(portions, sofar) })
+	if err != nil || text != "Кира шла" || usage.Calls != 2 || calls.Load() != 2 {
+		t.Fatalf("Stream() = %q, %+v, %v after %d calls", text, usage, err, calls.Load())
+	}
+	if want := []string{"", "Обры", "", "Кира ", "Кира шла"}; fmt.Sprint(portions) != fmt.Sprint(want) {
+		t.Fatalf("portions = %q, want %q", portions, want)
+	}
+	// Without portions the call is Complete as it was.
+	if text, _, err := client.Prose().Stream(t.Context(), "", "x", nil); err != nil || text != "Кира шла" {
+		t.Fatalf("Stream(nil) = %q, %v", text, err)
+	}
+}
+
 // R7.1: tokens come from response.completed; a stream without usage is one call with no tokens;
 // a retried attempt answered with 200 counts as a call too.
 func TestCompleteReportsUsage(t *testing.T) {

@@ -80,7 +80,8 @@ func hashText(value string) string {
 
 // ListStore reads the drafts of a project for one of its members.
 type ListStore interface {
-	ListChapterDrafts(ctx context.Context, actor Actor, cursor *domain.Cursor, limit int) (domain.Page, error)
+	// chat, when not empty, keeps the drafts whose proofreading began from a chapter attached in that chat (PM3.3).
+	ListChapterDrafts(ctx context.Context, actor Actor, cursor *domain.Cursor, limit int, chat string) (domain.Page, error)
 }
 
 // List is listChapterDrafts: the drafts of the project, newest first.
@@ -93,7 +94,9 @@ type PageView struct {
 	NextCursor string
 }
 
-func (useCase List) Execute(ctx context.Context, actor Actor, cursorValue string, limit int) (PageView, error) {
+// Execute reads a page; chat, when not empty, keeps the drafts proofread from chapters attached in that chat
+// (specs/2026-11-11-ux5-proofread-mode.md PM3.3).
+func (useCase List) Execute(ctx context.Context, actor Actor, cursorValue string, limit int, chat string) (PageView, error) {
 	if limit == 0 {
 		limit = defaultPageSize
 	}
@@ -108,7 +111,7 @@ func (useCase List) Execute(ctx context.Context, actor Actor, cursorValue string
 		}
 		cursor = &decoded
 	}
-	page, err := useCase.Store.ListChapterDrafts(ctx, actor, cursor, limit)
+	page, err := useCase.Store.ListChapterDrafts(ctx, actor, cursor, limit, chat)
 	if err != nil {
 		return PageView{}, err
 	}
@@ -230,8 +233,26 @@ type UpdateStore interface {
 type Update struct{ Store UpdateStore }
 
 func (useCase Update) Execute(ctx context.Context, actor Write, draftID string, expected int64, change domain.Change) (domain.Draft, error) {
-	if !actor.Proof.Valid() || expected < 1 || change.Empty() {
+	// The version «до разговора» may be kept alone, before an action of the voice that is not an edit (VO1.1); the
+	// author's variant is kept only alone, with his text or his idea (specs/2026-11-11-ux5-writing-path.md WP5.4).
+	if !actor.Proof.Valid() || expected < 1 || change.Empty() && !change.KeepVoice && change.Variant == nil {
 		return domain.Draft{}, domain.ErrInvalid
+	}
+	if variant := change.Variant; variant != nil {
+		if !change.Empty() || change.KeepVoice || change.KeepVersion || variant.Text == nil && variant.Idea == nil {
+			return domain.Draft{}, domain.ErrInvalid
+		}
+		if variant.Idea != nil && !domain.ValidBody(*variant.Idea, domain.MaxIdeaRunes) {
+			return domain.Draft{}, domain.ErrInvalid
+		}
+		if variant.Text != nil {
+			if !domain.ValidBody(*variant.Text, domain.MaxChapterRunes) {
+				return domain.Draft{}, domain.ErrInvalid
+			}
+			if err := domain.CheckMarks(*variant.Text); err != nil {
+				return domain.Draft{}, err
+			}
+		}
 	}
 	if change.Title != nil {
 		title, ok := domain.CleanTitle(*change.Title)

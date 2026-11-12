@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../../api/mock';
 import { createAppRoute, parseRoute } from '../../../shared/navigation/app-route';
 import { manuscriptSourceDestination } from '../../../shared/navigation/manuscript-route';
+import { InShell } from '../../../app/shell/AppShell.test-helpers';
 import { ManuscriptReaderMode } from './ManuscriptReaderMode';
 
 const sourceQuery = 'projectId=project-white-port&bookId=book-02&mode=read&chapterId=chapter-12';
@@ -16,12 +17,14 @@ function renderSource(search: string, configure?: (api: ReturnType<typeof create
   configure?.(api);
   const navigate = vi.fn();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  // In the shell of the root: «Поиск по книгам» is the shell's (specs/2026-11-10-ux2-shell-core.md SC1.7).
   function RoutedReader() {
     const [route, setRoute] = useState(parseRoute(`/manuscript/books?${sourceQuery}&${search}`));
-    return <ManuscriptReaderMode api={api} navigate={(path, query) => {
+    const go = (path: string, query?: Record<string, string | undefined>) => {
       navigate(path, query);
       setRoute(createAppRoute(path, query));
-    }} onLogout={vi.fn()} route={route} userName="Мира" />;
+    };
+    return <InShell api={api} navigate={go} route={route}><ManuscriptReaderMode api={api} navigate={go} route={route} /></InShell>;
   }
   render(<QueryClientProvider client={queryClient}><RoutedReader /></QueryClientProvider>);
   return { api, navigate, queryClient };
@@ -39,30 +42,31 @@ describe('Reader exact source landing', () => {
     vi.restoreAllMocks();
   });
 
-  it('does not select or scroll a paragraph from a different revision and opens current only explicitly', async () => {
+  // specs/2026-11-10-ux7-reader.md RD3.4: a stale link opens the chapter at once, from its top, with one line over it.
+  it('opens the chapter from its top for a paragraph of another revision, and no paragraph is lit or scrolled to', async () => {
     const { navigate } = renderSource('expectedRevision=1&paragraphId=p-12-03');
-    expect(await screen.findByText('Источник изменился')).toBeTruthy();
-    expect(document.querySelector('[data-paragraph-id]')).toBeNull();
+    expect(await screen.findByText(/^Глава изменилась после правки/u)).toBeTruthy();
+    expect(await screen.findByRole('document')).toBeTruthy();
+    expect(document.querySelector('[role="document"] mark')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть актуальную' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть строку' }));
     expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({
       chapterId: 'chapter-12', paragraphId: undefined, expectedRevision: undefined,
     }));
-    expect(await screen.findByRole('document')).toBeTruthy();
-    expect(screen.queryByText('Источник изменился')).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/^Глава изменилась после правки/u)).toBeNull());
   });
 
   it('never substitutes the first paragraph for an unavailable explicit paragraph', async () => {
     renderSource('paragraphId=missing-paragraph');
-    expect(await screen.findByText('Фрагмент больше не найден')).toBeTruthy();
-    expect(document.querySelector('[data-paragraph-id]')).toBeNull();
+    expect(await screen.findByText('Этого абзаца в главе больше нет — показываю главу с начала')).toBeTruthy();
+    expect(document.querySelector('[role="document"] mark')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it('does not treat an invalid expected revision as ordinary chapter navigation', async () => {
+  it('opens the chapter from its top for an invalid expected revision', async () => {
     renderSource('expectedRevision=0&paragraphId=p-12-03');
-    expect(await screen.findByText('Ссылка на источник недействительна')).toBeTruthy();
-    expect(document.querySelector('[data-paragraph-id]')).toBeNull();
+    expect(await screen.findByText('Не получилось открыть место по ссылке — показываю начало главы')).toBeTruthy();
+    expect(document.querySelector('[role="document"] mark')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
@@ -71,7 +75,7 @@ describe('Reader exact source landing', () => {
       const getChapter = api.getChapter.bind(api);
       vi.spyOn(api, 'getChapter').mockImplementation(async (...args) => ({ ...(await getChapter(...args)), contentVariant: 'draft' }));
     });
-    expect(await screen.findByText('Источник изменился')).toBeTruthy();
+    expect(await screen.findByRole('alert', { name: 'Не открылась глава' })).toBeTruthy();
     expect(screen.queryByRole('document')).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
@@ -81,7 +85,7 @@ describe('Reader exact source landing', () => {
       vi.spyOn(client, 'getChapter');
     });
     expect(await screen.findByRole('document')).toBeTruthy();
-    expect(screen.queryByText('Источник недоступен')).toBeNull();
+    expect(screen.queryByRole('status', { name: /ссылк/u })).toBeNull();
     expect(api.getChapter).toHaveBeenCalledWith('chapter-12', 'published');
     expect(api.getChapter).not.toHaveBeenCalledWith('chapter-12', 'draft');
   });
@@ -93,13 +97,12 @@ describe('Reader exact source landing', () => {
       vi.spyOn(client, 'getChapter').mockResolvedValueOnce(chapter).mockResolvedValue({ ...chapter, revision: chapter.revision + 1 });
     });
     const document = await screen.findByRole('document');
-    expect(screen.getByRole('heading', { level: 2, name: 'Белый порт' })).toBeTruthy();
-    expect(within(screen.getByRole('navigation', { name: 'Хлебные крошки' }))
-      .getByRole('button', { name: 'Книга II. Карта приливов' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Глава 12. Белый порт' })).toBeTruthy();
+    expect(screen.getByTitle('Книга II. Карта приливов').textContent).toContain('Книга 2 · Глава 12. Белый порт');
     expect(within(document).queryByRole('button', { pressed: true })).toBeNull();
     expect(api.getChapter).toHaveBeenCalledTimes(1);
     expect(scrollIntoView).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Следующая глава' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая глава: глава 13' }));
     expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({
       chapterId: 'chapter-13', expectedRevision: undefined, paragraphId: undefined,
     }));
@@ -109,22 +112,22 @@ describe('Reader exact source landing', () => {
     const { api, navigate } = renderSource('paragraphId=p-12-02');
     const result = (await api.searchProject('project-white-port', 'Мара', 'published')).data.find((item) => item.kind === 'chapter')!;
     await screen.findByRole('document');
-    fireEvent.click(screen.getByRole('button', { name: 'Глобальный поиск' }));
-    const search = await screen.findByRole('dialog', { name: 'Поиск по книге' });
+    fireEvent.click(screen.getByRole('button', { name: 'Поиск по книгам' }));
+    const search = await screen.findByRole('dialog', { name: 'Поиск по книгам' });
     fireEvent.change(within(search).getByLabelText('Запрос поиска'), { target: { value: 'Мара' } });
     fireEvent.click(within(search).getByRole('button', { name: 'Найти' }));
     fireEvent.click((await within(search).findAllByRole('button', { name: 'Открыть абзац' }))[0]!);
     expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', manuscriptSourceDestination(result.locator).query);
     await waitFor(() => expect(document.querySelector('[data-paragraph-id="p-12-03"] mark')).toBeTruthy());
-    fireEvent.click(within(screen.getAllByLabelText('Настройки чтения')[0]!).getByRole('button', { name: 'Режим фокуса' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Содержание' }));
     expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', expect.objectContaining({
-      paragraphId: 'p-12-03', expectedRevision: String(result.locator.sourceRevision),
+      paragraphId: 'p-12-03', expectedRevision: String(result.locator.sourceRevision), contents: 'chapters',
     }));
   });
 
   it('honours a server paragraph anchor that names a persisted heading', async () => {
     renderSource('expectedRevision=7&paragraphId=p-12-01');
-    await waitFor(() => expect(document.querySelector('[data-paragraph-id="p-12-01"] mark')?.textContent).toBe('Глава 12. Белый порт'));
+    await waitFor(() => expect(document.querySelector('h1[data-paragraph-id="p-12-01"] mark')?.textContent).toBe('Глава 12. Белый порт'));
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
     expect(document.querySelector('[data-paragraph-id="p-12-02"] mark')).toBeNull();
   });
@@ -139,13 +142,14 @@ describe('Reader exact source landing', () => {
     } };
     vi.spyOn(api, 'searchProject').mockResolvedValue({ ...response, data: [result] });
     await screen.findByRole('document');
-    fireEvent.click(screen.getByRole('button', { name: 'Глобальный поиск' }));
-    const search = await screen.findByRole('dialog', { name: 'Поиск по книге' });
+    fireEvent.click(screen.getByRole('button', { name: 'Поиск по книгам' }));
+    const search = await screen.findByRole('dialog', { name: 'Поиск по книгам' });
     fireEvent.change(within(search).getByLabelText('Запрос поиска'), { target: { value: 'Белый порт' } });
     fireEvent.click(within(search).getByRole('button', { name: 'Найти' }));
     fireEvent.click(await within(search).findByRole('button', { name: 'Открыть абзац' }));
     expect(navigate).toHaveBeenLastCalledWith('/manuscript/books', manuscriptSourceDestination(result.locator).query);
-    expect(await screen.findByText('Источник недоступен')).toBeTruthy();
-    expect(document.querySelector('[data-paragraph-id="p-12-03"]')).toBeNull();
+    // The chapter of the link is not in the book: the first chapter opens from its top, nothing of the old place lit.
+    expect(await screen.findByText('Главы, на которую вела ссылка, в книге больше нет — показываю первую главу')).toBeTruthy();
+    expect(document.querySelector('[role="document"] mark')).toBeNull();
   });
 });

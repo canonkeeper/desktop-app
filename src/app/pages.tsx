@@ -16,27 +16,23 @@ const AuthorMemoryPage = lazy(() => importAuthorMemoryPage().then((module) => ({
 /** The pages of the open sections, the same in every edition (specs/2026-11-07-desktop-app.md DA2.8). */
 export const openPages = {
   manuscript: {
-    render: ({ api, navigate, onLogout, route, user }) => (
-      <ManuscriptPage api={api} navigate={navigate} onLogout={onLogout} route={route} userName={user.displayName} />
-    ),
+    render: ({ api, navigate, route }) => <ManuscriptPage api={api} navigate={navigate} route={route} />,
     preload: importManuscriptPage,
   },
   chat: {
-    render: ({ api, navigate, onLogout, route, user }) => (
-      <ChatPage api={api} navigate={navigate} onLogout={onLogout} route={route} userName={user.displayName} />
-    ),
+    render: ({ api, navigate, route }) => <ChatPage api={api} navigate={navigate} route={route} />,
     preload: importChatPage,
   },
   notes: {
-    render: ({ api, navigate, onLogout, route, user }) => <NotesPage apiClient={api} user={user} route={route} navigate={navigate} onLogout={onLogout} />,
+    render: ({ api, navigate, route, user }) => <NotesPage apiClient={api} user={user} route={route} navigate={navigate} />,
     preload: importNotesPage,
   },
   saga: {
-    render: ({ api, navigate, onLogout, route, user }) => <SagaPage api={api} navigate={navigate} onLogout={onLogout} route={route} userName={user.displayName} />,
+    render: ({ api, navigate, route }) => <SagaPage api={api} navigate={navigate} route={route} />,
     preload: importSagaPage,
   },
   memory: {
-    render: ({ api, navigate, onLogout, route, user }) => <AuthorMemoryPage api={api} navigate={navigate} onLogout={onLogout} route={route} userName={user.displayName} />,
+    render: ({ api, navigate, route }) => <AuthorMemoryPage api={api} navigate={navigate} route={route} />,
     preload: importAuthorMemoryPage,
   },
 } satisfies Record<string, EditionPage>;

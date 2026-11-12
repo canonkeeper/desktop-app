@@ -73,10 +73,18 @@ func NewHandler(service Service, memory AuthorMemory, tools ...Tool) *Handler {
 const skillName = "canonkeeper-research-chat"
 
 // Bundle is the chat skill with the reading and memory tools every turn offers, the tools of the build (the site
-// adds saga.image), the reading of the chapter attached to a question, and the handler of them all.
-func Bundle(reads Service, memory AuthorMemory, extra ...Tool) service.Bundle {
+// adds saga.image), the reading of the chapter attached to a question, and the handler of them all. saga.threads stands
+// in the set only of a build with the thread layer (specs/2026-11-12-desk-window.md WN2.1): a build without it — the
+// desktop until it has one — offers no tool of an empty layer, and its skill reads no section of it.
+func Bundle(reads Service, memory AuthorMemory, layer bool, extra ...Tool) service.Bundle {
 	handler := NewHandler(reads, memory, extra...)
-	tools := append(append([]agent.ToolSpec(nil), readToolSpecs...), memoryToolSpecs...)
+	var tools []agent.ToolSpec
+	for _, spec := range readToolSpecs {
+		if spec.Name != threadsTool || layer {
+			tools = append(tools, spec)
+		}
+	}
+	tools = append(tools, memoryToolSpecs...)
 	for _, tool := range extra {
 		tools = append(tools, tool.Spec)
 	}
@@ -86,6 +94,9 @@ func Bundle(reads Service, memory AuthorMemory, extra ...Tool) service.Bundle {
 }
 
 const toolNamespace = researchdomain.ToolNamespace
+
+// threadsTool reads the thread layer of the saga: a tool of a build that has the layer.
+const threadsTool = "threads"
 
 // Handle decodes one tool call, runs it and returns the text the model reads. Correctable
 // mistakes return a typed error the model can fix in the same run. A panic of the tool becomes
@@ -175,7 +186,7 @@ func (handler *Handler) handle(ctx context.Context, call agent.ToolCall) (agent.
 			return invalidArguments("$", "аргументы не соответствуют схеме timeline"), nil
 		}
 		output, err = handler.service.Timeline(ctx, toolContext, service.TimelineInput{From: input.From, To: input.To, Query: input.Query})
-	case "threads":
+	case threadsTool:
 		var input threadsInput
 		if decode(call.Arguments, &input) != nil {
 			return invalidArguments("$", "аргументы не соответствуют схеме threads"), nil

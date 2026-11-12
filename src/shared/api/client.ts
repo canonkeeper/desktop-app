@@ -4,6 +4,7 @@ import type {
   ApiRequestOptions,
   BookCoverUploadOptions,
   BookExportFormat,
+  BookExportOptions,
   CanonKeeperApiClient,
   CursorListOptions,
   DeletedSourceListOptions,
@@ -14,6 +15,7 @@ import type {
   GetSagaContentsOptions,
   GetSagaMapNodeOptions,
   SearchSagaMapOptions,
+  GetSagaFirstQuestionsOptions,
   GetSagaMapOptions,
   ListSagaMapHiddenOptions,
   ImportBookInput,
@@ -24,10 +26,12 @@ import type {
   ListChatSessionsOptions,
   AuthorMaterialsImportInput,
   ChapterFileInput,
+  ProofreadChapterInput,
   ListAuthorMaterialsOptions,
   ListAuthorMemoryOptions,
   ListChapterDraftsOptions,
   ListDrawingsOptions,
+  GetDrawingsFacetsOptions,
   ListProjectImagesOptions,
   ListProjectJobsOptions,
   ListSagaGlossaryOptions,
@@ -49,15 +53,25 @@ import {
   type CanonKeeperApiClientOptions,
 } from './transport';
 
+// The media type of each kind of a book file (specs/2026-11-10-book-file-kinds.md K1.2): browsers name a text, an RTF
+// or a packed FB2 differently, so a file goes with the type of the end of its name, the longest first.
 const canonicalImportMimeTypes: Record<string, string> = {
   '.epub': 'application/epub+zip',
   '.fb2': 'application/x-fictionbook+xml',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.rtf': 'application/rtf',
+  '.odt': 'application/vnd.oasis.opendocument.text',
+  '.fb2.zip': 'application/zip',
 };
 
 function canonicalImportFile(file: File) {
-  const mimeType = canonicalImportMimeTypes[file.name.slice(file.name.lastIndexOf('.')).toLowerCase()];
-  return mimeType ? new File([file], file.name, { type: mimeType }) : file;
+  const name = file.name.trim().toLowerCase();
+  const kind = Object.keys(canonicalImportMimeTypes)
+    .filter((suffix) => name.endsWith(suffix))
+    .sort((left, right) => right.length - left.length)[0];
+  return kind ? new File([file], file.name, { type: canonicalImportMimeTypes[kind] }) : file;
 }
 
 // Методы клиента отражают операции контракта и делегируют всю сетевую работу транспорту.
@@ -82,6 +96,14 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'resetPassword', '200'>('resetPassword', { body });
   }
 
+  changeUnverifiedEmail(body: OperationRequest<'changeUnverifiedEmail'>) {
+    return this.request<'changeUnverifiedEmail', '200'>('changeUnverifiedEmail', { body });
+  }
+
+  checkPasswordResetLink(body: OperationRequest<'checkPasswordResetLink'>) {
+    return this.request<'checkPasswordResetLink', '200'>('checkPasswordResetLink', { body });
+  }
+
   async changePassword(body: OperationRequest<'changePassword'>) {
     await this.request<'changePassword', '204'>('changePassword', { body });
   }
@@ -90,12 +112,28 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     await this.request<'logoutEverywhere', '204'>('logoutEverywhere');
   }
 
+  setAccountName(body: OperationRequest<'setAccountName'>) {
+    return this.request<'setAccountName', '200'>('setAccountName', { body });
+  }
+
+  getAccountSessions(options: ApiRequestOptions = {}) {
+    return this.request<'getAccountSessions', '200'>('getAccountSessions', options);
+  }
+
+  logoutOtherSessions() {
+    return this.request<'logoutOtherSessions', '200'>('logoutOtherSessions');
+  }
+
   async acceptLegalDocuments(body: OperationRequest<'acceptLegalDocuments'>) {
     await this.request<'acceptLegalDocuments', '204'>('acceptLegalDocuments', { body });
   }
 
   getAccountQuota(options: ApiRequestOptions = {}) {
     return this.request<'getAccountQuota', '200'>('getAccountQuota', options);
+  }
+
+  listRecentlyDeleted() {
+    return this.request<'listRecentlyDeleted', '200'>('listRecentlyDeleted');
   }
 
   listAdminWriters(options: ApiRequestOptions = {}) {
@@ -130,12 +168,60 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'setAdminWriterIllustrations', '200'>('setAdminWriterIllustrations', { params: { path: { userId } }, body });
   }
 
-  listAdminIllustrationRequests(options: ApiRequestOptions = {}) {
-    return this.request<'listAdminIllustrationRequests', '200'>('listAdminIllustrationRequests', { signal: options.signal });
+  listSubscriptionTiers(options: ApiRequestOptions = {}) {
+    return this.request<'listSubscriptionTiers', '200'>('listSubscriptionTiers', { signal: options.signal });
   }
 
-  declineAdminIllustrationRequest(requestId: string, body: OperationRequest<'declineAdminIllustrationRequest'>) {
-    return this.request<'declineAdminIllustrationRequest', '200'>('declineAdminIllustrationRequest', { params: { path: { requestId } }, body });
+  getAccountPlan(options: ApiRequestOptions = {}) {
+    return this.request<'getAccountPlan', '200'>('getAccountPlan', { signal: options.signal });
+  }
+
+  getAccountLetters(options: ApiRequestOptions = {}) {
+    return this.request<'getAccountLetters', '200'>('getAccountLetters', { signal: options.signal });
+  }
+
+  setAccountLetters(body: OperationRequest<'setAccountLetters'>) {
+    return this.request<'setAccountLetters', '200'>('setAccountLetters', { body });
+  }
+
+  listAdminSubscriptionTiers(options: ApiRequestOptions = {}) {
+    return this.request<'listAdminSubscriptionTiers', '200'>('listAdminSubscriptionTiers', { signal: options.signal });
+  }
+
+  setAdminSubscriptionTier(tier: Schema<'SubscriptionTierCode'>, body: OperationRequest<'setAdminSubscriptionTier'>) {
+    return this.request<'setAdminSubscriptionTier', '200'>('setAdminSubscriptionTier', { params: { path: { tier } }, body });
+  }
+
+  grantAdminWriterTier(userId: string, body: OperationRequest<'grantAdminWriterTier'>) {
+    return this.request<'grantAdminWriterTier', '201'>('grantAdminWriterTier', { params: { path: { userId } }, body });
+  }
+
+  endAdminWriterPeriod(userId: string, periodId: string) {
+    return this.request<'endAdminWriterPeriod', '200'>('endAdminWriterPeriod', { params: { path: { userId, periodId } } });
+  }
+
+  checkSubscriptionKey(body: OperationRequest<'checkSubscriptionKey'>) {
+    return this.request<'checkSubscriptionKey', '200'>('checkSubscriptionKey', { body });
+  }
+
+  redeemSubscriptionKey(body: OperationRequest<'redeemSubscriptionKey'>) {
+    return this.request<'redeemSubscriptionKey', '200'>('redeemSubscriptionKey', { body });
+  }
+
+  listAdminKeyBatches(options: ApiRequestOptions = {}) {
+    return this.request<'listAdminKeyBatches', '200'>('listAdminKeyBatches', { signal: options.signal });
+  }
+
+  createAdminKeyBatch(body: OperationRequest<'createAdminKeyBatch'>) {
+    return this.requestFile('createAdminKeyBatch', undefined, `canonkeeper-${body.tier}-${body.count}.txt`, body);
+  }
+
+  revokeAdminKeyBatch(batchId: string) {
+    return this.request<'revokeAdminKeyBatch', '200'>('revokeAdminKeyBatch', { params: { path: { batchId } } });
+  }
+
+  resetAdminWriterTrials(userId: string, body: OperationRequest<'resetAdminWriterTrials'>) {
+    return this.request<'resetAdminWriterTrials', '200'>('resetAdminWriterTrials', { params: { path: { userId } }, body });
   }
 
   getContacts(options: ApiRequestOptions = {}) {
@@ -251,11 +337,6 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'getIllustrationAccess', '200'>('getIllustrationAccess', { signal: options.signal });
   }
 
-  createIllustrationAccessRequest(body: OperationRequest<'createIllustrationAccessRequest'>) {
-    return this.request<'createIllustrationAccessRequest', '201'>('createIllustrationAccessRequest', { body });
-  }
-
-
   login(body: OperationRequest<'loginUser'>) {
     return this.request<'loginUser', '200'>('loginUser', { body });
   }
@@ -320,6 +401,10 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
 
   createProject(body: OperationRequest<'createProject'>) {
     return this.request<'createProject', '201'>('createProject', { body });
+  }
+
+  openDemoSaga() {
+    return this.request<'openDemoSaga', '200'>('openDemoSaga');
   }
 
   getProject(projectId: string) {
@@ -416,6 +501,14 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'restoreBook', '200'>('restoreBook', { params: { path: { bookId } } });
   }
 
+  previewBookUpdateRevert(bookId: string) {
+    return this.request<'previewBookUpdateRevert', '200'>('previewBookUpdateRevert', { params: { path: { bookId } } });
+  }
+
+  revertBookUpdate(bookId: string, body: OperationRequest<'revertBookUpdate'>) {
+    return this.request<'revertBookUpdate', '200'>('revertBookUpdate', { params: { path: { bookId } }, body });
+  }
+
   uploadBookCover(bookId: string, file: File, options: BookCoverUploadOptions = {}) {
     const form = new FormData();
     form.append('file', file);
@@ -432,8 +525,14 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'setBookCoverFromImage', '200'>('setBookCoverFromImage', { params: { path: { bookId } }, body: { imageNumber } });
   }
 
-  getBookExport(bookId: string, format: BookExportFormat) {
-    return this.requestFile('getBookExport', { path: { bookId }, query: { format } }, `Книга.${format}`);
+  getBookExport(bookId: string, format: BookExportFormat, options: BookExportOptions = {}) {
+    // Without the drawings nothing is sent: the file is the one it was before them (BP2.1).
+    const query = options.drawings ? { format, drawings: true } : { format };
+    return this.requestFile('getBookExport', { path: { bookId }, query }, `Книга.${format}`);
+  }
+
+  getBookDrawingCounts(projectId: string, options: Pick<ApiRequestOptions, 'signal'> = {}) {
+    return this.request<'getBookDrawingCounts', '200'>('getBookDrawingCounts', { params: { path: { projectId } }, signal: options.signal });
   }
 
   getImportConstraints(projectId: string) {
@@ -478,10 +577,10 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     );
   }
 
-  updateImportQueue(projectId: string, queueId: string, body: OperationRequest<'updateImportQueue'>) {
-    return this.request<'updateImportQueue', '200'>('updateImportQueue', {
-      params: { path: { projectId, queueId } },
-      body,
+  /** «Пропустить» of a volume that did not read (specs/2026-11-11-ux7-upload.md UP3.2). */
+  skipImportQueueItem(projectId: string, queueId: string, itemId: string) {
+    return this.request<'skipImportQueueItem', '200'>('skipImportQueueItem', {
+      params: { path: { projectId, queueId, itemId } },
     });
   }
 
@@ -555,6 +654,12 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'searchSagaMap', '200'>('searchSagaMap', { params: { path: { projectId }, query }, signal });
   }
 
+  /** The questions an empty chat offers, with the names of the book (specs/2026-11-10-first-questions.md FQ1.4). */
+  getSagaFirstQuestions(projectId: string, options: GetSagaFirstQuestionsOptions) {
+    const { signal, ...query } = options;
+    return this.request<'getSagaFirstQuestions', '200'>('getSagaFirstQuestions', { params: { path: { projectId }, query }, signal });
+  }
+
   /** What the author took off the map (specs/2026-11-04-saga-map.md, R11.3). */
   listSagaMapHidden(projectId: string, options: ListSagaMapHiddenOptions) {
     const { signal, ...query } = options;
@@ -582,6 +687,12 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
   listAuthorMaterials(projectId: string, options: ListAuthorMaterialsOptions = {}) {
     const { signal, ...query } = options;
     return this.request<'listAuthorMaterials', '200'>('listAuthorMaterials', { params: { path: { projectId }, query }, signal });
+  }
+
+  createAuthorMaterial(projectId: string, body: OperationRequest<'createAuthorMaterial'>, options: RequiredIdempotencyOptions) {
+    return this.request<'createAuthorMaterial', '201'>('createAuthorMaterial', {
+      params: { path: { projectId } }, body, headers: idempotencyHeaders(options, 'createAuthorMaterial'), signal: options.signal,
+    });
   }
 
   updateAuthorMaterial(projectId: string, materialId: string, body: OperationRequest<'updateAuthorMaterial'>) {
@@ -673,6 +784,11 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'updateChapterDraftPlan', '200'>('updateChapterDraftPlan', { params: { path: { projectId, draftId } }, body });
   }
 
+  /** «Оставить как было» of a plan «Переписать отсюда до конца» that came (specs/2026-11-11-ux9-writing-b.md WB1.2). */
+  withdrawChapterDraftPlan(projectId: string, draftId: string, body: OperationRequest<'withdrawChapterDraftPlan'>) {
+    return this.request<'withdrawChapterDraftPlan', '200'>('withdrawChapterDraftPlan', { params: { path: { projectId, draftId } }, body });
+  }
+
   /** The author's choices about the pack (WA2.5). */
   updateChapterDraftMoment(projectId: string, draftId: string, body: OperationRequest<'updateChapterDraftMoment'>) {
     return this.request<'updateChapterDraftMoment', '200'>('updateChapterDraftMoment', { params: { path: { projectId, draftId } }, body });
@@ -726,9 +842,9 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'revertChapterFromDraft', '200'>('revertChapterFromDraft', { params: { path: { projectId, draftId } }, body });
   }
 
-  startChapterProofread(projectId: string, input: ChapterFileInput & { title?: string; bookId?: string; afterChapterId?: string }, options: RequiredIdempotencyOptions) {
+  startChapterProofread(projectId: string, input: ProofreadChapterInput & { title?: string; bookId?: string; afterChapterId?: string }, options: RequiredIdempotencyOptions) {
     idempotencyHeaders(options, 'startChapterProofread');
-    const form = chapterForm(input);
+    const form = 'chatId' in input && input.chatId ? chatChapterForm(input.chatId, input.attachment) : chapterForm(input as ChapterFileInput);
     if (input.title) form.append('title', input.title);
     if (input.bookId) form.append('bookId', input.bookId);
     if (input.afterChapterId) form.append('afterChapterId', input.afterChapterId);
@@ -742,6 +858,16 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     const chapter = chapterForm(input);
     for (const [name, value] of chapter.entries()) form.append(name, value);
     return this.postMultipart<'loadChapterDraftFile', OperationResponse<'loadChapterDraftFile', '200'>>('loadChapterDraftFile', { projectId, draftId }, form, options);
+  }
+
+  // The look of the author's Word file for the original of a draft (specs/2026-11-07-writing-proofread.md, PR9): the same
+  // file gives the same original, so it carries no key.
+  takeChapterDraftOriginalLook(projectId: string, draftId: string, input: { file: File }) {
+    const form = new FormData();
+    form.append('file', input.file);
+    return this.postMultipart<'takeChapterDraftOriginalLook', OperationResponse<'takeChapterDraftOriginalLook', '200'>>(
+      'takeChapterDraftOriginalLook', { projectId, draftId }, form, {},
+    );
   }
 
   applyChapterDraftNotes(projectId: string, draftId: string, body: OperationRequest<'applyChapterDraftNotes'>) {
@@ -821,6 +947,12 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     });
   }
 
+  changeProjectImageAngle(projectId: string, number: number, body: OperationRequest<'changeProjectImageAngle'>, options: RequiredIdempotencyOptions) {
+    return this.request<'changeProjectImageAngle', '201'>('changeProjectImageAngle', {
+      params: { path: { projectId, number } }, body, headers: idempotencyHeaders(options, 'changeProjectImageAngle'), signal: options?.signal,
+    });
+  }
+
 
   deleteProjectImages(projectId: string, body: OperationRequest<'deleteProjectImages'>, options: RequiredIdempotencyOptions) {
     return this.request<'deleteProjectImages', '200'>('deleteProjectImages', {
@@ -840,6 +972,21 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     });
   }
 
+  /**
+   * The main picture of drawing K in its full size, as a file for the archive of «Скачать (N)»
+   * (specs/2026-11-12-ux10-drawing-ops.md DO3.1): the file of getProjectImageFile, read here and not shown.
+   */
+  downloadProjectImage(projectId: string, number: number) {
+    return this.requestFile('getProjectImageFile', { path: { projectId, number }, query: { size: 'full' } }, `${number}.png`);
+  }
+
+  /** «Нарисовать этот ещё раз» of a variant that did not come out (specs/2026-11-12-ux10-drawing-ops.md DO1). */
+  redrawProjectImageVariant(projectId: string, number: number, body: OperationRequest<'redrawProjectImageVariant'>, options: RequiredIdempotencyOptions) {
+    return this.request<'redrawProjectImageVariant', '200'>('redrawProjectImageVariant', {
+      params: { path: { projectId, number } }, body, headers: idempotencyHeaders(options, 'redrawProjectImageVariant'), signal: options?.signal,
+    });
+  }
+
   chooseProjectImageLayerVariant(projectId: string, number: number, layerId: string, options: RequiredIdempotencyOptions) {
     return this.request<'chooseProjectImageLayerVariant', '200'>('chooseProjectImageLayerVariant', {
       params: { path: { projectId, number, layerId } }, headers: idempotencyHeaders(options, 'chooseProjectImageLayerVariant'), signal: options?.signal,
@@ -852,6 +999,11 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
       params: query ? { path: { projectId }, query } : { path: { projectId } },
       signal,
     });
+  }
+
+  getDrawingsFacets(projectId: string, options: GetDrawingsFacetsOptions = {}) {
+    const { signal, ...query } = options;
+    return this.request<'getDrawingsFacets', '200'>('getDrawingsFacets', { params: { path: { projectId }, query }, signal });
   }
 
   createDrawing(projectId: string, body: OperationRequest<'createDrawing'>, options: RequiredIdempotencyOptions) {
@@ -870,6 +1022,15 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
 
   async deleteDrawing(projectId: string, drawingId: string) {
     await this.request<'deleteDrawing', '204'>('deleteDrawing', { params: { path: { projectId, drawingId } } });
+  }
+
+  restoreDrawing(projectId: string, drawingId: string) {
+    return this.request<'restoreDrawing', '200'>('restoreDrawing', { params: { path: { projectId, drawingId } } });
+  }
+
+  /** «Отменить» of a drawing put off until the service of drawings is free (DO2.2). */
+  cancelDeferredDrawing(projectId: string, drawingId: string) {
+    return this.request<'cancelDeferredDrawing', '200'>('cancelDeferredDrawing', { params: { path: { projectId, drawingId } } });
   }
 
   drawDrawing(projectId: string, drawingId: string, body: OperationRequest<'drawDrawing'>, options: RequiredIdempotencyOptions) {
@@ -1071,6 +1232,14 @@ export function createCanonKeeperApiClient(options?: CanonKeeperApiClientOptions
 }
 
 /** One file or one text of a chapter as the form of its request (specs/2026-11-07-writing-proofread.md, PR2). */
+/** A chapter attached in a chat, named by its chat and number (CA5.5). */
+function chatChapterForm(chatId: string, attachment: number) {
+  const form = new FormData();
+  form.append('chatId', chatId);
+  form.append('attachment', String(attachment));
+  return form;
+}
+
 function chapterForm(input: ChapterFileInput) {
   const form = new FormData();
   if (input.file) form.append('file', input.file, input.file.name);

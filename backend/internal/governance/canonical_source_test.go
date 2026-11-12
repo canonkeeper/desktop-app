@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"math"
 	"testing"
+
+	"canonkeeper/backend/internal/domain/textface"
 )
 
 const (
@@ -237,4 +239,17 @@ func canonicalTestDigest(value byte) Digest {
 	var digest Digest
 	digest[0] = value
 	return digest
+}
+
+// specs/2026-11-08-italic-bold-in-text.md TF2.4: the digest of a chapter reads the plain text of its paragraphs, so a
+// change of the author's italic and bold alone keeps it.
+func TestTheDigestOfAChapterKeepsAChangeOfFaces(t *testing.T) {
+	digest := func(markdown string) Digest {
+		return mustCanonicalChapterHash(t, []CanonicalParagraphContent{
+			{ParagraphID: canonicalTestParagraphA, Order: 0, Content: textface.Plain(textface.Marked(textface.FromMarkdown(markdown))).Text},
+		})
+	}
+	if digest("Кайл *вошёл* в **кузницу**.") != digest("Кайл вошёл в кузницу.") {
+		t.Fatal("a change of faces changed the digest of the chapter")
+	}
 }

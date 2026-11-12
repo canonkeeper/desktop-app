@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { IndexingStatus, ProjectJob } from '../../../entities/manuscript/api';
-import { activeJobBookId, unfinishedIndexingBookId } from './shelf-jobs';
+import type { ProjectJob } from '../../../entities/manuscript/api';
+import { activeJobBookId, isNewBookOnItsWay } from './shelf-jobs';
 
 function makeJob(overrides: Partial<ProjectJob> = {}): ProjectJob {
   return {
@@ -22,57 +22,6 @@ function makeJob(overrides: Partial<ProjectJob> = {}): ProjectJob {
 }
 
 describe('shelf Jobs reconciliation', () => {
-  it('takes unfinished book identity only from the selected envelope', () => {
-    const status: IndexingStatus = {
-      draft: {
-        exists: true,
-        context: {
-          state: 'partial',
-          currentBook: null,
-          retryableFailedBook: { bookId: 'book-draft-failed' },
-        },
-      },
-      published: {
-        exists: true,
-        context: {
-          state: 'processing',
-          currentBook: { bookId: 'book-published-current', position: 1, total: 2 },
-          retryableFailedBook: { bookId: 'book-published-failed' },
-        },
-      },
-      steps: [{
-        bookId: 'book-stale-step',
-        canRetry: true,
-        kind: 'cards',
-        progress: null,
-        sourceView: 'draft',
-        status: 'failed',
-      }],
-    };
-
-    expect(unfinishedIndexingBookId(status, 'published')).toBe('book-published-current');
-    expect(unfinishedIndexingBookId(status, 'draft')).toBe('book-draft-failed');
-  });
-
-  it('does not use project-wide steps as a per-view book identity', () => {
-    const status: IndexingStatus = {
-      published: {
-        exists: true,
-        context: { state: 'partial', currentBook: null, retryableFailedBook: null },
-      },
-      steps: [{
-        bookId: 'book-stale-draft',
-        canRetry: true,
-        kind: 'cards',
-        progress: null,
-        sourceView: 'draft',
-        status: 'failed',
-      }],
-    };
-
-    expect(unfinishedIndexingBookId(status, 'published')).toBeNull();
-  });
-
   it('links an active import to its book card and leaves system cards Jobs unbound', () => {
     const importJob = makeJob({
       result: {
@@ -89,4 +38,19 @@ describe('shelf Jobs reconciliation', () => {
     expect(activeJobBookId(cardsJob)).toBeNull();
   });
 
+});
+
+// specs/2026-11-08-deletion-stops-processing.md R3.1, R3.2: one row per kind of work, the stopping Jobs apart.
+
+// specs/2026-11-11-import-speed.md IS2.3: a new book on its way to the shelf by a single import, while it is in work.
+describe('a new book on its way to the shelf', () => {
+  it('is a single import of a new book in work', () => {
+    expect(isNewBookOnItsWay(makeJob())).toBe(true);
+    expect(isNewBookOnItsWay(makeJob({ status: 'queued' }))).toBe(true);
+    expect(isNewBookOnItsWay(makeJob({ status: 'succeeded' }))).toBe(false);
+    expect(isNewBookOnItsWay(makeJob({ subject: { type: 'import', id: 'import-job', projectId: 'project-1', bookId: 'book-1' } }))).toBe(false);
+    expect(isNewBookOnItsWay(makeJob({
+      subject: { type: 'import', id: 'import-job', projectId: 'project-1', importQueueId: 'queue-1', importQueueItemId: 'item-1' },
+    }))).toBe(false);
+  });
 });

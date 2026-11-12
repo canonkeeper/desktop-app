@@ -49,12 +49,20 @@ type projectQuota struct {
 }
 
 type accountQuota struct {
-	Day           string         `json:"day"`
-	ResetsAt      string         `json:"resetsAt"`
-	ChatTurns     counter        `json:"chatTurns"`
-	ActiveTurns   counter        `json:"activeTurns"`
-	Imports       counter        `json:"imports"`
-	Images        counter        `json:"images"`
+	Day         string  `json:"day"`
+	ResetsAt    string  `json:"resetsAt"`
+	ChatTurns   counter `json:"chatTurns"`
+	ActiveTurns counter `json:"activeTurns"`
+	Imports     counter `json:"imports"`
+	Images      counter `json:"images"`
+	// The other counters of a day a refusal can meet (specs/2026-11-10-ux2-tariff-account.md TA2.3): the author's own
+	// pictures, the scenes, checks and proofreadings of «Письмо», the messages of the helpers of «Рисование» and «Письмо»
+	// and «Переписать».
+	ImageUploads  counter        `json:"imageUploads"`
+	ChapterDrafts counter        `json:"chapterDrafts"`
+	DrawingTurns  counter        `json:"drawingTurns"`
+	DraftTurns    counter        `json:"draftTurns"`
+	DraftRewrites counter        `json:"draftRewrites"`
 	Projects      counter        `json:"projects"`
 	Account       sources        `json:"account"`
 	OwnedProjects []projectQuota `json:"ownedProjects"`
@@ -92,13 +100,18 @@ func response(account domain.Account) accountQuota {
 			limits.ProjectBooks, limits.ProjectChapters, limits.ProjectCharacters)})
 	}
 	return accountQuota{
-		Day:         account.Day.Format(time.DateOnly),
-		ResetsAt:    account.ResetsAt.UTC().Format(time.RFC3339),
-		ChatTurns:   counter{Used: account.ChatTurns, Limit: limits.ChatTurnsPerDay},
-		ActiveTurns: counter{Used: account.ActiveTurns, Limit: limits.ActiveTurns},
-		Imports:     counter{Used: account.Imports, Limit: limits.ImportsPerDay},
-		Images:      counter{Used: account.Images, Limit: limits.ImagesPerDay},
-		Projects:    counter{Used: account.Projects, Limit: limits.Projects},
+		Day:           account.Day.Format(time.DateOnly),
+		ResetsAt:      account.ResetsAt.UTC().Format(time.RFC3339),
+		ChatTurns:     counter{Used: account.ChatTurns, Limit: limits.ChatTurnsPerDay},
+		ActiveTurns:   counter{Used: account.ActiveTurns, Limit: limits.ActiveTurns},
+		Imports:       counter{Used: account.Imports, Limit: limits.ImportsPerDay},
+		Images:        counter{Used: account.Images, Limit: limits.ImagesPerDay},
+		ImageUploads:  counter{Used: account.ImageUploads, Limit: limits.ImageUploadsPerDay},
+		ChapterDrafts: counter{Used: account.ChapterDrafts, Limit: limits.ChapterDraftsPerDay},
+		DrawingTurns:  counter{Used: account.DrawingTurns, Limit: limits.DrawingTurnsPerDay},
+		DraftTurns:    counter{Used: account.DraftTurns, Limit: limits.DraftTurnsPerDay},
+		DraftRewrites: counter{Used: account.DraftRewrites, Limit: limits.DraftRewritesPerDay},
+		Projects:      counter{Used: account.Projects, Limit: limits.Projects},
 		Account: sourcesOf(account.Sources,
 			limits.AccountBooks, limits.AccountChapters, limits.AccountCharacters),
 		OwnedProjects: owned,

@@ -16,9 +16,10 @@ type IndexedVersions interface {
 	IndexedVersions(ctx context.Context) ([]TextVersion, error)
 }
 
-// CardsQueue queues the cards Job of one text version; a Job already waiting is reused.
+// CardsQueue queues the cards Job of one text version; a Job already waiting is reused. It reports whether a Job waits
+// for the version: a build whose helper is not connected queues none (specs/2026-11-12-desk-window.md WN3.4).
 type CardsQueue interface {
-	QueueCards(ctx context.Context, version TextVersion) error
+	QueueCards(ctx context.Context, version TextVersion) (bool, error)
 }
 
 type selectionSource interface {
@@ -57,8 +58,8 @@ func NewQueueMissingCards(versions IndexedVersions, text selectionSource, cards 
 	return &QueueMissingCards{versions: versions, text: text, cards: cards, queue: queue}
 }
 
-// Execute returns how many versions it queued cards for; one failing version does not stop
-// the others.
+// Execute returns how many versions it queued cards for — a version the queue left without a Job is not counted; one
+// failing version does not stop the others.
 func (useCase *QueueMissingCards) Execute(ctx context.Context) (int, error) {
 	versions, err := useCase.versions.IndexedVersions(ctx)
 	if err != nil {
@@ -69,7 +70,8 @@ func (useCase *QueueMissingCards) Execute(ctx context.Context) (int, error) {
 	for _, version := range versions {
 		queue, err := useCase.needsJob(ctx, version)
 		if err == nil && queue {
-			if err = useCase.queue.QueueCards(ctx, version); err == nil {
+			var waits bool
+			if waits, err = useCase.queue.QueueCards(ctx, version); waits {
 				queued++
 			}
 		}

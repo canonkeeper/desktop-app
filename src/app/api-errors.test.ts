@@ -18,7 +18,7 @@ describe('classifyAuthFailure', () => {
   it('keeps auth failures distinguishable by status and network shape', () => {
     expect(classifyAuthFailure(statusError(401, 'invalid credentials', 'auth.invalid_credentials'), 'fallback')).toEqual({
       kind: 'unauthorized',
-      message: 'Неверный email или пароль.',
+      message: 'Проверьте почту и пароль.',
     });
     expect(classifyAuthFailure(statusError(401, 'authentication required', 'auth.session_required'), 'fallback')).toEqual({
       kind: 'unauthorized',
@@ -45,5 +45,20 @@ describe('classifyAuthFailure', () => {
     });
     expect(classifyAuthFailure(throttled('20'), 'fallback')).toMatchObject({ message: 'Слишком много попыток. Попробуйте снова через минуту.' });
     expect(classifyAuthFailure(throttled(null), 'fallback')).toMatchObject({ message: 'Слишком много попыток. Попробуйте снова чуть позже.' });
+  });
+});
+
+// specs/2026-11-10-ux2-patterns-refusals.md PR3.3: the cause of an error in the words of the author.
+describe('loadFailureWords', () => {
+  it('names no connection, a busy service and a failure on our side without technical words', async () => {
+    const { loadFailureWords, publicApiErrorMessage } = await import('../entities/api-errors');
+    expect(loadFailureWords(new NetworkApiError(new Error('down')))).toEqual({ cause: 'Нет связи с сервером. Проверьте интернет.', code: null });
+    expect(loadFailureWords(statusError(503))).toEqual({ cause: 'Сервис сейчас перегружен, попробуйте через минуту.', code: 'req_test' });
+    expect(loadFailureWords(statusError(500))).toEqual({ cause: 'Это сбой на нашей стороне, попробуйте через минуту.', code: 'req_test' });
+    expect(loadFailureWords(statusError(403)).cause).toBe('У вас нет доступа к этой саге.');
+    expect(publicApiErrorMessage(statusError(502), 'fallback')).toBe('Сервис сейчас перегружен, попробуйте через минуту.');
+    for (const status of [401, 403, 404, 429, 500, 502, 503]) {
+      expect(loadFailureWords(statusError(status)).cause).not.toMatch(/ошибка сервера|запрос|статус|server|status/iu);
+    }
   });
 });

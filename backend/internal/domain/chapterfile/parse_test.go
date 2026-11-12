@@ -60,7 +60,9 @@ func TestAWordFileIsReadParagraphByParagraphWithItsFaces(t *testing.T) {
 		t.Fatalf("format %q, title %q", document.Format, document.TitleText())
 	}
 	want := []Paragraph{
-		{Runs: []Run{{Text: "Кайл "}, {Text: "шёл", Italic: true}, {Text: " к реке", Bold: true}, {Text: ", не оглядываясь."}}},
+		// Each run keeps its properties as they stood (PR1.7): runs join only when they are equal too.
+		{Runs: []Run{{Text: "Кайл "}, {Text: "шёл", Italic: true, Props: "<w:i/>"}, {Text: " к реке", Bold: true, Props: `<w:b w:val="1"/>`},
+			{Text: ", не", Props: `<w:i w:val="0"/>`}, {Text: " оглядываясь."}}},
 		{},
 		{Runs: []Run{{Text: "Ольм молчал."}}},
 		{Runs: []Run{{Text: "Строка таблицы"}}},
@@ -156,5 +158,44 @@ func TestTheLimitsOfAChapterFile(t *testing.T) {
 	}
 	if _, err := ParseText(strings.Repeat("а", MaxFileBytes+1)); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("a pasted text over the limit: %v", err)
+	}
+}
+
+// specs/2026-11-08-italic-bold-in-text.md TF1.5: the signs of the marks of faces in the author's file are the brackets
+// they look like, as ⟦ and ⟧ are: in a working text they are only marks.
+func TestTheSignsOfFacesInAFileAreBrackets(t *testing.T) {
+	document, err := Parse("глава.txt", []byte("Он ⟨шёл⟩ и ⟪пел⟫ ⟦сам⟧."))
+	if err != nil || document.Text() != "Он ‹шёл› и «пел» [сам]." {
+		t.Fatalf("text = %q, %v", document.Text(), err)
+	}
+}
+
+// specs/2026-11-11-ux9-writing-a.md WA1.1 (J-65): the first line of a text or Markdown file names the chapter when it is
+// shorter than 80 signs, an empty line follows it and it does not read as the text — a sentence that ends, a reply.
+func TestTheFirstLineOfATextFileNamesTheChapterWhenAnEmptyLineFollowsIt(t *testing.T) {
+	for _, test := range []struct {
+		name, file, text, title string
+		paragraphs              int
+	}{
+		{"a title over the text", "глава.txt", "Утро после рулетки\r\n\r\nЯ проснулся поздно.\r\nВ голове ещё звенело.\r\n", "Утро после рулетки", 2},
+		{"a title that asks", "глава.txt", "Куда ушёл Тарен?\n\nКира ждала у ворот.\n", "Куда ушёл Тарен?", 1},
+		{"Markdown without a heading", "глава.md", "Утро после рулетки\n\nЯ проснулся *поздно*.\n", "Утро после рулетки", 1},
+		{"a first sentence", "глава.txt", "Кира ждала.\n\nТарен не пришёл.\n", "", 2},
+		{"a reply", "глава.txt", "— Где ты был\n\nКира молчала.\n", "", 2},
+		{"no empty line after it", "глава.txt", "Утро после рулетки\nЯ проснулся поздно.\n", "", 2},
+		{"the only line", "глава.txt", "Утро после рулетки\n\n", "", 1},
+		{"a long line", "глава.txt", strings.Repeat("слово ", 16) + "\n\nТекст.\n", "", 2},
+	} {
+		document, err := Parse(test.file, []byte(test.text))
+		if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if document.TitleText() != test.title || len(document.Paragraphs) != test.paragraphs {
+			t.Errorf("%s: title %q, %d paragraphs; want %q, %d", test.name, document.TitleText(), len(document.Paragraphs), test.title, test.paragraphs)
+		}
+	}
+	pasted, err := ParseText("Утро после рулетки\n\nЯ проснулся поздно.")
+	if err != nil || pasted.TitleText() != "Утро после рулетки" || len(pasted.Paragraphs) != 1 {
+		t.Fatalf("pasted text: %q %d %v", pasted.TitleText(), len(pasted.Paragraphs), err)
 	}
 }

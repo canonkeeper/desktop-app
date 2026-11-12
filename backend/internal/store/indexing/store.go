@@ -31,6 +31,13 @@ type storeFailpoint func(string) error
 type Store struct {
 	*storedb.DB
 	failpoint storeFailpoint
+	helper    Helper
+}
+
+// Helper says whether the helper of the build is connected: without it nobody reads the books, and the store queues no
+// cards Job (specs/2026-11-12-desk-window.md WN3.4).
+type Helper interface {
+	Connected(ctx context.Context) bool
 }
 
 type Option func(*Store)
@@ -43,6 +50,12 @@ func New(db *storedb.DB, options ...Option) *Store {
 		}
 	}
 	return store
+}
+
+// WithHelper makes the store queue the cards Job of a version only while the helper of the build is connected; a store
+// without it — the site's — always queues it.
+func WithHelper(helper Helper) Option {
+	return func(store *Store) { store.helper = helper }
 }
 
 func withFailpoint(failpoint storeFailpoint) Option {

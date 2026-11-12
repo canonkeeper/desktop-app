@@ -2,7 +2,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import { createIdempotencyKey, type CanonKeeperApiClient, type OperationRequest, type Schema } from '../../shared/api';
 
 export type AuthorMaterialsApiClient = Pick<CanonKeeperApiClient,
-  'listAuthorMaterials' | 'updateAuthorMaterial' | 'deleteAuthorMaterial' | 'startAuthorMaterialsImport' | 'getAuthorMaterialsImport'
+  'listAuthorMaterials' | 'createAuthorMaterial' | 'updateAuthorMaterial' | 'deleteAuthorMaterial' | 'startAuthorMaterialsImport' | 'getAuthorMaterialsImport'
   | 'confirmAuthorMaterialsImport' | 'discardAuthorMaterialsImport' | 'cancelJob'>;
 export type AuthorMaterial = Schema<'AuthorMaterial'>;
 export type AuthorMaterialKind = Schema<'AuthorMaterialKind'>;
@@ -11,13 +11,14 @@ export type AuthorMaterialCandidate = Schema<'AuthorMaterialCandidate'>;
 export type AuthorMaterialsImport = Schema<'AuthorMaterialsImport'>;
 export type AuthorMaterialChoice = Schema<'AuthorMaterialChoice'>;
 export type UpdateAuthorMaterial = OperationRequest<'updateAuthorMaterial'>;
+export type CreateAuthorMaterial = OperationRequest<'createAuthorMaterial'>;
 export { createIdempotencyKey };
 
 /** How the pages name a kind (specs/2026-11-04-saga-map.md, R9.1). */
 export const authorMaterialKinds: ReadonlyArray<{ value: AuthorMaterialKind; label: string }> = [
   { value: 'skill', label: 'Навык' },
   { value: 'place', label: 'Место' },
-  { value: 'character', label: 'Персонаж' },
+  { value: 'character', label: 'Герой' },
   { value: 'item', label: 'Предмет' },
   { value: 'faction', label: 'Фракция' },
   { value: 'other', label: 'Другое' },
@@ -25,6 +26,18 @@ export const authorMaterialKinds: ReadonlyArray<{ value: AuthorMaterialKind; lab
 
 export function authorMaterialKindLabel(kind: AuthorMaterialKind) {
   return authorMaterialKinds.find((item) => item.value === kind)?.label ?? kind;
+}
+
+/**
+ * The line under a record (specs/2026-11-10-ux8-memory-records.md MR3.5): what it is and where it came from — «Герой · из
+ * „Навыки и места.xlsx“, лист „Персонажи“», «Герой · добавлено вручную».
+ */
+export function materialOriginLine(material: Pick<AuthorMaterial, 'kind' | 'section' | 'sourceKind' | 'sourceName'>) {
+  const kind = authorMaterialKindLabel(material.kind);
+  if (material.sourceKind === 'manual') return `${kind} · добавлено вручную`;
+  const source = material.sourceName ? `из „${material.sourceName}“` : 'из вставленного текста';
+  const part = material.sourceKind === 'xlsx' || material.sourceKind === 'csv' ? 'лист' : 'раздел';
+  return `${kind} · ${source}${material.section ? `, ${part} „${material.section}“` : ''}`;
 }
 
 export interface AuthorMaterialFilters {
@@ -67,12 +80,12 @@ export function importIsRunning(status: AuthorMaterialsImport['jobStatus'] | und
 }
 
 /** The import the author has not answered, read again while its Job goes: its state is the server's. */
-export function useAuthorMaterialsImportQuery(api: AuthorMaterialsApiClient, projectId: string) {
+export function useAuthorMaterialsImportQuery(api: AuthorMaterialsApiClient, projectId: string, enabled = true) {
   return useQuery({
     queryKey: authorMaterialQueryKeys.import(projectId),
     queryFn: ({ meta, signal }) => materialsApi(meta).getAuthorMaterialsImport(projectId, { signal }),
     meta: { materialsApi: api },
-    enabled: projectId.length > 0,
+    enabled: enabled && projectId.length > 0,
     refetchInterval: (query) => (importIsRunning(query.state.data?.import?.jobStatus) ? importPollMs : false),
   });
 }

@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
+	"time"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/jobs"
 	governancestore "canonkeeper/backend/internal/store/governance"
+	quotastore "canonkeeper/backend/internal/store/quota"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -33,13 +37,17 @@ type FinalizeQueuedImportQueueSuffixInTxInput struct {
 	UpdatedAt     pgtype.Timestamptz
 }
 
+// FinalizeQueuedImportQueueSuffixInTx cancels the volumes of a stopped queue it has not reached. A volume of a queue that
+// failed gives its upload back to whoever started the queue, for the day the queue started: the queue never reached it
+// through no fault of his (specs/2026-11-09-quota-accounting.md Q5.1). A queue the author canceled or whose project
+// went keeps its uploads.
 func FinalizeQueuedImportQueueSuffixInTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	input FinalizeQueuedImportQueueSuffixInTxInput,
 ) (int64, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT item.import_job_id
+		SELECT item.import_job_id, queue.status = 'failed', COALESCE(job.creator_user_id::text, ''), job.created_at
 		FROM import_queue_items AS item
 		JOIN import_queues AS queue
 		  ON queue.id=item.queue_id AND queue.project_id=item.project_id
@@ -54,14 +62,20 @@ func FinalizeQueuedImportQueueSuffixInTx(
 	if err != nil {
 		return 0, err
 	}
-	var jobIDs []pgtype.UUID
+	type unreached struct {
+		jobID    pgtype.UUID
+		failed   bool
+		starter  string
+		queuedAt time.Time
+	}
+	var volumes []unreached
 	for rows.Next() {
-		var jobID pgtype.UUID
-		if err := rows.Scan(&jobID); err != nil {
+		var volume unreached
+		if err := rows.Scan(&volume.jobID, &volume.failed, &volume.starter, &volume.queuedAt); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		jobIDs = append(jobIDs, jobID)
+		volumes = append(volumes, volume)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -69,27 +83,39 @@ func FinalizeQueuedImportQueueSuffixInTx(
 	}
 	rows.Close()
 
-	for _, jobID := range jobIDs {
+	for _, volume := range volumes {
 		if err := FinalizeImportTerminalInTx(ctx, tx, ImportTerminalInTxInput{
-			ProjectID: input.ProjectID, JobID: jobID,
+			ProjectID: input.ProjectID, JobID: volume.jobID,
 			From: jobs.StatusQueued, To: jobs.StatusCanceled,
 			UpdatedAt: input.UpdatedAt, QueuedCancel: true,
 		}, nil); err != nil {
 			return 0, err
 		}
+		if !volume.failed || volume.starter == "" {
+			continue
+		}
+		// A release reads no limit, so it needs no plan of the build.
+		if err := (quotastore.Fence{}).ReleaseDailyInTx(ctx, tx, volume.starter, quota.KeyImportsPerDay, 1, volume.queuedAt); err != nil {
+			return 0, err
+		}
 	}
-	return int64(len(jobIDs)), nil
+	return int64(len(volumes)), nil
 }
 
 // CompleteReadyImportQueuesInTx finishes the running Import Queues of a project
 // whose every volume was imported and whose books are ready after the text index; a volume
-// the author deleted meanwhile no longer holds its queue open (R2.4).
+// the author deleted meanwhile no longer holds its queue open (R2.4). A volume that did not read holds it open until
+// the author replaces its file or skips it; a skipped volume holds nothing (specs/2026-11-11-ux7-upload.md UP3.2).
 func CompleteReadyImportQueuesInTx(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE import_queues AS queue
 		SET status = 'succeeded', version = queue.version + 1,
 		    updated_at = clock_timestamp(), completed_at = clock_timestamp()
 		WHERE queue.project_id = $1 AND queue.status = 'running'
+		  AND EXISTS (
+		    SELECT 1 FROM import_queue_items AS item
+		    WHERE item.queue_id = queue.id AND item.project_id = queue.project_id AND item.skipped_at IS NULL
+		  )
 		  AND NOT EXISTS (
 		    SELECT 1
 		    FROM import_queue_items AS item
@@ -98,6 +124,7 @@ func CompleteReadyImportQueuesInTx(ctx context.Context, tx pgx.Tx, projectID pgt
 		    LEFT JOIN books AS book
 		      ON book.id = item.book_id AND book.project_id = item.project_id AND book.deleted_at IS NULL
 		    WHERE item.queue_id = queue.id AND item.project_id = queue.project_id
+		      AND item.skipped_at IS NULL
 		      AND (import_job.status IS DISTINCT FROM 'succeeded'
 		           OR (book.id IS NOT NULL AND book.status <> 'ready'))
 		  )
@@ -199,7 +226,8 @@ func FinalizeImportTerminalInTx(
 		if err := json.Unmarshal(errorJSON, &terminalError); err != nil {
 			return ErrImportTerminalConflict
 		}
-		if terminalError.Code != jobs.RetryExhaustedCode {
+		// A refusal by a limit keeps its code, as a single import does (R3.3): the author sees the limit and his tier.
+		if terminalError.Code != jobs.RetryExhaustedCode && !strings.HasPrefix(terminalError.Code, "quota.") {
 			terminalError.Code = "unexpected_deterministic_failure"
 		}
 		marshaled, marshalErr := json.Marshal(terminalError)
@@ -264,8 +292,9 @@ func FinalizeImportTerminalInTx(
 	if jobTag.RowsAffected() != 1 {
 		return ErrImportTerminalConflict
 	}
-	if queueStatus == "running" &&
-		(input.To == jobs.StatusFailed || input.To == jobs.StatusCanceled) {
+	// A volume that did not read waits for the author at its place, and the queue goes on to the volumes after it
+	// (specs/2026-11-11-ux7-upload.md UP3.2): only a stopped volume stops its queue.
+	if queueStatus == "running" && input.To == jobs.StatusCanceled {
 		queueTag, err := tx.Exec(ctx, `
 			UPDATE import_queues AS queue
 			SET status = $1, version = version + 1,

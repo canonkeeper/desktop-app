@@ -5,8 +5,10 @@ import type { ChatApiClient, ChatJob } from '../../entities/chat/api';
 import type { AppRoute, RouteNavigate } from '../../shared/navigation/app-route';
 import { Button } from '../../ui/controls/Button';
 import type { ToastInput } from '../../ui/feedback/useToastQueue';
-import { browserNotice, forgetAllTurns, forgetTurn, useWatchedTurns, type WatchedTurn } from './answer-ready';
+import { formatCount } from '../../ui/copy';
+import { browserNotice, forgetAllTurns, forgetTurn, markAnswerUnseen, useUnseenAnswers, useWatchedTurns, type WatchedTurn } from './answer-ready';
 import { turnJobQueryOptions } from './api';
+import { markHiddenTab } from '../../shared/navigation/page-title';
 
 interface AnswerReadyWatcherProps {
   api: Pick<ChatApiClient, 'getJob'>;
@@ -16,17 +18,18 @@ interface AnswerReadyWatcherProps {
   route: AppRoute;
 }
 
-const titleMark = /^● [^·]+ · /u;
-
 /**
  * Waits for the awaited chat turns on every page (UC6): when a turn ends and the author is not
  * looking at its chat, the app says so, marks a hidden tab and, if allowed, notifies the browser.
  */
 export function AnswerReadyWatcher({ api, dismiss, navigate, notify, route }: AnswerReadyWatcherProps) {
   const turns = useWatchedTurns();
+  const unseen = useUnseenAnswers();
   const jobs = useQueries({ combine: jobStates, queries: turns.map((turn) => turnJobQueryOptions(api, turn.jobId)) });
-  const latest = useRef({ dismiss, navigate, notify, route });
-  useEffect(() => { latest.current = { dismiss, navigate, notify, route }; });
+  // The one line of the ready answers (AA2.3): a second answer takes the place of the first line instead of a second one.
+  const readyLine = useRef<{ id: number; turns: readonly WatchedTurn[] } | null>(null);
+  const latest = useRef({ dismiss, navigate, notify, route, unseen, readyLine });
+  useEffect(() => { latest.current = { dismiss, navigate, notify, route, unseen, readyLine }; });
   useEffect(() => forgetAllTurns, []);
 
   useEffect(() => {
@@ -41,6 +44,15 @@ export function AnswerReadyWatcher({ api, dismiss, navigate, notify, route }: An
     });
   }, [jobs, turns]);
 
+  // The author opened the chat the line names: the line has said what it had to.
+  const openChatId = route.surface === 'chat' ? route.query.get('chatId') : null;
+  useEffect(() => {
+    const line = readyLine.current;
+    if (!openChatId || !line?.turns.some((turn) => turn.chatId === openChatId)) return;
+    dismiss(line.id);
+    readyLine.current = null;
+  }, [dismiss, openChatId]);
+
   return null;
 }
 
@@ -53,28 +65,52 @@ function finished(job: ChatJob) {
   return job.status === 'succeeded' || job.status === 'failed' || job.status === 'canceled';
 }
 
-function signal(turn: WatchedTurn, ready: boolean, app: Omit<AnswerReadyWatcherProps, 'api'>) {
+type WatcherApp = Omit<AnswerReadyWatcherProps, 'api'> & {
+  unseen: readonly WatchedTurn[];
+  readyLine: { current: { id: number; turns: readonly WatchedTurn[] } | null };
+};
+
+function signal(turn: WatchedTurn, ready: boolean, app: WatcherApp) {
   const visible = document.visibilityState === 'visible';
+  const inItsChat = app.route.surface === 'chat' && app.route.query.get('chatId') === turn.chatId;
   // The author sees the answer arrive in the open chat (R6.5).
-  if (visible && app.route.surface === 'chat' && app.route.query.get('chatId') === turn.chatId) return;
-  const message = ready ? 'Ответ готов' : 'Ответ не получен';
-  const openChat = () => app.navigate('/chat', { chatId: turn.chatId, projectId: turn.projectId });
+  if (visible && inItsChat) return;
+  // The number at «Чат» in the menu counts it until the author opens its chat (S2.5, AA2.2).
+  if (ready && !inItsChat) markAnswerUnseen(turn);
+  const openChat = (opened: WatchedTurn) => app.navigate('/chat', { chatId: opened.chatId, projectId: opened.projectId });
   let id = 0;
-  id = app.notify({
-    action: <Button onClick={() => { app.dismiss(id); openChat(); }} size="sm" variant="outline">Открыть чат</Button>,
-    message,
-    persistent: true,
-    tone: ready ? 'success' : 'warning',
-  });
+  if (ready) {
+    // One line of every ready answer not opened yet; it opens the freshest (AA2.3).
+    const answers = [...app.unseen.filter((answer) => answer.jobId !== turn.jobId), turn];
+    const previous = app.readyLine.current;
+    if (previous) app.dismiss(previous.id);
+    const one = answers.length === 1;
+    id = app.notify({
+      action: <Button onClick={() => { app.dismiss(id); app.readyLine.current = null; openChat(turn); }} size="sm" variant="outline">{one ? 'Открыть' : 'Открыть чаты'}</Button>,
+      message: one ? (turn.label ? `Ответ готов: «${clip(turn.label, 48)}»` : 'Ответ готов') : `Готовы ${formatCount(answers.length, 'ответ', 'ответа', 'ответов')}`,
+      persistent: true,
+      tone: 'success',
+    });
+    app.readyLine.current = { id, turns: answers };
+  } else {
+    id = app.notify({
+      action: <Button onClick={() => { app.dismiss(id); openChat(turn); }} size="sm" variant="outline">Открыть чат</Button>,
+      message: 'Ответ не получен',
+      ...(turn.label ? { detail: `«${clip(turn.label, 80)}»` } : {}),
+      persistent: true,
+      tone: 'warning',
+    });
+  }
+  const message = ready ? 'Ответ готов' : 'Ответ не получен';
   if (visible) return;
   markHiddenTab(message);
   if (browserNotice() !== 'on') return;
   try {
-    const notification = new window.Notification(message, { body: turn.label ? `«${clip(turn.label)}»` : undefined, tag: turn.jobId });
+    const notification = new window.Notification(message, { body: turn.label ? `«${clip(turn.label, 80)}»` : undefined, tag: turn.jobId });
     notification.onclick = () => {
       window.focus();
       app.dismiss(id);
-      openChat();
+      openChat(turn);
       notification.close();
     };
   } catch {
@@ -82,18 +118,7 @@ function signal(turn: WatchedTurn, ready: boolean, app: Omit<AnswerReadyWatcherP
   }
 }
 
-function clip(text: string) {
+function clip(text: string, length: number) {
   const characters = Array.from(text.replace(/\s+/gu, ' ').trim());
-  return characters.length > 80 ? `${characters.slice(0, 79).join('')}…` : characters.join('');
-}
-
-/** «● Ответ готов · » stays in the tab title until the author returns to the tab (R6.3). */
-function markHiddenTab(message: string) {
-  document.title = `● ${message} · ${document.title.replace(titleMark, '')}`;
-  const restore = () => {
-    if (document.visibilityState !== 'visible') return;
-    document.title = document.title.replace(titleMark, '');
-    document.removeEventListener('visibilitychange', restore);
-  };
-  document.addEventListener('visibilitychange', restore);
+  return characters.length > length ? `${characters.slice(0, length - 1).join('').trimEnd()}…` : characters.join('');
 }

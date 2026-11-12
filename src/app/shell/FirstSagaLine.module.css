@@ -1,0 +1,25 @@
+.line {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 8px 20px;
+  background: var(--ck-secondary);
+  color: var(--ck-secondary-foreground);
+  font-size: 14px;
+}
+
+.line > span {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .line {
+    padding: 8px 16px;
+  }
+}

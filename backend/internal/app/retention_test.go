@@ -109,6 +109,7 @@ func TestRetentionRunLogsCountsOnly(t *testing.T) {
 		DeletionTargetsReconciled:         8,
 		DeletionTargetRetriesScheduled:    9,
 		TerminalImportQueueJobsReconciled: 11,
+		ExpiredBookUpdatesRemoved:         12,
 	}}
 	var logs bytes.Buffer
 
@@ -127,6 +128,7 @@ func TestRetentionRunLogsCountsOnly(t *testing.T) {
 		"deletion_targets_reconciled=8",
 		"deletion_target_retries_scheduled=9",
 		"terminal_import_queue_jobs_reconciled=11",
+		"expired_book_updates_removed=12",
 	} {
 		if !strings.Contains(output, fragment) {
 			t.Fatalf("log output = %q, want %q", output, fragment)

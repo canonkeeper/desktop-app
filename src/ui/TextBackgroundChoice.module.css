@@ -1,0 +1,30 @@
+/* «Фон текста» and, under a dark sheet on a light site, «Сделать тёмным весь сайт» (TH1.3). */
+.choice {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.choice > [role='radiogroup'][data-full-width] {
+  justify-self: stretch;
+}
+
+/* The visible words before the control (WR4.1); «Сделать тёмным весь сайт» goes under both. */
+.choice[data-labelled] {
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.choice[data-labelled] > .whole {
+  grid-column: 1 / -1;
+}
+
+.label {
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.whole {
+  font-size: 13px;
+}

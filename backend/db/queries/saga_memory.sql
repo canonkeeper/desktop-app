@@ -1,5 +1,5 @@
 -- name: ListSagaMemoryBooks :many
-SELECT book.id, book."order", book.title
+SELECT book.id, book."order", book.key_number, book.title
 FROM books AS book
 WHERE book.project_id = sqlc.arg(project_id)
   AND book.deleted_at IS NULL;
@@ -89,14 +89,15 @@ WHERE card.project_id = sqlc.arg(project_id)
 -- The operator's chapter-cards status (specs/2026-10-29-chapter-cards-quality.md, UC1): every
 -- current chapter text of a live chapter, once per text, and the card it has; model is empty
 -- for a text without a card. Like the versions the cards Job builds (IndexedVersions), only
--- projects an active owner or member can open.
-SELECT text.project_id,
+-- projects an active owner or member can open. The owner names the saga in the admin service status
+-- (specs/2026-11-08-admin-redesign.md AR6.2).
+SELECT text.project_id, text.owner_user_id,
   count(*)::bigint AS texts,
   count(card.chapter_id) FILTER (WHERE card.version = sqlc.arg(version)::integer)::bigint AS current_cards,
   count(card.chapter_id) FILTER (WHERE card.version <> sqlc.arg(version)::integer)::bigint AS other_cards,
   coalesce(string_agg(DISTINCT card.model || ' v' || card.version::text, ', '), '')::text AS models
 FROM (
-  SELECT DISTINCT state.project_id, state.chapter_id, state.chapter_content_hash
+  SELECT DISTINCT state.project_id, project.owner_user_id, state.chapter_id, state.chapter_content_hash
   FROM chapter_text_index_state AS state
   JOIN projects AS project ON project.id = state.project_id AND project.deleted_at IS NULL
   JOIN chapters AS chapter ON chapter.id = state.chapter_id AND chapter.project_id = state.project_id AND chapter.deleted_at IS NULL
@@ -112,7 +113,7 @@ FROM (
 ) AS text
 LEFT JOIN chapter_cards AS card
   ON card.project_id = text.project_id AND card.chapter_id = text.chapter_id AND card.content_hash = text.chapter_content_hash
-GROUP BY text.project_id
+GROUP BY text.project_id, text.owner_user_id
 ORDER BY text.project_id;
 
 -- name: ListCurrentChapterCards :many

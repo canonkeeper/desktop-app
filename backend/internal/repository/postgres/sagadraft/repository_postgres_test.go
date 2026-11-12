@@ -2,10 +2,13 @@ package sagadraft
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/domain/quota"
@@ -156,14 +159,14 @@ func TestChapterDraftRightsPostgres(t *testing.T) {
 	if _, err := store.AddChapterDraftToBook(ctx, fixture.viewer, draft.ID, 1); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("a reader adds: %v", err)
 	}
-	page, err := store.ListChapterDrafts(ctx, fixture.viewer.Actor, nil, 10)
+	page, err := store.ListChapterDrafts(ctx, fixture.viewer.Actor, nil, 10, "")
 	if err != nil || len(page.Drafts) != 1 || page.Total != 1 || page.Drafts[0].ID != draft.ID || page.Drafts[0].Stage != domain.StageText {
 		t.Fatalf("a reader lists: %+v, %v", page, err)
 	}
 	if read := fixture.get(t, draft.ID); read.Text != "набросок" {
 		t.Fatalf("a reader reads: %+v", read)
 	}
-	if _, err := store.ListChapterDrafts(ctx, fixture.outsider.Actor, nil, 10); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := store.ListChapterDrafts(ctx, fixture.outsider.Actor, nil, 10, ""); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("an outsider lists: %v", err)
 	}
 	if _, err := store.GetChapterDraft(ctx, fixture.outsider.Actor, draft.ID); !errors.Is(err, domain.ErrNotFound) {
@@ -194,7 +197,7 @@ func TestChapterDraftCreationIsReplayedPostgres(t *testing.T) {
 	if _, err := fixture.store.CreateChapterDraft(ctx, command); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("another request under the key: %v", err)
 	}
-	page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10)
+	page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, "")
 	if err != nil || page.Total != 1 {
 		t.Fatalf("drafts = %+v, %v", page, err)
 	}
@@ -425,7 +428,7 @@ func TestAddToBookStopsAtTheLimitsOfTheTextPostgres(t *testing.T) {
 func TestTheListCountsTheWordsOfEachDraftPostgres(t *testing.T) {
 	fixture := seedDraftProject(t, "ck_chapter_draft_list_words")
 	draft := fixture.create(t, domain.KindSketch, "Кайл вошёл.\n― Опоздал, ― сказал Тарн.")
-	page, err := fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10)
+	page, err := fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10, "")
 	if err != nil || len(page.Drafts) != 1 || page.Drafts[0].Words != 5 {
 		t.Fatalf("the list = %+v, %v", page.Drafts, err)
 	}
@@ -433,7 +436,85 @@ func TestTheListCountsTheWordsOfEachDraftPostgres(t *testing.T) {
 	if _, err := fixture.store.UpdateChapterDraft(context.Background(), fixture.editor, draft.ID, draft.Revision, domain.Change{Text: &chapter}); err != nil {
 		t.Fatal(err)
 	}
-	if page, err = fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10); err != nil || page.Drafts[0].Words != 6 {
+	if page, err = fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10, ""); err != nil || page.Drafts[0].Words != 6 {
 		t.Fatalf("the list after an edit = %+v, %v", page.Drafts, err)
+	}
+	// specs/2026-11-08-italic-bold-in-text.md TF1.4: a mark of the author's italic and bold is no word of its own.
+	edited, err := fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	faced := "Кайл ⟨ вошёл⟩ в ⟪кузницу⟫ ― и сел."
+	if _, err := fixture.store.UpdateChapterDraft(context.Background(), fixture.editor, draft.ID, edited.Drafts[0].Revision, domain.Change{Text: &faced}); err != nil {
+		t.Fatal(err)
+	}
+	if page, err = fixture.store.ListChapterDrafts(context.Background(), fixture.editor.Actor, nil, 10, ""); err != nil || page.Drafts[0].Words != 6 {
+		t.Fatalf("the list of a text with faces = %+v, %v", page.Drafts, err)
+	}
+}
+
+// specs/2026-11-12-ux12-writing.md WR2.1: the list says the words of a draft as the head of its chapter does — by the rule of
+// the shared table testdata/words.json («all»: runs of letters, marks and digits; «по-русски» is two words, a dash none,
+// a mark of the helper parts a word, a mark of a face does not) — and so for every sign of the scripts and the punctuation
+// an author writes with, sign by sign against the rule of the domain, still reading no text of a draft into the server.
+func TestTheListCountsTheWordsAsTheHeadOfTheChapterPostgres(t *testing.T) {
+	fixture := seedDraftProject(t, "ck_chapter_draft_list_all_words")
+	ctx := context.Background()
+	draft := fixture.create(t, domain.KindSketch, "")
+	listed := func(text string) int {
+		t.Helper()
+		page, err := fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, "")
+		if err != nil || len(page.Drafts) != 1 {
+			t.Fatalf("the list = %+v, %v", page.Drafts, err)
+		}
+		if _, err := fixture.store.UpdateChapterDraft(ctx, fixture.editor, draft.ID, page.Drafts[0].Revision, domain.Change{Text: &text}); err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		if page, err = fixture.store.ListChapterDrafts(ctx, fixture.editor.Actor, nil, 10, ""); err != nil {
+			t.Fatal(err)
+		}
+		return page.Drafts[0].Words
+	}
+	raw, err := os.ReadFile("../../../domain/sagadraft/testdata/words.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table []struct {
+		Text  string `json:"text"`
+		Valid bool   `json:"valid"`
+		All   int    `json:"all"`
+	}
+	if err := json.Unmarshal(raw, &table); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range table {
+		if test.Valid && test.Text != "" {
+			if got := listed(test.Text); got != test.All {
+				t.Fatalf("the list counts %q as %d words, the head of the chapter %d", test.Text, got, test.All)
+			}
+		}
+	}
+	// Every sign of the Latin, Greek and Cyrillic letters, the marks over them, the digits, the punctuation, the symbols and
+	// the number forms, alone between spaces: a word of the domain is a word of the list. The circled letters U+24B6–U+24E9
+	// are symbols to the domain and letters to PostgreSQL, the one difference of these blocks (Decision log).
+	var signs []rune
+	for _, block := range [][2]rune{{0x21, 0x52f}, {0x1ab0, 0x1aff}, {0x1d00, 0x1fff}, {0x2000, 0x27e5}, {0x27ec, 0x2bff}, {0x2de0, 0x2dff},
+		{0xa640, 0xa69f}, {0xfe00, 0xfe2f}, {0xff00, 0xffef}} {
+		for sign := block[0]; sign <= block[1]; sign++ {
+			if sign >= 0x24b6 && sign <= 0x24e9 || !unicode.IsGraphic(sign) && !unicode.Is(unicode.Mn, sign) || unicode.IsSpace(sign) {
+				continue
+			}
+			signs = append(signs, sign)
+		}
+	}
+	for from := 0; from < len(signs); from += 200 {
+		part := signs[from:min(from+200, len(signs))]
+		var text strings.Builder
+		for _, sign := range part {
+			text.WriteString(" " + string(sign))
+		}
+		if got, want := listed(text.String()), len(domain.WordsOf(text.String())); got != want {
+			t.Fatalf("U+%04X–U+%04X: the list counts %d words, the domain %d", part[0], part[len(part)-1], got, want)
+		}
 	}
 }

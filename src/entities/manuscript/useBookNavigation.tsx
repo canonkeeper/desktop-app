@@ -1,3 +1,5 @@
+import { loadFailureWords } from '../api-errors';
+import { ErrorBlock } from '../../ui/feedback/ErrorBlock';
 import { BookOpen, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useManuscriptShelfQuery, type ManuscriptApiClient } from './api';
@@ -7,6 +9,7 @@ import { IconButton } from '../../ui/controls/IconButton';
 import { Alert } from '../../ui/feedback/Alert';
 import { Dialog } from '../../ui/overlays/Dialog';
 import styles from './BookPicker.module.css';
+import { SkeletonArea } from '../../ui/feedback/Skeleton';
 
 interface BookNavigationProps {
   api: ManuscriptApiClient;
@@ -39,7 +42,7 @@ export function useBookNavigation({ api, bookId, chapterId, navigate, projectId 
           {projectId ? <BookChoices api={api} projectId={projectId} onSelect={(id) => {
             setPickerProjectId(null);
             navigate('/manuscript/books', { projectId, bookId: id, mode: 'read' });
-          }} /> : <p>Сначала выберите сагу на полке.</p>}
+          }} /> : <p>Сначала выберите сагу в «Книгах».</p>}
           <footer><Button onClick={() => setPickerProjectId(null)} variant="outline">Отмена</Button></footer>
         </section>
       </Dialog>
@@ -51,9 +54,8 @@ function BookChoices({ api, onSelect, projectId }: {
   api: ManuscriptApiClient; onSelect: (bookId: string) => void; projectId: string;
 }) {
   const query = useManuscriptShelfQuery(api, { projectId });
-  if (query.isPending) return <p role="status">Загружаем книги…</p>;
-  if (query.isError) return <Alert tone="error"><p>Не удалось загрузить книги.</p>
-    <Button onClick={() => void query.refetch()} variant="outline">Повторить</Button></Alert>;
+  if (query.isPending) return <SkeletonArea count={3} shape="rows" />;
+  if (query.isError) return <ErrorBlock {...loadFailureWords(query.error)} onRetry={() => void query.refetch()} retrying={query.isRefetching} title="Не открылись книги саги" />;
   if (query.data.project?.id !== projectId) {
     return <Alert tone="error">Сага недоступна.</Alert>;
   }

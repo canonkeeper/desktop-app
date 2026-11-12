@@ -21,6 +21,11 @@ type migrationQuiescenceQueryer interface {
 // exact sealed job artifact owner exists but is no longer readable, because
 // governed source deletion fenced the claim incarnation away. Unknown future
 // statuses stay outside the terminal list and therefore keep blocking.
+//
+// The build of the threads of a saga (saga_layer) is not waited for: on a large
+// saga it runs for hours, saves every step, is released to the queue by the
+// stopping worker and goes on from its checkpoint in the replacement runtime —
+// the cutover strands nothing of it.
 func MigrationQuiescent(ctx context.Context, db *DB) (bool, error) {
 	if db == nil || db.Pool == nil {
 		return false, errors.New("migration database is nil")
@@ -35,6 +40,7 @@ func checkMigrationQuiescence(ctx context.Context, db migrationQuiescenceQueryer
 SELECT count(*)::bigint
 FROM jobs AS job
 WHERE job.status NOT IN ('queued', 'succeeded', 'failed', 'canceled', 'expired')
+  AND job.kind <> 'saga_layer'
   AND (
     job.artifact_source_owner_id IS NULL
     OR NOT EXISTS (

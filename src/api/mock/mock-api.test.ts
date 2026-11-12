@@ -70,6 +70,23 @@ describe('mock API repository', () => {
     await expect(api.getIndexingStatus('project-white-port')).resolves.toMatchObject({ steps: [] });
   });
 
+  // specs/2026-11-09-demo-saga.md DS1.2: «Попробовать на примере» makes the demo saga of the author once, with its book.
+  it('opens one demo saga with its book ready, and the same one again', async () => {
+    const api = createMockApiClient();
+    const before = (await api.listProjects()).data.length;
+    const saga = await api.openDemoSaga();
+    expect(saga).toMatchObject({ demo: true, title: 'Пример: «Игрок» Достоевского', bookCount: 1, currentMembership: { role: 'owner' } });
+    expect(saga.description).toContain('Текст: Викитека, CC BY-SA 4.0');
+    expect((await api.openDemoSaga()).id).toBe(saga.id);
+    const sagas = (await api.listProjects()).data;
+    expect(sagas).toHaveLength(before + 1);
+    expect(sagas.filter((project) => project.demo)).toHaveLength(1);
+    expect((await api.listBooks(saga.id)).data.map((book) => book.title)).toEqual(['Игрок']);
+    await expect(api.getIndexingStatus(saga.id)).resolves.toMatchObject({ published: { exists: true, context: { state: 'ready' } } });
+    // A saga of the author carries no sign.
+    expect((await api.createProject({ title: 'Своя сага' })).demo).toBeUndefined();
+  });
+
   it('keeps state in memory and resets to seeded data', async () => {
     const api = createMockApiClient();
     const initialCount = (await api.listProjects()).data.length;
@@ -79,6 +96,24 @@ describe('mock API repository', () => {
 
     api.reset();
     expect((await api.listProjects()).data).toHaveLength(initialCount);
+  });
+
+  // specs/2026-11-08-italic-bold-in-text.md TF3.2: the book keeps the italic and bold of a working text in markdown, its
+  // words in text; «Править главу» and «Вернуть» give the working text its marks back.
+  it('carries the faces between the book and the working text as the server does', async () => {
+    const api = createMockApiClient();
+    const opened = await api.openChapterEdit('project-white-port', 'chapter-16');
+    const before = opened.text;
+    const text = 'Сава ⟨молчал⟩, и это было ⟪громче⟫ * * *\n⟦Знак⟧ на полях.';
+    const written = await api.updateChapterDraft('project-white-port', opened.id, { expectedRevision: opened.revision, text });
+    const replaced = await api.replaceChapterFromDraft('project-white-port', opened.id, { expectedRevision: written.revision, title: 'Белый порт' });
+    expect(replaced.text).toBe('Сава ⟨молчал⟩, и это было ⟪громче⟫ * * *\n\nЗнак на полях.');
+    const chapter = await api.getChapter('chapter-16', 'published');
+    expect(chapter.paragraphs.map((paragraph) => [paragraph.markdown, paragraph.text])).toEqual([
+      ['Сава *молчал*, и это было **громче** \\* \\* \\*', 'Сава молчал, и это было громче * * *'], ['Знак на полях.', 'Знак на полях.'],
+    ]);
+    const reverted = await api.revertChapterFromDraft('project-white-port', opened.id, { expectedRevision: replaced.revision });
+    expect(reverted.text).toBe(before);
   });
 
   it('selects the requested chapter variant and conceals draft from viewers', async () => {
@@ -258,7 +293,7 @@ describe('mock API repository', () => {
   it('validates import file controls and keeps book reorder commands out of book resources', async () => {
     const api = createMockApiClient();
 
-    await expect(api.getImportConstraints('project-white-port')).resolves.toMatchObject({ nextBookOrder: 5 });
+    await expect(api.getImportConstraints('project-white-port')).resolves.not.toHaveProperty('nextBookOrder');
 
     await expect(
       api.importBookFile(
@@ -299,17 +334,18 @@ describe('mock API repository', () => {
     });
   });
 
-  it('fills the first missing order for implicit book creation', async () => {
+  // specs/2026-11-11-ux7-upload.md UP2.3: a new book stands after the books of the shelf, not in the place of a deleted one.
+  it('puts a new book after the books of the shelf', async () => {
 	const api = createMockApiClient();
 	await api.deleteBook('book-02');
 
-	const inserted = await api.createBook('project-white-port', { title: 'Замена второго тома' });
-	expect(inserted).toMatchObject({ order: 2 });
+	const inserted = await api.createBook('project-white-port', { title: 'Новый том' });
+	expect(inserted).toMatchObject({ place: 4 });
 	const books = await api.listBooks('project-white-port');
-	expect(books.data.map((book) => book.order)).toEqual([1, 2, 3, 4]);
+	expect(books.data.map((book) => book.id)).toEqual(['book-01', 'book-03', 'book-04', inserted.id]);
   });
 
-  it('rejects a stale expected import order and offers the first active-book gap', async () => {
+  it('rejects a stale expected import order', async () => {
     const api = createMockApiClient();
 
     await expect(api.importBookFile(
@@ -325,8 +361,7 @@ describe('mock API repository', () => {
       status: 409,
     });
 
-	await api.deleteBook('book-02');
-	await expect(api.getImportConstraints('project-white-port')).resolves.toMatchObject({ nextBookOrder: 2 });
+
   });
 
   it('completes an import job with its book and source file', async () => {
@@ -427,7 +462,6 @@ describe('mock API repository', () => {
     });
     const books = await api.listBooks('project-white-port');
     expect(books.data.filter((book) => book.order === 5)).toHaveLength(1);
-    await expect(api.getImportConstraints('project-white-port')).resolves.toMatchObject({ nextBookOrder: 6 });
   });
 
   it('advances the authoritative order across sequential imports', async () => {
@@ -456,7 +490,6 @@ describe('mock API repository', () => {
         expect.objectContaining({ id: second.result.bookId, order: 6, status: 'draft' }),
       ]),
     });
-    await expect(api.getImportConstraints('project-white-port')).resolves.toMatchObject({ nextBookOrder: 7 });
   });
 
   it('rejects a DOCX File with an empty or mismatched MIME type', async () => {

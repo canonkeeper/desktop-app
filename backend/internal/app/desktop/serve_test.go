@@ -161,3 +161,13 @@ func TestThePageIsServedWithTheHeadersOfTheSite(t *testing.T) {
 		t.Fatalf("the page without a build = %d", response.Code)
 	}
 }
+
+// specs/2026-11-12-desk-window.md WN1.1: «кто автор» is an operation of the open core the desktop answers itself — without
+// the session of the window it is the 401 of the site, not the 404 that left the window empty.
+func TestTheWindowAsksWhoTheAuthorIs(t *testing.T) {
+	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	response := serveRequest(handler, http.MethodGet, "/api/v1/auth/session", testHost, nil)
+	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"auth.session_required"`) {
+		t.Fatalf("getCurrentUser without a session = %d %s", response.Code, response.Body.String())
+	}
+}

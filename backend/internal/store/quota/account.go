@@ -11,16 +11,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Store reads a writer's quotas outside a write transaction.
+// Store reads a writer's quotas outside a write transaction through the fence of the build
+// (specs/2026-11-08-subscription-tiers.md TR2.4).
 type Store struct {
-	db *storedb.DB
+	db    *storedb.DB
+	fence Fence
 }
 
-func New(db *storedb.DB) *Store {
+func New(db *storedb.DB, fence Fence) *Store {
 	if db == nil {
 		panic("quota store: database is required")
 	}
-	return &Store{db: db}
+	return &Store{db: db, fence: fence}
 }
 
 // AccountQuota is getAccountQuota (R5.1): limits, the day's use, active questions and the text of
@@ -29,7 +31,7 @@ func (store *Store) AccountQuota(ctx context.Context, userID string, at time.Tim
 	if _, err := storedb.ParseUUID(userID); err != nil {
 		return quota.Account{}, quota.ErrNotFound
 	}
-	limits, err := EffectiveLimitsInTx(ctx, store.db.Pool, userID)
+	limits, err := store.fence.EffectiveLimitsInTx(ctx, store.db.Pool, userID)
 	if err != nil {
 		return quota.Account{}, err
 	}
@@ -58,7 +60,7 @@ func (store *Store) ImagesToday(ctx context.Context, userID string, at time.Time
 	if _, err := storedb.ParseUUID(userID); err != nil {
 		return quota.Counter{}, quota.ErrNotFound
 	}
-	limits, err := EffectiveLimitsInTx(ctx, store.db.Pool, userID)
+	limits, err := store.fence.EffectiveLimitsInTx(ctx, store.db.Pool, userID)
 	if err != nil {
 		return quota.Counter{}, err
 	}
@@ -78,7 +80,7 @@ func (store *Store) ImageUploadsToday(ctx context.Context, userID string, at tim
 	if _, err := storedb.ParseUUID(userID); err != nil {
 		return quota.Counter{}, quota.ErrNotFound
 	}
-	limits, err := EffectiveLimitsInTx(ctx, store.db.Pool, userID)
+	limits, err := store.fence.EffectiveLimitsInTx(ctx, store.db.Pool, userID)
 	if err != nil {
 		return quota.Counter{}, err
 	}
@@ -93,8 +95,9 @@ func (store *Store) ImageUploadsToday(ctx context.Context, userID string, at tim
 }
 
 // ownerSources counts, per live project of the owner, live books, live chapters of live books
-// and the characters of their current draft text (R3.5); deleted sources do not count.
-func ownerSources(ctx context.Context, db querier, ownerID string) ([]quota.ProjectSources, error) {
+// and the characters of their current draft text (R3.5); deleted sources do not count, and neither does the demo
+// saga: its text is not the author's (specs/2026-11-09-demo-saga.md DS3.2).
+func ownerSources(ctx context.Context, db Querier, ownerID string) ([]quota.ProjectSources, error) {
 	rows, err := db.Query(ctx, `
 		SELECT project.id::text,
 		       (SELECT count(*) FROM books AS book
@@ -110,7 +113,7 @@ func ownerSources(ctx context.Context, db querier, ownerID string) ([]quota.Proj
 		         AND paragraph.variant = 'draft'
 		        WHERE chapter.project_id = project.id AND chapter.deleted_at IS NULL AND book.deleted_at IS NULL)
 		FROM projects AS project
-		WHERE project.owner_user_id = $1::uuid AND project.deleted_at IS NULL
+		WHERE project.owner_user_id = $1::uuid AND project.deleted_at IS NULL AND NOT project.demo
 		ORDER BY project.created_at, project.id
 	`, ownerID)
 	if err != nil {

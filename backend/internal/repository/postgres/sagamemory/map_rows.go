@@ -99,7 +99,8 @@ func (repository *Repository) QueueMap(ctx context.Context, projectID, view stri
 	if err != nil || active {
 		return err
 	}
-	return repository.QueueCards(ctx, service.TextVersion{ProjectID: projectID, View: view})
+	_, err = repository.QueueCards(ctx, service.TextVersion{ProjectID: projectID, View: view})
+	return err
 }
 
 // StoredMapRevision returns the revision of the prepared map, empty without one.

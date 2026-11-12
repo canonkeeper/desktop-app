@@ -217,7 +217,9 @@ func TestLibraryStoreFinalizeImportRejectsConcurrentOrderInterleave(t *testing.T
 	}
 }
 
-func TestLibraryStoreFinalizeImportRejectsChangedRequiredOrderAfterAdmission(t *testing.T) {
+// A book deleted between the staging of an import and its end does not move the place of the new book: it stands after
+// the books, where its import was given it (specs/2026-11-11-ux7-upload.md UP2.3).
+func TestLibraryStoreFinalizeImportKeepsItsPlaceAfterABookIsDeleted(t *testing.T) {
 	fixture := newImportFinalizeFailpointFixture(t)
 	store := New(fixture.db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -241,14 +243,16 @@ func TestLibraryStoreFinalizeImportRejectsChangedRequiredOrderAfterAdmission(t *
 		t.Fatalf("FenceBookDeletion() error = %v", err)
 	}
 
-	_, err := store.FinalizeImport(fixture.ctx, fixture.input)
-	if !errors.Is(err, library.ErrImportExpectedOrderConflict) {
-		t.Fatalf("FinalizeImport() error = %v, want ErrImportExpectedOrderConflict", err)
+	finalized, err := store.FinalizeImport(fixture.ctx, fixture.input)
+	if err != nil {
+		t.Fatalf("FinalizeImport() error = %v", err)
 	}
-	if got := countJobsStoreRowsForTest(t, fixture.db, `
-		SELECT count(*) FROM books WHERE project_id = $1 AND deleted_at IS NULL
-	`, fixture.projectID); got != 2 {
-		t.Fatalf("active books after rejected finalization = %d, want 2", got)
+	var order int
+	if err := fixture.db.Pool.QueryRow(fixture.ctx, `SELECT "order" FROM books WHERE id = $1`, finalized.BookID).Scan(&order); err != nil {
+		t.Fatal(err)
+	}
+	if order != 4 {
+		t.Fatalf("the new book stands at order %d, want 4", order)
 	}
 }
 

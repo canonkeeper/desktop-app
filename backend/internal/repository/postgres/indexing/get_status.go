@@ -46,6 +46,7 @@ func (store *Store) GetStatus(ctx context.Context, input indexingservice.GetStat
 	if err != nil {
 		return canon.IndexingStatusResponse{}, err
 	}
+	snapshot.waiting = input.Waiting
 	response, err := buildStatusResponse(snapshot, scope)
 	if err != nil {
 		return canon.IndexingStatusResponse{}, err
@@ -75,7 +76,35 @@ func loadStatusSnapshot(ctx context.Context, tx pgx.Tx, actorID, projectID pgtyp
 	if !projects.CanReadProject(role) {
 		return statusSnapshot{}, indexingdomain.ErrNotFound
 	}
-	snapshot := statusSnapshot{role: role, views: make(map[governance.SourceView]statusViewSnapshot)}
+	views, err := loadStatusViews(ctx, tx, projectID)
+	if err != nil {
+		return statusSnapshot{}, err
+	}
+	wave, err := loadStatusWave(ctx, tx, projectID, actorID)
+	if err != nil {
+		return statusSnapshot{}, err
+	}
+	snapshot := statusSnapshot{role: role, views: views, wave: wave}
+	jobRows, err := queries.ListIndexingStatusJobs(ctx, sqlc.ListIndexingStatusJobsParams{
+		ProjectID: projectID, ActorUserID: actorID, BookID: bookID,
+	})
+	if err != nil {
+		return statusSnapshot{}, err
+	}
+	for _, row := range jobRows {
+		job, err := jobstore.JobFromSQLJob(row.Job)
+		if err != nil {
+			return statusSnapshot{}, err
+		}
+		snapshot.jobs = append(snapshot.jobs, job)
+	}
+	return snapshot, nil
+}
+
+// loadStatusViews reads the current text versions of a live project with their books in order and, per book, how many
+// chapters have current text and current cards. The wave of «Сага готова» closes on the same counters the status shows.
+func loadStatusViews(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID) (map[governance.SourceView]statusViewSnapshot, error) {
+	views := make(map[governance.SourceView]statusViewSnapshot)
 	rows, err := tx.Query(ctx, `
 		SELECT marker.source_view, marker.catalog_revision
 		FROM project_source_views AS marker
@@ -87,25 +116,25 @@ func loadStatusSnapshot(ctx context.Context, tx pgx.Tx, actorID, projectID pgtyp
 		ORDER BY marker.source_view
 	`, projectID)
 	if err != nil {
-		return statusSnapshot{}, err
+		return nil, err
 	}
 	for rows.Next() {
 		var viewValue string
 		var revision int64
 		if err := rows.Scan(&viewValue, &revision); err != nil {
 			rows.Close()
-			return statusSnapshot{}, err
+			return nil, err
 		}
 		view := governance.SourceView(viewValue)
 		if revision < 1 || view != governance.SourceViewPublished && view != governance.SourceViewDraft {
 			rows.Close()
-			return statusSnapshot{}, indexingdomain.ErrConflict
+			return nil, indexingdomain.ErrConflict
 		}
-		snapshot.views[view] = statusViewSnapshot{revision: uint64(revision)}
+		views[view] = statusViewSnapshot{revision: uint64(revision)}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return statusSnapshot{}, err
+		return nil, err
 	}
 	rows, err = tx.Query(ctx, `
 		SELECT member.source_view, member.book_id,
@@ -140,7 +169,7 @@ func loadStatusSnapshot(ctx context.Context, tx pgx.Tx, actorID, projectID pgtyp
 		ORDER BY member.source_view, book."order", member.book_id
 	`, projectID)
 	if err != nil {
-		return statusSnapshot{}, err
+		return nil, err
 	}
 	for rows.Next() {
 		var viewValue string
@@ -148,34 +177,21 @@ func loadStatusSnapshot(ctx context.Context, tx pgx.Tx, actorID, projectID pgtyp
 		var book statusBookSnapshot
 		if err := rows.Scan(&viewValue, &bookID, &book.chapters, &book.indexed, &book.carded); err != nil {
 			rows.Close()
-			return statusSnapshot{}, err
+			return nil, err
 		}
 		view := governance.SourceView(viewValue)
-		viewSnapshot, ok := snapshot.views[view]
+		viewSnapshot, ok := views[view]
 		if !ok {
 			rows.Close()
-			return statusSnapshot{}, indexingdomain.ErrConflict
+			return nil, indexingdomain.ErrConflict
 		}
 		book.id = storedb.UUIDString(bookID)
 		viewSnapshot.books = append(viewSnapshot.books, book)
-		snapshot.views[view] = viewSnapshot
+		views[view] = viewSnapshot
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return statusSnapshot{}, err
+		return nil, err
 	}
-	jobRows, err := queries.ListIndexingStatusJobs(ctx, sqlc.ListIndexingStatusJobsParams{
-		ProjectID: projectID, ActorUserID: actorID, BookID: bookID,
-	})
-	if err != nil {
-		return statusSnapshot{}, err
-	}
-	for _, row := range jobRows {
-		job, err := jobstore.JobFromSQLJob(row.Job)
-		if err != nil {
-			return statusSnapshot{}, err
-		}
-		snapshot.jobs = append(snapshot.jobs, job)
-	}
-	return snapshot, nil
+	return views, nil
 }

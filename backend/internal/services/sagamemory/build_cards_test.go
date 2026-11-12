@@ -136,11 +136,17 @@ type cardsStore struct {
 	progress []float64
 	outcome  *CardsOutcome
 	yields   int
+	// othersWait is whether cards of another project wait for a worker; asked counts how often the Job asked.
+	othersWait bool
+	othersErr  error
+	asked      int
 
 	cards      map[CardKey]domain.Card
 	names      *StoredNames
 	namesClaim jobs.WorkerClaim
 	namesErr   error
+	// subject is the subject the Job finishes with, cardsSubject when nil.
+	subject *jobs.ChapterCardsSubject
 }
 
 func (store *cardsStore) Cards(_ context.Context, _ string, keys []CardKey, parts domain.CardParts) (map[CardKey]domain.Card, error) {
@@ -196,7 +202,11 @@ func (store *cardsStore) SaveCard(_ context.Context, claim jobs.WorkerClaim, car
 }
 
 func (store *cardsStore) FinishCards(_ context.Context, claim jobs.WorkerClaim, outcome CardsOutcome) error {
-	if claim != cardsClaim || outcome.Subject != cardsSubject {
+	subject := cardsSubject
+	if store.subject != nil {
+		subject = *store.subject
+	}
+	if claim != cardsClaim || outcome.Subject != subject {
 		return errors.New("wrong claim")
 	}
 	store.outcome = &outcome
@@ -211,6 +221,16 @@ func (store *cardsStore) YieldCards(_ context.Context, claim jobs.WorkerClaim) e
 	}
 	store.yields++
 	return nil
+}
+
+func (store *cardsStore) OthersWait(_ context.Context, claim jobs.WorkerClaim) (bool, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if claim != cardsClaim {
+		return false, errors.New("wrong claim")
+	}
+	store.asked++
+	return store.othersWait, store.othersErr
 }
 
 // slowCardsModel takes a while for each card; failing titles never parse.
@@ -243,11 +263,38 @@ func manyChapters(count int) cardsTextSource {
 	return cardsTextSource{chapters: chapters}
 }
 
+// specs/2026-11-09-first-session.md, FS6.1: while no cards of another project wait for a worker, the end of a portion
+// stops nothing — the Job keeps handing chapters to the model and builds them all under one claim; the map still grows
+// with the cards at every portion.
+func TestBuildCardsKeepsItsTurnWhileNobodyWaits(t *testing.T) {
+	store := &cardsStore{existing: map[CardKey]bool{}}
+	maps := &countingMaps{}
+	build := NewBuildCards(manyChapters(12), store, &slowCardsModel{delay: 15 * time.Millisecond}, nil, "test-model", 1, nil, nil).WithMap(maps, nil)
+	build.portion = 50 * time.Millisecond
+	status, err := build.RunForClaim(context.Background(), cardsClaim, cardsSubject, false)
+	if err != nil || status != jobs.StatusSucceeded || store.yields != 0 || len(store.saved) != 12 {
+		t.Fatalf("RunForClaim() = %q, %v, yields %d, saved %d; want every chapter built without a yield", status, err, store.yields, len(store.saved))
+	}
+	if store.asked < 2 || maps.refreshes != store.asked+1 {
+		t.Fatalf("asked %d times, the map prepared %d times; want it at every portion and at the end", store.asked, maps.refreshes)
+	}
+}
+
+// FS6.1: a store that cannot say whether anybody waits is treated as before — the Job gives up its turn.
+func TestBuildCardsYieldsWhenItCannotTellWhoWaits(t *testing.T) {
+	store := &cardsStore{existing: map[CardKey]bool{}, othersErr: errors.New("database is away")}
+	build := NewBuildCards(manyChapters(12), store, &slowCardsModel{delay: 15 * time.Millisecond}, nil, "test-model", 1, nil, nil)
+	build.portion = 50 * time.Millisecond
+	if status, err := build.RunForClaim(context.Background(), cardsClaim, cardsSubject, false); err != nil || status != jobs.StatusQueued || store.yields != 1 {
+		t.Fatalf("RunForClaim() = %q, %v, yields %d; want a yield", status, err, store.yields)
+	}
+}
+
 // R12.1, R12.2: new chapters go to the model only during the portion; a portion that built
-// cards yields the Job, and the next claim builds the rest.
+// cards yields the Job to the cards of another project that wait, and the next claim builds the rest.
 func TestBuildCardsYieldsAfterPortion(t *testing.T) {
 	text := manyChapters(12)
-	store := &cardsStore{existing: map[CardKey]bool{}}
+	store := &cardsStore{existing: map[CardKey]bool{}, othersWait: true}
 	build := NewBuildCards(text, store, &slowCardsModel{delay: 15 * time.Millisecond}, nil, "test-model", 1, nil, nil)
 	build.portion = 50 * time.Millisecond
 	status, err := build.RunForClaim(context.Background(), cardsClaim, cardsSubject, false)

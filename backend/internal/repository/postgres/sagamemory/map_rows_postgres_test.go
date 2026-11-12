@@ -136,7 +136,7 @@ func TestAMapBehindItsCardsGetsAJobWithoutACallOfTheModel(t *testing.T) {
 	seedMemoryProject(t, db)
 	testutil.SeedSagaSearchRows(t, db, memoryProjectID)
 	ctx := context.Background()
-	repository := New(db)
+	repository := siteRepository(db)
 	model := &namesCardModel{}
 	withoutMap := service.NewBuildCards(repository, repository, model, nil, "test-model", 2, nil, nil)
 	if status, err := withoutMap.RunForClaim(ctx, claimCardsJobForTest(t, db), cardsSubjectForTest(), true); err != nil || status != jobs.StatusSucceeded {
@@ -294,7 +294,7 @@ func TestDeletingASourceRemovesTheMap(t *testing.T) {
 	seedMemoryProject(t, db)
 	testutil.SeedSagaSearchRows(t, db, memoryProjectID)
 	ctx := context.Background()
-	repository := New(db)
+	repository := siteRepository(db)
 	build := mapCardsJob(t, repository, &namesCardModel{})
 	if status, err := build.RunForClaim(ctx, claimCardsJobForTest(t, db), cardsSubjectForTest(), true); err != nil || status != jobs.StatusSucceeded {
 		t.Fatalf("run = %q, %v", status, err)
@@ -422,7 +422,7 @@ func TestARecordOfTheAuthorLeavesTheMapBehindUntilItsNextBuild(t *testing.T) {
 	seedMemoryProject(t, db)
 	testutil.SeedSagaSearchRows(t, db, memoryProjectID)
 	ctx := context.Background()
-	repository := New(db)
+	repository := siteRepository(db)
 	saga := service.NewSaga(repository, repository)
 	model := &namesCardModel{}
 	failed := func(_, stage string, err error) { t.Errorf("the step %s of the Job failed: %v", stage, err) }

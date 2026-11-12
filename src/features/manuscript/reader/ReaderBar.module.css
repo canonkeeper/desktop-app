@@ -1,0 +1,76 @@
+/* The one line of the reader (RD1.1; Pattern/Reader/Chapter Bar): painted by the background of reading. */
+.bar {
+  background: var(--ck-reader);
+  color: var(--ck-foreground);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  gap: 4px;
+  padding: 0 12px 0 8px;
+}
+
+.place {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.short {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.actions button[data-variant='ghost'] {
+  gap: 6px;
+  font-weight: 500;
+}
+
+.progress {
+  height: 2px;
+  background: var(--ck-border);
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--ck-primary);
+  transition: width 120ms linear;
+}
+
+/* A phone (RD1.9): «‹ Книга II · гл. 12», «Найти» as an icon and «⋯»; «Аа» and «Содержание» stand in the bottom bar. */
+@media (max-width: 767px) {
+  .row {
+    padding: 0 2px;
+  }
+
+  .full {
+    display: none;
+  }
+
+  .short {
+    display: inline;
+  }
+
+  .wide {
+    display: none;
+  }
+
+  .find {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

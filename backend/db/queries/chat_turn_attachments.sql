@@ -8,10 +8,10 @@ FROM chat_turn_attachments
 WHERE project_id = sqlc.arg(project_id) AND chat_id = sqlc.arg(chat_id);
 
 -- name: CreateChatTurnAttachment :exec
-INSERT INTO chat_turn_attachments (turn_id, chat_id, project_id, number, title, file_name, format, paragraphs, words, created_at)
+INSERT INTO chat_turn_attachments (turn_id, chat_id, project_id, number, title, file_name, format, paragraphs, words, document, created_at)
 VALUES (
     sqlc.arg(turn_id), sqlc.arg(chat_id), sqlc.arg(project_id), sqlc.arg(number), sqlc.arg(title), sqlc.arg(file_name),
-    sqlc.arg(format), sqlc.arg(paragraphs)::text[], sqlc.arg(words), sqlc.arg(created_at)
+    sqlc.arg(format), sqlc.arg(paragraphs)::text[], sqlc.arg(words), sqlc.narg(document)::jsonb, sqlc.arg(created_at)
 );
 
 -- name: GetChatTurnAttachmentHeader :one
@@ -38,3 +38,12 @@ SELECT number
 FROM chat_turn_attachments
 WHERE project_id = sqlc.arg(project_id) AND chat_id = sqlc.arg(chat_id)
 ORDER BY number;
+
+-- name: GetChatAttachmentDocument :one
+-- The parse of an attachment of a live chat for the proofreading started from it (CA5.5): NULL for the attachments
+-- before it was kept.
+SELECT attachment.document
+FROM chat_turn_attachments AS attachment
+JOIN chat_sessions AS chat ON chat.id = attachment.chat_id AND chat.project_id = attachment.project_id
+WHERE attachment.project_id = sqlc.arg(project_id) AND attachment.chat_id = sqlc.arg(chat_id)
+  AND chat.deleted_at IS NULL AND attachment.number = sqlc.arg(number);

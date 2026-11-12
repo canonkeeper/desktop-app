@@ -48,6 +48,28 @@ const (
 	NoteProofread NoteKind = "proofread"
 )
 
+// Finding says the note is a finding of «Сверка» the author decides on: what the check found and what the earlier
+// writing left (specs/2026-11-07-writing-screen.md WS7.1). The corrections of the proofreading are counted apart, the
+// questions, variants and replaced places are not findings.
+func (kind NoteKind) Finding() bool {
+	switch kind {
+	case NoteCanon, NoteNew, NoteStyle, NoteCraft, NoteSeam, NotePlanFollow, NoteMeaning, NoteRepeat, NoteMachine:
+		return true
+	}
+	return false
+}
+
+// FindingKinds are the kinds of the findings of «Сверка», as a store counts them.
+func FindingKinds() []string {
+	kinds := []string{}
+	for _, kind := range []NoteKind{NoteCanon, NoteNew, NoteStyle, NoteCraft, NoteSeam, NotePlanFollow, NoteMeaning, NoteRepeat, NoteMachine} {
+		if kind.Finding() {
+			kinds = append(kinds, string(kind))
+		}
+	}
+	return kinds
+}
+
 // NoteTarget is the text a note stands in: the one working text, or none (a brief of the helper before
 // specs/2026-11-06-writing-agent.md S8). The notes on the chapter text of the earlier writing stand in the working text
 // since the migration of S8 (WA10.4).

@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../api/mock';
 import { parseRoute } from '../../shared/navigation/app-route';
 import { ManuscriptPage } from './ManuscriptPage';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 const draftModuleLoad = vi.hoisted(() => ({ count: 0 }));
 
@@ -19,9 +20,9 @@ it('does not preload the Draft chunk in reader mode', async () => {
   const route = parseRoute(new URL('http://localhost/manuscript/books?mode=read&projectId=project-white-port&bookId=book-02&chapterId=chapter-12&paragraphId=p-12-03'));
 
   render(
-    <QueryClientProvider client={queryClient}>
-      <ManuscriptPage api={createMockApiClient()} navigate={vi.fn()} onLogout={vi.fn()} route={route} userName="Мира Волкова" />
-    </QueryClientProvider>,
+    <QueryClientProvider client={queryClient}><ToastsProvider>
+      <ManuscriptPage api={createMockApiClient()} navigate={vi.fn()} route={route} />
+    </ToastsProvider></QueryClientProvider>,
   );
 
   expect(await screen.findByRole('heading', { level: 1, name: 'Глава 12. Белый порт' })).toBeTruthy();

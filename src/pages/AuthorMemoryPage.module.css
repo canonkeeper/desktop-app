@@ -1,0 +1,63 @@
+/* «Что помнит помощник» (specs/2026-11-10-ux2-memory-page.md MP1.1): the page of the lists, its heading and its two parts. */
+
+/* The width is the shell's — the content of a list, as on the other sections (specs/2026-11-11-ux9-shelf-chat.md SC2.4, W-31,
+   П-3); the page keeps no column of its own. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-4);
+  padding: var(--ck-space-5) var(--ck-space-5) var(--ck-space-7);
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-1);
+}
+
+.title {
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.lead {
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* The tabs stay in one row: a long name — «Ваши материалы · 133 на проверку» — takes a second line on a phone. */
+.tabs {
+  flex-wrap: nowrap;
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.tabs > [role='tab'] {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-bottom: -1px;
+  text-align: left;
+}
+
+.waiting {
+  color: var(--ck-primary);
+}
+
+.part {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: var(--ck-space-4) var(--ck-space-4) var(--ck-space-6);
+  }
+
+  .title {
+    font-size: 24px;
+  }
+}

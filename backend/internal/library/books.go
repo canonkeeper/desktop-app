@@ -169,7 +169,7 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, bookID string, in
 	if err != nil {
 		return Book{}, err
 	}
-	return s.store.UpdateBook(ctx, UpdateBookStoreInput{
+	updated, err := s.store.UpdateBook(ctx, UpdateBookStoreInput{
 		ProjectID:   access.ProjectID,
 		BookID:      bookID,
 		Title:       title,
@@ -178,6 +178,10 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, bookID string, in
 		UpdatedAt:   s.clock.Now(),
 		AfterBookID: placement,
 	})
+	if err == nil && placement.Present && s.reordered != nil {
+		s.reordered(context.WithoutCancel(ctx), access.ProjectID)
+	}
+	return updated, err
 }
 
 func (s *Service) DeleteBook(ctx context.Context, actor Actor, bookID string) error {

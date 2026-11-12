@@ -31,6 +31,9 @@ type Attachment struct {
 	Paragraphs []string
 	Words      int
 	CreatedAt  time.Time
+	// Document is the parse of the chapter whole — its runs and the look of a Word file — for the proofreading started
+	// from it (specs/2026-11-07-chat-attach-chapter.md, CA5.5); nil for the attachments before it was kept.
+	Document *chapterfile.Document
 }
 
 // NewAttachment makes the attachment of a question from the parsed chapter (CA1.1, CA1.2): its paragraphs with words,
@@ -46,7 +49,7 @@ func NewAttachment(document chapterfile.Document, fileName string) Attachment {
 	}
 	return Attachment{
 		Title: title, FileName: fileName, Format: string(document.Format),
-		Paragraphs: document.Lines(), Words: document.Words(),
+		Paragraphs: document.Lines(), Words: document.Words(), Document: &document,
 	}
 }
 

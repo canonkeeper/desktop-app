@@ -15,13 +15,13 @@ func testVersion() *Version {
 		return out
 	}
 	return NewVersion("project", "draft", "fp", []Chapter{
-		{ID: "c3", BookID: "b2", BookOrder: 2, Order: 1, Title: "Глава 83. Подземный город Зимого́рск.",
+		{ID: "c3", BookID: "b2", BookOrder: 2, BookKeyNumber: 2, Order: 1, Title: "Глава 83. Подземный город Зимого́рск.",
 			Paragraphs: paragraphs("Дозорный первым нашёл скрытый город-алтарь Зимого́рск.", "Жрица вьюжница ждала у входа.")},
-		{ID: "c1", BookID: "b1", BookOrder: 1, Order: 1, Title: "Глава 1. Начало",
+		{ID: "c1", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 1, Title: "Глава 1. Начало",
 			Paragraphs: paragraphs("Его друг по отряду позвал Мирона с собой.", "Мирон купил капсулу и мини-босс.")},
-		{ID: "c2", BookID: "b1", BookOrder: 1, Order: 2, Title: "Послесловие",
+		{ID: "c2", BookID: "b1", BookOrder: 1, BookKeyNumber: 1, Order: 2, Title: "Послесловие",
 			Paragraphs: paragraphs("Ёлки, это был миниконтро́ллер!")},
-		{ID: "c4", BookID: "b2", BookOrder: 2, Order: 2, Title: "Глава 83. Повтор номера",
+		{ID: "c4", BookID: "b2", BookOrder: 2, BookKeyNumber: 2, Order: 2, Title: "Глава 83. Повтор номера",
 			Paragraphs: paragraphs("Вьюжница снова появилась в Зимогорске.")},
 	})
 }
@@ -44,8 +44,10 @@ func TestNewVersionOrdersChaptersAndAssignsStableKeys(t *testing.T) {
 	if chapter, ok := version.Find("гл. 1"); !ok || chapter.ID != "c1" {
 		t.Fatalf("Find(гл. 1) = %v, %v", chapter, ok)
 	}
-	if _, ok := version.Find("83"); ok {
-		t.Fatal("ambiguous number 83 must not resolve")
+	// specs/2026-11-11-ux7-reorder.md RK1.5: an ambiguous number is no key of its own, but reads as its first holder —
+	// the earliest such chapter of the book with the lowest number.
+	if chapter, ok := version.Find("83"); !ok || chapter.ID != "c3" || chapter.Key != "b2c1" {
+		t.Fatalf("ambiguous number 83 = %+v, %v; want the first «Глава 83» under its own key b2c1", chapter, ok)
 	}
 }
 
@@ -85,7 +87,7 @@ func TestSearchModes(t *testing.T) {
 // Snowball stems the nominative of a surname apart from its other cases ("кутузов" → "кутуз",
 // "кутузова" → "кутузов"); a word query still finds every case form the text has.
 func TestWordSearchFindsEveryCaseOfASurname(t *testing.T) {
-	version := NewVersion("project", "draft", "fp", []Chapter{{ID: "c1", BookOrder: 1, Order: 1, Title: "Глава 1",
+	version := NewVersion("project", "draft", "fp", []Chapter{{ID: "c1", BookOrder: 1, BookKeyNumber: 1, Order: 1, Title: "Глава 1",
 		Paragraphs: []Paragraph{{Text: "Брат — адъютант Кутузова."}, {Text: "Кутузов улыбнулся."}, {Text: "Письмо Кутузову."}}}})
 	stems := map[string]string{
 		"кутузов": "кутуз", "кутузова": "кутузов", "кутузову": "кутузов",
@@ -151,8 +153,8 @@ func TestNormalizeAndTokenize(t *testing.T) {
 // when the number repeats across parts and books.
 func TestChapterCitationsUseTheAuthorsNames(t *testing.T) {
 	version := NewVersion("project", "draft", "fp", []Chapter{
-		{ID: "c1", BookOrder: 9, Order: 1, Title: "Глава 312. Опознание", Paragraphs: []Paragraph{{Text: "a"}, {Text: "b"}}},
-		{ID: "c2", BookOrder: 1, Order: 62, Title: "Часть третья. Глава XVI", Paragraphs: []Paragraph{{Text: "a"}}},
+		{ID: "c1", BookOrder: 9, BookKeyNumber: 9, Order: 1, Title: "Глава 312. Опознание", Paragraphs: []Paragraph{{Text: "a"}, {Text: "b"}}},
+		{ID: "c2", BookOrder: 1, BookKeyNumber: 1, Order: 62, Title: "Часть третья. Глава XVI", Paragraphs: []Paragraph{{Text: "a"}}},
 	})
 	numbered, _ := version.Find("312")
 	titled, _ := version.Find("b1c62")

@@ -59,17 +59,27 @@ type Input struct {
 	Name    string
 }
 
-// View is a record with the chapter it names, nil when it names none or the chapter is gone.
+// View is a record with the chapter it names, nil when it names none or the chapter is gone; ChapterGone says it named one
+// the saga no longer has (specs/2026-11-10-ux8-memory-records.md MR1.2).
 type View struct {
 	domain.Record
-	Chapter *sagamemory.Chapter
+	Chapter     *sagamemory.Chapter
+	ChapterGone bool
 }
 
-// PageView is a page of records; NextCursor continues it, empty on the last one.
+// viewWith names the chapter of a record among the chapters of the saga.
+func viewWith(record domain.Record, byID map[string]*sagamemory.Chapter) View {
+	chapter := byID[record.ChapterID]
+	return View{Record: record, Chapter: chapter, ChapterGone: record.ChapterID != "" && chapter == nil}
+}
+
+// PageView is a page of records; NextCursor continues it, empty on the last one. Shared says the saga has members besides
+// one, so the page signs a record with its author (MR1.5).
 type PageView struct {
 	Records    []View
 	Total      int64
 	NextCursor string
+	Shared     bool
 }
 
 func readInput(ctx context.Context, chapters ChapterVersions, projectID string, input Input) (domain.Draft, error) {
@@ -167,13 +177,13 @@ func (useCase List) Execute(ctx context.Context, actor Actor, input ListInput) (
 	if err != nil {
 		return PageView{}, err
 	}
-	result := PageView{Records: make([]View, len(page.Records)), Total: page.Total}
+	result := PageView{Records: make([]View, len(page.Records)), Total: page.Total, Shared: page.Shared}
 	byID, err := useCase.chaptersOf(ctx, actor.ProjectID, page.Records)
 	if err != nil {
 		return PageView{}, err
 	}
 	for index, record := range page.Records {
-		result.Records[index] = View{Record: record, Chapter: byID[record.ChapterID]}
+		result.Records[index] = viewWith(record, byID)
 	}
 	if page.HasMore && len(page.Records) > 0 {
 		last := page.Records[len(page.Records)-1]
@@ -216,7 +226,7 @@ func viewOf(ctx context.Context, chapters ChapterVersions, record domain.Record)
 	if err != nil {
 		return View{}, err
 	}
-	return View{Record: record, Chapter: chapterIndex(version)[record.ChapterID]}, nil
+	return viewWith(record, chapterIndex(version)), nil
 }
 
 func encodeCursor(cursor domain.Cursor) (string, error) {

@@ -59,9 +59,12 @@ type Session struct {
 	LatestTurnJobID string    `json:"latestTurnJobId,omitempty"`
 	// LatestTurnStatus is the Job status of the latest turn; the chat list marks the chats
 	// whose turn is queued, running or canceling.
-	LatestTurnStatus string           `json:"latestTurnStatus,omitempty"`
-	SavedAssignment  *SavedAssignment `json:"savedAssignment"`
-	Outdated         bool             `json:"outdated"`
+	LatestTurnStatus string `json:"latestTurnStatus,omitempty"`
+	// LatestTurnAt is when the latest turn was asked: the list of chats stands by it and opens the latest conversation
+	// (specs/2026-11-11-ux4-after-answer.md AA2.1, AA3.1).
+	LatestTurnAt    *time.Time       `json:"latestTurnAt,omitempty"`
+	SavedAssignment *SavedAssignment `json:"savedAssignment"`
+	Outdated        bool             `json:"outdated"`
 	// Kind is research for a chat, drawing for the session of a helper of the drawing workshop
 	// (specs/2026-11-02-image-workshop.md IW4.2): the chat operations neither list nor post into the latter.
 	Kind            string `json:"-"`
@@ -130,7 +133,9 @@ type TurnRun struct {
 	// drawing or the draft (specs/2026-11-03-workshop-helpers-steering.md S2.1).
 	WorkshopLines []string
 	// DrawAfter says «Нарисовать» sent the turn (specs/2026-11-05-drawing-one-screen.md D3.7).
-	DrawAfter       bool
+	DrawAfter bool
+	// Button says a button of the page sent the question (specs/2026-11-11-ux9-writing-b.md WB3.3).
+	Button          bool
 	SelectedContext []ContextSelection
 	// Images are the gallery images the author attached to the question
 	// (specs/2026-10-29-saga-illustrations.md R15.9).

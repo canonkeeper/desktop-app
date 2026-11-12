@@ -1,52 +1,38 @@
-import {
-  textSourceView,
-  useIndexingStatusQuery,
-  type IndexingStatus,
-  type ManuscriptApiClient,
-} from '../../entities/manuscript/api';
+import type { IndexingStatus } from '../../entities/manuscript/api';
+import { chatReadingLine, waitingLine } from '../../entities/manuscript/preparation-copy';
 import { Button } from '../../ui/controls/Button';
 import { Alert } from '../../ui/feedback/Alert';
 import styles from './ResearchChatPanel.module.css';
 
-type PreparationContext = NonNullable<IndexingStatus['published']['context']>;
-
 interface PreparationNoticeProps {
-  api: Pick<ManuscriptApiClient, 'getIndexingStatus'>;
-  /** The preparation of the chat's text version; a ready one shows nothing. */
-  context: PreparationContext;
+  /** The status of the saga of the chat: its reading, or that the reading stopped. */
+  status: IndexingStatus;
   onOpenBooks: () => void;
-  projectId: string;
 }
 
 /**
- * UC2.3: while the saga is still being prepared, the chat says it answers from the prepared
- * part and which book it is on (R2.3.3). The cards of the current book are followed until the
- * preparation ends; the notice goes away with it.
+ * The advice over the field of the chat while the saga is read (specs/2026-11-10-ux3-saga-state.md SS3.1): the reading by
+ * the counts of the server, as on the shelf, and that a question may be asked now — the answer before and after the end
+ * of the reading is the same, so there is no plate of a partial answer. A reading that stopped sends to the books, where
+ * «Продолжить» stands. Nothing once the saga is read.
  */
-export function PreparationNotice({ api, context, onOpenBooks, projectId }: PreparationNoticeProps) {
-  const book = context.state === 'processing' ? context.currentBook : null;
-  const bookStatus = useIndexingStatusQuery(api, projectId, {
-    bookId: book?.bookId ?? '', enabled: Boolean(book), follow: true, sourceView: textSourceView,
-  });
-  if (context.state === 'ready') return null;
-  const cards = book ? bookStatus.data?.steps.find((step) => step.kind === 'cards')?.counters : undefined;
-  const progress = book
-    ? `: книга ${book.position} из ${book.total}${cards?.totalChapters ? `, карточки глав ${cards.indexedChapters ?? 0} из ${cards.totalChapters}` : ''}`
-    : '';
-  // Advice, not an alarm: its counters change every few seconds and are not announced.
+export function PreparationNotice({ onOpenBooks, status }: PreparationNoticeProps) {
+  const context = status.published.exists ? status.published.context : null;
+  // Advice, not an alarm: its counts change every few seconds and are not announced.
+  if (status.preparation) {
+    // A reading that waits for the helper is named so: the line says the helper is not connected (WN3.2).
+    const label = waitingLine(status.preparation) ? 'Помощник ещё не подключён' : 'Помощник читает книгу';
+    return (
+      <Alert aria-label={label} className={styles.preparation} role="note" tone="info">
+        <span>{chatReadingLine(status.preparation)}</span>
+      </Alert>
+    );
+  }
+  if (context?.state !== 'partial') return null;
   return (
-    <Alert aria-label="Подготовка саги" className={styles.preparation} role="note" tone="info">
-      {context.state === 'processing' ? (
-        <>
-          <span>Книги ещё готовятся{progress}. Пока отвечаю по готовой части — ответ может быть неполным.</span>
-          <Button onClick={onOpenBooks} size="sm" variant="ghost">Подробнее на полке</Button>
-        </>
-      ) : (
-        <>
-          <span>Часть глав не подготовлена. Ответы — по готовой части.</span>
-          <Button onClick={onOpenBooks} size="sm" variant="ghost">К книгам</Button>
-        </>
-      )}
+    <Alert aria-label="Помощник читает книгу" className={styles.preparation} role="note" tone="info">
+      <span>Помощник прочитал не всю книгу — отвечаю по прочитанной части. Продолжить чтение можно на странице книг.</span>
+      <Button onClick={onOpenBooks} size="sm" variant="ghost">К книгам</Button>
     </Alert>
   );
 }

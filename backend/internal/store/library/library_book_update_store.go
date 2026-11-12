@@ -23,7 +23,11 @@ func (s *Store) UpdateBook(ctx context.Context, input library.UpdateBookStoreInp
 	if err != nil {
 		return library.Book{}, library.ErrNotFound
 	}
-	var row sqlc.Book
+	// The id and the title of the book as written.
+	var written struct {
+		id    pgtype.UUID
+		title string
+	}
 	err = s.WithTx(ctx, func(tx pgx.Tx) error {
 		if input.AfterBookID.Present {
 			if err := lockBookOrderProject(ctx, tx, projectUUID); err != nil {
@@ -42,18 +46,11 @@ func (s *Store) UpdateBook(ctx context.Context, input library.UpdateBookStoreInp
 			return err
 		}
 		if input.AfterBookID.Present {
-			_, currentOrder, err := bookProjectAndOrder(ctx, tx, projectUUID, bookUUID)
+			targetOrder, err := placeBooksForMove(ctx, tx, projectUUID, bookUUID, input.AfterBookID, input.UpdatedAt)
 			if err != nil {
 				return err
 			}
-			targetOrder, err := bookMoveTargetOrder(ctx, tx, projectUUID, bookUUID, currentOrder, input.AfterBookID)
-			if err != nil {
-				return err
-			}
-			if err := shiftBooksForMove(ctx, tx, projectUUID, bookUUID, currentOrder, targetOrder, input.UpdatedAt); err != nil {
-				return err
-			}
-			row, err = scanLibraryBook(tx.QueryRow(ctx, `
+			row, err := scanLibraryBook(tx.QueryRow(ctx, `
 UPDATE books b
 SET title = $1,
     subtitle = $2,
@@ -75,8 +72,9 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order", b.d
 			if err != nil {
 				return err
 			}
+			written.id, written.title = row.ID, row.Title
 		} else {
-			row, err = sqlc.New(tx).UpdateBook(ctx, sqlc.UpdateBookParams{
+			row, err := sqlc.New(tx).UpdateBook(ctx, sqlc.UpdateBookParams{
 				Title:             input.Title,
 				Subtitle:          textValue(input.Subtitle),
 				CoverColor:        textValue(input.CoverColor),
@@ -89,6 +87,7 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order", b.d
 			if err != nil {
 				return err
 			}
+			written.id, written.title = row.ID, row.Title
 		}
 		if previousTitle == input.Title {
 			return nil
@@ -96,7 +95,7 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order", b.d
 		if err := upsertBookSourceMember(ctx, tx, library.BookSourceMember{
 			ProjectID: projectUUID.String(), ProjectLifecycleGeneration: vector.Project,
 			SourceView: governance.SourceViewDraft, BookID: bookUUID.String(),
-			BookLifecycleGeneration: vector.Book, Title: row.Title,
+			BookLifecycleGeneration: vector.Book, Title: written.title,
 		}); err != nil {
 			return err
 		}
@@ -118,7 +117,7 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order", b.d
 	if err != nil {
 		return library.Book{}, err
 	}
-	return s.GetBook(ctx, input.ProjectID, row.ID.String())
+	return s.GetBook(ctx, input.ProjectID, written.id.String())
 }
 func bookInsertionOrder(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, placement library.OrderPlacement) (int, error) {
 	if !placement.Present {
@@ -207,83 +206,73 @@ FOR UPDATE
 	return vector, nil
 }
 
-func bookProjectAndOrder(ctx context.Context, tx pgx.Tx, expectedProjectID, bookID pgtype.UUID) (pgtype.UUID, int, error) {
-	var projectID pgtype.UUID
-	var order int
-	err := tx.QueryRow(ctx, `
-SELECT b.project_id, b."order"
+// placeBooksForMove puts the living books of the saga at places 1…n in the new order — the book after its anchor, at
+// the start without one — and returns the place of the book; the row of the book itself is written by the caller. The
+// keys of the chapters do not depend on the places (specs/2026-11-11-ux7-reorder.md RK1.1), so a move may close the
+// places a deleted book left: «Книга N» is the place on the shelf. The same move twice leaves the same shelf.
+func placeBooksForMove(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, placement library.OrderPlacement, updatedAt time.Time) (int, error) {
+	var anchorID pgtype.UUID
+	if placement.AfterID != nil {
+		parsed, err := storedb.ParseUUID(*placement.AfterID)
+		if err != nil {
+			return 0, library.ErrNotFound
+		}
+		if parsed == bookID {
+			return 0, library.ErrValidation
+		}
+		anchorID = parsed
+	}
+	rows, err := tx.Query(ctx, `
+SELECT b.id
 FROM books b
 JOIN projects p ON p.id = b.project_id
 WHERE b.project_id = $1
-  AND b.id = $2
   AND b.deleted_at IS NULL
   AND p.deleted_at IS NULL
-`, expectedProjectID, bookID).Scan(&projectID, &order)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return pgtype.UUID{}, 0, library.ErrNotFound
-	}
-	return projectID, order, err
-}
-
-func bookMoveTargetOrder(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, currentOrder int, placement library.OrderPlacement) (int, error) {
-	if !placement.Present {
-		return currentOrder, nil
-	}
-	if placement.AfterID == nil {
-		return 1, nil
-	}
-	anchorID, err := storedb.ParseUUID(*placement.AfterID)
-	if err != nil {
-		return 0, library.ErrNotFound
-	}
-	if anchorID == bookID {
-		return 0, library.ErrValidation
-	}
-	rawTarget, err := bookInsertionOrder(ctx, tx, projectID, placement)
+ORDER BY b."order", b.id
+`, projectID)
 	if err != nil {
 		return 0, err
 	}
-	if currentOrder < rawTarget {
-		return rawTarget - 1, nil
+	shelf, err := pgx.CollectRows(rows, pgx.RowTo[pgtype.UUID])
+	if err != nil {
+		return 0, err
 	}
-	return rawTarget, nil
-}
-
-func shiftBooksForMove(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, currentOrder, targetOrder int, updatedAt time.Time) error {
-	if targetOrder < 1 || currentOrder < 1 {
-		return library.ErrValidation
+	placed := make([]pgtype.UUID, 0, len(shelf))
+	found := !anchorID.Valid
+	if found {
+		placed = append(placed, bookID)
 	}
-	if targetOrder == currentOrder {
-		return nil
+	for _, id := range shelf {
+		if id == bookID {
+			continue
+		}
+		placed = append(placed, id)
+		if anchorID.Valid && id == anchorID {
+			placed = append(placed, bookID)
+			found = true
+		}
 	}
-	if targetOrder < currentOrder {
-		_, err := tx.Exec(ctx, `
+	if !found || len(placed) != len(shelf) {
+		return 0, library.ErrNotFound
+	}
+	if _, err := tx.Exec(ctx, `
 UPDATE books b
-SET "order" = b."order" + 1,
-    updated_at = $5
-FROM projects p
+SET "order" = placed.place,
+    updated_at = $4
+FROM unnest($2::uuid[]) WITH ORDINALITY AS placed(id, place)
 WHERE b.project_id = $1
-  AND p.id = b.project_id
-  AND b.id <> $2
+  AND b.id = placed.id
+  AND b.id <> $3
   AND b.deleted_at IS NULL
-  AND p.deleted_at IS NULL
-  AND b."order" >= $3
-  AND b."order" < $4
-`, projectID, bookID, targetOrder, currentOrder, storedb.Timestamptz(updatedAt))
-		return err
+  AND b."order" <> placed.place
+`, projectID, placed, bookID, storedb.Timestamptz(updatedAt)); err != nil {
+		return 0, err
 	}
-	_, err := tx.Exec(ctx, `
-UPDATE books b
-SET "order" = b."order" - 1,
-    updated_at = $5
-FROM projects p
-WHERE b.project_id = $1
-  AND p.id = b.project_id
-  AND b.id <> $2
-  AND b.deleted_at IS NULL
-  AND p.deleted_at IS NULL
-  AND b."order" > $3
-  AND b."order" <= $4
-`, projectID, bookID, currentOrder, targetOrder, storedb.Timestamptz(updatedAt))
-	return err
+	for i, id := range placed {
+		if id == bookID {
+			return i + 1, nil
+		}
+	}
+	return 0, library.ErrNotFound
 }

@@ -860,6 +860,48 @@ func (q *Queries) LockCurrentSourceChapter(ctx context.Context, arg LockCurrentS
 	return i, err
 }
 
+const lockCurrentSourceChapters = `-- name: LockCurrentSourceChapters :many
+SELECT id, lifecycle_generation
+FROM chapters
+WHERE project_id = $1
+  AND book_id = $2
+  AND id = ANY($3::uuid[])
+  AND deleted_at IS NULL
+ORDER BY id
+FOR SHARE
+`
+
+type LockCurrentSourceChaptersParams struct {
+	ProjectID  pgtype.UUID   `json:"project_id"`
+	BookID     pgtype.UUID   `json:"book_id"`
+	ChapterIds []pgtype.UUID `json:"chapter_ids"`
+}
+
+type LockCurrentSourceChaptersRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	LifecycleGeneration int64       `json:"lifecycle_generation"`
+}
+
+func (q *Queries) LockCurrentSourceChapters(ctx context.Context, arg LockCurrentSourceChaptersParams) ([]LockCurrentSourceChaptersRow, error) {
+	rows, err := q.db.Query(ctx, lockCurrentSourceChapters, arg.ProjectID, arg.BookID, arg.ChapterIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockCurrentSourceChaptersRow
+	for rows.Next() {
+		var i LockCurrentSourceChaptersRow
+		if err := rows.Scan(&i.ID, &i.LifecycleGeneration); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockCurrentSourceChaptersForBook = `-- name: LockCurrentSourceChaptersForBook :many
 SELECT id
 FROM chapters
@@ -1241,58 +1283,6 @@ func (q *Queries) UpsertBookSourceMember(ctx context.Context, arg UpsertBookSour
 		arg.BookID,
 		arg.BookLifecycleGeneration,
 		arg.Title,
-	)
-	return err
-}
-
-const upsertChapterSourceMember = `-- name: UpsertChapterSourceMember :exec
-INSERT INTO chapter_source_members (
-  project_id, source_view, project_lifecycle_generation,
-  book_id, book_lifecycle_generation,
-  chapter_id, chapter_lifecycle_generation, source_revision,
-  title, chapter_order
-)
-VALUES (
-  $1, $2, $3,
-  $4, $5,
-  $6, $7, $8,
-  $9, $10
-)
-ON CONFLICT (project_id, source_view, chapter_id) DO UPDATE
-SET project_lifecycle_generation = EXCLUDED.project_lifecycle_generation,
-    book_id = EXCLUDED.book_id,
-    book_lifecycle_generation = EXCLUDED.book_lifecycle_generation,
-    chapter_lifecycle_generation = EXCLUDED.chapter_lifecycle_generation,
-    source_revision = EXCLUDED.source_revision,
-    title = EXCLUDED.title,
-    chapter_order = EXCLUDED.chapter_order
-`
-
-type UpsertChapterSourceMemberParams struct {
-	ProjectID                  pgtype.UUID `json:"project_id"`
-	SourceView                 string      `json:"source_view"`
-	ProjectLifecycleGeneration int64       `json:"project_lifecycle_generation"`
-	BookID                     pgtype.UUID `json:"book_id"`
-	BookLifecycleGeneration    int64       `json:"book_lifecycle_generation"`
-	ChapterID                  pgtype.UUID `json:"chapter_id"`
-	ChapterLifecycleGeneration int64       `json:"chapter_lifecycle_generation"`
-	SourceRevision             int64       `json:"source_revision"`
-	Title                      string      `json:"title"`
-	ChapterOrder               int32       `json:"chapter_order"`
-}
-
-func (q *Queries) UpsertChapterSourceMember(ctx context.Context, arg UpsertChapterSourceMemberParams) error {
-	_, err := q.db.Exec(ctx, upsertChapterSourceMember,
-		arg.ProjectID,
-		arg.SourceView,
-		arg.ProjectLifecycleGeneration,
-		arg.BookID,
-		arg.BookLifecycleGeneration,
-		arg.ChapterID,
-		arg.ChapterLifecycleGeneration,
-		arg.SourceRevision,
-		arg.Title,
-		arg.ChapterOrder,
 	)
 	return err
 }

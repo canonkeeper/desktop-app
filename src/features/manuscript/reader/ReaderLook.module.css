@@ -1,0 +1,48 @@
+/* «Аа» (RD1.4): a window over the text, in the background of reading like the rest of the reader (RD1.5). */
+.popover {
+  position: absolute;
+  z-index: 8;
+  top: 52px;
+  right: 12px;
+  width: 340px;
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 8px 16px 16px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-md);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheetLayer {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: var(--ck-scrim);
+}
+
+.sheet {
+  width: 100%;
+  max-height: 80dvh;
+  overflow-y: auto;
+  border-radius: var(--ck-radius-lg, 12px) var(--ck-radius-lg, 12px) 0 0;
+  padding: 8px 16px 20px;
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+}

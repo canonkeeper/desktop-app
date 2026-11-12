@@ -3,6 +3,7 @@ import type {
   Book,
   BookCoverUploadOptions,
   BookExportFormat,
+  BookExportOptions,
   DeletedSourceListOptions,
   DownloadedFile,
   ImportBookInput,
@@ -43,33 +44,56 @@ type MockImportBookInput = {
   options?: ImportBookInput['options'];
 };
 
-const allowedImportExtensions = ['.fb2', '.epub', '.docx'] as const;
+// The kinds of a book file as the server names them (specs/2026-11-10-book-file-kinds.md K1.2).
+const allowedImportExtensions = ['.fb2', '.epub', '.docx', '.txt', '.md', '.rtf', '.odt', '.fb2.zip'] as const;
 type ImportExtension = (typeof allowedImportExtensions)[number];
 const allowedImportMimeTypesByExtension = {
-  '.epub': ['application/epub+zip'],
   '.fb2': ['application/x-fictionbook+xml', 'text/xml', 'application/xml'],
+  '.epub': ['application/epub+zip'],
   '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  '.txt': ['text/plain'],
+  '.md': ['text/markdown', 'text/x-markdown', 'text/plain'],
+  '.rtf': ['application/rtf', 'text/rtf'],
+  '.odt': ['application/vnd.oasis.opendocument.text'],
+  '.fb2.zip': ['application/zip', 'application/x-zip-compressed'],
 } as const satisfies Record<ImportExtension, readonly string[]>;
-const allowedImportMimeTypes = Object.values(allowedImportMimeTypesByExtension).flat();
+const allowedImportMimeTypes = [...new Set(Object.values(allowedImportMimeTypesByExtension).flat())];
+// A browser names a text by nothing or by octet-stream; the server takes it as a text (K1.2).
+const unnamedTextExtensions = new Set<ImportExtension>(['.txt', '.md']);
 const maxImportFileSizeBytes = 52_428_800;
 const maxCoverFileSizeBytes = 5_242_880;
 const coverMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-export function firstMissingBookOrder(books: readonly Book[], projectId: string) {
+/**
+ * The stored order of a new book, as the backend gives it: after the living books of the shelf (specs/2026-11-11-ux7-upload.md
+ * UP2.3) — the place a deleted book keeps for its return is not filled. Null when two books share an order.
+ */
+export function nextShelfOrder(books: readonly Book[], projectId: string) {
   const orders = new Set<number>();
   for (const book of books) {
     if (book.projectId !== projectId) continue;
     if (orders.has(book.order)) return null;
     orders.add(book.order);
   }
-  for (let order = 1; ; order += 1) {
-    if (!orders.has(order)) return order;
-  }
+  return Math.max(0, ...orders) + 1;
 }
 
-function extensionForFileName(name: string) {
-  const dot = name.lastIndexOf('.');
-  return dot >= 0 ? name.slice(dot).toLowerCase() : '';
+/** The kind of a book file by the end of its name, the longest first (K1.1); '' for none. */
+function extensionForFileName(name: string): ImportExtension | '' {
+  const lower = name.trim().toLowerCase();
+  return [...allowedImportExtensions].sort((left, right) => right.length - left.length).find((kind) => lower.endsWith(kind)) ?? '';
+}
+
+/** The name of a book file without the end of its kind: the title of a book that names none. */
+export function importFileTitle(name: string) {
+  const kind = extensionForFileName(name);
+  return kind ? name.slice(0, name.length - kind.length) : name;
+}
+
+function importMimeTypeMatches(extension: ImportExtension, contentType: string) {
+  const type = contentType.toLowerCase();
+  if (unnamedTextExtensions.has(extension) && (type === '' || type === 'application/octet-stream')) return true;
+  return (allowedImportMimeTypesByExtension[extension] as readonly string[]).includes(type);
 }
 export function importFileDetails(file: MockImportBookInput['file']) {
   if (typeof file === 'string') {
@@ -102,14 +126,11 @@ function validateImportFilePart(
 
 export function validateImportFileInput(input: Pick<MockImportBookInput, 'file'>, operationId: 'importBookFile') {
   const details = validateImportFilePart(input, operationId);
-  const extension = extensionForFileName(details.name) as ImportExtension;
-  if (!allowedImportExtensions.includes(extension)) {
+  const extension = extensionForFileName(details.name);
+  if (!extension) {
     throw new MockApiError(415, 'Import file type is not supported.', operationId);
   }
-  if (
-    typeof input.file !== 'string' &&
-    !allowedImportMimeTypesByExtension[extension].includes(details.contentType.toLowerCase() as never)
-  ) {
+  if (typeof input.file !== 'string' && !importMimeTypeMatches(extension, details.contentType)) {
     throw new MockApiError(415, 'Import file type is not supported.', operationId);
   }
 }
@@ -120,14 +141,11 @@ export function validateImportFileInput(input: Pick<MockImportBookInput, 'file'>
  */
 export function importQueuePreflightError(input: Pick<MockImportBookInput, 'file'>) {
   const details = validateImportFilePart(input, 'uploadImportQueueItem');
-  const extension = extensionForFileName(details.name) as ImportExtension;
-  if (!allowedImportExtensions.includes(extension)) {
+  const extension = extensionForFileName(details.name);
+  if (!extension) {
     return { code: 'import.unsupported_media_type', message: 'Import file type is not supported.' };
   }
-  if (
-    typeof input.file !== 'string' &&
-    !allowedImportMimeTypesByExtension[extension].includes(details.contentType.toLowerCase() as never)
-  ) {
+  if (typeof input.file !== 'string' && !importMimeTypeMatches(extension, details.contentType)) {
     return { code: 'import.content_mismatch', message: 'Import file content does not match its declared type.' };
   }
   if (details.sizeBytes === 0) {
@@ -136,7 +154,18 @@ export function importQueuePreflightError(input: Pick<MockImportBookInput, 'file
   return null;
 }
 
+/**
+ * A book as the backend gives it: «Книга N» is its rank among the living books of its saga in the order of the shelf,
+ * 1…n without gaps (specs/2026-11-11-ux7-reorder.md RK1.6), whatever the stored order holds.
+ */
+export function placedBook(books: readonly Book[], book: Book): Book {
+  const shelf = books.filter((each) => each.projectId === book.projectId)
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  return { ...clone(book), place: shelf.findIndex((each) => each.id === book.id) + 1 };
+}
+
 export function createBookOperations(context: MockRepositoryContext) {
+  const out = (book: Book) => placedBook(context.state.books, book);
   function reorderProjectBook(projectId: string, bookId: string, afterBookId: string | null | undefined, operationId: 'createBook' | 'updateBook') {
     const orderedBooks = context.state.books
       .filter((book) => book.projectId === projectId)
@@ -184,8 +213,16 @@ export function createBookOperations(context: MockRepositoryContext) {
         .map((source) => deletedSourceRow(source));
       return paginateList('listBooks', context.scenario.preset === 'empty-lists' ? [] : data, pagination, { projectId: id, state });
     }
-    const data = context.state.books.filter((book) => book.projectId === id).sort((left, right) => left.order - right.order);
+    const data = context.state.books.filter((book) => book.projectId === id).sort((left, right) => left.order - right.order)
+      .map((book) => withOpening(out(book)));
     return paginateList('listBooks', context.scenario.preset === 'empty-lists' ? [] : data, pagination, { projectId: id, state });
+  }
+
+  /** How a book begins, as the listing of the server says (specs/2026-11-11-ux9-shelf-chat.md SC1.3). */
+  function withOpening(book: Book): Book {
+    const first = context.state.chapters.filter((chapter) => chapter.bookId === book.id).sort((left, right) => left.order - right.order)[0];
+    const text = (first?.paragraphs ?? []).map((paragraph) => paragraph.text.trim()).filter(Boolean).slice(0, 4).join(' ').slice(0, 300);
+    return text ? { ...book, opening: text } : book;
   }
 
   async function createBook(id: string, body: OperationRequest<'createBook'>): Promise<OperationResponse<'createBook', '201'>> {
@@ -203,6 +240,7 @@ export function createBookOperations(context: MockRepositoryContext) {
       title: body.title,
       subtitle: body.subtitle ?? null,
       order: nextOrder,
+      place: 0,
       displayNumber: String(context.state.books.length + 1),
       coverColor: body.coverColor ?? '#4F46E5',
       coverUrl: null,
@@ -214,12 +252,12 @@ export function createBookOperations(context: MockRepositoryContext) {
     };
     context.state.books.push(book);
     reorderProjectBook(id, book.id, body.afterBookId, 'createBook');
-    return clone(book);
+    return out(book);
   }
 
   async function getBook(id: string): Promise<OperationResponse<'getBook', '200'>> {
     context.applyOperation('getBook');
-    return clone(context.bookFor(id, 'getBook'));
+    return out(context.bookFor(id, 'getBook'));
   }
 
   async function uploadBookCover(
@@ -243,7 +281,7 @@ export function createBookOperations(context: MockRepositoryContext) {
     book.coverUrl = `/api/v1/books/${id}/cover/${version}`;
     book.updatedAt = now;
     options.onUploadProgress?.({ loadedBytes: sizeBytes, totalBytes: sizeBytes });
-    return clone(book);
+    return out(book);
   }
 
   /** A drawing of the saga becomes the cover of a book (A8.6): the rules of an upload, a copy of the render. */
@@ -261,16 +299,17 @@ export function createBookOperations(context: MockRepositoryContext) {
     context.state.bookCovers[id] = { version, mimeType: 'image/png', sizeBytes: 1, active: true };
     book.coverUrl = `/api/v1/books/${id}/cover/${version}`;
     book.updatedAt = now;
-    return clone(book);
+    return out(book);
   }
 
-  async function getBookExport(id: string, format: BookExportFormat): Promise<DownloadedFile> {
+  async function getBookExport(id: string, format: BookExportFormat, options: BookExportOptions = {}): Promise<DownloadedFile> {
     context.applyOperation('getBookExport');
     const book = context.bookFor(id, 'getBookExport', ['editor', 'admin', 'owner']);
     if (book.chapterCount < 1) {
       throw new MockApiError(422, 'The book has no text to export.', 'getBookExport', 'book_export.empty');
     }
-    return { blob: new Blob([`Книга «${book.title}» в файле ${format}`]), fileName: `${book.title}.${format}` };
+    const drawings = options.drawings ? ' с рисунками' : '';
+    return { blob: new Blob([`Книга «${book.title}» в файле ${format}${drawings}`]), fileName: `${book.title}.${format}` };
   }
 
   async function deleteBookCover(id: string): Promise<OperationResponse<'deleteBookCover', '200'>> {
@@ -279,12 +318,12 @@ export function createBookOperations(context: MockRepositoryContext) {
     const cover = context.state.bookCovers[id];
     if (!cover?.active) {
       book.coverUrl = null;
-      return clone(book);
+      return out(book);
     }
     cover.active = false;
     book.coverUrl = null;
     book.updatedAt = now;
-    return clone(book);
+    return out(book);
   }
 
   async function updateBook(id: string, body: OperationRequest<'updateBook'>): Promise<OperationResponse<'updateBook', '200'>> {
@@ -297,7 +336,7 @@ export function createBookOperations(context: MockRepositoryContext) {
     if (Object.hasOwn(body, 'afterBookId')) {
       reorderProjectBook(book.projectId, book.id, body.afterBookId, 'updateBook');
     }
-    return clone(book);
+    return out(book);
   }
 
   async function deleteBook(id: string): Promise<void> {
@@ -315,9 +354,18 @@ export function createBookOperations(context: MockRepositoryContext) {
       if ('bookId' in job.subject && job.subject.bookId === id) return true;
       return job.result !== null && 'bookId' in job.result && job.result.bookId === id;
     }).map((job) => job.id));
+    // The snapshot of its last update goes with the book (specs/2026-11-12-ux10-book-revert.md BR1.2).
+    delete book.update;
     context.state.deletedBooks.push(deletedSource(book));
     context.state.books = context.state.books.filter((book) => book.id !== id);
-    context.state.jobs = context.state.jobs.filter((job) => !removedJobIds.has(job.id));
+    // The running cards and thread layer of the saga stop with the book, as the fence does
+    // (specs/2026-11-08-deletion-stops-processing.md R1.1.1).
+    context.state.jobs = context.state.jobs
+      .filter((job) => !removedJobIds.has(job.id))
+      .map((job) => job.subject.projectId === book.projectId && job.status === 'running'
+        && (job.kind === 'chapter_cards' || job.kind === 'saga_layer')
+        ? { ...job, status: 'canceling' as const, canCancel: false }
+        : job);
     for (const jobId of removedJobIds) {
       context.jobCreators.delete(jobId);
     }
@@ -341,11 +389,60 @@ export function createBookOperations(context: MockRepositoryContext) {
     }
     context.state.deletedBooks.splice(sourceIndex, 1);
     context.state.books.push(source.resource);
-    return clone(source.resource);
+    return out(source.resource);
   }
 
-  function nextImportBookOrder(id: string, operationId: 'createBook' | 'getImportConstraints' | 'importBookFile') {
-    const nextOrder = firstMissingBookOrder(context.state.books, id);
+  /** The fingerprint of a book whose last update can be returned: it changes with the update. */
+  function revertFingerprint(book: Book) {
+    return [...`${book.id}:${book.update?.at ?? ''}`].reduce((hash, sign) => (hash * 31 + sign.charCodeAt(0)) >>> 0, 7)
+      .toString(16).padStart(8, '0').repeat(4);
+  }
+
+  /** A book of a saga the author edits whose last update from a file can be returned (BR2.4). */
+  function updatedBook(id: string, operationId: 'previewBookUpdateRevert' | 'revertBookUpdate') {
+    const book = context.bookFor(id, operationId, ['editor', 'admin', 'owner']);
+    if (context.state.projects.find((project) => project.id === book.projectId)?.demo) {
+      throw new MockApiError(409, 'The demo saga takes no text.', operationId, 'demo_saga.read_only');
+    }
+    if (context.state.jobs.some((job) => job.kind === 'import' && job.subject.type === 'import' && job.subject.bookId === id
+      && !job.subject.preview && (job.status === 'queued' || job.status === 'running' || job.status === 'canceling'))) {
+      throw new MockApiError(409, 'The book is being updated from a file.', operationId, 'book.busy');
+    }
+    if (!book.update || book.update.revertUntil <= now) {
+      throw new MockApiError(404, 'The book has no update to return from.', operationId, 'book.update_gone');
+    }
+    return book as Book & { update: NonNullable<Book['update']> };
+  }
+
+  /**
+   * What «Вернуть прежнюю версию» would do (specs/2026-11-12-ux10-book-revert.md BR2.1): the update of the mock changes the
+   * words of the first chapter, so its text comes back.
+   */
+  async function previewBookUpdateRevert(id: string): Promise<OperationResponse<'previewBookUpdateRevert', '200'>> {
+    context.applyOperation('previewBookUpdateRevert');
+    const book = updatedBook(id, 'previewBookUpdateRevert');
+    const changed = context.state.chapters.filter((chapter) => chapter.bookId === id).sort((left, right) => left.order - right.order)[0];
+    return {
+      bookId: book.id, bookTitle: book.title, updatedAt: book.update.at, revertUntil: book.update.revertUntil,
+      fingerprint: revertFingerprint(book),
+      text: changed ? [{ id: changed.id, title: changed.title }] : [], place: [], returned: [], removed: [], kept: [],
+    };
+  }
+
+  /** The return itself (BR2.2): as the preview said, or `book.update_changed`; the update of the book is gone after it. */
+  async function revertBookUpdate(id: string, body: OperationRequest<'revertBookUpdate'>): Promise<OperationResponse<'revertBookUpdate', '200'>> {
+    context.applyOperation('revertBookUpdate');
+    const book = updatedBook(id, 'revertBookUpdate');
+    if (body.fingerprint !== revertFingerprint(book)) {
+      throw new MockApiError(409, 'The book changed after the preview.', 'revertBookUpdate', 'book.update_changed');
+    }
+    delete (book as Book).update;
+    book.updatedAt = now;
+    return out(book);
+  }
+
+  function nextImportBookOrder(id: string, operationId: 'createBook' | 'importBookFile') {
+    const nextOrder = nextShelfOrder(context.state.books, id);
     if (nextOrder === null) {
       throw new MockApiError(409, 'Existing book order is not contiguous.', operationId, 'import_sequence_conflict');
     }
@@ -359,7 +456,6 @@ export function createBookOperations(context: MockRepositoryContext) {
       allowedExtensions: [...allowedImportExtensions],
       allowedMimeTypes: [...allowedImportMimeTypes],
       maxFileSizeBytes: maxImportFileSizeBytes,
-      nextBookOrder: nextImportBookOrder(_id, 'getImportConstraints'),
     };
   }
 
@@ -442,18 +538,17 @@ export function createBookOperations(context: MockRepositoryContext) {
         removedChapters: 0,
         punctuationChapters: 0,
         renamedChapters: 0,
-        ...(preview ? {
-          preview: {
-            newCards: changed ? 1 : 0,
-            threads: false,
-            chapters: changed ? [{
-              order: 1,
-              title: changed.title,
-              change: 'words' as const,
-              places: [{ before: '…отряд из пятнадцати человек вышел к реке…', after: '…отряд из тринадцати человек вышел к реке…' }],
-            }] : [],
-          },
-        } : {}),
+        // The preview tells what an update would do, the update keeps what it did (specs/2026-11-11-ux7-trash.md TB4.1).
+        preview: {
+          newCards: changed ? 1 : 0,
+          threads: false,
+          chapters: changed ? [{
+            order: 1,
+            title: changed.title,
+            change: 'words' as const,
+            places: [{ before: '…отряд из пятнадцати человек вышел к реке…', after: '…отряд из тринадцати человек вышел к реке…' }],
+          }] : [],
+        },
       },
       canCancel: true,
     });
@@ -469,6 +564,8 @@ export function createBookOperations(context: MockRepositoryContext) {
     updateBook,
     deleteBook,
     restoreBook,
+    previewBookUpdateRevert,
+    revertBookUpdate,
     uploadBookCover,
     deleteBookCover,
     getBookExport,

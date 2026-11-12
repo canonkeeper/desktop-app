@@ -54,7 +54,12 @@ func CaseOf(authorWords int, typical *int, choice Case) Case {
 	}
 }
 
-// Case is the case of the draft: by the author's words in its working text, unless he chose one.
+// Case is the case of the draft: by the author's words in its working text, unless he chose one. A draft that edits a
+// chapter of the book is the author's written chapter whatever its length: it is nearly done, and nothing asks what to do
+// with his text (specs/2026-11-11-ux9-writing-a.md WA4.1); one whose chapter is deleted goes in as a new chapter.
 func (draft Draft) Case(choice Case) Case {
+	if draft.Edits != nil && !draft.Edits.Gone {
+		return CaseNearlyDone
+	}
 	return CaseOf(AuthorWords(draft.Text), draft.TypicalWords, choice)
 }

@@ -1,0 +1,142 @@
+/* The scale «Сага на момент главы» of the saga map (specs/2026-11-11-ux8-map.md MP2). */
+
+/* «Сага на момент главы» (MP2): the name and its line, then the scale with the marks of the books and the place in words. The
+   parts are one row of flex items, so a phone puts the place beside the name and gives the scale the whole width. */
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--ck-space-2);
+  padding: var(--ck-space-2) var(--ck-space-4) var(--ck-space-1);
+  border-top: 1px solid var(--ck-border);
+}
+
+.scaleName { order: 1; color: var(--ck-foreground-strong); font-size: var(--ck-font-size-body-sm); font-weight: 600; }
+.scaleHint { order: 2; min-width: 0; color: var(--ck-muted-foreground); font-size: var(--ck-font-size-meta); }
+.scaleBreak { order: 3; flex-basis: 100%; height: 0; }
+.scaleBack { order: 4; }
+.scaleTrack { position: relative; min-width: 0; flex: 1 1 0; order: 5; padding-bottom: 18px; }
+.scaleForward { order: 6; }
+
+.scaleValue {
+  min-width: 0;
+  flex: 0 1 280px;
+  order: 7;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-body-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scaleAll { order: 8; white-space: nowrap; }
+
+/* A scale of known geometry: the marks stand under the centre of the thumb at their chapters. */
+.slider {
+  --thumb: 18px;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ck-primary) var(--scale-fill), var(--ck-border-strong) var(--scale-fill));
+}
+
+.slider::-moz-range-track { height: 4px; border-radius: 2px; background: var(--ck-border-strong); }
+.slider::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--ck-primary); }
+
+.slider::-webkit-slider-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc(2px - var(--thumb) / 2);
+  border: 2px solid var(--ck-primary);
+  border-radius: 50%;
+  background: var(--ck-card);
+  appearance: none;
+}
+
+.slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--thumb);
+  height: var(--thumb);
+  border: 2px solid var(--ck-primary);
+  border-radius: 50%;
+  background: var(--ck-card);
+}
+
+.slider:focus-visible { outline: none; }
+.slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ck-focus-shadow); }
+.slider:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--ck-focus-shadow); }
+
+.marks {
+  position: absolute;
+  right: 9px;
+  bottom: 0;
+  left: 9px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.marks > li { position: absolute; top: 0; left: calc(var(--mark-at) * 100%); transform: translateX(-50%); }
+
+.mark {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: start center;
+  padding: 0 3px;
+  border: 0;
+  border-radius: var(--ck-radius-xs);
+  background: none;
+  color: var(--ck-muted-foreground);
+  font: inherit;
+  font-size: var(--ck-font-size-meta);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mark::before,
+.markLine {
+  display: block;
+  width: 1px;
+  height: 5px;
+  margin: 0 auto 2px;
+  background: var(--ck-border-strong);
+  content: '';
+}
+
+.mark:hover { color: var(--ck-foreground); }
+.mark:focus-visible { outline: 1.5px solid var(--ck-ring); outline-offset: 1px; }
+
+@media (max-width: 760px) {
+  /* A phone: the name with the place in one line, its line under it, then the scale over the whole width (MP2, К-08). */
+  .scale { padding: var(--ck-space-1) var(--ck-space-3) 0; }
+  .scaleName::after { content: ':'; }
+  .scaleValue { flex: 1 1 0; order: 2; font-size: var(--ck-font-size-body-sm); }
+  .scaleAll { order: 3; }
+  .scaleHint { flex-basis: 100%; order: 4; }
+  .scaleBreak { display: none; }
+  .slider { --thumb: 22px; height: 40px; }
+  .scaleBack, .scaleForward { width: 44px; height: 44px; }
+  .marks { right: 11px; left: 11px; }
+}
+
+/* Under a finger and below 900 px the thumb and the marks of the books are targets of 44 px, by the scale itself
+   (specs/2026-11-11-ux9-shelf-chat.md SC2.1, К-03): the marks stand under the track, each a column of 44 px. */
+@media (pointer: coarse), (max-width: 899px) {
+  .scaleTrack { padding-bottom: 44px; }
+  .slider { --thumb: 24px; height: 44px; }
+  .marks { height: 44px; }
+  .mark { min-width: 44px; height: 44px; padding-top: 2px; }
+}

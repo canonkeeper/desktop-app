@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { putOnFree } from '../../../test/illustration-api';
 import { createMockApiClient } from '../repository';
 import { projectId } from './fixtures';
 
@@ -54,6 +55,8 @@ describe('mock saga gallery drawings', () => {
   // and a layer end draw_limited with its reset and give back the trial drawing and the day's place.
   it('ends a drawing and a layer draw_limited under the image limit and gives back what they spent', async () => {
     const api = createMockApiClient();
+    // On «Бесплатно» the drawings spend its trial drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+    await putOnFree(api);
     const before = await api.getIllustrationAccess();
     api.setScenario({ ...api.getScenario(), drawingLimit: { retryAt: '2026-10-30T11:30:00.000Z' } });
     const variant = await api.createProjectImageVariant(projectId, 2, {}, { idempotencyKey: 'idem-mock-limit-1' });
@@ -127,11 +130,13 @@ describe('mock saga gallery drawings', () => {
   // with the link to the workshop and spends nothing.
   it('answers a question that asks to draw with the link to the workshop and draws nothing', async () => {
     const api = createMockApiClient();
+    // On «Бесплатно» the drawings spend its trial drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+    await putOnFree(api);
     const before = (await api.listProjectImages(projectId, { limit: 50 })).data.length;
     const chat = await api.createChatSession(projectId, { sourceView: 'published', scope: 'project', title: 'Рисунок' }, { idempotencyKey: 'idem-mock-draw-chat' });
     const request = await api.createChatTurn(chat.id, { body: 'Нарисуй Мару на причале' }, { idempotencyKey: 'idem-mock-draw-turn' });
     expect((await api.listProjectImages(projectId, { limit: 50 })).data.length).toBe(before);
-    expect((await api.getIllustrationAccess()).trialLeft).toBe(5);
+    expect((await api.getIllustrationAccess()).trialLeft).toBe(3);
     const events: Array<{ kind: string; text?: string; tool?: { name: string } }> = [];
     let cursor: string | null | undefined;
     do {
@@ -176,6 +181,8 @@ describe('mock saga gallery drawings', () => {
 describe('mock enlargement', () => {
   it('starts a version of the branch, counts its tiles and comes out at twice the size', async () => {
     const api = createMockApiClient();
+    // On «Бесплатно» the drawings spend its trial drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+    await putOnFree(api);
     const before = await api.getIllustrationAccess();
     const version = await api.enlargeProjectImage(projectId, 2, { idempotencyKey: 'idem-mock-enlarge' });
     expect(version.prompt).toBe('Увеличено ×2');
@@ -219,18 +226,18 @@ describe('a regeneration of the mock gallery', () => {
 // specs/2026-11-03-workshop-helpers-steering.md S3.4: a regeneration of 2–4 variants is a group by as many stagings of
 // the brief of the drawing, as the backend draws it.
 describe('a regeneration by variants in the mock', () => {
-  it('draws a group by the stagings of the brief and refuses another count', async () => {
+  // specs/2026-11-11-ux6-drawing-flow.md DF3.3: the angles are optional — the brief's first, the mock picks the rest.
+  it('draws a group by the stagings of the brief and the picked ones', async () => {
     const api = createMockApiClient();
     const pier = '00000000-0000-4000-9000-000000000002';
-    await expect(api.createProjectImageVariant(projectId, 2, { variants: 3 }, { idempotencyKey: 'idem-regroup-none' }))
-      .rejects.toMatchObject({ status: 400 });
     const drawing = await api.getDrawing(projectId, pier);
-    await api.updateDrawing(projectId, pier, { brief: { ...drawing.brief, staging: ['общий план', 'крупный план', 'вид сверху'] }, expectedRevision: drawing.revision });
-    await expect(api.createProjectImageVariant(projectId, 2, { variants: 2 }, { idempotencyKey: 'idem-regroup-two' }))
-      .rejects.toMatchObject({ status: 400 });
+    await api.updateDrawing(projectId, pier, { brief: { ...drawing.brief, staging: ['общий план', 'крупный план'] }, expectedRevision: drawing.revision });
     const first = await api.createProjectImageVariant(projectId, 2, { variants: 3 }, { idempotencyKey: 'idem-regroup-three' });
     expect(first.variantGroup).toBeTruthy();
     expect(first.variantNumbers).toHaveLength(3);
+    const prompts = await Promise.all(first.variantNumbers!.map(async (number) => (await api.getProjectImage(projectId, number)).variantPrompt));
+    expect(prompts.slice(0, 2)).toEqual(['общий план', 'крупный план']);
+    expect(new Set(prompts).size).toBe(3);
     const waiting = await api.getDrawing(projectId, pier);
     expect(waiting.variants).toBe(3);
     expect(waiting.current?.number).toBe(2);
@@ -242,6 +249,8 @@ describe('a regeneration by variants in the mock', () => {
 describe('the frames and cutouts of the mock', () => {
   it('cuts the background away in a version of one spend whose replay answers the first, and takes no frame for a hero', async () => {
     const api = createMockApiClient();
+    // On «Бесплатно» the drawings spend its trial drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+    await putOnFree(api);
     const before = (await api.getIllustrationAccess()).trialLeft;
     const cutout = await api.cutoutProjectImage(projectId, 2, { idempotencyKey: 'idem-cut' });
     expect(cutout).toMatchObject({ transparent: true, baseImage: 2, branch: 2, aspect: 'landscape', status: 'drawing' });
@@ -261,6 +270,8 @@ describe('the frames and cutouts of the mock', () => {
   // D4.3, D4.10: the mock keeps what the backend keeps — the choice deletes nothing, the gallery shows one tile a branch.
   it('draws variants as one start and one spend, keeps them out of the gallery and closes the group by the choice', async () => {
     const api = createMockApiClient();
+    // On «Бесплатно» the drawings spend its trial drawings (specs/2026-11-08-subscription-tiers.md TR6.1).
+    await putOnFree(api);
     const before = (await api.getIllustrationAccess()).trialLeft;
     const first = await api.agentDrawVersion(projectId, 1, { instruction: 'ночь', variants: 3 });
     const numbers = first.variantNumbers!;
@@ -290,5 +301,36 @@ describe('the frames and cutouts of the mock', () => {
     await expect(api.chooseProjectImageVariant(projectId, numbers[2]!, { idempotencyKey: 'idem-mock-other' })).rejects.toMatchObject({ status: 409 });
     // As chooseVariantInTx: the current version of a drawing answers the same, whether it ever was a variant or not.
     expect((await api.chooseProjectImageVariant(projectId, 2, { idempotencyKey: 'idem-mock-plain' })).number).toBe(2);
+  });
+});
+
+// specs/2026-11-11-drawing-angle.md DA2.1, DA2.2, DA2.3: «Сменить ракурс» of the mock is what the backend keeps — a version
+// of the branch from the drawing with its camera and the caption of the server, one spend under one key; the point of the
+// drawing and a value out of bounds draw nothing; «Нарисовать заново» of it keeps the angle and takes no frame.
+describe('«Сменить ракурс» of the mock', () => {
+  it('starts a version of the branch with the camera and its caption and refuses the point of the drawing', async () => {
+    const api = createMockApiClient();
+    await putOnFree(api);
+    const before = (await api.getIllustrationAccess()).trialLeft;
+    const camera = { azimuth: 40, elevation: 25, distance: 0.7 };
+    const version = await api.changeProjectImageAngle(projectId, 2, camera, { idempotencyKey: 'idem-angle' });
+    expect(version).toMatchObject({
+      baseImage: 2, branch: 2, aspect: 'landscape', status: 'drawing', referenceImages: [],
+      angle: { ...camera, label: 'ракурс: справа спереди, выше, ближе' },
+    });
+    const asked = 'Та же сцена с другой точки обзора: камера справа спереди, выше, ближе.';
+    expect(version.prompt).toBe(asked);
+    expect((await api.changeProjectImageAngle(projectId, 2, camera, { idempotencyKey: 'idem-angle' })).number).toBe(version.number);
+    expect((await api.getIllustrationAccess()).trialLeft).toBe(before - 1);
+    // An axis in the capture of the point of the drawing is that point.
+    expect((await api.changeProjectImageAngle(projectId, 2, { azimuth: 5, elevation: 30, distance: 1.04 }, { idempotencyKey: 'idem-angle-held' })).angle)
+      .toEqual({ azimuth: 0, elevation: 30, distance: 1, label: 'ракурс: выше' });
+    for (const bad of [{ azimuth: 3, elevation: -4, distance: 1.02 }, { azimuth: 181, elevation: 0, distance: 1 }, { azimuth: 30, elevation: 0, distance: 0.4 }]) {
+      await expect(api.changeProjectImageAngle(projectId, 2, bad, { idempotencyKey: `idem-angle-${bad.azimuth}` })).rejects.toMatchObject({ status: 400 });
+    }
+    for (let read = 0; read < 7; read += 1) await api.getProjectImage(projectId, version.number);
+    const again = await api.createProjectImageVariant(projectId, version.number, { note: 'костёр ярче' }, { idempotencyKey: 'idem-angle-again' });
+    expect(again).toMatchObject({ baseImage: 2, angle: version.angle, regenerateNote: 'костёр ярче' });
+    await expect(api.createProjectImageVariant(projectId, version.number, { aspect: 'wide' }, { idempotencyKey: 'idem-angle-wide' })).rejects.toMatchObject({ status: 400 });
   });
 });

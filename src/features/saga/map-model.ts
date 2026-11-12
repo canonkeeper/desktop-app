@@ -1,4 +1,4 @@
-import type { SagaChapterRef, SagaMap, SagaMapCategory, SagaMapNode } from '../../entities/saga/api';
+import type { SagaMap, SagaMapCategory, SagaMapNode } from '../../entities/saga/api';
 
 /**
  * The saga map in the browser (specs/2026-11-04-saga-map.md, UC3, UC4): the graph the server built,
@@ -7,7 +7,7 @@ import type { SagaChapterRef, SagaMap, SagaMapCategory, SagaMapNode } from '../.
  */
 
 export const mapCategories: ReadonlyArray<{ category: SagaMapCategory; label: string }> = [
-  { category: 'character', label: 'Персонажи' },
+  { category: 'character', label: 'Герои' },
   { category: 'place', label: 'Места' },
   { category: 'faction', label: 'Фракции' },
   { category: 'item', label: 'Предметы' },
@@ -43,6 +43,8 @@ export interface MapView {
   focus: string | null;
   /** The node whose card is open: always on the map once it has appeared. */
   selected: string | null;
+  /** «Только новое» (MP3.5): the records of the author the book does not know, the rest pale. */
+  onlyNew?: boolean;
 }
 
 export interface ViewNode {
@@ -54,6 +56,8 @@ export interface ViewNode {
   hero: boolean;
   /** A record of the author the book does not know: a dashed outline, no chapters (R9.5). */
   material: boolean;
+  /** Drawn pale and without its label: a name of the book while the map shows only what is new (MP3.5). */
+  dim: boolean;
 }
 
 export interface ViewLink {
@@ -109,7 +113,9 @@ export function projectMap(map: SagaMap, view: MapView): ViewGraph {
   // A record of the author is no event of a chapter: it stands at any chapter.
   const present = map.nodes.map((node) => (node.material ? 0 : countTo(node.chapters, view.to)));
   const appeared = (index: number) => present[index]! > 0 || Boolean(map.nodes[index]!.material);
-  const hiddenNode = (node: SagaMapNode) => view.hidden.has(node.category) || (Boolean(node.material) && view.hidden.has('material'));
+  // «Только новое» shows the records of the author whatever the kinds hide (MP3.5).
+  const hiddenNode = (node: SagaMapNode) => (node.material && view.onlyNew ? false
+    : view.hidden.has(node.category) || (Boolean(node.material) && view.hidden.has('material')));
   const shown = new Set<number>();
   let total = 0;
   map.nodes.forEach((node, index) => {
@@ -141,7 +147,7 @@ export function projectMap(map: SagaMap, view: MapView): ViewGraph {
 
   const nodes = [...shown].sort((left, right) => left - right).map((index): ViewNode => {
     const node = map.nodes[index]!;
-    return { key: node.key, name: node.name, category: node.category, count: present[index]!, hero: node.key === map.hero, material: Boolean(node.material) };
+    return { key: node.key, name: node.name, category: node.category, count: present[index]!, hero: node.key === map.hero, material: Boolean(node.material), dim: Boolean(view.onlyNew) && !node.material };
   });
   const links: ViewLink[] = [];
   for (const link of map.links) {
@@ -177,6 +183,17 @@ export function searchNodes(map: SagaMap, query: string, limit = 8): SagaMapNode
 }
 
 /**
+ * The second line of a found node (specs/2026-11-11-ux8-map.md MP3.3): the other name it was found by and where it first
+ * appears, from what the map already carries; empty when there is nothing to say.
+ */
+export function foundLine(map: SagaMap, node: SagaMapNode, query: string) {
+  const wanted = normalized(query);
+  const alias = normalized(node.name).includes(wanted) ? undefined : node.aliases.find((name) => normalized(name).includes(wanted));
+  const first = node.chapters.length ? map.chapters[node.chapters[0]!]?.label : undefined;
+  return [alias ? `также: ${alias}` : null, first ? `впервые: ${first}` : null].filter(Boolean).join(' · ');
+}
+
+/**
  * The key of the node a URL names: a key, or a name or another name as the voice agent says it (R6.4); a name that
  * is no node stays as it is — the card asks the glossary of the saga for it.
  */
@@ -185,11 +202,6 @@ export function resolveNodeKey(map: SagaMap, value: string | undefined) {
   if (map.nodes.some((node) => node.key === value)) return value;
   const wanted = normalized(value);
   return map.nodes.find((node) => [node.key, node.name, ...node.aliases].some((name) => normalized(name) === wanted))?.key ?? value;
-}
-
-/** «гл. 312 · Том 7»: the chapter the scale stands at. */
-export function chapterLabel(chapter: SagaChapterRef) {
-  return `гл. ${chapter.number ?? chapter.key} · Том ${chapter.bookOrder}`;
 }
 
 /** The hidden categories of the URL: «place,item»; unknown words are left out. */

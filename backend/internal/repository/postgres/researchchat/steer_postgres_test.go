@@ -83,7 +83,8 @@ func (fixture steerFixture) begin(key string) service.BeginSteerCommand {
 }
 
 // specs/2026-10-30-chat-steering.md R1.3, R1.5, R1.6, R1.7: the target is the bound native turn;
-// the key goes from sending to accepted or back; nothing of the question quota or the Jobs changes.
+// the key goes from sending to accepted or back; no Job and no turn is created (the question a correction spends —
+// specs/2026-11-09-quota-accounting.md Q2.2 — is TestACorrectionSpendsAQuestionOfTheDayPostgres).
 func TestBeginSteerTakesTheKeyOfABoundTurnPostgres(t *testing.T) {
 	fixture := newSteerFixture(t, "ck_rch_steer_key")
 	ctx := context.Background()

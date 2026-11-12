@@ -1,8 +1,9 @@
 import { Eye, EyeOff } from 'lucide-react';
-import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useId, useState, type ComponentPropsWithRef, type ReactNode } from 'react';
 import styles from './controls.module.css';
 
-export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'children'> {
+/** The props of the input, its ref too: a window may start its focus in a field (React 19 passes the ref as a prop). */
+export interface FieldProps extends Omit<ComponentPropsWithRef<'input'>, 'children'> {
   /** A control at the right edge of the input. */
   action?: ReactNode;
   error?: ReactNode;

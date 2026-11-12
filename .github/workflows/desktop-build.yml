@@ -1,0 +1,234 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The installers of the CanonKeeper desktop app (specs/2026-11-12-desk-shell.md SH4.3), for the public repository
+# canonkeeper/desktop-app: the monorepo keeps it in desktop/ci and never runs it; the export puts it into
+# .github/workflows. Windows: NSIS for the current user; Linux (built on ubuntu-24.04): .deb, .rpm and AppImage. Every
+# third-party action is pinned by its commit; the workflow needs no secret (the token of the run reads the releases).
+#
+#   postgres — the PostgreSQL 18 set built from the source pinned in desktop/release.json (desktop/postgres), cached;
+#   app      — the core of the shell (cargo test, clippy), the set (scripts/desktop-app.mjs: the backend with the web,
+#              PostgreSQL, codex-app-server by its pinned sha256), tauri build, a smoke run of the installed app — start,
+#              the window gets the page of the backend, stop with no process left — and the installers as artifacts.
+name: Desktop installers
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  postgres:
+    name: PostgreSQL set · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: pg-out
+          key: pg-set-${{ matrix.os }}-${{ hashFiles('desktop/postgres/**', 'desktop/release.json') }}
+      - name: Build tools (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bison flex
+          pip install meson ninja patchelf
+      - name: Build tools (Windows)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install winflexbison3 -y --no-progress
+          pip install meson ninja
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      - name: Build the set from the pinned source
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: python -I desktop/postgres/build.py pg-work pg-out
+      - name: Pack the set (artifacts lose file modes, a tar keeps them)
+        run: tar -cf pg-set.tar -C pg-out .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pg-${{ matrix.os }}
+          path: pg-set.tar
+          retention-days: 7
+
+  app:
+    name: Installers · ${{ matrix.os }}
+    needs: [postgres]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,rpm" }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, toolchain pinned below
+        with:
+          toolchain: 1.96.1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          workspaces: desktop/src-tauri
+      - name: Linux packages for WebKitGTK 4.1 and the bundles
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm >/dev/null
+      - name: npm packages of the web and of the shell
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix desktop
+      - name: The shell without its window (cargo test) and with it (clippy)
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo test --locked -p canonkeeper-desktop-core
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pg-${{ matrix.os }}
+      - name: The Codex package pinned for the target, through the API of the release assets
+        # The download address of a release page answered 5xx on large files (DA1.9, 08.11); the API does not.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          read -r repo tag asset < <(node -e '
+            const release = require("./desktop/release.json");
+            const pin = release.codex.targets[process.argv[1]];
+            if (!pin) { console.error("desktop/release.json pins no Codex package for " + process.argv[1]); process.exit(1); }
+            console.log(release.codex.repository, pin.tag, pin.asset);' ${{ matrix.target }} | tr -d '\r')
+          for attempt in 1 2 3 4 5; do
+            gh release download "$tag" -R "$repo" -p "$asset" -D codex-download --clobber && break
+            echo "attempt $attempt failed"; sleep 20
+          done
+          echo "CODEX_ARCHIVE=codex-download/$asset" >> "$GITHUB_ENV"
+      - name: The set — the backend with the web, PostgreSQL, codex-app-server — checked against the pins
+        run: node scripts/desktop-app.mjs --target ${{ matrix.target }} --postgres pg-set.tar --codex "$CODEX_ARCHIVE"
+      - name: Tools of the Tauri bundler through the API of the release assets
+        # The bundler downloads them from release pages that answered 5xx (DA1.9); it takes cached ones as they are
+        # (the names and the cache directory of tauri-bundler 2.12.4, which checks the NSIS hashes itself).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fetch() {
+            for attempt in 1 2 3 4 5; do
+              gh release download "$2" -R "$1" -p "$3" -O "$4" --clobber && return 0
+              echo "attempt $attempt failed"; sleep 20
+            done
+            return 1
+          }
+          if [ "$RUNNER_OS" = Linux ]; then
+            tools="$HOME/.cache/tauri"; mkdir -p "$tools"
+            fetch tauri-apps/binary-releases apprun-old AppRun-x86_64 "$tools/AppRun-x86_64"
+            fetch tauri-apps/binary-releases linuxdeploy-07333c6 linuxdeploy-x86_64.AppImage "$tools/linuxdeploy-07333c6-x86_64.AppImage"
+            fetch linuxdeploy/linuxdeploy-plugin-appimage continuous linuxdeploy-plugin-appimage-x86_64.AppImage \
+              "$tools/linuxdeploy-plugin-appimage.AppImage" || rm -f "$tools/linuxdeploy-plugin-appimage.AppImage"
+            fetch AppImage/type2-runtime continuous runtime-x86_64 "$tools/runtime-x86_64"
+            chmod +x "$tools"/*
+          else
+            tools="$(cygpath -u "$LOCALAPPDATA")/tauri"; mkdir -p "$tools"
+            fetch tauri-apps/binary-releases nsis-3.13 nsis-3.13.zip "$RUNNER_TEMP/nsis.zip"
+            python -I -m zipfile -e "$RUNNER_TEMP/nsis.zip" "$tools"
+            mv "$tools/nsis-3.13" "$tools/NSIS"
+            mkdir -p "$tools/NSIS/Plugins/x86-unicode/additional"
+            fetch tauri-apps/nsis-tauri-utils nsis_tauri_utils-v0.5.3 nsis_tauri_utils.dll \
+              "$tools/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
+          fi
+      - name: Build the installers
+        working-directory: desktop
+        run: npx tauri build --ci --config src-tauri/tauri.bundle.json --bundles ${{ matrix.bundles }}
+      - name: AppImage (Linux), with the static AppImage runtime
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        run: LDAI_RUNTIME_FILE="$HOME/.cache/tauri/runtime-x86_64" npx tauri build --ci --config src-tauri/tauri.bundle.json --bundles appimage
+      - name: Install (Linux · apt from the .deb)
+        if: runner.os == 'Linux'
+        run: |
+          deb=$(ls "$PWD"/desktop/src-tauri/target/release/bundle/deb/*.deb)
+          sudo apt-get install -y -qq "$deb" >/dev/null
+          echo "APP_EXE=/usr/bin/canonkeeper" >> "$GITHUB_ENV"
+          echo "APP_DATA=$HOME/.local/share/canonkeeper" >> "$GITHUB_ENV"
+      - name: Install (Windows · NSIS for the current user, apart from the data)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "desktop\src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'CanonKeeper'
+          $data = Join-Path $env:LOCALAPPDATA 'ru.canonkeeper.desktop\data'
+          if (-not (Test-Path "$dir\canonkeeper.exe")) { throw "the installer put no canonkeeper.exe into $dir" }
+          if ($dir -eq $data) { throw "the installation and the data share a directory" }
+          "APP_EXE=$dir\canonkeeper.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_DIR=$dir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_DATA=$data" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Smoke run — start, the window gets the page of the backend, stop with no process left
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            # A desktop session has a session bus; the single instance of the app lives on it.
+            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA"
+          else
+            node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA"
+          fi
+      - name: Uninstall without the box «Удалить данные приложения» keeps the data (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "$env:APP_DIR\uninstall.exe" -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path "$env:APP_DIR\canonkeeper.exe"); $i++) { Start-Sleep -Seconds 2 }
+          if (Test-Path "$env:APP_DIR\canonkeeper.exe") { throw "the program stayed after the uninstaller" }
+          if (-not (Test-Path "$env:APP_DATA\logs")) { throw "the uninstaller removed the data" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: logs-${{ matrix.os }}
+          path: ${{ env.APP_DATA }}/logs
+          if-no-files-found: ignore
+          retention-days: 14

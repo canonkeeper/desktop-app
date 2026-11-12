@@ -1,7 +1,13 @@
 import type { MouseEvent } from 'react';
 import { parseChatSourceTarget } from './chat-source';
+import { drawingStates, drawingsListKeys, drawingViews } from './drawings-address';
 
-export type Surface = 'admin' | 'auth' | 'chat' | 'compare' | 'drawing' | 'gallery' | 'home' | 'illustrations' | 'legal' | 'manuscript' | 'memory' | 'notes' | 'promo' | 'promo-link' | 'saga' | 'unknown' | 'writing';
+/** Every surface of the routes: the name of the tab is read from one table by it (specs/2026-11-10-ux1-shell.md SH1.2). */
+export const surfaces = [
+  'account', 'admin', 'auth', 'chat', 'compare', 'drawing', 'home', 'legal', 'manuscript', 'memory',
+  'notes', 'promo', 'promo-link', 'saga', 'tariff', 'unknown', 'writing',
+] as const;
+export type Surface = typeof surfaces[number];
 
 export interface AppRoute {
   invalidQuery?: boolean;
@@ -12,16 +18,98 @@ export interface AppRoute {
   sourceReturnHref?: string;
   /** The email typed on the sign-in screen, carried in history state to «Забыли пароль?». */
   authEmail?: string;
+  /**
+   * A new letter of verification the author asked for on the page of an old link, carried in history state to sign-in
+   * and «Откройте почту», never in the address: a reload sends no second letter (specs/2026-11-10-ux3-auth.md AU2.3).
+   */
+  sendLetter?: boolean;
   /** The idea of a new drawing from the question of a chat turn, carried in history state, never in the address (IW7.3). */
   drawingIdea?: string;
   /** The question a new chat starts with, from «Спросить о нём» of the saga map, in history state (saga map R5.6). */
   chatQuestion?: string;
+  /** Where the author came to «Тариф» from by the link of a refusal, in history state: the page offers the way back. */
+  returnPlace?: ReturnPlace;
+  /** The section the author came from by a link, in history state: the shell offers «← К …» (PS4.1). */
+  from?: BackFrom;
+  /**
+   * The list of «Рисунки» a drawing was opened from, its query in history state (specs/2026-11-10-ux6-drawings-section.md
+   * DS1.9): the workplace steps to the neighbours of that list and goes back to it with the same selection.
+   */
+  drawingList?: string;
+}
+
+/**
+ * Where the author came from by a link of another section (specs/2026-11-10-ux2-patterns-states.md PS4.1, PS4.2): the
+ * section and, when there is one, the name of its object — the beginning of the question of a chat, a hero of the map, the
+ * title of a chapter in work, the name of a drawing, the title of a chapter read (`manuscript`, the reader:
+ * specs/2026-11-10-ux7-reader.md RD3.2), or a list of a section — the books, the chapters in work, the drawings — and
+ * «Что помнит помощник» (specs/2026-11-11-ux9-account.md AC2.6). It lives in the state of the history entry, never in the
+ * address: a link opened anew has no way back, and a step of the menu of the sections starts without one (PS4.3).
+ */
+export const backSections = ['chat', 'saga', 'writing', 'drawing', 'notes', 'manuscript', 'books', 'writings', 'drawings', 'memory'] as const;
+export interface BackFrom {
+  section: typeof backSections[number];
+  name?: string;
+}
+
+export function isBackFrom(value: unknown): value is BackFrom {
+  if (!value || typeof value !== 'object') return false;
+  const { name, section } = value as { name?: unknown; section?: unknown };
+  return backSections.some((known) => known === section) && (name === undefined || typeof name === 'string');
+}
+
+/**
+ * The section the author is in, as a way back to it (specs/2026-11-11-ux9-account.md AC2.6): «Тариф» and «Аккаунт», opened
+ * from the menu of the account, offer «← К чату», «← К книгам», «← К рисунку»… — an open object of a section, or its list;
+ * none from a page of no section.
+ */
+export function backFromRoute(route: Pick<AppRoute, 'surface' | 'query'>): BackFrom | undefined {
+  switch (route.surface) {
+    case 'chat':
+    case 'saga':
+    case 'notes':
+    case 'memory':
+      return { section: route.surface };
+    case 'manuscript':
+      return { section: route.query.has('chapterId') ? 'manuscript' : 'books' };
+    case 'writing':
+      return { section: route.query.has('draft') ? 'writing' : 'writings' };
+    case 'drawing':
+      return { section: route.query.has('drawing') ? 'drawing' : 'drawings' };
+    default:
+      return undefined;
+  }
+}
+
+/** The same navigation, which marks each step as a step from `from`: the page that opens offers «← К …» back. */
+export function navigateFrom(navigate: RouteNavigate, from: BackFrom): RouteNavigate {
+  return (path, query, options) => navigate(path, query, options?.back ? options : { ...options, from });
+}
+
+/**
+ * A place whose refusal leads to «Тариф» (specs/2026-11-10-ux1-drawing.md DX2.8, specs/2026-11-10-ux2-tariff-account.md
+ * TA3.6, specs/2026-11-10-ux2-patterns-refusals.md PR2.4): the workplace of a drawing, the list of «Рисунки», the
+ * question of a chat, a chapter of «Письмо», the shelf, the map of the saga, a new saga. The page names it
+ * in its link back; the way back itself is a step of the browser's history, with what the author typed kept by the place.
+ */
+export const returnPlaces = ['drawing', 'drawings', 'question', 'chapter', 'shelf', 'map', 'new-saga'] as const;
+export type ReturnPlace = typeof returnPlaces[number];
+
+export function isReturnPlace(value: unknown): value is ReturnPlace {
+  return returnPlaces.some((place) => place === value);
 }
 
 export type RouteNavigate = (
   path: string,
   query?: Record<string, string | undefined>,
-  options?: { replace?: boolean; back?: boolean; sourceReturnHref?: string; authEmail?: string; drawingIdea?: string; chatQuestion?: string },
+  options?: {
+    replace?: boolean; back?: boolean; sourceReturnHref?: string; authEmail?: string; sendLetter?: boolean; drawingIdea?: string;
+    chatQuestion?: string; returnPlace?: ReturnPlace;
+    /** The section this step comes from (PS4.2); `null` — a step of the menu, which starts without a way back (PS4.3). */
+    from?: BackFrom | null;
+    /** The query of the list of «Рисунки» an opened drawing belongs to (DS1.9); a step that replaces a drawing keeps it. */
+    drawingList?: string;
+  },
 ) => void;
 
 const urlBase = 'http://canonkeeper.local';
@@ -30,42 +118,57 @@ const allowedValuesBySurface: Partial<Record<Surface, Readonly<Record<string, Re
   home: {
     contact: new Set(['write']),
   },
-  // The admin panel (admin panel R6.1): the tab, the period of «Сводка» and the stage filter.
+  // The admin panel (specs/2026-11-08-admin-redesign.md AR1.1, AR3.3): the section, the period of «Сервис» and the
+  // filters of «Писатели».
   admin: {
-    tab: new Set(['writers', 'days', 'service', 'requests', 'feedback', 'limits', 'permissions']),
+    tab: new Set(['today', 'writers', 'feedback', 'tiers', 'service', 'promo', 'settings']),
     days: new Set(['7', '14', '30']),
     stage: new Set(['unverified', 'no_documents', 'no_book', 'no_question', 'asking', 'quiet', 'blocked']),
+    tier: new Set(['free', 'artist', 'writer', 'pro']),
+    flag: new Set(['blocked', 'own']),
+    sort: new Set(['new', 'seen']),
   },
+  // A document opened from the registration form offers the way back to it (specs/2026-11-11-ux9-account.md AC3.5).
+  legal: {
+    from: new Set(['register']),
+  },
+  // «Откуда» and «Все саги» of «Заметки» (specs/2026-11-11-ux7-notes.md NT3.1, NT3.2).
   notes: {
     source: new Set(['free', 'chat', 'chapter']),
+    sagas: new Set(['all']),
   },
-  // The lightbox of a drawing over the chat and its panel (illustrations R8.5).
+  // The lightbox of a drawing over the chat and its panel (illustrations R8.5); `new=1` — the author asked for a new chat,
+  // while /chat without a chat opens the latest one (specs/2026-11-11-ux4-after-answer.md AA2.1).
   chat: {
     panel: new Set(['info', 'layers']),
+    new: new Set(['1']),
   },
+  // «Что помнит помощник»: the open part and the kind of the records (specs/2026-11-10-ux2-memory-page.md MP1.1).
   memory: {
+    part: new Set(['memory', 'materials']),
     kind: new Set(['plan', 'correction', 'style_rule', 'rejected']),
   },
-  // «Рисование»: the voice presses «Нарисовать» of a new drawing; the tab open beside the drawing (specs/2026-11-05-drawing-one-screen.md D1.1, D2.5).
+  // «Рисунки»: the voice presses «Нарисовать» of a new drawing; the tab open beside the drawing (specs/2026-11-05-drawing-one-screen.md
+  // D1.1, D2.5); what narrows the list and how it is shown, the panel of a picture open in «Мои картинки» or «Показать все
+  // варианты» (specs/2026-11-10-ux6-drawings-section.md DS1.5, DS2.1).
   drawing: {
     then: new Set(['draw']),
     tab: new Set(['check', 'brief', 'edits']),
+    state: new Set(drawingStates),
+    look: new Set(['1']),
+    sort: new Set(['chapters']),
+    view: new Set(drawingViews),
+    panel: new Set(['info', 'layers']),
   },
   // «Письмо»: the tab open beside the chapter, «Глава» on a narrow screen (specs/2026-11-07-writing-screen.md WS2.4, WS2.5).
   writing: {
     tab: new Set(['chapter', 'idea', 'check', 'versions', 'helper']),
+    // A new chapter, not written down until the author writes something (specs/2026-11-11-ux9-writing-a.md WA1.2).
+    new: new Set(['idea', 'text']),
     // What «Сверка» shows: the saga or a category of the proofreading (specs/2026-11-07-writing-proofread.md, PR4.2).
     show: new Set(['saga', 'typo', 'spelling', 'punctuation', 'grammar', 'names', 'phrase']),
   },
-  // «Галерея» of the saga: its filters, view and lightbox (illustrations R8.8, R8.5, R11.9).
-  gallery: {
-    kind: new Set(['character', 'place', 'scene', 'item', 'sheet', 'other', 'upload']),
-    refs: new Set(['1']),
-    view: new Set(['chronicle', 'grid']),
-    panel: new Set(['info', 'layers']),
-  },
   manuscript: {
-    bookMenu: new Set(['open']),
     chapters: new Set(['open']),
     focus: new Set(['1']),
     indexing: new Set(['active']),
@@ -75,37 +178,44 @@ const allowedValuesBySurface: Partial<Record<Surface, Readonly<Record<string, Re
     // «Иллюстрированная книга» and the lightbox of a drawing in the reader (illustrations R8.9).
     illustrated: new Set(['1']),
     panel: new Set(['info', 'layers']),
+    // The open tab of «Содержание» of the reader (specs/2026-11-10-ux7-reader.md RD1.7).
+    contents: new Set(['chapters', 'notes', 'drawings', 'found']),
   },
 };
 const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   // The open thread of «Обратная связь» (specs/2026-11-07-contacts.md F2.2).
-  admin: new Set(['tab', 'days', 'stage', 'thread']),
+  admin: new Set(['tab', 'days', 'stage', 'tier', 'flag', 'sort', 'thread']),
   auth: new Set(['returnTo']),
   // «Написать нам» of the letter to a guest (specs/2026-11-07-contacts.md F2.5).
   home: new Set(['contact']),
-  legal: new Set(),
-  notes: new Set(['source', 'projectId', 'bookId', 'returnTo']),
-  chat: new Set(['projectId', 'chatId', 'source', 'sourceMode', 'noteId', 'image', 'panel']),
-  // The page of the feature «Иллюстрации саги» (illustrations R11.4).
-  illustrations: new Set(['projectId']),
+  legal: new Set(['from']),
+  // The filters, the open note and the place the notes were opened from (specs/2026-11-11-ux7-notes.md NT2.1, NT3.2);
+  // `projectId` of an older link names the saga they are opened in (notes-route.ts).
+  notes: new Set(['source', 'projectId', 'bookId', 'sagas', 'note', 'returnTo']),
+  chat: new Set(['projectId', 'chatId', 'new', 'source', 'sourceMode', 'noteId', 'image', 'panel']),
   // «Разрешения на продвижение» and the page of a letter link (specs/2026-10-30-promo-permissions.md):
   // the value of a link lives in the URL fragment only.
   promo: new Set(),
   'promo-link': new Set(),
   // The public page of a blind comparison: nothing but its slug in the address (specs/2026-11-05-reading-test.md).
   compare: new Set(),
-  // The saga map: the open node, the surroundings shown, the chapter of the scale, the hidden categories (saga map R6.2).
-  saga: new Set(['projectId', 'node', 'focus', 'to', 'hide', 'materials', 'removed']),
-  gallery: new Set(['projectId', 'subject', 'chapter', 'kind', 'refs', 'view', 'versions', 'image', 'panel']),
-  // The open drawing (or «new»), the picture on the scene, the drawing of version K, «Нарисовать» of the voice and the tab open (D1.1, D2.5, D4.9).
-  drawing: new Set(['projectId', 'drawing', 'version', 'image', 'then', 'tab']),
-  memory: new Set(['projectId', 'kind', 'q']),
-  // The open chapter, the tab beside it and the version open in «Версии» (specs/2026-11-07-writing-screen.md WS2.4).
-  writing: new Set(['projectId', 'draft', 'tab', 'version', 'show']),
+  // «Тариф», open without signing in, and «Аккаунт» (specs/2026-11-10-ux2-tariff-account.md TA2.1, TA4.1); `for` — the code
+  // of the refusal the author came with: its card stands out (specs/2026-11-11-ux9-account.md AC2.1).
+  tariff: new Set(['for']),
+  account: new Set(),
+  // The saga map: the open node, the surroundings shown, the chapter of the scale, the hidden categories (saga map R6.2) and
+  // «только новое» (specs/2026-11-11-ux8-map.md MP3.5).
+  saga: new Set(['projectId', 'node', 'focus', 'to', 'hide', 'removed', 'only']),
+  // The open drawing (or «new»), the picture on the scene, the drawing of version K, «Нарисовать» of the voice and the tab open
+  // (D1.1, D2.5, D4.9); the selection of the list and the panel of an open picture (DS1.5, DS2.1).
+  drawing: new Set(['projectId', 'drawing', 'version', 'image', 'then', 'tab', ...drawingsListKeys, 'panel']),
+  memory: new Set(['projectId', 'part', 'kind', 'q']),
+  // The open chapter, the tab beside it and the version open in «Версии» (specs/2026-11-07-writing-screen.md WS2.4); a new
+  // chapter by its entry and the place after a chapter of the book (specs/2026-11-11-ux9-writing-a.md WA1.2).
+  writing: new Set(['projectId', 'draft', 'tab', 'version', 'show', 'new', 'book', 'after']),
   manuscript: new Set([
     'projectId',
     'bookId',
-    'bookMenu',
     'menu',
     'indexing',
     'mode',
@@ -118,6 +228,11 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
     'illustrated',
     'image',
     'panel',
+    // «Содержание» and «Найти» of the reader (specs/2026-11-10-ux7-reader.md RD1.7, RD2.1).
+    'contents',
+    // The note open beside the text (specs/2026-11-11-ux7-notes.md NT2.2, NT2.3).
+    'note',
+    'find',
     // The thread of «Связаться с нами» a letter links to (specs/2026-11-07-contacts.md F3.4).
     'contact',
   ]),
@@ -169,18 +284,6 @@ export function followRoute(navigate: RouteNavigate, path: string) {
   };
 }
 
-export function canonicalProductRoutes() {
-  return [
-    { label: 'Мои книги', path: '/manuscript/books' },
-    { label: 'Чат', path: '/chat' },
-    { label: 'Карта саги', path: '/saga' },
-    { label: 'Письмо', path: '/writing' },
-    { label: 'Рисование', path: '/drawing' },
-    { label: 'Галерея', path: '/gallery' },
-    { label: 'Заметки', path: '/notes' },
-  ] as const;
-}
-
 export function isExpectedRevision(value: string) {
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
@@ -226,7 +329,8 @@ function sanitizeSearch(surface: Surface, search: URLSearchParams | Record<strin
     }
   }
 
-  if (surface === 'notes' && !query.has('projectId')) query.delete('bookId');
+  // A book is a book of the open saga: «Все саги» has none (NT3.2).
+  if (surface === 'notes' && query.get('sagas') === 'all') query.delete('bookId');
 
   if (surface === 'chat' && !parseChatSourceTarget(query)) {
     query.delete('source');
@@ -240,7 +344,8 @@ function sanitizeReturnTo(value: string, workspaceOnly = false) {
   try {
     const target = new URL(value, urlBase);
     const surface = surfaceFromPath(target.pathname);
-    if (target.origin !== urlBase || (surface !== 'chat' && surface !== 'manuscript' && surface !== 'notes')) return null;
+    // «Тариф» takes a guest with a key back after signing in (specs/2026-11-10-ux2-tariff-account.md TA3.4); it has no query.
+    if (target.origin !== urlBase || (surface !== 'chat' && surface !== 'manuscript' && surface !== 'notes' && !(surface === 'tariff' && !workspaceOnly))) return null;
     if (workspaceOnly && target.pathname !== '/chat' && target.pathname !== '/manuscript/books') return null;
     const sanitized = sanitizeSearch(surface, target.searchParams);
     if ((surface === 'manuscript' || workspaceOnly) && sanitized.invalidQuery) return null;
@@ -285,11 +390,11 @@ function surfaceFromPath(path: string): Surface {
   if (path === '/saga') return 'saga';
   if (path === '/memory') return 'memory';
   if (path === '/writing') return 'writing';
-  if (path === '/gallery') return 'gallery';
   if (path === '/drawing') return 'drawing';
-  if (path === '/illustrations') return 'illustrations';
   if (path === '/promo-permissions') return 'promo';
   if (path === '/promo/link') return 'promo-link';
+  if (path === '/tariff') return 'tariff';
+  if (path === '/account') return 'account';
   if (path === '/chat') {
     return 'chat';
   }

@@ -30,7 +30,7 @@ type ImportQueueService interface {
 	ListImportQueues(context.Context, ListImportQueuesInput) ([]ImportQueue, error)
 	GetImportQueue(context.Context, GetImportQueueInput) (ImportQueue, error)
 	UploadImportQueueItem(context.Context, UploadImportQueueItemInput) (ImportQueueItem, error)
-	SaveImportQueueDraft(context.Context, SaveImportQueueDraftInput) (ImportQueue, error)
+	SkipImportQueueItem(context.Context, SkipImportQueueItemInput) (ImportQueue, error)
 	StartImportQueue(context.Context, StartImportQueueInput) (ImportQueue, error)
 	CancelImportQueue(context.Context, CancelImportQueueInput) (ImportQueue, error)
 }
@@ -94,7 +94,7 @@ func (h Handlers) Mount(router chi.Router) {
 		router.Post("/projects/{projectId}/imports", h.ImportBookFile)
 		router.Post("/projects/{projectId}/import-queues", h.CreateImportQueue)
 		router.Post("/projects/{projectId}/import-queues/{queueId}/items", h.UploadImportQueueItem)
-		router.Patch("/projects/{projectId}/import-queues/{queueId}", h.UpdateImportQueue)
+		router.Delete("/projects/{projectId}/import-queues/{queueId}/items/{itemId}", h.SkipImportQueueItem)
 		router.Post("/projects/{projectId}/import-queues/{queueId}/start", h.StartImportQueue)
 		router.Delete("/projects/{projectId}/import-queues/{queueId}", h.CancelImportQueue)
 	})

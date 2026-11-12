@@ -53,31 +53,47 @@ func (s *Store) previewImportedBookInTx(
 	for _, contents := range update.fileContents {
 		write.paragraphCount += len(contents)
 	}
-	// R6.2: whether the threads would be rebuilt is told by the rule of the layer on the chapters of the saga after
-	// the update; the chapters that get a new card are those with other words and the new ones. A removed chapter
-	// takes the built threads away with it (specs/2026-11-01-index-foundation.md, R2.8): they are built anew.
+	preview, err := updatePreviewInTx(ctx, tx, update, input.Chapters, projectID, write.counts)
+	if err != nil {
+		return importedBookWrite{}, err
+	}
+	write.counts.Preview = preview
+	return write, nil
+}
+
+// updatePreviewInTx is what an update of a book does, chapter by chapter, read before it writes: the preview tells it
+// before the update (UC6), and the update keeps it in its result for «Что изменилось» (specs/2026-11-11-ux7-trash.md
+// TB4.1). R6.2: whether the threads are rebuilt is told by the rule of the layer on the chapters of the saga after the
+// update; the chapters that get a new card are those with other words and the new ones. A removed chapter takes the
+// built threads away with it (specs/2026-11-01-index-foundation.md, R2.8): they are built anew.
+func updatePreviewInTx(
+	ctx context.Context, tx pgx.Tx, update importedBookUpdate, file []library.FinalizeImportChapterInput, projectID pgtype.UUID,
+	counts library.FinalizedImport,
+) (*jobs.ImportPreview, error) {
 	var chapters int
 	var built bool
 	if err := tx.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM chapters WHERE project_id = $1 AND deleted_at IS NULL),
 		       EXISTS (SELECT 1 FROM saga_threads WHERE project_id = $1 AND digest IS NOT NULL)
 	`, projectID).Scan(&chapters, &built); err != nil {
-		return importedBookWrite{}, err
+		return nil, err
 	}
-	counts := write.counts
 	newCards := counts.ChangedChapters + counts.AddedChapters
-	preview := importedBookPreview(update, input.Chapters)
+	edited, err := chaptersEditedOnSiteInTx(ctx, tx, projectID, update.chapters)
+	if err != nil {
+		return nil, err
+	}
+	preview := importedBookPreview(update, file, edited)
 	preview.NewCards = newCards
 	preview.Threads = built && counts.RemovedChapters > 0 ||
 		sagalayer.DueAfter(newCards, chapters-counts.RemovedChapters+counts.AddedChapters, built)
-	write.counts.Preview = preview
-	return write, nil
+	return preview, nil
 }
 
 // importedBookPreview lists the chapters the update would change in the order of the book after it, then the
 // removed ones in their order now; the places of at most previewPlacedChapters chapters, and at most
 // jobs.MaxImportPreviewChapters chapters, the rest counted.
-func importedBookPreview(update importedBookUpdate, file []library.FinalizeImportChapterInput) *jobs.ImportPreview {
+func importedBookPreview(update importedBookUpdate, file []library.FinalizeImportChapterInput, edited map[pgtype.UUID]bool) *jobs.ImportPreview {
 	preview := &jobs.ImportPreview{Chapters: []jobs.ImportPreviewChapter{}}
 	placed := 0
 	add := func(chapter jobs.ImportPreviewChapter) {
@@ -100,9 +116,9 @@ func importedBookPreview(update importedBookUpdate, file []library.FinalizeImpor
 		}
 		switch {
 		case pairing.Change == domainlibrary.TextWords:
-			entry.Change = jobs.ImportPreviewWords
+			entry.Change, entry.EditedOnSite = jobs.ImportPreviewWords, edited[chapter.id]
 		case pairing.Change == domainlibrary.TextPunctuation:
-			entry.Change = jobs.ImportPreviewPunctuation
+			entry.Change, entry.EditedOnSite = jobs.ImportPreviewPunctuation, edited[chapter.id]
 		case pairing.Renamed:
 			entry.Change = jobs.ImportPreviewRenamed
 		default:
@@ -118,9 +134,43 @@ func importedBookPreview(update importedBookUpdate, file []library.FinalizeImpor
 	}
 	for _, removed := range update.plan.Removed {
 		chapter := update.chapters[removed]
-		add(jobs.ImportPreviewChapter{Order: max(chapter.order, 1), Title: previewTitle(chapter.title), Change: jobs.ImportPreviewRemoved})
+		add(jobs.ImportPreviewChapter{
+			Order: max(chapter.order, 1), Title: previewTitle(chapter.title), Change: jobs.ImportPreviewRemoved, EditedOnSite: edited[chapter.id],
+		})
 	}
 	return preview
+}
+
+// chaptersEditedOnSiteInTx names the chapters of the book whose text in the book now was written on the site
+// (specs/2026-11-11-ux9-shelf-chat.md SC1.4): a chapter «Письмо» added that no file has rewritten since — still its first
+// revision — or one whose revision is the one its edit put into the book. A file that changes or removes such a chapter
+// replaces that text, and the preview says so.
+func chaptersEditedOnSiteInTx(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, chapters []importedBookChapter) (map[pgtype.UUID]bool, error) {
+	ids := make([]pgtype.UUID, len(chapters))
+	for index, chapter := range chapters {
+		ids[index] = chapter.id
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT chapter.id
+		FROM chapters AS chapter
+		WHERE chapter.project_id = $1 AND chapter.id = ANY($2::uuid[]) AND EXISTS (
+		  SELECT 1 FROM chapter_drafts AS draft
+		  WHERE draft.project_id = chapter.project_id AND (
+		    (draft.added_chapter_id = chapter.id AND chapter.revision = 1)
+		    OR (draft.edits_chapter_id = chapter.id AND draft.edits_revision = chapter.revision AND draft.edits_previous_revision IS NOT NULL)))
+	`, projectID, ids)
+	if err != nil {
+		return nil, err
+	}
+	edited, err := pgx.CollectRows(rows, pgx.RowTo[pgtype.UUID])
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[pgtype.UUID]bool, len(edited))
+	for _, id := range edited {
+		byID[id] = true
+	}
+	return byID, nil
 }
 
 // previewTitle keeps a title within the bound of a preview.

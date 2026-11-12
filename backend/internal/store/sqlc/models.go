@@ -134,6 +134,7 @@ type Book struct {
 	HardPurgeStartedAt           pgtype.Timestamptz `json:"hard_purge_started_at"`
 	GovernanceRetentionStartedAt pgtype.Timestamptz `json:"governance_retention_started_at"`
 	PurgeDeadline                pgtype.Timestamptz `json:"purge_deadline"`
+	KeyNumber                    int32              `json:"key_number"`
 }
 
 type BookCoverArtifact struct {
@@ -163,6 +164,26 @@ type BookSourceMember struct {
 	BookID                     pgtype.UUID `json:"book_id"`
 	BookLifecycleGeneration    int64       `json:"book_lifecycle_generation"`
 	Title                      string      `json:"title"`
+}
+
+type BookUpdateSnapshot struct {
+	BookID     pgtype.UUID        `json:"book_id"`
+	ProjectID  pgtype.UUID        `json:"project_id"`
+	JobID      pgtype.UUID        `json:"job_id"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	PurgeAfter pgtype.Timestamptz `json:"purge_after"`
+}
+
+type BookUpdateSnapshotChapter struct {
+	BookID           pgtype.UUID `json:"book_id"`
+	ChapterID        pgtype.UUID `json:"chapter_id"`
+	Change           string      `json:"change"`
+	Revision         int64       `json:"revision"`
+	Generation       int64       `json:"generation"`
+	PreviousRevision pgtype.Int8 `json:"previous_revision"`
+	PreviousTitle    pgtype.Text `json:"previous_title"`
+	PreviousOrder    pgtype.Int4 `json:"previous_order"`
+	PreviousMarkdown []string    `json:"previous_markdown"`
 }
 
 type CardBuildPermission struct {
@@ -279,13 +300,15 @@ type ChapterDraftNote struct {
 }
 
 type ChapterDraftOriginal struct {
-	DraftID   pgtype.UUID        `json:"draft_id"`
-	ProjectID pgtype.UUID        `json:"project_id"`
-	FileName  string             `json:"file_name"`
-	Format    string             `json:"format"`
-	Document  []byte             `json:"document"`
-	Words     int32              `json:"words"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	DraftID          pgtype.UUID        `json:"draft_id"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
+	FileName         string             `json:"file_name"`
+	Format           string             `json:"format"`
+	Document         []byte             `json:"document"`
+	Words            int32              `json:"words"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	AttachmentChatID pgtype.UUID        `json:"attachment_chat_id"`
+	AttachmentNumber pgtype.Int4        `json:"attachment_number"`
 }
 
 type ChapterDraftPack struct {
@@ -347,6 +370,8 @@ type ChapterDraftVersion struct {
 	Support     []byte             `json:"support"`
 	JobID       pgtype.UUID        `json:"job_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Idea        pgtype.Text        `json:"idea"`
+	Place       pgtype.Text        `json:"place"`
 }
 
 type ChapterParagraph struct {
@@ -466,6 +491,7 @@ type ChatTurnAttachment struct {
 	Paragraphs []string           `json:"paragraphs"`
 	Words      int32              `json:"words"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Document   []byte             `json:"document"`
 }
 
 type CkAnnotationRegistryTarget struct {
@@ -644,23 +670,10 @@ type IdempotencyRecord struct {
 }
 
 type IllustrationAccess struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	State       string             `json:"state"`
-	TrialLeft   int32              `json:"trial_left"`
-	ActiveUntil pgtype.Date        `json:"active_until"`
-	GrantedBy   pgtype.UUID        `json:"granted_by"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-type IllustrationAccessRequest struct {
-	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
-	Status    string             `json:"status"`
-	Message   pgtype.Text        `json:"message"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	SentAt    pgtype.Timestamptz `json:"sent_at"`
-	DecidedAt pgtype.Timestamptz `json:"decided_at"`
-	DecidedBy pgtype.UUID        `json:"decided_by"`
+	State     string             `json:"state"`
+	GrantedBy pgtype.UUID        `json:"granted_by"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ImageUploadConsent struct {
@@ -720,7 +733,6 @@ type ImportQueueItem struct {
 	MimeType           pgtype.Text        `json:"mime_type"`
 	SizeBytes          pgtype.Int8        `json:"size_bytes"`
 	Sha256             pgtype.Text        `json:"sha256"`
-	DetectedBookOrder  pgtype.Int4        `json:"detected_book_order"`
 	ConfirmedBookOrder pgtype.Int4        `json:"confirmed_book_order"`
 	PreflightStatus    string             `json:"preflight_status"`
 	PreflightErrorJson []byte             `json:"preflight_error_json"`
@@ -728,6 +740,7 @@ type ImportQueueItem struct {
 	BookID             pgtype.UUID        `json:"book_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	SkippedAt          pgtype.Timestamptz `json:"skipped_at"`
 }
 
 type ImportUpload struct {
@@ -876,7 +889,6 @@ type PlatformQuotaDefault struct {
 	AccountChapters     pgtype.Int4        `json:"account_chapters"`
 	AccountCharacters   pgtype.Int8        `json:"account_characters"`
 	ImagesPerDay        pgtype.Int4        `json:"images_per_day"`
-	TrialDrawings       pgtype.Int4        `json:"trial_drawings"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	UpdatedBy           pgtype.UUID        `json:"updated_by"`
 	ImageUploadsPerDay  pgtype.Int4        `json:"image_uploads_per_day"`
@@ -900,6 +912,8 @@ type Project struct {
 	HardPurgeStartedAt           pgtype.Timestamptz `json:"hard_purge_started_at"`
 	GovernanceRetentionStartedAt pgtype.Timestamptz `json:"governance_retention_started_at"`
 	PurgeDeadline                pgtype.Timestamptz `json:"purge_deadline"`
+	Demo                         bool               `json:"demo"`
+	BookKeyNumbers               int32              `json:"book_key_numbers"`
 }
 
 type ProjectIllustrationSetting struct {
@@ -998,6 +1012,8 @@ type SagaDrawing struct {
 	UpdatedBy      pgtype.UUID        `json:"updated_by"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	PurgeAfter     pgtype.Timestamptz `json:"purge_after"`
 }
 
 type SagaImage struct {
@@ -1047,6 +1063,10 @@ type SagaImage struct {
 	UnchosenVariants  []int32            `json:"unchosen_variants"`
 	VariantPrompt     pgtype.Text        `json:"variant_prompt"`
 	RegenerateNote    pgtype.Text        `json:"regenerate_note"`
+	BookAfter         pgtype.Int4        `json:"book_after"`
+	AngleAzimuth      pgtype.Float8      `json:"angle_azimuth"`
+	AngleElevation    pgtype.Float8      `json:"angle_elevation"`
+	AngleDistance     pgtype.Float8      `json:"angle_distance"`
 }
 
 type SagaImageLayer struct {
@@ -1150,6 +1170,15 @@ type SagaName struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SagaReadyWafe struct {
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	StartedByUserID pgtype.UUID        `json:"started_by_user_id"`
+	ReadyAt         pgtype.Timestamptz `json:"ready_at"`
+	ReadyBooks      pgtype.Int4        `json:"ready_books"`
+	ReadyChapters   pgtype.Int4        `json:"ready_chapters"`
+}
+
 type SagaThread struct {
 	ProjectID           pgtype.UUID        `json:"project_id"`
 	Digest              pgtype.Text        `json:"digest"`
@@ -1181,6 +1210,91 @@ type Session struct {
 	ImpersonatorUserID pgtype.UUID        `json:"impersonator_user_id"`
 }
 
+type SubscriptionChapterCharge struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Kind       string             `json:"kind"`
+	DraftID    pgtype.UUID        `json:"draft_id"`
+	JobID      pgtype.UUID        `json:"job_id"`
+	ChargedAt  pgtype.Timestamptz `json:"charged_at"`
+	SceneAt    pgtype.Timestamptz `json:"scene_at"`
+	ReturnedAt pgtype.Timestamptz `json:"returned_at"`
+}
+
+type SubscriptionKey struct {
+	ID         pgtype.UUID        `json:"id"`
+	BatchID    pgtype.UUID        `json:"batch_id"`
+	KeyHash    []byte             `json:"key_hash"`
+	RedeemedBy pgtype.UUID        `json:"redeemed_by"`
+	RedeemedAt pgtype.Timestamptz `json:"redeemed_at"`
+	PeriodID   pgtype.UUID        `json:"period_id"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type SubscriptionKeyBatch struct {
+	ID        pgtype.UUID        `json:"id"`
+	Tier      string             `json:"tier"`
+	Days      int32              `json:"days"`
+	Keys      int32              `json:"keys"`
+	Note      pgtype.Text        `json:"note"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy pgtype.UUID        `json:"revoked_by"`
+}
+
+type SubscriptionPeriod struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Tier           string             `json:"tier"`
+	StartsAt       pgtype.Timestamptz `json:"starts_at"`
+	EndsAt         pgtype.Timestamptz `json:"ends_at"`
+	Source         string             `json:"source"`
+	GrantedBy      pgtype.UUID        `json:"granted_by"`
+	EndedBy        pgtype.UUID        `json:"ended_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	EndingLetterAt pgtype.Timestamptz `json:"ending_letter_at"`
+	EndedLetterAt  pgtype.Timestamptz `json:"ended_letter_at"`
+}
+
+type SubscriptionTier struct {
+	Code                  string             `json:"code"`
+	Rank                  int16              `json:"rank"`
+	Title                 string             `json:"title"`
+	LotUrl                pgtype.Text        `json:"lot_url"`
+	Projects              int32              `json:"projects"`
+	AccountBooks          int32              `json:"account_books"`
+	ChatTurnsPerDay       int32              `json:"chat_turns_per_day"`
+	ImagesPerDay          int32              `json:"images_per_day"`
+	TrialImages           int32              `json:"trial_images"`
+	ChapterEveryDays      pgtype.Int4        `json:"chapter_every_days"`
+	TrialChapters         int32              `json:"trial_chapters"`
+	VoiceMinutesPerDay    int32              `json:"voice_minutes_per_day"`
+	TrialVoiceCalls       int32              `json:"trial_voice_calls"`
+	TrialVoiceCallMinutes int32              `json:"trial_voice_call_minutes"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy             pgtype.UUID        `json:"updated_by"`
+	ProjectBooks          int32              `json:"project_books"`
+	ActiveTurns           int32              `json:"active_turns"`
+	ImportsPerDay         int32              `json:"imports_per_day"`
+	AccountChapters       int32              `json:"account_chapters"`
+	AccountCharacters     int64              `json:"account_characters"`
+	ChapterDraftsPerDay   int32              `json:"chapter_drafts_per_day"`
+	DrawingTurnsPerDay    int32              `json:"drawing_turns_per_day"`
+	DraftTurnsPerDay      int32              `json:"draft_turns_per_day"`
+	DraftRewritesPerDay   int32              `json:"draft_rewrites_per_day"`
+	ChaptersPerWindow     pgtype.Int4        `json:"chapters_per_window"`
+}
+
+type SubscriptionUsage struct {
+	UserID              pgtype.UUID        `json:"user_id"`
+	KeyFailures         int32              `json:"key_failures"`
+	KeyFailuresDay      pgtype.Date        `json:"key_failures_day"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	TrialImagesUsed     int32              `json:"trial_images_used"`
+	TrialVoiceCallsUsed int32              `json:"trial_voice_calls_used"`
+}
+
 type User struct {
 	ID                         pgtype.UUID        `json:"id"`
 	Email                      string             `json:"email"`
@@ -1195,6 +1309,10 @@ type User struct {
 	DocumentsAcceptedAt        pgtype.Timestamptz `json:"documents_accepted_at"`
 	DeletedAt                  pgtype.Timestamptz `json:"deleted_at"`
 	AssistantVoice             pgtype.Text        `json:"assistant_voice"`
+	SagaReadyLetters           bool               `json:"saga_ready_letters"`
+	VerificationReminderAt     pgtype.Timestamptz `json:"verification_reminder_at"`
+	TierLetters                bool               `json:"tier_letters"`
+	LastSeenAt                 pgtype.Timestamptz `json:"last_seen_at"`
 }
 
 type WriterQuotaOverride struct {
@@ -1235,4 +1353,5 @@ type WriterUsageDay struct {
 	DrawingTurns       int32       `json:"drawing_turns"`
 	DraftTurns         int32       `json:"draft_turns"`
 	DraftRewrites      int32       `json:"draft_rewrites"`
+	VoiceSeconds       int32       `json:"voice_seconds"`
 }

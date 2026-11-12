@@ -16,6 +16,7 @@ type importQueueMemoryStoreForTest struct {
 	createdQueueIDs         map[string]string
 	putImportQueueItemCalls int
 	lastStartInput          *StartImportQueueStoreInput
+	lastReplaceInput        *ReplaceImportQueueItemStoreInput
 }
 
 func newImportQueueMemoryStoreForTest(memory *memoryStoreForTest) *importQueueMemoryStoreForTest {
@@ -41,7 +42,7 @@ func (s *importQueueMemoryStoreForTest) CreateImportQueueDraftForActor(_ context
 	for _, item := range input.Items {
 		queue.Items = append(queue.Items, ImportQueueItem{
 			ID: "item-1", QueueID: queue.ID, ProjectID: queue.ProjectID, ClientItemID: item.ClientItemID,
-			Position: item.Position, SourceFileName: item.SourceFileName, DetectedBookOrder: item.DetectedBookOrder,
+			Position: item.Position, SourceFileName: item.SourceFileName,
 			PreflightStatus: ImportQueueItemUploading, CreatedAt: now, UpdatedAt: now,
 		})
 	}
@@ -81,7 +82,6 @@ func (s *importQueueMemoryStoreForTest) PutImportQueueItemForActor(_ context.Con
 		updated := item
 		updated.StorageKey, updated.MIMEType, updated.SizeBytes, updated.SHA256 = input.StorageKey, input.MIMEType, input.SizeBytes, input.SHA256
 		updated.SourceFileName, updated.PreflightStatus, updated.PreflightErrorJSON = input.SourceFileName, input.PreflightStatus, input.PreflightErrorJSON
-		updated.DetectedBookOrder, updated.ConfirmedBookOrder = input.DetectedBookOrder, input.ConfirmedBookOrder
 		updated.QueueVersion, updated.UpdatedAt = queue.Version+1, staticTestTime()
 		queue.Items[index] = updated
 		queue.Version++
@@ -95,22 +95,47 @@ func (s *importQueueMemoryStoreForTest) PutImportQueueItemForActor(_ context.Con
 	return ImportQueueItem{}, ErrNotFound
 }
 
-func (s *importQueueMemoryStoreForTest) SaveImportQueueDraftForActor(_ context.Context, input SaveImportQueueDraftStoreInput) (ImportQueue, error) {
+func (s *importQueueMemoryStoreForTest) ReplaceImportQueueItemFileForActor(_ context.Context, input ReplaceImportQueueItemStoreInput) (ImportQueue, error) {
 	queue, exists := s.queues[input.QueueID]
-	if !exists || queue.ProjectID != input.ProjectID || queue.Version != input.ExpectedVersion {
+	if !exists || queue.ProjectID != input.ProjectID || queue.Status != ImportQueueRunning {
 		return ImportQueue{}, ErrConflict
 	}
-	for _, update := range input.Items {
-		for index, item := range queue.Items {
-			if item.ID == update.ItemID {
-				queue.Items[index].Position = update.Position
-				queue.Items[index].ConfirmedBookOrder = update.ConfirmedBookOrder
-			}
+	for index, item := range queue.Items {
+		if item.ID != input.ItemID {
+			continue
+		}
+		if item.SkippedAt != nil || item.ImportJobStatus != string(jobs.StatusFailed) {
+			return ImportQueue{}, ErrConflict
+		}
+		updated := item
+		updated.SourceFileName, updated.PreflightStatus, updated.PreflightErrorJSON = input.SourceFileName, input.PreflightStatus, input.PreflightErrorJSON
+		if input.PreflightStatus == ImportQueueItemReady {
+			updated.StorageKey, updated.MIMEType, updated.SizeBytes, updated.SHA256 = input.StorageKey, input.MIMEType, input.SizeBytes, input.SHA256
+			updated.ImportJobID, updated.ImportJobStatus = "job-again-"+item.ID, string(jobs.StatusQueued)
+		}
+		queue.Items[index] = updated
+		queue.Version++
+		captured := input
+		s.lastReplaceInput = &captured
+		return cloneImportQueueForTest(queue), nil
+	}
+	return ImportQueue{}, ErrNotFound
+}
+
+func (s *importQueueMemoryStoreForTest) SkipImportQueueItemForActor(_ context.Context, input SkipImportQueueItemStoreInput) (ImportQueue, error) {
+	queue, exists := s.queues[input.QueueID]
+	if !exists || queue.ProjectID != input.ProjectID || queue.Status != ImportQueueRunning {
+		return ImportQueue{}, ErrConflict
+	}
+	for index, item := range queue.Items {
+		if item.ID == input.ItemID && item.SkippedAt == nil && item.ImportJobStatus == string(jobs.StatusFailed) {
+			skippedAt := staticTestTime()
+			queue.Items[index].SkippedAt = &skippedAt
+			queue.Version++
+			return cloneImportQueueForTest(queue), nil
 		}
 	}
-	queue.Version++
-	queue.UpdatedAt = staticTestTime()
-	return cloneImportQueueForTest(queue), nil
+	return ImportQueue{}, ErrConflict
 }
 
 func (s *importQueueMemoryStoreForTest) CancelImportQueueForActor(_ context.Context, input CancelImportQueueStoreInput) (ImportQueue, error) {

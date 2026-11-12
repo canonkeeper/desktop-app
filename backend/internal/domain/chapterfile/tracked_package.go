@@ -23,16 +23,18 @@ const (
 		`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
 		`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>` +
 		`<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` +
-		`<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`
+		`<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>`
 	trackedRelationships = xmlDeclaration + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
 		`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
 		`<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>` +
 		`</Relationships>`
 	trackedDocumentRelationships = xmlDeclaration + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
 		`<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
-		`<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>` +
-		`</Relationships>`
-	trackedStyles = xmlDeclaration + `<w:styles xmlns:w="` + wordNamespace + `">` +
+		`<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`
+	// The theme of the author's file, when it is kept (PR6.7).
+	trackedThemeType         = `<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`
+	trackedThemeRelationship = `<Relationship Id="rIdTheme" Type="` + themeRelationship + `" Target="theme/theme1.xml"/>`
+	trackedStyles            = xmlDeclaration + `<w:styles xmlns:w="` + wordNamespace + `">` +
 		`<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="Times New Roman" w:cs="Times New Roman"/>` +
 		`<w:sz w:val="28"/><w:szCs w:val="28"/><w:lang w:val="ru-RU" w:eastAsia="ru-RU"/></w:rPr></w:rPrDefault>` +
 		`<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>` +
@@ -47,8 +49,19 @@ const (
 		`w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`
 )
 
-// writeTrackedPackage writes the parts of the file into one archive.
-func writeTrackedPackage(writer io.Writer, document, title, author string, at time.Time) error {
+// writeTrackedPackage writes the parts of the file into one archive: in the styles and the theme of the author's file
+// when its look is kept (PR6.7), otherwise in those of the export of a book.
+func writeTrackedPackage(writer io.Writer, document, title, author string, at time.Time, layout *Layout) error {
+	types, relationships, styles := trackedContentTypes, trackedDocumentRelationships, trackedStyles
+	parts := []struct{ name, content string }{}
+	if layout != nil && layout.Styles != "" {
+		styles = layout.Styles
+	}
+	if layout != nil && layout.Theme != "" {
+		types += trackedThemeType
+		relationships += trackedThemeRelationship
+		parts = append(parts, struct{ name, content string }{"word/theme/theme1.xml", layout.Theme})
+	}
 	archive := zip.NewWriter(writer)
 	date := at.UTC().Truncate(time.Second)
 	var core strings.Builder
@@ -60,15 +73,15 @@ func writeTrackedPackage(writer io.Writer, document, title, author string, at ti
 	stamp := date.Format(time.RFC3339)
 	core.WriteString(`</dc:creator><dc:language>ru-RU</dc:language><dcterms:created xsi:type="dcterms:W3CDTF">` + stamp +
 		`</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">` + stamp + `</dcterms:modified></cp:coreProperties>`)
-	for _, part := range []struct{ name, content string }{
-		{"[Content_Types].xml", trackedContentTypes},
+	for _, part := range append([]struct{ name, content string }{
+		{"[Content_Types].xml", types + `</Types>`},
 		{"_rels/.rels", trackedRelationships},
 		{"docProps/core.xml", core.String()},
-		{"word/_rels/document.xml.rels", trackedDocumentRelationships},
-		{"word/styles.xml", trackedStyles},
+		{"word/_rels/document.xml.rels", relationships + `</Relationships>`},
+		{"word/styles.xml", styles},
 		{"word/settings.xml", trackedSettings},
 		{"word/document.xml", document},
-	} {
+	}, parts...) {
 		file, err := archive.CreateHeader(&zip.FileHeader{Name: part.name, Method: zip.Deflate, Modified: date})
 		if err != nil {
 			return err

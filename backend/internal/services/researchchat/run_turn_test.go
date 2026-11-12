@@ -431,3 +431,23 @@ func TestRunTurnHandsTheHeaderOfTheAttachedChapterToTheModel(t *testing.T) {
 		t.Fatalf("public question = %+v, %t", question, ok)
 	}
 }
+
+// specs/2026-11-11-ux9-writing-b.md WB3.3: the native question of a turn a button of the page sent says so, and the
+// timeline reads it back; a correction is never a press.
+func TestTheInputOfATurnAButtonSentSaysSo(t *testing.T) {
+	run := researchdomain.TurnRun{Question: "Написать главу", SourceView: "draft", Scope: researchdomain.ScopeProject, Button: true}
+	input, err := initialAssignment(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if question, ok := researchdomain.PublicAssignmentQuestion(input); !ok || !question.Button || question.Text != "Написать главу" {
+		t.Fatalf("the question = %+v, %v (input %s)", question, ok, input)
+	}
+	steer, err := encodeAssignment(assignmentInput{Text: "ещё", SourceView: "draft", Scope: researchdomain.ScopeProject, Correction: true, Button: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if question, ok := researchdomain.PublicAssignmentQuestion(steer); !ok || question.Button {
+		t.Fatalf("a correction = %+v, %v", question, ok)
+	}
+}

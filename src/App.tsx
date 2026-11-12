@@ -3,24 +3,29 @@ import { onlineManager, useQueryClient, type QueryClient } from '@tanstack/react
 import { edition } from '@edition';
 import type { CanonKeeperApiClient } from './shared/api';
 import { type AuthShellStatus, useAuthShellStore } from './app/auth-store';
+import { focusPageContent, usePageFocus } from './app/page-focus';
 import { openPages } from './app/pages';
 import { RouteFallback } from './app/RouteFallback';
 import {
   classifyAuthFailure,
   useCurrentUserQuery,
 } from './entities/session/api';
-import { canonicalProductRoutes, createAppRoute, toHref, type AppRoute, type RouteNavigate } from './shared/navigation/app-route';
-import { Button } from './ui/controls/Button';
+import { toHref, type AppRoute, type RouteNavigate } from './shared/navigation/app-route';
+import { sectionTitle, usePageTitlePart } from './shared/navigation/page-title';
 import { Alert } from './ui/feedback/Alert';
 import { NoticeSlot, useSteadyPageUnderNotices } from './ui/feedback/notice-slot';
-import { ToastRegion } from './ui/feedback/Toast';
+import { ToastsProvider } from './ui/feedback/Toast';
 import { useToastQueue } from './ui/feedback/useToastQueue';
 import styles from './App.module.css';
 import { NotesProvider } from './features/notes/NotesProvider';
 import { ServiceUnavailable, requestIdFrom } from './app/ServiceUnavailable';
 import { AnswerReadyWatcher } from './features/chat/AnswerReadyWatcher';
-import { TopBarStrip } from './ui/navigation/TopBarStrip';
+import { SagaReadyWatcher } from './features/chat/SagaReadyWatcher';
 import { SagaSectionsProvider } from './ui/saga-sections';
+import { shellOfSurface } from './ui/shell/shell-routes';
+import { AppShell } from './app/shell/AppShell';
+import { NotFound } from './app/shell/NotFound';
+import { PageErrorBoundary } from './app/PageErrorBoundary';
 
 function findActiveSessionFailure(queryClient: QueryClient) {
   for (const query of queryClient.getQueryCache().getAll()) {
@@ -35,8 +40,13 @@ function findActiveSessionFailure(queryClient: QueryClient) {
 }
 
 function useActiveSessionFailure(queryClient: QueryClient) {
+  // A query is added to the cache while the page that asks for it renders: that is no failure yet, and telling the root of
+  // it then would update the root while another component renders (specs/2026-11-11-ux9-shelf-chat.md SC2.5, W-35). The
+  // failures come with the updates of a query and of its observers, after the render.
   const subscribe = useCallback(
-    (notify: () => void) => queryClient.getQueryCache().subscribe(notify),
+    (notify: () => void) => queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'added') notify();
+    }),
     [queryClient],
   );
   const getSnapshot = useCallback(() => findActiveSessionFailure(queryClient), [queryClient]);
@@ -55,6 +65,10 @@ interface AppProps {
  */
 export function App({ api, navigate, route }: AppProps) {
   const { clearAuthMessage, errorMessage, setFailure } = useAuthShellStore();
+  // The tab names the section of the address on every page, before and after signing in (specs/2026-11-10-ux1-shell.md SH1.2).
+  usePageTitlePart('section', sectionTitle(route));
+  // A chapter of «Письмо» opened from its list is a new page too (specs/2026-11-11-ux9-writing-a.md WA1.4).
+  usePageFocus(route.path, route.path === '/writing' ? route.query.get('draft') : null);
   const queryClient = useQueryClient();
   const currentUserQuery = useCurrentUserQuery(api);
   const activeFailureError = useActiveSessionFailure(queryClient);
@@ -145,6 +159,24 @@ export function App({ api, navigate, route }: AppProps) {
     if (outagePausedRef.current) onlineManager.setOnline(true);
   }, []);
 
+  // «Соединение восстановлено» is said by the end of the outage itself, whoever checked the connection — «Повторить»,
+  // the check of the strip, the network coming back or the page: a retry that another check overtook left without the
+  // line (specs/2026-11-11-ux9-account.md AC3.3, the flake of the full check of 12.11).
+  const outageSeenRef = useRef(false);
+  const pushConnectionToast = connectionToasts.push;
+  useEffect(() => {
+    if (serviceOutage) {
+      outageSeenRef.current = true;
+      return;
+    }
+    if (!outageSeenRef.current || status === 'checking') return;
+    outageSeenRef.current = false;
+    // An outage that ended at the way in says nothing: the author signs in, he did not get a page back.
+    if (status !== 'authenticated') return;
+    pushConnectionToast({ message: 'Соединение восстановлено', tone: 'success' });
+    setOutageAttempt(1);
+  }, [pushConnectionToast, serviceOutage, status]);
+
   useEffect(() => {
     // R1.1: a signed-in writer goes from the home page straight to the shelf.
     if ((route.surface === 'home' || pageDenied) && status === 'authenticated' && user) {
@@ -173,8 +205,6 @@ export function App({ api, navigate, route }: AppProps) {
         },
         { cancelRefetch: false },
       );
-      connectionToasts.push({ message: 'Соединение восстановлено', tone: 'success' });
-      setOutageAttempt(1);
     } finally {
       setRetryingOutage(false);
     }
@@ -201,81 +231,62 @@ export function App({ api, navigate, route }: AppProps) {
   if (status !== 'authenticated' || !user) return <RouteFallback />;
 
   const { onLogout } = account;
-  const pageContent = pageDenied ? <RouteFallback /> : page?.render({ api, navigate, onLogout, route, user });
-  const surfaceContent = pageContent ?? (
-    <main className={styles.appShell}>
-      <header className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>Canon Keeper</p>
-          <h1 id="route-not-found-title">Страница не найдена</h1>
-        </div>
-        <nav className={styles.nav} aria-label="Основная навигация">
-          {canonicalProductRoutes().filter((item) => edition.pages[createAppRoute(item.path).surface]).map((item) => (
-            <button
-              className={route.path === item.path ? styles.activeNav : styles.navButton}
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        {onLogout ? (
-          <button
-            className={styles.navButton}
-            onClick={onLogout}
-            type="button"
-          >
-            Выйти
-          </button>
-        ) : null}
-      </header>
-      <TopBarStrip />
-
-      <section className={styles.panel} aria-labelledby="route-not-found-title">
-        <p className={styles.copy}>Такой страницы нет.</p>
-        <div className={styles.nav}>
-          <Button onClick={() => navigate('/manuscript/books')} variant="primary">К моим книгам</Button>
-          <Button onClick={() => navigate('/chat')} variant="outline">Открыть чат</Button>
-        </div>
-      </section>
-    </main>
+  // An error of the page stays in its place: the shell and «Написать нам» of the account stay with it (specs/2026-11-11-ux9-account.md AC3.2).
+  const pageContent = (
+    <PageErrorBoundary key={route.path}>
+      {pageDenied ? <RouteFallback /> : page?.render({ api, navigate, onLogout, route, user }) ?? <NotFound navigate={navigate} />}
+    </PageErrorBoundary>
   );
+  // One shell of the author around the page (specs/2026-11-10-ux2-shell-core.md SC1.1).
+  const surfaceContent = shellOfSurface[route.surface]
+    ? <AppShell api={api} navigate={navigate} onLogout={onLogout} route={route} user={user}>{pageContent}</AppShell>
+    : <Suspense fallback={<RouteFallback />}>{pageContent}</Suspense>;
 
   return (
     <NoticeSlot.Provider value={noticeSlot}>
-      {serviceOutage
-        ? (
-          <ServiceUnavailable
-            attempt={outageAttempt}
-            onRetry={() => void retryService()}
-            requestId={requestIdFrom(currentUserQuery.error)}
-            retrying={retryingOutage}
-          />
-        )
-        : errorMessage
-          ? <Alert className={styles.sessionError} tone="error">{errorMessage}</Alert>
-          : null}
-      {account.wrapAccount(
-        <div
-          className={styles.productSurface}
-          key={user.id}
-        >
-          <div className={styles.pageNotices} data-page-notices="" ref={setNoticeSlot} />
-          <AnswerReadyWatcher api={api} dismiss={connectionToasts.dismiss} navigate={navigate} notify={connectionToasts.push} route={route} />
-          {account.wrapPages(
-            <SagaSectionsProvider value={edition.sections}>
-              <NotesProvider api={api} accountId={user.id} navigate={navigate} route={route}>
-                <Suspense fallback={<RouteFallback />}>{surfaceContent}</Suspense>
-              </NotesProvider>
-            </SagaSectionsProvider>,
-          )}
-          {account.notices}
-        </div>,
-      )}
-      {account.overlay}
-      <ToastRegion onDismiss={connectionToasts.dismiss} queue={connectionToasts.queue} />
+      {/* The one queue and area of the toasts of the tab (specs/2026-11-10-ux2-patterns-actions.md PA1.1). */}
+      <ToastsProvider queue={connectionToasts}>
+        {/* The first stop of Tab on every page of the author (specs/2026-11-10-ux1-shell.md SH2.3): seen only in focus. */}
+        <a className={styles.skipLink} href="#page-content" onClick={(event) => {
+          event.preventDefault();
+          focusPageContent();
+        }}>К содержимому</a>
+        {serviceOutage
+          ? (
+            // A strip above the open page, in the place of the notices: the page stays readable (specs/2026-11-11-ux9-account.md AC3.3).
+            <ServiceUnavailable
+              attempt={outageAttempt}
+              onRetry={() => void retryService()}
+              requestId={requestIdFrom(currentUserQuery.error)}
+              retrying={retryingOutage}
+              slot={noticeSlot}
+            />
+          )
+          : errorMessage
+            ? <Alert className={styles.sessionError} tone="error">{errorMessage}</Alert>
+            : null}
+        {account.wrapAccount(
+          <div
+            className={styles.productSurface}
+            key={user.id}
+          >
+            <div className={styles.pageNotices} data-page-notices="" ref={setNoticeSlot} />
+            <AnswerReadyWatcher api={api} dismiss={connectionToasts.dismiss} navigate={navigate} notify={connectionToasts.push} route={route} />
+            {/* «Книга прочитана» stands under the top bar, in the place of the notices of the shell (specs/2026-11-10-ux3-saga-state.md SS3.5). */}
+            <SagaReadyWatcher api={api} navigate={navigate} route={route}>
+              {account.wrapPages(
+                <SagaSectionsProvider value={edition.sections}>
+                  <NotesProvider api={api} accountId={user.id} navigate={navigate} route={route}>
+                    {surfaceContent}
+                  </NotesProvider>
+                </SagaSectionsProvider>,
+              )}
+            </SagaReadyWatcher>
+            {account.notices}
+          </div>,
+        )}
+        {account.overlay}
+      </ToastsProvider>
     </NoticeSlot.Provider>
   );
 }

@@ -34,6 +34,9 @@ type ContentsInput struct {
 	Scope
 	BookID string
 	Query  string
+	// Chapter is a chapter key as a kept place holds it (a link of an answer, the place of a drawing, a key the voice
+	// heard): the server reads it by the one rule of the keys and shows its book (specs/2026-11-11-ux7-reorder.md RK1.5).
+	Chapter string
 }
 
 type ContentsResult struct {
@@ -41,6 +44,8 @@ type ContentsResult struct {
 	Books    []BookView
 	Book     *sagamemory.Book // the book shown; nil when searching the whole saga
 	Chapters []sagamemory.ContentsChapter
+	// Found is the chapter of ContentsInput.Chapter under its key of now; nil when the text has no such chapter.
+	Found *sagamemory.Chapter
 }
 
 // GetContents lists the chapters of a book with their card summaries, or the chapters of the
@@ -52,7 +57,7 @@ func NewGetContents(access Access, memory Memory) *GetContents {
 }
 
 func (useCase *GetContents) Execute(ctx context.Context, input ContentsInput) (ContentsResult, error) {
-	if !validText(input.Query, maxQueryRunes) || !validText(input.BookID, maxKeyRunes) {
+	if !validText(input.Query, maxQueryRunes) || !validText(input.BookID, maxKeyRunes) || !validText(input.Chapter, maxKeyRunes) {
 		return ContentsResult{}, ErrInvalid
 	}
 	outline, cards, err := useCase.load(ctx, input.Scope, sagamemory.CardParts{Summary: true})
@@ -65,7 +70,13 @@ func (useCase *GetContents) Execute(ctx context.Context, input ContentsInput) (C
 		result.Chapters = cards.Contents(version, 0, len(version.Chapters)-1, input.Query, maxFoundChapters)
 		return result, nil
 	}
-	selected, err := book(version, input.BookID)
+	bookID := input.BookID
+	if key := strings.TrimSpace(input.Chapter); key != "" {
+		if found, ok := version.Find(key); ok {
+			result.Found, bookID = found, found.BookID
+		}
+	}
+	selected, err := book(version, bookID)
 	if err != nil || selected == nil {
 		return result, err
 	}

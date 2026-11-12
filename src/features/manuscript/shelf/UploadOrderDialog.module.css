@@ -1,0 +1,233 @@
+.panel {
+  width: min(680px, calc(100dvw - 32px));
+}
+
+.window {
+  display: grid;
+  max-height: min(820px, calc(100dvh - 32px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  background: var(--ck-card);
+  color: var(--ck-foreground);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.header,
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--ck-card);
+}
+
+.header {
+  justify-content: space-between;
+  padding: 16px 20px 8px;
+}
+
+.header h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.close {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ck-radius-md);
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: pointer;
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--ck-primary);
+}
+
+.body {
+  display: grid;
+  min-height: 0;
+  /* A long file name is cut in its row: the column never grows past the window (a phone of 390 px). */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 4px 20px 12px;
+}
+
+.hint,
+.count {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rows {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-card);
+  padding: 0 6px 0 4px;
+  touch-action: none;
+}
+
+.row[data-dragging] {
+  border-color: var(--ck-primary);
+  box-shadow: var(--ck-shadow-lg);
+}
+
+.row[data-outside] {
+  opacity: 0.55;
+}
+
+.handle {
+  display: inline-grid;
+  width: 36px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--ck-muted-foreground);
+  cursor: grab;
+  touch-action: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ck-primary);
+}
+
+.name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  flex: none;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-color-warning);
+  color: var(--ck-color-warning-foreground);
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.place {
+  flex: none;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.remarks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--ck-color-warning-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.refused {
+  display: grid;
+  gap: 4px;
+}
+
+.choose {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  color: var(--ck-link);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.choose input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.choose:focus-within {
+  outline: 2px solid var(--ck-primary);
+  outline-offset: 2px;
+}
+
+.footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--ck-border);
+  padding: 12px 20px;
+}
+
+@media (max-width: 760px) {
+  .panel {
+    width: 100dvw;
+    align-self: end;
+  }
+
+  .window {
+    max-height: calc(100dvh - 48px);
+    border-radius: var(--ck-radius-lg) var(--ck-radius-lg) 0 0;
+  }
+
+  /* Board 35·21, the sheet: the name takes two lines, the place is «книгой N». */
+  .row {
+    gap: 6px;
+  }
+
+  .handle {
+    width: 28px;
+  }
+
+  .name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+
+  .place {
+    font-size: 12px;
+  }
+
+  .placeVerb {
+    display: none;
+  }
+
+  .footer {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .footer > :last-child {
+    flex: 1;
+  }
+}

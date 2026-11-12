@@ -9,15 +9,34 @@ type Version = Schema<'ChapterDraftVersion'>;
 const versions = new WeakMap<Draft, Version[]>();
 const wordsOf = (text: string) => text.split(/\s+/u).filter((token) => token && !/^[―—–-]+$/u.test(token)).length;
 
+/**
+ * The place an action changed, as the server names a version by it (sagadraft.ChangedPlace; specs/2026-11-11-ux9-writing-b.md
+ * WB3.1): the first words of what went, whole words, «…» after the sixth.
+ */
+export function changedPlace(before: string, after: string) {
+  const tokens = (text: string) => text.replace(/[⟦⟧⟨⟩⟪⟫]/gu, '').match(/[\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+/gu) ?? [];
+  const was = tokens(before);
+  const now = tokens(after);
+  let start = 0;
+  while (start < was.length && start < now.length && was[start] === now[start]) start += 1;
+  let end = 0;
+  while (end < was.length - start && end < now.length - start && was[was.length - 1 - end] === now[now.length - 1 - end]) end += 1;
+  const words = was.slice(start, was.length - end).join('').split(/\s+/u).filter(Boolean);
+  if (!words.some((word) => /\p{L}/u.test(word))) return undefined;
+  return words.length > 6 ? `${words.slice(0, 6).join(' ').replace(/[,.;:!?—–-]+$/u, '')}…` : words.join(' ');
+}
+
 /** Keeps the working text before an action that changes it, or after the writing with its plan and where its scenes stand. */
-export function keepVersion(draft: Draft, reason: Version['reason'], text: string, written: { plan: number; support: Version['support'] } | null = null) {
+export function keepVersion(draft: Draft, reason: Version['reason'], text: string, written: { plan: number; support: Version['support'] } | null = null, idea?: string, after?: string) {
   const kept = versions.get(draft) ?? [];
+  const place = after === undefined ? undefined : changedPlace(text, after);
   kept.push({
     number: kept.length + 1, reason, text, words: wordsOf(text.replace(/[⟦⟧]/gu, '')),
     authorWords: wordsOf(text.replace(/⟦[^⟧]*⟧/gu, '')), createdAt: new Date().toISOString(), support: written?.support ?? [],
-    ...(written ? { plan: written.plan } : {}),
+    ...(written ? { plan: written.plan, scenes: written.support.length } : {}), ...(idea === undefined ? {} : { idea }), ...(place ? { place } : {}),
   });
   versions.set(draft, kept);
+  return kept.length;
 }
 
 /** The versions of a draft, the earliest first. */

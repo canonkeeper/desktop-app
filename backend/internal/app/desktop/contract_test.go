@@ -73,7 +73,8 @@ func mountedOperations(t *testing.T) []string {
 // contracts/openapi.json.
 func TestTheDesktopContractIsWhatTheDesktopBuildMounts(t *testing.T) {
 	mounted := mountedOperations(t)
-	if !slices.Contains(mounted, "openDesktopSession") || slices.Contains(mounted, "loginUser") {
+	// «Кто автор» is open and the desktop answers it (specs/2026-11-12-desk-window.md WN1.1); signing in is the site's.
+	if !slices.Contains(mounted, "openDesktopSession") || !slices.Contains(mounted, "getCurrentUser") || slices.Contains(mounted, "loginUser") {
 		t.Fatalf("the desktop mounts %v", mounted)
 	}
 	body, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", "openapi.desktop.json"))

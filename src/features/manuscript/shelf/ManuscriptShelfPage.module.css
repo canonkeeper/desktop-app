@@ -1,15 +1,4 @@
-.workspace {
-  display: grid;
-  height: 100vh;
-  grid-template-rows: 64px minmax(0, 1fr);
-  background: var(--ck-background);
-  color: var(--ck-foreground);
-}
 
-/* The strip of a call has its row under the top bar (specs/2026-11-03-voice-assistant.md V6.5). */
-.workspace:has(> [data-voice-call]) {
-  grid-template-rows: 64px auto minmax(0, 1fr);
-}
 
 .uploadButton {
   display: inline-flex;
@@ -28,6 +17,12 @@
   line-height: 17px;
 }
 
+/* «Загрузить файл» closed until the address is verified: in its place, dimmed, and a press says why (SH4.4). */
+.uploadButton[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .newBookButton {
   min-height: 37px;
   padding: 9px 15px;
@@ -40,11 +35,6 @@
 .newBookButton svg {
   width: 16px;
   height: 16px;
-}
-
-.body {
-  display: flex;
-  min-height: 0;
 }
 
 .projectMeta,
@@ -80,31 +70,6 @@
   line-height: 13px;
 }
 
-.activeNavButton {
-  background: var(--ck-sidebar-accent);
-  color: var(--ck-foreground);
-}
-
-.tabletRail {
-  display: none;
-  width: 88px;
-  min-width: 88px;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  overflow-y: auto;
-  box-shadow: inset -1px 0 0 var(--ck-border);
-  padding: 12px 0;
-  background: var(--ck-sidebar);
-}
-
-@media (pointer: coarse) {
-  .tabletRail button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
 .content {
   display: flex;
   min-width: 0;
@@ -113,7 +78,7 @@
   gap: 24px;
   overflow: auto;
   padding: 32px;
-  scrollbar-color: #c5c5c2 transparent;
+  scrollbar-color: var(--ck-scrollbar-native) transparent;
   scrollbar-width: thin;
 }
 
@@ -124,8 +89,16 @@
   gap: 18px;
 }
 
-.titleBlock h1 {
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
   margin: 0 0 4px;
+}
+
+.titleBlock h1 {
+  margin: 0;
   color: var(--ck-foreground-strong);
   font-family: var(--ck-font-serif);
   font-size: 26px;
@@ -133,11 +106,50 @@
   line-height: 36px;
 }
 
+.demoNotice {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-lg);
+  padding: 16px;
+  background: var(--ck-card);
+}
+
+.demoNotice p {
+  margin: 0;
+}
+
+.demoNotice .demoCredit {
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
 .topActions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* The line of the materials sits close under «Добавить книги»: the actions stay lower than the heading with its line,
+   so the heading does not move when the shelf comes (specs/2026-11-10-ux2-patterns-states.md PS3.1). */
+.topActions:has(.materialsLine) {
+  row-gap: 4px;
+}
+
+/* «Продолжить чтение: <книга>» — the main action of the shelf after the reader (specs/2026-11-10-ux2-shell.md S2.2). */
+.continueReading[data-variant] {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 37px;
+}
+
+.continueReading > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropZone {
@@ -187,57 +199,17 @@
   color: var(--ck-muted-foreground);
 }
 
-.shelfSkeleton {
-  display: grid;
-  width: min(420px, 100%);
-  gap: 12px;
+
+
+/* The heading of a shelf whose saga is not there: the page is named, the block under it says why (PR3.5). */
+.missingTitle {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
 }
 
-.shelfSkeletonLine {
-  width: 100%;
-  height: 58px;
-}
-
+/* The one block of an error of the shelf (specs/2026-11-10-ux2-patterns-refusals.md PR3.1): its place under the title. */
 .loadError,
-.projectMissing {
-  display: grid;
-  gap: 10px;
-}
-
-.loadError strong,
-.projectMissing h2,
-.projectMissing p {
-  margin: 0;
-}
-
-.projectMissing {
-  align-items: center;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.projectMissingActions {
-  display: flex;
-  gap: 10px;
-}
-
-.firstProjectPanel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px) auto;
-  align-items: end;
-  gap: 16px;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-sm);
-  padding: 16px;
-  background: var(--ck-card);
-}
-
-.firstProjectPanel h2 {
-  margin: 0;
-  color: var(--ck-foreground-strong);
-  font-size: 18px;
-  font-weight: 600;
-}
-
 .field {
   display: grid;
   gap: 6px;
@@ -271,9 +243,14 @@
   gap: 12px;
 }
 
-.noticeTitle {
-  display: block;
-  color: var(--ck-foreground);
+.sagaFormStacked {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+
+.sagaFormStacked .field {
+  width: 100%;
 }
 
 .formActions {
@@ -281,84 +258,7 @@
   justify-content: flex-end;
 }
 
-.menuItem,
-.dangerMenuItem {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-height: 38px;
-  gap: 10px;
-  border: 0;
-  border-radius: var(--ck-radius-sm);
-  padding: 0 10px;
-  background: transparent;
-  color: var(--ck-foreground);
-  cursor: pointer;
-  text-align: left;
-}
-
-.menuItem:hover,
-.dangerMenuItem:hover {
-  background: var(--ck-muted);
-}
-
-.menuItem:disabled,
-.dangerMenuItem:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.dangerMenuItem {
-  color: var(--ck-destructive-text);
-}
-
-.projectMenu {
-  top: 114px;
-  left: 18px;
-  width: 260px;
-  padding: 8px;
-}
-
-.projectMenuHeader {
-  display: grid;
-  gap: 3px;
-  border-bottom: 1px solid var(--ck-border);
-  margin-bottom: 4px;
-  padding: 8px 10px 10px;
-}
-
-.projectMenuHeader span {
-  color: var(--ck-muted-foreground);
-  font-size: 12px;
-}
-
-.projectRename {
-  display: grid;
-  gap: 4px;
-}
-
-.projectRename input {
-  min-width: 0;
-  border: 1px solid var(--ck-border);
-  border-radius: var(--ck-radius-sm);
-  padding: 9px 10px;
-  font: inherit;
-}
-
-.projectMenuDivider {
-  height: 1px;
-  margin: 4px 0;
-  background: var(--ck-border);
-}
-
 @media (max-width: 1100px) {
-  .workspace {
-    grid-template-rows: 56px minmax(0, 1fr);
-  }
-
-  .workspace:has(> [data-voice-call]) {
-    grid-template-rows: 56px auto minmax(0, 1fr);
-  }
 
   .content {
     gap: 20px;
@@ -366,21 +266,7 @@
   }
 }
 
-/* From 960 px the sections are named in a narrow column; below it they are in the menu (narrow-windows N2). */
-@media (min-width: 960px) and (max-width: 1100px) {
-  .tabletRail {
-    display: flex;
-  }
-}
-
 @media (max-width: 760px) {
-  .workspace {
-    grid-template-rows: 52px minmax(0, 1fr);
-  }
-
-  .workspace:has(> [data-voice-call]) {
-    grid-template-rows: 52px auto minmax(0, 1fr);
-  }
 
   .content {
     gap: 16px;
@@ -391,8 +277,11 @@
     display: block;
   }
 
-  .titleBlock h1 {
+  .titleRow {
     margin-bottom: 0;
+  }
+
+  .titleBlock h1 {
     font-size: 22px;
     line-height: 30px;
   }
@@ -427,25 +316,40 @@
     grid-row: 1;
   }
 
+  /* The size is the button's own: a target of 44 px on a phone (specs/2026-11-10-ux2-patterns-refusals.md PR1.4). */
   .uploadFileButton {
     grid-column: 2;
     grid-row: 1;
     min-width: 130px;
-    min-height: 36px;
-    font-size: 11px;
-    line-height: 13px;
   }
 
-  .projectMissing {
-    grid-template-columns: minmax(0, 1fr);
+  /* On a phone the reading goes first and whole, the upload under it (board 14·01, 390). */
+  .continueReading[data-variant] {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
   }
 
-  .projectMissingActions {
-    flex-direction: column;
-    align-items: stretch;
+  .topActions:has(.continueReading) .uploadFileButton {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
   }
 
-  .firstProjectPanel,
+  /* The line of the materials stands beside «Добавить книги» on a phone: one row, not a row of its own (the rule of all
+     widths stands later in the file, so this one names the actions too). */
+  .topActions .materialsLine {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+    text-align: left;
+  }
+
+  .topActions:has(.continueReading) .materialsLine {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
   .sagaForm {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -453,15 +357,40 @@
   .formActions {
     justify-content: flex-start;
   }
+}
 
-  .projectMenu {
-    top: auto;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    width: min(390px, 100dvw);
-    border-radius: var(--ck-radius-lg) var(--ck-radius-lg) 0 0;
-    padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
+/* «Недавно удалённые: N саг» under the first steps of a shelf without a saga (UXS4.1). */
+.deletedSagasEntry {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .deletedSagasEntry {
+    align-self: stretch;
   }
+}
 
+/* The step «Загрузите книги» calls with the entry of the top of the shelf (specs/2026-11-11-ux7-upload.md UP1.1). */
+.addBooks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.addBooks > span {
+  color: var(--ck-muted-foreground);
+  font-size: 14px;
+}
+
+/* «Навыки, места и персонажи из таблиц — в «Ваши материалы»» under «Добавить книги» (specs/2026-11-11-ux9-shelf-chat.md SC1.7):
+   a quiet line of the action, its whole width under the buttons of the top. */
+.materialsLine {
+  flex-basis: 100%;
+  order: 10;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+  text-align: right;
 }

@@ -1,0 +1,181 @@
+/* «Содержание» (RD1.7; Pattern/Reader/Contents): painted by the background of reading. */
+.panel {
+  display: flex;
+  width: 340px;
+  min-height: 0;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid var(--ck-border);
+  background: var(--ck-reader-pane);
+  color: var(--ck-foreground);
+}
+
+/* 768–1099 px: the panel stands over the text, not beside it — the column keeps its width. */
+@media (max-width: 1099px) {
+  .panel {
+    position: absolute;
+    z-index: 6;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    box-shadow: var(--ck-shadow-md);
+  }
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 0 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tabs {
+  padding: 0 6px;
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  outline: none;
+}
+
+.items {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chapter,
+.note,
+.place {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.note,
+.place {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chapter:hover,
+.note:hover,
+.place:hover {
+  background: var(--ck-secondary);
+}
+
+.chapter[aria-current],
+.note[aria-current],
+.place[aria-current] {
+  background: var(--ck-secondary);
+  box-shadow: inset 3px 0 var(--ck-primary);
+}
+
+.chapter:focus-visible,
+.note:focus-visible,
+.place:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: -2px;
+}
+
+.number {
+  min-width: 22px;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.words {
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.words strong {
+  font-weight: 500;
+}
+
+.words span,
+.note span,
+.place span {
+  color: var(--ck-muted-foreground);
+  font-size: 12px;
+}
+
+.note strong,
+.place strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.place mark {
+  border-radius: 2px;
+  background: var(--ck-highlight);
+  color: var(--ck-highlight-foreground);
+}
+
+.empty {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 8px 6px;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
+}
+
+.empty p {
+  margin: 0;
+}
+
+.all {
+  margin: 12px 6px 4px;
+}
+
+/* A phone: a sheet from below over the text. */
+.sheetLayer {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: var(--ck-scrim);
+}
+
+.sheet {
+  display: flex;
+  width: 100%;
+  max-height: 72dvh;
+  flex-direction: column;
+  border-radius: var(--ck-radius-lg, 12px) var(--ck-radius-lg, 12px) 0 0;
+  background: var(--ck-reader-pane);
+  color: var(--ck-foreground);
+}

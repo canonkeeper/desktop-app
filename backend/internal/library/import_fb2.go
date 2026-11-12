@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"canonkeeper/backend/internal/domain/chapterfile"
+	"canonkeeper/backend/internal/domain/textface"
 )
 
 var ErrImportNoContent = errors.New("library: import has no content")
@@ -14,11 +17,17 @@ var ErrImportNoContent = errors.New("library: import has no content")
 type BookImport struct {
 	Title    string
 	Chapters []ChapterImport
+	// Unsplit says the file names no chapter: its text is one chapter, named as the book
+	// (specs/2026-11-10-book-file-kinds.md K2.3).
+	Unsplit bool
 }
 
+// ChapterImport is a chapter of an imported book: its title and its paragraphs in the runs of their italic and bold
+// (specs/2026-11-08-italic-bold-in-text.md TF4.1); the book keeps a paragraph in markdown as their Markdown and in
+// plain_text as their text.
 type ChapterImport struct {
 	Title      string
-	Paragraphs []string
+	Paragraphs []chapterfile.Paragraph
 }
 
 // maxFB2Sections caps the sections of a file, empty ones included. A book keeps empty sections
@@ -27,9 +36,9 @@ type ChapterImport struct {
 const maxFB2Sections = 10 * maxImportedChapters
 
 // ParseFB2 reads the book title (description/title-info/book-title) and turns every section of a
-// body with paragraphs into a chapter: its own <p> are the paragraphs, the first line of its
-// <title> is the title, and it comes before the chapters of its subsections. The file is read as
-// a stream that stops at the book limits.
+// body with paragraphs into a chapter: its own <p> are the paragraphs, with <emphasis> in italic and
+// <strong> in bold, the first line of its <title> is the title, and it comes before the chapters of
+// its subsections. The file is read as a stream that stops at the book limits.
 func ParseFB2(reader io.Reader) (BookImport, error) {
 	parser := fb2Parser{xml: newImportXMLReader(reader)}
 	if err := parser.parse(); err != nil {
@@ -61,6 +70,9 @@ const (
 	fb2BookTitleText
 	fb2ParagraphText
 	fb2TitleLineText
+	// fb2Emphasis and fb2Strong are the italic and the bold inside a text that is read.
+	fb2Emphasis
+	fb2Strong
 )
 
 type fb2Parser struct {
@@ -70,7 +82,9 @@ type fb2Parser struct {
 	elements []fb2Element
 	sections []fb2OpenSection
 	opened   int // sections opened so far
-	text     strings.Builder
+	runs     []chapterfile.Run
+	// italic and bold count the open <emphasis> and <strong> of the text being read.
+	italic, bold int
 	// textDepth is the depth of the element whose text is read, 0 when none is.
 	textDepth int
 }
@@ -95,7 +109,7 @@ func (parser *fb2Parser) parse() error {
 			}
 		case xml.CharData:
 			if parser.textDepth > 0 {
-				parser.text.Write(token)
+				parser.runs = append(parser.runs, chapterfile.Run{Text: string(token), Italic: parser.italic > 0, Bold: parser.bold > 0})
 			}
 		case xml.EndElement:
 			if err := parser.end(); err != nil {
@@ -110,8 +124,15 @@ func (parser *fb2Parser) parse() error {
 
 func (parser *fb2Parser) start(name string) error {
 	element := fb2Other
-	if parser.textDepth == 0 {
+	switch {
+	case parser.textDepth == 0:
 		element = parser.role(name)
+	case name == "emphasis":
+		element = fb2Emphasis
+		parser.italic++
+	case name == "strong":
+		element = fb2Strong
+		parser.bold++
 	}
 	parser.elements = append(parser.elements, element)
 	switch element {
@@ -122,7 +143,7 @@ func (parser *fb2Parser) start(name string) error {
 		}
 		parser.sections = append(parser.sections, fb2OpenSection{position: len(parser.book.Chapters)})
 	case fb2BookTitleText, fb2ParagraphText, fb2TitleLineText:
-		parser.text.Reset()
+		parser.runs, parser.italic, parser.bold = nil, 0, 0
 		parser.textDepth = len(parser.elements)
 	}
 	return nil
@@ -158,9 +179,16 @@ func (parser *fb2Parser) end() error {
 	depth := len(parser.elements)
 	element := parser.elements[depth-1]
 	parser.elements = parser.elements[:depth-1]
+	switch element {
+	case fb2Emphasis:
+		parser.italic--
+	case fb2Strong:
+		parser.bold--
+	}
 	if depth == parser.textDepth {
 		parser.textDepth = 0
-		return parser.endText(element, normalizeImportText(parser.text.String()))
+		runs := textface.Spaced(parser.runs)
+		return parser.endText(element, chapterfile.Paragraph{Runs: runs})
 	}
 	if element == fb2Section {
 		section := parser.sections[len(parser.sections)-1]
@@ -172,7 +200,8 @@ func (parser *fb2Parser) end() error {
 	return nil
 }
 
-func (parser *fb2Parser) endText(element fb2Element, text string) error {
+func (parser *fb2Parser) endText(element fb2Element, paragraph chapterfile.Paragraph) error {
+	text := paragraph.Text()
 	if element == fb2BookTitleText {
 		parser.book.Title = text
 		return nil
@@ -195,7 +224,7 @@ func (parser *fb2Parser) endText(element fb2Element, text string) error {
 	if err := parser.limits.addParagraph(text); err != nil {
 		return err
 	}
-	chapter.Paragraphs = append(chapter.Paragraphs, text)
+	chapter.Paragraphs = append(chapter.Paragraphs, paragraph)
 	return nil
 }
 

@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
+	"canonkeeper/backend/internal/domain/chapterfile"
 	domain "canonkeeper/backend/internal/domain/sagadraft"
 	"canonkeeper/backend/internal/projects"
 	service "canonkeeper/backend/internal/services/sagadraft"
@@ -84,10 +86,18 @@ func (repository *Repository) ReadTx(ctx context.Context, actor service.Actor, r
 }
 
 // ListChapterDrafts lists the drafts of the project, newest first, without their text.
-func (repository *Repository) ListChapterDrafts(ctx context.Context, actor service.Actor, cursor *domain.Cursor, limit int) (domain.Page, error) {
+// A chat names the drafts proofread from chapters attached in it (specs/2026-11-11-ux5-proofread-mode.md PM3.3).
+func (repository *Repository) ListChapterDrafts(ctx context.Context, actor service.Actor, cursor *domain.Cursor, limit int, chat string) (domain.Page, error) {
 	var page domain.Page
 	err := repository.ReadTx(ctx, actor, func(queries *sqlc.Queries, project pgtype.UUID) error {
-		params := sqlc.ListChapterDraftsParams{ProjectID: project, LimitCount: int32(limit + 1)}
+		params := sqlc.ListChapterDraftsParams{ProjectID: project, LimitCount: int32(limit + 1), FindingKinds: domain.FindingKinds()}
+		if chat != "" {
+			id, err := storedb.ParseUUID(chat)
+			if err != nil {
+				return domain.ErrInvalid
+			}
+			params.HasChat, params.ChatID = true, id
+		}
 		if cursor != nil {
 			id, err := storedb.ParseUUID(cursor.ID)
 			if err != nil {
@@ -102,12 +112,46 @@ func (repository *Repository) ListChapterDrafts(ctx context.Context, actor servi
 		page.Drafts = make([]domain.Summary, 0, len(rows))
 		for _, row := range rows {
 			page.Total = row.TotalCount
-			page.Drafts = append(page.Drafts, domain.Summary{
+			summary := domain.Summary{
 				ID: storedb.UUIDString(row.ID), Title: row.Title, Kind: domain.Kind(row.Kind),
 				Stage: domain.StageOf(row.AddedChapterID.Valid), Words: int(row.Words),
-				JobStatus: row.JobStatus.String, Revision: row.Revision, Edits: row.Edits,
+				Revision: row.Revision, Edits: row.Edits,
 				CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
-			})
+				Idea: strings.TrimSpace(row.Idea) != "", Findings: int(row.Findings), Corrections: int(row.Corrections),
+			}
+			// The plan says what the draft says of it: the same rule of a plan the idea outgrew (WA3.10).
+			if row.PlanNumber.Valid {
+				planned := domain.Draft{Idea: row.Idea, PlanNumber: int(row.PlanNumber.Int32), PlanIdeaHash: row.PlanIdeaHash}
+				summary.Plan = &domain.PlanState{
+					Number: planned.PlanNumber, Approved: row.PlanApproved.Valid && row.PlanApproved.Int32 == row.PlanNumber.Int32,
+					Stale: planned.PlanStale(), Reason: row.PlanReason,
+				}
+			}
+			if row.JobID.Valid {
+				summary.Job = &domain.Job{
+					ID: storedb.UUIDString(row.JobID), Status: row.JobStatus.String, Mode: row.JobMode, Phase: row.JobPhase,
+					Done: int(row.JobDone), Total: int(row.JobTotal), ErrorCode: row.JobErrorCode,
+				}
+			}
+			if row.AttachmentChatID.Valid && row.AttachmentNumber.Valid {
+				summary.Attachment = &domain.Attachment{ChatID: storedb.UUIDString(row.AttachmentChatID), Number: int(row.AttachmentNumber.Int32)}
+			}
+			summary.Opening = domain.Opening(row.Idea, row.BodyHead)
+			if row.Edits {
+				// The same rule of an edit the draft says of itself (WA1.3): the book holds it, the author changed it, the
+				// chapter changed in the book or is gone.
+				edit := domain.Edit{Revision: row.EditsRevision.Int64, Gone: !row.EditedChapterID.Valid}
+				if row.EditedChapterID.Valid {
+					paragraphs, err := heldParagraphs(row.EditedParagraphs)
+					if err != nil {
+						return err
+					}
+					edit.BookRevision = row.EditedRevision.Int64
+					edit.Same = domain.HeldByBook(row.BodyHead, row.Title, paragraphs, row.EditedChapterTitle.String)
+				}
+				summary.EditState = edit.State()
+			}
+			page.Drafts = append(page.Drafts, summary)
 		}
 		if len(page.Drafts) > limit {
 			page.Drafts, page.HasMore = page.Drafts[:limit], true
@@ -117,16 +161,48 @@ func (repository *Repository) ListChapterDrafts(ctx context.Context, actor servi
 	return page, err
 }
 
+// heldParagraphs are the paragraphs of a chapter of the book read as [markdown, plain text] pairs, as the edit of the
+// chapter takes them (library.EditedChapter): the paragraphs with words, their edges trimmed.
+func heldParagraphs(raw []byte) ([]string, error) {
+	var pairs [][2]string
+	if err := json.Unmarshal(raw, &pairs); err != nil {
+		return nil, err
+	}
+	paragraphs := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		if strings.TrimSpace(pair[1]) != "" {
+			paragraphs = append(paragraphs, strings.TrimSpace(pair[0]))
+		}
+	}
+	return paragraphs, nil
+}
+
 // GetChapterDraft reads one draft for a member of its project.
 func (repository *Repository) GetChapterDraft(ctx context.Context, actor service.Actor, draftID string) (domain.Draft, error) {
+	project, user, err := ProjectAndActor(actor.ProjectID, actor.UserID)
+	if err != nil {
+		return domain.Draft{}, err
+	}
+	id, err := storedb.ParseUUID(draftID)
+	if err != nil {
+		return domain.Draft{}, domain.ErrNotFound
+	}
 	var draft domain.Draft
-	err := repository.ReadTx(ctx, actor, func(queries *sqlc.Queries, project pgtype.UUID) error {
-		id, err := storedb.ParseUUID(draftID)
+	err = repository.db.WithTx(ctx, func(tx pgx.Tx) error {
+		queries := sqlc.New(tx)
+		role, err := RoleInTx(ctx, queries, project, user)
 		if err != nil {
-			return domain.ErrNotFound
+			return err
 		}
-		draft, err = GetInTx(ctx, queries, project, id)
-		return err
+		if draft, err = GetInTx(ctx, queries, project, id); err != nil {
+			return err
+		}
+		// The scene in writing is the editor's work in progress (specs/2026-11-12-ux10-scene-stream.md ST1.4): a reader of the
+		// saga reads the chapter, not what the helper writes into it now.
+		if draft.Job != nil && !projects.CanMutateProject(role) {
+			draft.Job.Writing = nil
+		}
+		return nil
 	})
 	return draft, err
 }
@@ -164,12 +240,17 @@ func GetInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.UUID
 		if row.EditedChapterID.Valid {
 			draft.Edits.ChapterTitle, draft.Edits.BookID = row.EditedChapterTitle.String, storedb.UUIDString(row.EditedBookID)
 			draft.Edits.BookRevision, draft.Edits.BookWords = row.EditedRevision.Int64, int(row.EditedWords)
+			paragraphs, err := heldParagraphs(row.EditedParagraphs)
+			if err != nil {
+				return domain.Draft{}, err
+			}
+			draft.Edits.Same = domain.HeldByBook(row.Body, row.Title, paragraphs, row.EditedChapterTitle.String)
 		}
 	}
 	if row.ChatID.Valid {
 		draft.ChatID = storedb.UUIDString(row.ChatID)
 	}
-	draft.CaseChoice, draft.PlanIdeaHash = domain.Case(row.CaseChoice.String), row.PlanIdeaHash
+	draft.CaseChoice, draft.PlanIdeaHash, draft.PlanReason = domain.Case(row.CaseChoice.String), row.PlanIdeaHash, row.PlanReason
 	if row.PlanNumber.Valid {
 		draft.PlanNumber = int(row.PlanNumber.Int32)
 		draft.PlanApproved = row.PlanApproved.Valid && row.PlanApproved.Int32 == row.PlanNumber.Int32
@@ -181,6 +262,12 @@ func GetInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.UUID
 		draft.Job = &domain.Job{
 			ID: storedb.UUIDString(row.JobID), Status: row.JobStatus.String, Mode: row.JobMode, Phase: row.JobPhase,
 			Done: int(row.JobDone), Total: int(row.JobTotal), ErrorCode: row.JobErrorCode,
+		}
+		if err := json.Unmarshal(row.JobMissing, &draft.Job.Missing); err != nil {
+			return domain.Draft{}, err
+		}
+		if err := json.Unmarshal(row.JobWriting, &draft.Job.Writing); err != nil {
+			return domain.Draft{}, err
 		}
 	}
 	words, err := queries.ChapterDraftTypicalWords(ctx, sqlc.ChapterDraftTypicalWordsParams{
@@ -202,7 +289,7 @@ func GetInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.UUID
 	for i, note := range notes {
 		draft.Notes[i] = NoteOf(note)
 	}
-	if draft.Original, err = originalSummaryInTx(ctx, queries, project, id); err != nil {
+	if draft.Original, err = originalSummaryInTx(ctx, queries, project, id, draft.Title, draft.Text); err != nil {
 		return domain.Draft{}, err
 	}
 	return draft, nil
@@ -414,9 +501,45 @@ func (repository *Repository) UpdateChapterDraft(ctx context.Context, write serv
 		if err != nil {
 			return err
 		}
+		// The first change of a conversation with the voice: the draft before it, its idea too, goes into a version
+		// (specs/2026-11-10-ux5-voice.md VO1.1); alone it is all the edit does, and the revision stays.
+		kept := 0
+		if change.KeepVoice {
+			if kept, err = SaveVersionInTx(ctx, queries, project, id, domain.NewVersion(domain.VersionBeforeVoice, draft.Text).WithIdea(draft.Idea)); err != nil {
+				return err
+			}
+			if change.Empty() {
+				updated, err = GetInTx(ctx, queries, project, id)
+				updated.KeptVersion = kept
+				return err
+			}
+		}
+		// The author's text the draft could not take goes into a version «Ваш вариант»; alone it is all the edit does, and
+		// the revision stays (specs/2026-11-11-ux5-writing-path.md WP5.4).
+		if variant := change.Variant; variant != nil {
+			text, version := draft.Text, domain.Version{}
+			if variant.Text != nil {
+				text = *variant.Text
+			}
+			version = domain.NewVersion(domain.VersionAuthorVariant, text)
+			if variant.Idea != nil {
+				version = version.WithIdea(*variant.Idea)
+			}
+			if kept, err = SaveVersionInTx(ctx, queries, project, id, version); err != nil {
+				return err
+			}
+			if change.Empty() {
+				updated, err = GetInTx(ctx, queries, project, id)
+				updated.KeptVersion = kept
+				return err
+			}
+		}
 		// The author takes a piece out: the text before goes into a version (specs/2026-11-06-writing-agent.md, WA7.7).
 		if change.KeepVersion {
-			if _, err := SaveVersionInTx(ctx, queries, project, id, domain.NewVersion(domain.VersionBeforeDelete, draft.Text)); err != nil {
+			// It is named by what went (specs/2026-11-11-ux9-writing-b.md WB3.1).
+			before := domain.NewVersion(domain.VersionBeforeDelete, draft.Text)
+			before.Place = domain.ChangedPlace(draft.Text, next.Text)
+			if _, err := SaveVersionInTx(ctx, queries, project, id, before); err != nil {
 				return err
 			}
 		}
@@ -448,6 +571,7 @@ func (repository *Repository) UpdateChapterDraft(ctx context.Context, write serv
 			}
 		}
 		updated, err = GetInTx(ctx, queries, project, id)
+		updated.KeptVersion = kept
 		return err
 	})
 	return updated, err
@@ -509,8 +633,10 @@ func NoteOf(row sqlc.ListChapterDraftNotesRow) domain.Note {
 	return note
 }
 
-// originalSummaryInTx is what the page shows of the chapter loaded as a file, nil without one.
-func originalSummaryInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.UUID) (*domain.Original, error) {
+// originalSummaryInTx is what the page shows of the chapter loaded as a file, nil without one: with the revisions of Word
+// the file with corrections of the title and the text of the draft now has (specs/2026-11-11-ux5-proofread-mode.md PM1.4),
+// counted by the writer of that file.
+func originalSummaryInTx(ctx context.Context, queries *sqlc.Queries, project, id pgtype.UUID, title, text string) (*domain.Original, error) {
 	row, err := queries.ChapterDraftOriginalSummary(ctx, sqlc.ChapterDraftOriginalSummaryParams{ProjectID: project, DraftID: id})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -518,7 +644,14 @@ func originalSummaryInTx(ctx context.Context, queries *sqlc.Queries, project, id
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Original{FileName: row.FileName, Format: row.Format, Words: int(row.Words), LoadedAt: row.CreatedAt.Time.UTC()}, nil
+	var document chapterfile.Document
+	if err := json.Unmarshal(row.Document, &document); err != nil {
+		return nil, err
+	}
+	return &domain.Original{
+		FileName: row.FileName, Format: row.Format, Words: int(row.Words), LoadedAt: row.CreatedAt.Time.UTC(), Look: row.Look,
+		Revisions: domain.FileRevisions(document, title, text),
+	}, nil
 }
 
 func pgUUID(value string) (pgtype.UUID, error) {

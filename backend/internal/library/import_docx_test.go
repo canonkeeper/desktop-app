@@ -30,7 +30,7 @@ func TestParseDOCXPreservesParagraphOrder(t *testing.T) {
 		t.Fatalf("ParseDOCX() = %#v, want one untitled chapter", parsed)
 	}
 	want := []string{"Первый абзац", "Второй абзац"}
-	got := parsed.Chapters[0].Paragraphs
+	got := textsOf(parsed.Chapters[0].Paragraphs)
 	if len(got) != len(want) {
 		t.Fatalf("paragraphs = %#v, want %#v", got, want)
 	}
@@ -49,7 +49,7 @@ func TestParseDOCXSupportsStrictWordprocessingMLNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseDOCX(strict namespace) error = %v", err)
 	}
-	if len(parsed.Chapters) != 1 || len(parsed.Chapters[0].Paragraphs) != 1 || parsed.Chapters[0].Paragraphs[0] != "Strict paragraph" {
+	if len(parsed.Chapters) != 1 || len(parsed.Chapters[0].Paragraphs) != 1 || parsed.Chapters[0].Paragraphs[0].Text() != "Strict paragraph" {
 		t.Fatalf("ParseDOCX(strict namespace) = %#v", parsed)
 	}
 }
@@ -72,7 +72,7 @@ func TestParseDOCXPreservesInlineSeparators(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseDOCX() error = %v", err)
 			}
-			want := []ChapterImport{{Paragraphs: []string{"до\tтабуляции\nразрыва\nвозврата"}}}
+			want := []ChapterImport{{Paragraphs: paragraphsOf("до\tтабуляции\nразрыва\nвозврата")}}
 			if !reflect.DeepEqual(parsed.Chapters, want) {
 				t.Fatalf("chapters = %#v, want %#v", parsed.Chapters, want)
 			}
@@ -106,8 +106,8 @@ func TestParseDOCXCreatesChaptersFromHeading1Styles(t *testing.T) {
 				t.Fatalf("ParseDOCX() error = %v", err)
 			}
 			want := []ChapterImport{
-				{Paragraphs: []string{"Вступление", "Текст вступления"}},
-				{Title: "Первая глава", Paragraphs: []string{"Текст главы"}},
+				{Paragraphs: paragraphsOf("Вступление", "Текст вступления")},
+				{Title: "Первая глава", Paragraphs: paragraphsOf("Текст главы")},
 			}
 			if !reflect.DeepEqual(parsed.Chapters, want) {
 				t.Fatalf("chapters = %#v, want %#v", parsed.Chapters, want)
@@ -133,8 +133,8 @@ func TestParseDOCXSplitsPlainChapterTitleLines(t *testing.T) {
 		t.Fatalf("ParseDOCX() error = %v", err)
 	}
 	want := BookImport{Title: "13 том. Черновик", Chapters: []ChapterImport{
-		{Title: "Глава 618. Колизей", Paragraphs: []string{"После пары наводящих вопросов.", "Глава гильдии кивнул."}},
-		{Title: "Глава 619. Вопрос", Paragraphs: []string{"Ворон выяснил."}},
+		{Title: "Глава 618. Колизей", Paragraphs: paragraphsOf("После пары наводящих вопросов.", "Глава гильдии кивнул.")},
+		{Title: "Глава 619. Вопрос", Paragraphs: paragraphsOf("Ворон выяснил.")},
 		{Title: "Глава 630"},
 		{Title: "Глава 6"},
 	}}
@@ -172,9 +172,9 @@ func TestParseDOCXResolvesHeadingStylesFromStylesXML(t *testing.T) {
 		t.Fatalf("ParseDOCX() error = %v", err)
 	}
 	want := BookImport{Title: "13 том", Chapters: []ChapterImport{
-		{Title: "Колизей", Paragraphs: []string{"Текст 1"}},
-		{Title: "Вопрос", Paragraphs: []string{"Сцена", "Текст 2"}},
-		{Title: "Изолятор", Paragraphs: []string{"Текст 3"}},
+		{Title: "Колизей", Paragraphs: paragraphsOf("Текст 1")},
+		{Title: "Вопрос", Paragraphs: paragraphsOf("Сцена", "Текст 2")},
+		{Title: "Изолятор", Paragraphs: paragraphsOf("Текст 3")},
 	}}
 	if !reflect.DeepEqual(parsed, want) {
 		t.Fatalf("ParseDOCX() = %#v, want %#v", parsed, want)
@@ -192,7 +192,7 @@ func TestParseDOCXKeepsHeading2InUntitledChapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseDOCX() error = %v", err)
 	}
-	want := []ChapterImport{{Paragraphs: []string{"Подзаголовок", "Текст"}}}
+	want := []ChapterImport{{Paragraphs: paragraphsOf("Подзаголовок", "Текст")}}
 	if !reflect.DeepEqual(parsed.Chapters, want) {
 		t.Fatalf("chapters = %#v, want %#v", parsed.Chapters, want)
 	}

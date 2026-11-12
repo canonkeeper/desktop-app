@@ -99,3 +99,52 @@ export function iterateLayout(graph: Graph, iterations: number) {
 export function layoutPositions(graph: Graph): Array<[string, number, number]> {
   return graph.mapNodes((key, attributes) => [key, attributes.x as number, attributes.y as number]);
 }
+
+/**
+ * A label the canvas could draw: sigma writes it to the right of its node, `size` px from the center (the rendered radius).
+ * `tier` orders the labels before their size: the open or hovered node (0), the hero (1), the neighbors of the open one (2),
+ * the rest (`ordinaryLabel`).
+ */
+export interface LabelCandidate {
+  key: string;
+  x: number;
+  y: number;
+  size: number;
+  width: number;
+  height: number;
+  tier: number;
+}
+
+/** The tier of a label that is no more than its node: it gives way to the circles of the others. */
+export const ordinaryLabel = 3;
+
+/** The free room around a label, so two kept labels never touch. */
+const labelGap = 2;
+
+/**
+ * The labels that fit without running over each other or over the circle of a node as big as theirs (specs/2026-11-11-ux8-map.md
+ * MP1.3): by tier, then the bigger node first; a label that meets a kept one is hidden — its node shows it on hover, focus
+ * and when the camera comes closer.
+ */
+export function placeLabels(candidates: readonly LabelCandidate[]): Set<string> {
+  const ordered = [...candidates].sort((left, right) => left.tier - right.tier || right.size - left.size || (left.key < right.key ? -1 : 1));
+  const kept: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+  const shown = new Set<string>();
+  for (const label of ordered) {
+    const left = label.x + label.size + 3;
+    const box = { left: left - labelGap, top: label.y - label.height / 2 - labelGap, right: left + label.width + labelGap, bottom: label.y + label.height / 2 + labelGap };
+    if (kept.some((other) => box.left < other.right && other.left < box.right && box.top < other.bottom && other.top < box.bottom)) continue;
+    // A name does not cover a circle as big as its own; the open or hovered node, the hero and the neighbors of the open one
+    // say their names over a circle too.
+    const coversNode = label.tier >= ordinaryLabel && candidates.some((node) => {
+      if (node.key === label.key || node.size < label.size) return false;
+      const nearestX = Math.max(box.left, Math.min(node.x, box.right));
+      const nearestY = Math.max(box.top, Math.min(node.y, box.bottom));
+      return (node.x - nearestX) ** 2 + (node.y - nearestY) ** 2 < node.size ** 2;
+    });
+    if (coversNode) continue;
+    kept.push(box);
+    shown.add(label.key);
+  }
+  return shown;
+}

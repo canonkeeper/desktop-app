@@ -13,7 +13,9 @@ type coverage struct {
 }
 
 type chapterRef struct {
-	Key       string `json:"key"`
+	Key string `json:"key"`
+	// Label is the place of the chapter as the author reads it (specs/2026-11-10-ux1-names.md N1.3).
+	Label     string `json:"label"`
 	ChapterID string `json:"chapterId"`
 	BookID    string `json:"bookId"`
 	BookOrder int    `json:"bookOrder"`
@@ -63,6 +65,8 @@ type contents struct {
 	Books    []book            `json:"books"`
 	BookID   string            `json:"bookId,omitempty"`
 	Chapters []contentsChapter `json:"chapters"`
+	// Chapter is the chapter the asked key names, under its key of now (specs/2026-11-11-ux7-reorder.md RK1.5).
+	Chapter *chapterRef `json:"chapter,omitempty"`
 }
 
 func coverageDTO(value sagamemory.Coverage) coverage {
@@ -71,7 +75,7 @@ func coverageDTO(value sagamemory.Coverage) coverage {
 
 func chapterDTO(chapter *sagamemory.Chapter) chapterRef {
 	return chapterRef{
-		Key: chapter.Key, ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
+		Key: chapter.Key, Label: chapter.Place(), ChapterID: chapter.ID, BookID: chapter.BookID, BookOrder: chapter.BookOrder,
 		BookTitle: chapter.BookTitle, Title: chapter.Title, Number: chapter.Number,
 	}
 }
@@ -114,6 +118,10 @@ func contentsDTO(result service.ContentsResult) contents {
 	}
 	if result.Book != nil {
 		out.BookID = result.Book.ID
+	}
+	if result.Found != nil {
+		found := chapterDTO(result.Found)
+		out.Chapter = &found
 	}
 	for i, item := range result.Chapters {
 		value := contentsChapter{Chapter: chapterDTO(item.Chapter)}

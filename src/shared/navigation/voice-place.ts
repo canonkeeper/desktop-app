@@ -31,6 +31,13 @@ export interface VoicePlaceRegistry {
   /** The page of an author without a saga says how to found the first one. */
   registerFirstSaga: (create: (() => Promise<unknown>) | null) => void;
   live: boolean;
+  /**
+   * The versions «до разговора» of the drafts the conversation changed, by draft, while it goes on and while its summary
+   * stands (specs/2026-11-10-ux5-voice.md VO1.4): what the voice added is lit against them.
+   */
+  kept: Readonly<Record<string, number>>;
+  /** The author types in a field of his chapter himself: the voice waits for him there (VO2.1). */
+  typing: (field: 'idea' | 'text') => void;
 }
 
 const VoicePlaceContext = createContext<VoicePlaceRegistry | null>(null);
@@ -51,8 +58,9 @@ export function useVoiceFirstSaga(create: (() => Promise<unknown>) | null) {
 }
 
 /**
- * A page names where the author is and what it does for the call (V0.8, V2.4): null where he may not talk. It answers
- * whether a call goes on here — on a chapter of «Письмо» the fields are the agent's then (V1.3).
+ * A page names where the author is and what it does for the call (V0.8, V2.4): null where it names no place of its own.
+ * Such a page registers nothing, so the workspace above «Письмо» and «Рисование» does not erase the place they name. It
+ * answers whether a call goes on here — on a chapter of «Письмо» the fields are the agent's then (V1.3).
  */
 export function useVoicePlace(projectId: string | null | undefined, place: VoicePlace | null, handlers: VoicePlaceHandlers = {}) {
   const call = useContext(VoicePlaceContext);
@@ -67,7 +75,7 @@ export function useVoicePlace(projectId: string | null | undefined, place: Voice
       ...(chatId ? { chatId } : {}), ...(entry ? { entry } : {}) },
   } : null), [projectId, page, draftId, chapterKey, drawingId, chatId, entry]);
   useEffect(() => {
-    if (!register) return undefined;
+    if (!register || !named) return undefined;
     const proxy: VoicePlaceHandlers = {
       beforeStart: () => latest.current.beforeStart?.() ?? Promise.resolve(),
       onDraft: (id, revision) => latest.current.onDraft?.(id, revision),
@@ -77,5 +85,12 @@ export function useVoicePlace(projectId: string | null | undefined, place: Voice
     register(named, proxy);
     return () => register(null, {});
   }, [register, named]);
-  return { live: Boolean(call?.live) };
+  return {
+    live: Boolean(call?.live),
+    /** The version «до разговора» of the draft of this place, or null. */
+    before: (draftId && call?.kept[draftId]) || null,
+    typing: call?.typing ?? noTyping,
+  };
 }
+
+const noTyping = () => undefined;

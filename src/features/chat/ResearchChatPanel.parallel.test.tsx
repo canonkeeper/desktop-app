@@ -8,6 +8,7 @@ import { createIdempotencyKey } from '../../shared/api';
 import { FakeWebSocket } from '../../test/FakeWebSocket';
 import { forgetAllTurns } from './answer-ready';
 import { ResearchChatPanel } from './ResearchChatPanel';
+import { ToastsProvider } from '../../ui/feedback/Toast';
 
 beforeEach(() => {
   vi.stubGlobal('innerWidth', 1440);
@@ -31,7 +32,7 @@ function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
   function SelectedChat() {
     const [chatId, setChatId] = useState(selectedChatId);
-    return <QueryClientProvider client={client}>
+    return <QueryClientProvider client={client}><ToastsProvider>
       <ResearchChatPanel
         api={api}
         canCreate
@@ -41,7 +42,7 @@ function renderPanel(api: ReturnType<typeof createMockApiClient>, selectedChatId
         selectedChatId={chatId}
         sourceView="published"
       />
-    </QueryClientProvider>;
+    </ToastsProvider></QueryClientProvider>;
   }
   render(<SelectedChat />);
 }
@@ -64,13 +65,13 @@ describe('Research Chat parallel chats', () => {
     expect(screen.getByRole('textbox', { name: 'Уточнение' })).toHaveProperty('disabled', false);
     const newChat = screen.getByRole('button', { name: 'Новый чат' });
     expect(newChat).toHaveProperty('disabled', false);
-    expect(await screen.findByRole('button', { name: 'Кто такой Тарас Гнедой?, идёт работа' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Кто такой Тарас Гнедой?, готовится' })).toBeTruthy();
 
     fireEvent.click(newChat);
     await ask('Где впервые появляется Ворон?');
 
-    expect(await screen.findByRole('button', { name: 'Где впервые появляется Ворон?, идёт работа' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Кто такой Тарас Гнедой?, идёт работа' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Где впервые появляется Ворон?, готовится' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Кто такой Тарас Гнедой?, готовится' })).toBeTruthy();
   });
 
   it('marks only the chats whose turn works', async () => {
@@ -79,7 +80,7 @@ describe('Research Chat parallel chats', () => {
     const working = await chat(api, 'Работающий чат');
     await api.createChatTurn(working.id, { body: 'Проверь первую главу' }, { idempotencyKey: createIdempotencyKey('createChatTurn') });
     renderPanel(api, idle.id);
-    expect(await screen.findByRole('button', { name: 'Работающий чат, идёт работа' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Работающий чат, готовится' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Тихий чат' })).toBeTruthy();
   });
 
@@ -93,6 +94,6 @@ describe('Research Chat parallel chats', () => {
     }
     renderPanel(api, idle.id);
 
-    expect(await screen.findByRole('button', { name: 'Чаты, работают: 2' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Чаты: помощник отвечает в 2 чатах' })).toBeTruthy();
   });
 });

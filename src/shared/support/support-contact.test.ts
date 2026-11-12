@@ -17,7 +17,7 @@ describe('supportMailHref', () => {
 
     expect(letter.protocol).toBe('mailto:');
     expect(letter.address).toBe(supportEmail);
-    expect(letter.subject).toBe('Canon Keeper: ошибка req-1');
+    expect(letter.subject).toBe('CanonKeeper: ошибка req-1');
     expect(letter.body).toContain('Код для поддержки: req-1');
     expect(letter.body).toContain('Страница: /chat');
     expect(letter.body).toContain('Что вы делали, когда появилась ошибка:');
@@ -28,11 +28,11 @@ describe('supportMailHref', () => {
   it('asks a plain question without a code', () => {
     const letter = parse(supportMailHref(undefined, '/manuscript/books#top'));
 
-    expect(letter.subject).toBe('Canon Keeper: вопрос');
+    expect(letter.subject).toBe('CanonKeeper: вопрос');
     expect(letter.body.trim()).toBe('Страница: /manuscript/books');
   });
 
   it('treats a blank code as no code', () => {
-    expect(parse(supportMailHref('  ', '/')).subject).toBe('Canon Keeper: вопрос');
+    expect(parse(supportMailHref('  ', '/')).subject).toBe('CanonKeeper: вопрос');
   });
 });

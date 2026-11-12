@@ -36,15 +36,16 @@ type JobAccessService interface {
 
 func NewHandlers(
 	timeline Timeline,
+	places Places,
 	currentUser CurrentUserService,
 	jobAccess JobAccessService,
 	allowedOrigins []string,
 ) Handlers {
-	if timeline == nil || currentUser == nil || jobAccess == nil {
+	if timeline == nil || places == nil || currentUser == nil || jobAccess == nil {
 		panic("agent timeline: HTTP dependencies are required")
 	}
 	return Handlers{
-		timeline: timeline, currentUser: currentUser, jobs: jobAccess,
+		timeline: timeline, places: places, currentUser: currentUser, jobs: jobAccess,
 		allowedOrigins:             append([]string(nil), allowedOrigins...),
 		authorizationLeaseDuration: defaultAuthorizationLeaseDuration,
 		bindingPollInterval:        defaultBindingPollInterval,
@@ -88,7 +89,8 @@ func (handlers Handlers) StreamTimeline(w http.ResponseWriter, request *http.Req
 		handlers.writeTimelineError(w, request, err)
 		return
 	}
-	envelope, err := handlers.Live(ctx, projectID, jobID)
+	memo := placeMemo{}
+	envelope, err := handlers.live(ctx, projectID, jobID, memo)
 	if err != nil {
 		handlers.writeTimelineError(w, request, err)
 		return
@@ -110,7 +112,7 @@ func (handlers Handlers) StreamTimeline(w http.ResponseWriter, request *http.Req
 	sessionID := auth.SessionCookieValue(request)
 	if pending {
 		var bound bool
-		if updates, bound = handlers.awaitRootThread(ctx, connection, sessionID, user.ID, projectID, jobID); !bound {
+		if updates, bound = handlers.awaitRootThread(ctx, connection, sessionID, user.ID, projectID, jobID, memo); !bound {
 			return
 		}
 	}
@@ -158,7 +160,7 @@ func (handlers Handlers) StreamTimeline(w http.ResponseWriter, request *http.Req
 				}
 			}
 			if refresh {
-				envelope, err = handlers.Live(ctx, projectID, jobID)
+				envelope, err = handlers.live(ctx, projectID, jobID, memo)
 				if err != nil {
 					if ctx.Err() == nil {
 						observability.ReportUnexpectedError(ctx, err)
@@ -178,7 +180,7 @@ func (handlers Handlers) StreamTimeline(w http.ResponseWriter, request *http.Req
 // bindingPollInterval проверяет доступ к задаче и привязку. После привязки отдаёт свежий снимок и
 // подписку; задача, завершившаяся без thread, закрывает поток нормально.
 func (handlers Handlers) awaitRootThread(
-	ctx context.Context, connection *websocket.Conn, sessionID, userID, projectID, jobID string,
+	ctx context.Context, connection *websocket.Conn, sessionID, userID, projectID, jobID string, memo placeMemo,
 ) (<-chan domain.Update, bool) {
 	poll := time.NewTicker(handlers.bindingPollInterval)
 	defer poll.Stop()
@@ -203,7 +205,7 @@ func (handlers Handlers) awaitRootThread(
 		}
 		var envelope EnvelopeDTO
 		if err == nil {
-			envelope, err = handlers.Live(ctx, projectID, jobID)
+			envelope, err = handlers.live(ctx, projectID, jobID, memo)
 		}
 		if err != nil {
 			if ctx.Err() == nil {

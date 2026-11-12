@@ -48,16 +48,23 @@ func loadImportQueueItems(ctx context.Context, queryer sqlc.DBTX, queueID, proje
 	return items, nil
 }
 
-func validateImportQueueStartItems(items []sqlc.ListImportQueueItemsForStartRow, nextBookOrder int) error {
+// validateImportQueueStartItems checks the volumes of a queue to start: every file received, a file that passed the
+// check with its upload intact. A file that did not pass starts nothing and waits for the author at its place
+// (specs/2026-11-11-ux7-upload.md UP1.2, UP3.2).
+func validateImportQueueStartItems(items []sqlc.ListImportQueueItemsForStartRow) error {
 	if len(items) == 0 {
 		return library.ErrValidation
 	}
 	for index, item := range items {
-		if item.Position != int32(index+1) ||
-			item.PreflightStatus != library.ImportQueueItemReady ||
+		if item.Position != int32(index+1) {
+			return library.ErrValidation
+		}
+		if item.PreflightStatus == library.ImportQueueItemInvalid {
+			continue
+		}
+		if item.PreflightStatus != library.ImportQueueItemReady ||
 			!item.StorageKey.Valid || !item.MimeType.Valid || !item.Sha256.Valid ||
-			!item.SizeBytes.Valid || item.SizeBytes.Int64 <= 0 ||
-			!item.ConfirmedBookOrder.Valid {
+			!item.SizeBytes.Valid || item.SizeBytes.Int64 <= 0 {
 			return library.ErrValidation
 		}
 		if !item.UploadPresent || !item.UploadOwnerActive || !item.UploadSizeMatches {
@@ -66,11 +73,19 @@ func validateImportQueueStartItems(items []sqlc.ListImportQueueItemsForStartRow,
 		if !item.UploadChecksumMatches {
 			return library.ErrImportContentMismatch
 		}
-		if item.ConfirmedBookOrder.Int32 != int32(nextBookOrder+index) {
-			return library.ErrImportSequenceConflict
-		}
 	}
 	return nil
+}
+
+// assignImportQueueOrders gives every volume of the queue its place by its position, from the first place after the
+// books of the shelf.
+func assignImportQueueOrders(ctx context.Context, tx pgx.Tx, projectID, queueID pgtype.UUID, firstOrder int) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE import_queue_items
+		SET confirmed_book_order = $3::integer + position - 1, updated_at = clock_timestamp()
+		WHERE queue_id = $1 AND project_id = $2
+	`, queueID, projectID, firstOrder)
+	return err
 }
 
 func validateImportQueueStartReplay(
@@ -81,10 +96,17 @@ func validateImportQueueStartReplay(
 	if locked.Status != string(library.ImportQueueRunning) || input.ExpectedVersion != locked.Version-1 {
 		return library.ErrConflict
 	}
-	if err := validateImportQueueStartItems(items, int(items[0].ConfirmedBookOrder.Int32)); err != nil {
+	if err := validateImportQueueStartItems(items); err != nil {
 		return err
 	}
-	for _, item := range items {
+	firstOrder := items[0].ConfirmedBookOrder.Int32
+	for index, item := range items {
+		if !item.ConfirmedBookOrder.Valid || item.ConfirmedBookOrder.Int32 != firstOrder+int32(index) {
+			return library.ErrConflict
+		}
+		if item.PreflightStatus == library.ImportQueueItemInvalid && !item.ImportJobID.Valid {
+			continue
+		}
 		if !item.ImportJobID.Valid ||
 			optionalText(item.RequestIdempotencyKey) != input.IdempotencyKey+":"+item.ID.String() ||
 			optionalText(item.RequestMethod) != input.RequestMethod ||
@@ -119,37 +141,6 @@ func importQueueOrderIsReserved(ctx context.Context, tx pgx.Tx, projectID, queue
 	return activeQueue || bookConflict || importJobConflict, err
 }
 
-func saveImportQueueItemOrder(ctx context.Context, tx pgx.Tx, projectID, queueID pgtype.UUID, items []library.SaveImportQueueItemStoreInput) error {
-	ids := make([]pgtype.UUID, len(items))
-	positions := make([]int32, len(items))
-	confirmed := make([]int32, len(items))
-	for index, item := range items {
-		id, err := storedb.ParseUUID(item.ItemID)
-		if err != nil {
-			return library.ErrValidation
-		}
-		ids[index], positions[index], confirmed[index] = id, int32(item.Position), int32(item.ConfirmedBookOrder)
-	}
-	command, err := tx.Exec(ctx, `
-		UPDATE import_queue_items AS item
-		SET position = incoming.position,
-		    confirmed_book_order = NULLIF(incoming.confirmed_book_order, 0),
-		    updated_at = clock_timestamp()
-		FROM unnest($1::uuid[], $2::integer[], $3::integer[])
-		  AS incoming(item_id, position, confirmed_book_order)
-		WHERE item.id = incoming.item_id
-		  AND item.queue_id = $4
-		  AND item.project_id = $5
-	`, ids, positions, confirmed, queueID, projectID)
-	if err != nil {
-		return err
-	}
-	if command.RowsAffected() != int64(len(items)) {
-		return library.ErrNotFound
-	}
-	return nil
-}
-
 func importQueueFromSQL(row sqlc.ImportQueue) library.ImportQueue {
 	return library.ImportQueue{
 		ID: storedb.UUIDString(row.ID), ProjectID: storedb.UUIDString(row.ProjectID), CreatedByUserID: storedb.UUIDString(row.CreatedByUserID),
@@ -164,11 +155,11 @@ func importQueueItemFromSQL(row sqlc.ListImportQueueItemsRow) library.ImportQueu
 		ID: storedb.UUIDString(row.ID), QueueID: storedb.UUIDString(row.QueueID), ProjectID: storedb.UUIDString(row.ProjectID),
 		ClientItemID: row.ClientItemID, Position: int(row.Position), SourceFileName: row.SourceFileName,
 		StorageKey: optionalText(row.StorageKey), MIMEType: optionalText(row.MimeType), SizeBytes: optionalInt8(row.SizeBytes),
-		SHA256: optionalText(row.Sha256), DetectedBookOrder: optionalInt4Value(row.DetectedBookOrder), ConfirmedBookOrder: optionalInt4Value(row.ConfirmedBookOrder),
+		SHA256: optionalText(row.Sha256), ConfirmedBookOrder: optionalInt4Value(row.ConfirmedBookOrder),
 		PreflightStatus: row.PreflightStatus, PreflightErrorJSON: append([]byte(nil), row.PreflightErrorJson...),
 		ImportJobID: storedb.UUIDString(row.ImportJobID), ImportJobStatus: row.ImportJobStatus, ImportJobRetryCount: int(row.ImportJobRetryCount),
 		ImportJobErrorJSON: append([]byte(nil), row.ImportJobErrorJson...), BookID: storedb.UUIDString(row.BookID),
-		CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
+		CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time, SkippedAt: storedb.OptionalTime(row.SkippedAt),
 	}
 }
 
@@ -213,13 +204,6 @@ func optionalQueueUUID(value string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, nil
 	}
 	return storedb.ParseUUID(value)
-}
-
-func optionalInt4(value int) pgtype.Int4 {
-	if value < 1 {
-		return pgtype.Int4{}
-	}
-	return pgtype.Int4{Int32: int32(value), Valid: true}
 }
 
 func optionalInt4Value(value pgtype.Int4) int {

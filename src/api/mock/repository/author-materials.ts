@@ -6,7 +6,7 @@ import type { MockRepositoryContext } from './context';
 type Material = Schema<'AuthorMaterial'>;
 type MaterialImport = Schema<'AuthorMaterialsImport'>;
 type Candidate = Schema<'AuthorMaterialCandidate'>;
-type Operations = Pick<CanonKeeperApiClient, 'listAuthorMaterials' | 'updateAuthorMaterial' | 'deleteAuthorMaterial'
+type Operations = Pick<CanonKeeperApiClient, 'listAuthorMaterials' | 'createAuthorMaterial' | 'updateAuthorMaterial' | 'deleteAuthorMaterial'
   | 'startAuthorMaterialsImport' | 'getAuthorMaterialsImport' | 'confirmAuthorMaterialsImport' | 'discardAuthorMaterialsImport'>;
 
 const writers = ['owner', 'admin', 'editor'] as const;
@@ -50,13 +50,21 @@ const largeOwn = (at: number) => at % 16 === 7;
 /** What the server answers about a file it does not read, by the name of the file. */
 function refusedFormat(name: string): string | null {
   const extension = name.toLowerCase().split('.').pop() ?? '';
-  if (['xlsx', 'xlsm', 'docx'].includes(extension)) return null;
+  // specs/2026-11-10-ux8-memory-records.md MR2.4: a table of a .csv and a text of a .txt or a .md are read too.
+  if (['xlsx', 'xlsm', 'docx', 'csv', 'txt', 'md'].includes(extension)) return null;
   if (['xls', 'doc', 'rtf'].includes(extension)) return 'author_materials.old_format';
   if (['ods', 'odt'].includes(extension)) return 'author_materials.open_document';
   if (extension === 'pdf') return 'author_materials.pdf';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'].includes(extension)) return 'author_materials.picture';
-  if (['csv', 'txt', 'md'].includes(extension)) return 'author_materials.plain_text';
   return 'author_materials.unreadable';
+}
+
+/** What a file of the mock is, by its name as the server tells it by its content. */
+function sourceKindOf(name: string, file: boolean): MaterialImport['sourceKind'] {
+  const extension = name.toLowerCase().split('.').pop() ?? '';
+  if (!file || extension === 'txt' || extension === 'md') return 'text';
+  if (extension === 'csv') return 'csv';
+  return extension === 'docx' ? 'docx' : 'xlsx';
 }
 
 export function createAuthorMaterialOperations(context: MockRepositoryContext) {
@@ -72,6 +80,7 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
       records.clear();
       imports.clear();
       replies.clear();
+      created.clear();
     }
     return records.get(projectId) ?? [];
   };
@@ -80,6 +89,12 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
     if (!found) throw new MockApiError(404, 'Record not found.', operationId);
     return found;
   };
+  /** MR2.3: one name is one record; a name another record has is refused with that record. */
+  const refuseTaken = (projectId: string, name: string, operationId: 'createAuthorMaterial' | 'updateAuthorMaterial', self?: string) => {
+    const other = ofProject(projectId).find((item) => item.id !== self && keyOf(item.name) === keyOf(name));
+    if (other) throw new MockApiError(409, 'The name is taken.', operationId, 'author_materials.name_taken', { fields: { materialId: other.id } });
+  };
+  const created = new Map<string, Material>();
   const matched = (projectId: string, candidate: Omit<Candidate, 'match'>): Candidate => {
     const own = ofProject(projectId).some((item) => keyOf(item.name) === keyOf(candidate.name));
     if (keyOf(candidate.name) === 'мара') return { ...candidate, match: own ? 'materials' : 'book', bookName: 'Мара' };
@@ -95,10 +110,28 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
         .sort((left, right) => keyOf(left.name).localeCompare(keyOf(right.name), 'ru'));
       return clone({ data, meta: { hasMore: false, nextCursor: null, totalCount: data.length } });
     },
+    async createAuthorMaterial(projectId, body: OperationRequest<'createAuthorMaterial'>, options) {
+      context.requireProjectAccess('createAuthorMaterial', projectId, [...writers]);
+      ofProject(projectId);
+      const replay = created.get(options.idempotencyKey);
+      if (replay) return clone(replay);
+      const name = body.name.trim();
+      if (!name) throw new MockApiError(400, 'A name is needed.', 'createAuthorMaterial', 'request.validation');
+      refuseTaken(projectId, name, 'createAuthorMaterial');
+      const at = new Date().toISOString();
+      const material: Material = {
+        id: `00000000-0000-4000-a000-${String(nextId++).padStart(12, '0')}`, name, kind: body.kind, description: body.description.trim(),
+        properties: body.properties, section: body.section ?? '', sourceName: '', sourceKind: 'manual', revision: 1, createdAt: at, updatedAt: at,
+      };
+      records.set(projectId, [...ofProject(projectId), material]);
+      created.set(options.idempotencyKey, material);
+      return clone(material);
+    },
     async updateAuthorMaterial(projectId, materialId, body: OperationRequest<'updateAuthorMaterial'>) {
       context.requireProjectAccess('updateAuthorMaterial', projectId, [...writers]);
       const found = materialOf(projectId, materialId, 'updateAuthorMaterial');
       if (found.revision !== body.expectedRevision) throw new MockApiError(409, 'The record changed.', 'updateAuthorMaterial', 'conflict');
+      refuseTaken(projectId, body.name, 'updateAuthorMaterial', materialId);
       const updated: Material = {
         ...found, name: body.name.trim(), kind: body.kind, description: body.description, properties: body.properties,
         revision: found.revision + 1, updatedAt: new Date().toISOString(),
@@ -129,7 +162,7 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
       const id = nextId++;
       const started: MaterialImport = {
         id: `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`, jobId: `00000000-0000-4000-9000-${String(id).padStart(12, '0')}`, jobStatus: 'queued',
-        sourceName: name, sourceKind: name.toLowerCase().endsWith('.docx') ? 'docx' : input.file ? 'xlsx' : 'text', createdAt: new Date().toISOString(), candidates: null,
+        sourceName: name, sourceKind: sourceKindOf(name, Boolean(input.file)), createdAt: new Date().toISOString(), candidates: null,
       };
       imports.set(projectId, started);
       replies.set(options.idempotencyKey, started);

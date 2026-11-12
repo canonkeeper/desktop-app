@@ -1,4 +1,5 @@
 .panel {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -9,19 +10,29 @@
   background: var(--ck-card);
 }
 
-.panel[data-toolbar] { border: 0; border-radius: 0; background: transparent; }
+/* In the frame of the page: the frame is the card (specs/2026-11-11-ux2-polish.md PL2.1). */
+.panel[data-row] { border: 0; border-radius: 0; background: transparent; }
 
-.deleteButton,
 .sendButton {
   border: 0;
   font: inherit;
   cursor: pointer;
 }
 
+/* «Уточнить» — the one action at the field of a running turn, a word at any width (specs/2026-11-10-ux4-chat-waiting.md CW2.4). */
+.steerButton {
+  flex: 0 0 auto;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+/* The field is as high as its text, from one line to eight, then it scrolls (specs/2026-11-10-ux1-chat.md CH1.7). */
 .composerTextarea {
   min-width: 0;
   height: 48px;
   min-height: 48px;
+  max-height: calc(8 * 1.4em + 22px);
+  overflow-y: auto;
   border: 1px solid var(--ck-border-strong);
   border-radius: var(--ck-radius-md);
   padding: 10px;
@@ -189,6 +200,12 @@
   white-space: normal;
 }
 
+/* «Ещё примеры вопросов» under the questions of the saga: the general examples folded (first-questions FQ1.5). */
+.moreExamples {
+  justify-self: start;
+  min-height: 44px;
+}
+
 .examplesHint {
   color: var(--ck-muted-foreground);
   font-size: 13px;
@@ -222,7 +239,7 @@
   display: grid;
   min-height: 48px;
   flex: 0 0 auto;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 0 26px;
@@ -235,7 +252,7 @@
 }
 
 .composerField {
-  grid-column: 2;
+  grid-column: 1;
 }
 
 /* The chapter attached to the question (specs/2026-11-07-chat-attach-chapter.md CA7): a row of its own over the field,
@@ -253,11 +270,14 @@
   gap: 0;
 }
 
+/* The actions stay at the last line of a field that grew; beside one line they stand at its middle, as before. */
 .composerActions {
-  grid-column: 3;
+  grid-column: 2;
   display: flex;
+  align-self: end;
   justify-content: flex-end;
   gap: 8px;
+  padding-block: 5px;
 }
 
 .visuallyHidden {
@@ -270,7 +290,6 @@
   clip-path: inset(50%);
 }
 
-.deleteButton,
 .sendButton {
   display: inline-flex;
   align-items: center;
@@ -281,57 +300,6 @@
   padding: 0 13px;
   font-size: 13px;
   font-weight: 600;
-}
-
-.deleteButton {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  background: transparent;
-  color: var(--ck-destructive-text);
-}
-
-.deleteError {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.deleteError span {
-  min-width: 0;
-  white-space: pre-wrap;
-}
-
-/* On a computer the panel is the kit dialog's (narrow-windows N7.1); on a phone the sheet's, padded here. */
-.deleteDialog {
-  display: grid;
-  gap: 8px;
-}
-
-.deleteDialog h2,
-.deleteDialog p {
-  margin: 0;
-}
-
-.deleteDialog h2 {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.deleteDialog p {
-  color: var(--ck-muted-foreground);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.deleteDialogActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 10px;
 }
 
 .panel button:disabled {
@@ -350,21 +318,15 @@
     padding: 12px 10px;
   }
 
-  .deleteDialog {
-    padding: 18px 20px;
-  }
-
-  .deleteDialogActions button {
-    min-height: 44px;
-  }
-
-  .sendButton,
-  .deleteButton {
+  .sendButton {
     min-width: 44px;
     min-height: 44px;
     height: 44px;
   }
 
+  .composerActions {
+    padding-block: 2px;
+  }
 }
 
 @container chat-viewport (max-width: 360px) {
@@ -380,12 +342,14 @@
 }
 
 @media (pointer: coarse) {
-  .sendButton,
-  .deleteButton,
-  .deleteDialogActions button {
+  .sendButton {
     min-width: 44px;
     min-height: 44px;
     height: 44px;
+  }
+
+  .composerActions {
+    padding-block: 2px;
   }
 }
 
@@ -398,10 +362,70 @@
   margin: 0 auto;
 }
 
+/* «Отменить» and «Что помнит помощник» of the line «Запомнил: …» (specs/2026-11-10-ux1-chat.md CH4.2). */
 .rememberedNote {
   align-items: center;
   color: var(--ck-muted-foreground);
   display: inline-flex;
+  flex-wrap: wrap;
   font-size: 13px;
-  gap: 6px;
+  gap: 4px 12px;
+}
+
+/* A word under the record, in line with it: no box of a button between the record and its undo. */
+.rememberedUndo {
+  border: 0;
+  border-radius: 3px;
+  padding: 0;
+  background: transparent;
+  color: var(--ck-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.rememberedUndo:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rememberedUndo:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rememberedLink {
+  border-radius: 3px;
+  color: var(--ck-link);
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  .rememberedUndo,
+  .rememberedLink {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+  }
+}
+
+/* A chapter file dragged over the chat (specs/2026-11-11-ux4-after-answer.md AA4.4): the whole panel takes it. */
+.dropOverlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border: 2px dashed var(--ck-primary);
+  border-radius: var(--ck-radius-md);
+  background: color-mix(in srgb, var(--ck-card) 92%, transparent);
+  color: var(--ck-foreground);
+  pointer-events: none;
+}
+
+.savedNote {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: 13px;
 }

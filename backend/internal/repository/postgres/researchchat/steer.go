@@ -43,7 +43,7 @@ func (repository *Repository) BeginSteer(ctx context.Context, command service.Be
 		if _, err := repository.lockWritableSessionInTx(ctx, tx, command.Session.ProjectID, command.ChatID, command.ActorUserID); err != nil {
 			return err
 		}
-		loaded, status, err := repository.steerTurnInTx(ctx, tx, command.Session.ProjectID, command.ChatID, command.TurnID)
+		loaded, status, kind, err := repository.steerTurnInTx(ctx, tx, command.Session.ProjectID, command.ChatID, command.TurnID)
 		if err != nil {
 			return err
 		}
@@ -98,8 +98,18 @@ func (repository *Repository) BeginSteer(ctx context.Context, command service.Be
 		if err := readyImagesInTx(ctx, tx, command.Session.ProjectID, command.Images); err != nil {
 			return err
 		}
-		target.ImageTitles, err = imageTitlesOf(ctx, tx, command.Session.ProjectID, command.Images)
-		return err
+		if target.ImageTitles, err = imageTitlesOf(ctx, tx, command.Session.ProjectID, command.Images); err != nil {
+			return err
+		}
+		// A correction is a message of the author to the model, as a new turn is: it spends the same daily unit of its
+		// session's kind, under the lock of the same day row, before it goes (specs/2026-11-09-quota-accounting.md Q2.1,
+		// Q2.2). It starts no Job, so active_turns is not its limit.
+		charge := service.SteerCharge{UserID: command.ActorUserID, Key: turnQuotaKey(kind), At: command.CreatedAt}
+		if err := repository.quota.ReserveDailyInTx(ctx, tx, charge.UserID, charge.Key, 1, charge.At); err != nil {
+			return err
+		}
+		target.Charge = charge
+		return nil
 	})
 	if err != nil {
 		return service.SteerTarget{}, mapError(err)
@@ -113,7 +123,7 @@ func (repository *Repository) ReloadSteerTarget(ctx context.Context, target serv
 	var reloaded service.SteerTarget
 	err := repository.db.WithTx(ctx, func(tx pgx.Tx) error {
 		var err error
-		reloaded, status, err = repository.steerTurnInTx(ctx, tx, target.ProjectID, target.ChatID, target.TurnID)
+		reloaded, status, _, err = repository.steerTurnInTx(ctx, tx, target.ProjectID, target.ChatID, target.TurnID)
 		return err
 	})
 	if err != nil {
@@ -122,11 +132,12 @@ func (repository *Repository) ReloadSteerTarget(ctx context.Context, target serv
 	if !steerableJob(status) {
 		return service.SteerTarget{}, researchdomain.ErrTurnEnded
 	}
-	reloaded.RecordID, reloaded.ImageTitles = target.RecordID, target.ImageTitles
+	reloaded.RecordID, reloaded.ImageTitles, reloaded.Charge = target.RecordID, target.ImageTitles, target.Charge
 	return reloaded, nil
 }
 
-// FinishSteer keeps the key of an accepted correction and lets go of any other (R1.6).
+// FinishSteer keeps the key of an accepted correction and lets go of any other (R1.6); a correction the turn did not
+// take gives its unit back in the same transaction (specs/2026-11-09-quota-accounting.md Q2.2).
 func (repository *Repository) FinishSteer(ctx context.Context, target service.SteerTarget, accepted bool) error {
 	record, err := storedb.ParseUUID(target.RecordID)
 	if err != nil {
@@ -136,8 +147,19 @@ func (repository *Repository) FinishSteer(ctx context.Context, target service.St
 	if accepted {
 		status = steerKeyAccepted
 	}
-	_, err = sqlc.New(repository.db.Pool).UpdateIdempotencyRecordResponse(ctx, sqlc.UpdateIdempotencyRecordResponseParams{
-		ID: record, StatusCode: status, ResponseJson: []byte("{}"),
+	err = repository.db.WithTx(ctx, func(tx pgx.Tx) error {
+		updated, err := tx.Exec(ctx, `
+			UPDATE idempotency_records SET status_code = $2, response_json = '{}'::jsonb
+			WHERE id = $1 AND status_code = $3
+		`, record, status, steerKeySending)
+		if err != nil {
+			return err
+		}
+		// Only the request that holds the key sending ends it, so a charge is given back once.
+		if updated.RowsAffected() != 1 || accepted || target.Charge.UserID == "" {
+			return nil
+		}
+		return repository.quota.ReleaseDailyInTx(ctx, tx, target.Charge.UserID, target.Charge.Key, 1, target.Charge.At)
 	})
 	return mapError(err)
 }
@@ -153,14 +175,14 @@ func steerableJob(state steerJobState) bool {
 	return !state.cancelRequested && (state.status == "queued" || state.status == "running")
 }
 
-// steerTurnInTx reads the turn of the chat with its Job and native identity; a turn of another chat is
-// not found.
-func (repository *Repository) steerTurnInTx(ctx context.Context, tx pgx.Tx, projectID, chatID, turnID string) (service.SteerTarget, steerJobState, error) {
+// steerTurnInTx reads the turn of the chat with its Job, native identity and the kind of its session; a turn of
+// another chat is not found.
+func (repository *Repository) steerTurnInTx(ctx context.Context, tx pgx.Tx, projectID, chatID, turnID string) (service.SteerTarget, steerJobState, string, error) {
 	project, projectErr := storedb.ParseUUID(projectID)
 	chat, chatErr := storedb.ParseUUID(chatID)
 	turn, turnErr := storedb.ParseUUID(turnID)
 	if projectErr != nil || chatErr != nil || turnErr != nil {
-		return service.SteerTarget{}, steerJobState{}, researchdomain.ErrNotFound
+		return service.SteerTarget{}, steerJobState{}, "", researchdomain.ErrNotFound
 	}
 	target := service.SteerTarget{ProjectID: projectID, ChatID: chatID, TurnID: turnID}
 	var state steerJobState
@@ -175,20 +197,20 @@ func (repository *Repository) steerTurnInTx(ctx context.Context, tx pgx.Tx, proj
 		  AND job.kind = 'research_chat_turn' AND chat.deleted_at IS NULL
 	`, project, chat, turn).Scan(&target.JobID, &state.status, &state.cancelRequested, &root, &provider, &kind)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return service.SteerTarget{}, steerJobState{}, researchdomain.ErrNotFound
+		return service.SteerTarget{}, steerJobState{}, "", researchdomain.ErrNotFound
 	}
 	if err != nil {
-		return service.SteerTarget{}, steerJobState{}, err
+		return service.SteerTarget{}, steerJobState{}, "", err
 	}
 	if root != nil && provider != nil {
 		target.RootThreadID, target.ProviderTurnID = *root, *provider
 	}
 	flow, known := agent.SessionFlow(kind)
 	if !known {
-		return service.SteerTarget{}, steerJobState{}, researchdomain.ErrNotFound
+		return service.SteerTarget{}, steerJobState{}, "", researchdomain.ErrNotFound
 	}
 	target.Flow = flow
-	return target, state, nil
+	return target, state, kind, nil
 }
 
 // imageTitlesOf reads the captions of the images of a correction, for its anchors (R15.19).

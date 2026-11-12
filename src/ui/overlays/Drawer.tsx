@@ -1,6 +1,6 @@
 import type { OverlayProps } from './Overlay';
 import { Overlay } from './Overlay';
-import { Portal } from './Portal';
+import { Portal, useOverlayScrim } from './Portal';
 import styles from './overlays.module.css';
 
 export interface DrawerProps extends Omit<OverlayProps, 'canDismiss' | 'kind'> {
@@ -10,6 +10,7 @@ export interface DrawerProps extends Omit<OverlayProps, 'canDismiss' | 'kind'> {
 }
 
 export function Drawer({ canDismiss, className, onDismiss, state = 'open', side = 'left', size = 'default', ...props }: DrawerProps) {
+  const scrim = useOverlayScrim();
   return (
     <Portal>
       <div
@@ -20,16 +21,19 @@ export function Drawer({ canDismiss, className, onDismiss, state = 'open', side 
         onPointerDown={(event) => {
           if (canDismiss && event.target === event.currentTarget) onDismiss();
         }}
+        ref={scrim.ref}
       >
-        <Overlay
-          {...props}
-          canDismiss={canDismiss}
-          className={`${styles.drawer}${className ? ` ${className}` : ''}`}
-          kind="drawer"
-          data-size={size}
-          onDismiss={onDismiss}
-          state={state}
-        />
+        <scrim.Provider value={scrim.scrim}>
+          <Overlay
+            {...props}
+            canDismiss={canDismiss}
+            className={`${styles.drawer}${className ? ` ${className}` : ''}`}
+            kind="drawer"
+            data-size={size}
+            onDismiss={onDismiss}
+            state={state}
+          />
+        </scrim.Provider>
       </div>
     </Portal>
   );

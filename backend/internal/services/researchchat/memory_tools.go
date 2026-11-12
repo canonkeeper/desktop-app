@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
@@ -48,9 +47,9 @@ func (tools *ReadTools) Glossary(ctx context.Context, call ToolContext, input Gl
 		if err != nil {
 			return "", err
 		}
-		glossary := cards.Glossary
-		if saga.authority.Scope == researchdomain.ScopeBook {
-			glossary = sagamemory.BuildGlossary(saga.scopedCards(cards), cards.Names)
+		glossary := saga.glossaryOf(cards)
+		if strings.TrimSpace(input.Query) != "" {
+			saga.about(sagamemory.NamedNames(input.Query), glossary)
 		}
 		var out strings.Builder
 		if missing := saga.chaptersWithoutCards(cards); missing > 0 {
@@ -133,10 +132,8 @@ func (tools *ReadTools) Changes(ctx context.Context, call ToolContext, input Cha
 		if err != nil {
 			return "", err
 		}
-		glossary := cards.Glossary
-		if saga.authority.Scope == researchdomain.ScopeBook {
-			glossary = sagamemory.BuildGlossary(saga.scopedCards(cards), cards.Names)
-		}
+		glossary := saga.glossaryOf(cards)
+		saga.about(sagamemory.NamedNames(input.Subject), glossary)
 		names := map[string]bool{}
 		var others []string
 		if entry, ok := glossary.Lookup(input.Subject); ok {

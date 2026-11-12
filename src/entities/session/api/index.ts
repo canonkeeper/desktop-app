@@ -7,6 +7,7 @@ import {
   type OperationRequest,
   type OperationResponse,
 } from '../../../shared/api';
+import { emailUnverifiedShort } from '../../../shared/session/account-session';
 import { publicApiErrorMessage } from '../../api-errors';
 
 export type CurrentUser = OperationResponse<'getCurrentUser', '200'>;
@@ -18,16 +19,16 @@ export type SessionAuthClient = Pick<CanonKeeperApiClient, 'login' | 'register'>
 /** Account letters and their links (UC1–UC2). */
 export type AccountMailClient = Pick<
   CanonKeeperApiClient,
-  'sendEmailVerification' | 'confirmEmailVerification' | 'requestPasswordReset' | 'resetPassword'
+  'sendEmailVerification' | 'confirmEmailVerification' | 'requestPasswordReset' | 'resetPassword' | 'changeUnverifiedEmail' | 'checkPasswordResetLink'
 >;
 /** The signed-in writer's own sign-in settings (UC3). */
 export type AccountSecurityClient = Pick<CanonKeeperApiClient, 'changePassword' | 'logoutEverywhere'>;
 /** The acceptance of the current terms and personal data consent (legal R3.2). */
 export type LegalDocumentsClient = Pick<CanonKeeperApiClient, 'acceptLegalDocuments'>;
-export const emailUnverifiedMessage = 'Подтвердите адрес почты, чтобы загружать книги и задавать вопросы.';
 export const mailUnavailableMessage = 'Не удалось отправить письмо. Попробуйте через несколько минут.';
 export type SessionLogoutClient = Pick<CanonKeeperApiClient, 'logout'>;
-type CurrentUserClient = Pick<CanonKeeperApiClient, 'getCurrentUser'>;
+/** The read of who is signed in: pages that wait for its change read it again (specs/2026-11-10-ux3-auth.md AU1.5). */
+export type CurrentUserClient = Pick<CanonKeeperApiClient, 'getCurrentUser'>;
 
 export interface AuthFailure {
   kind: AuthFailureKind;
@@ -81,12 +82,12 @@ export function classifyAuthFailure(error: unknown, fallback: string): AuthFailu
   if (error instanceof ApiStatusError) {
     if (error.status === 401) {
       if (error.problem.code === 'auth.invalid_credentials') {
-        return { kind: 'unauthorized', message: 'Неверный email или пароль.' };
+        return { kind: 'unauthorized', message: 'Проверьте почту и пароль.' };
       }
       return { kind: 'unauthorized', message: 'Время входа истекло. Войдите снова — вернём вас на ту же страницу.' };
     }
     if (error.status === 403) {
-      if (error.problem.code === 'auth.email_unverified') return { kind: 'forbidden', message: emailUnverifiedMessage };
+      if (error.problem.code === 'auth.email_unverified') return { kind: 'forbidden', message: emailUnverifiedShort };
       return { kind: 'forbidden', message: 'Нет доступа к этой странице.' };
     }
     if (error.status === 429) {
@@ -111,6 +112,16 @@ export function retryAfterSeconds(error: unknown) {
   if (!(error instanceof ApiStatusError) || error.status !== 429) return null;
   const seconds = Number(error.response.headers.get('Retry-After'));
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/**
+ * What is left of the window of a refused sign-in (specs/2026-11-10-ux3-auth.md AU3.3): the attempts the server still
+ * takes and the minutes a full window closes the sign-in; null without them.
+ */
+export function signInAttemptsLeft(error: unknown) {
+  if (!(error instanceof ApiStatusError) || error.problem.code !== 'auth.invalid_credentials') return null;
+  const { attemptsLeft, lockMinutes } = error.problem;
+  return typeof attemptsLeft === 'number' && typeof lockMinutes === 'number' ? { attemptsLeft, lockMinutes } : null;
 }
 
 /** True when the backend refused model work because the address is not verified. */

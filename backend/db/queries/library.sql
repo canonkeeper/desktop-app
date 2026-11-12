@@ -179,7 +179,8 @@ SELECT
   b.updated_at,
   COALESCE(cover.version, 0)::bigint AS cover_version,
   COALESCE(book_stats.chapter_count, 0)::integer AS chapter_count,
-  COALESCE(book_stats.word_count, 0)::integer AS word_count
+  COALESCE(book_stats.word_count, 0)::integer AS word_count,
+  COALESCE(opening.text, '')::text AS opening
 FROM books b
 JOIN projects p ON p.id = b.project_id
 LEFT JOIN LATERAL (
@@ -190,6 +191,29 @@ LEFT JOIN LATERAL (
     AND artifact.state = 'active'
   LIMIT 1
 ) cover ON true
+-- How the book begins (specs/2026-11-11-ux9-shelf-chat.md SC1.3): the first paragraphs with text of its first live chapter,
+-- at most 300 letters. The page asks about a file that begins so as about this book.
+LEFT JOIN LATERAL (
+  SELECT left(string_agg(btrim(first_paragraphs.plain_text), ' ' ORDER BY first_paragraphs."order"), 300) AS text
+  FROM (
+    SELECT c.id, c.revision
+    FROM chapters c
+    WHERE c.book_id = b.id
+      AND c.deleted_at IS NULL
+    ORDER BY c."order" ASC, c.id ASC
+    LIMIT 1
+  ) first_chapter
+  JOIN LATERAL (
+    SELECT cp.plain_text, cp."order"
+    FROM chapter_paragraphs cp
+    WHERE cp.chapter_id = first_chapter.id
+      AND cp.revision = first_chapter.revision
+      AND cp.variant = 'draft'
+      AND btrim(cp.plain_text) <> ''
+    ORDER BY cp."order" ASC
+    LIMIT 4
+  ) first_paragraphs ON true
+) opening ON true
 LEFT JOIN LATERAL (
   SELECT
     COUNT(c.id)::integer AS chapter_count,
@@ -320,38 +344,6 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order",
           b.hard_purge_started_at, b.governance_retention_started_at,
           b.purge_deadline;
 
--- name: CreateChapter :one
-INSERT INTO chapters (
-  id,
-  project_id,
-  book_id,
-  title,
-  "order",
-  lifecycle_generation,
-  created_at,
-  updated_at
-)
-SELECT
-  sqlc.arg(id),
-  project.id,
-  book.id,
-  sqlc.arg(title),
-  sqlc.arg(sort_order),
-  1,
-  sqlc.arg(created_at),
-  sqlc.arg(created_at)
-FROM books AS book
-JOIN projects AS project ON project.id = book.project_id
-WHERE book.project_id = sqlc.arg(project_id)
-  AND book.id = sqlc.arg(book_id)
-  AND book.deleted_at IS NULL
-  AND project.deleted_at IS NULL
-RETURNING id, book_id, title, "order", status, revision,
-          published_revision, published_at, publish_error, deleted_at,
-          purge_after, created_at, updated_at, lifecycle_generation,
-          hard_purge_started_at, governance_retention_started_at,
-          purge_deadline, project_id;
-
 -- name: ListChaptersByBook :many
 SELECT c.id, c.book_id, c.title, c."order", c.status, c.revision,
        c.published_revision, c.published_at, c.publish_error, c.deleted_at,
@@ -414,46 +406,6 @@ SELECT sqlc.embed(c),
 FROM navigation AS nav
 JOIN chapters c ON c.id = nav.id
 WHERE c.id = sqlc.arg(chapter_id);
-
--- name: CreateChapterParagraph :one
-INSERT INTO chapter_paragraphs (
-  id,
-  chapter_id,
-  revision,
-  variant,
-  kind,
-  "order",
-  markdown,
-  plain_text,
-  word_count,
-  created_at,
-  updated_at
-)
-SELECT
-  sqlc.arg(id),
-  c.id,
-  sqlc.arg(revision),
-  sqlc.arg(variant),
-  sqlc.arg(kind),
-  sqlc.arg(sort_order),
-  sqlc.arg(markdown),
-  sqlc.arg(plain_text),
-  sqlc.arg(word_count),
-  sqlc.arg(created_at),
-  sqlc.arg(created_at)
-FROM chapters c
-JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
-JOIN projects pr ON pr.id = c.project_id
-WHERE c.project_id = sqlc.arg(project_id)
-  AND c.book_id = sqlc.arg(book_id)
-  AND c.id = sqlc.arg(chapter_id)
-  AND pr.lifecycle_generation = sqlc.arg(project_generation)
-  AND b.lifecycle_generation = sqlc.arg(book_generation)
-  AND c.lifecycle_generation = sqlc.arg(chapter_generation)
-  AND c.deleted_at IS NULL
-  AND b.deleted_at IS NULL
-  AND pr.deleted_at IS NULL
-RETURNING id, chapter_id, revision, variant, kind, "order", markdown, plain_text, word_count, created_at, updated_at;
 
 -- name: ListChapterParagraphsByChapterRevisionVariant :many
 SELECT p.id, p.chapter_id, p.revision, p.variant, p.kind, p."order", p.markdown, p.plain_text, p.word_count, p.created_at, p.updated_at
@@ -951,7 +903,7 @@ WHERE q.project_id = sqlc.arg(project_id)
 -- name: CreateImportQueueItemRow :one
 INSERT INTO import_queue_items (
   id, queue_id, project_id, client_item_id, position, source_file_name,
-  detected_book_order, preflight_status, created_at, updated_at
+  preflight_status, created_at, updated_at
 )
 VALUES (
   COALESCE(sqlc.narg(id)::uuid, gen_random_uuid()),
@@ -960,15 +912,11 @@ VALUES (
   sqlc.arg(client_item_id),
   sqlc.arg(position),
   sqlc.arg(source_file_name),
-  sqlc.narg(detected_book_order),
   'uploading',
   sqlc.arg(created_at),
   sqlc.arg(created_at)
 )
-RETURNING id, queue_id, project_id, client_item_id, position, source_file_name,
-          storage_key, mime_type, size_bytes, sha256, detected_book_order,
-          confirmed_book_order, preflight_status, preflight_error_json,
-          import_job_id, book_id, created_at, updated_at;
+RETURNING id;
 
 -- name: LoadImportQueueForActor :one
 SELECT q.*
@@ -997,9 +945,9 @@ LIMIT sqlc.arg(row_limit);
 
 -- name: ListImportQueueItems :many
 SELECT item.id, item.queue_id, item.project_id, item.client_item_id, item.position, item.source_file_name,
-       item.storage_key, item.mime_type, item.size_bytes, item.sha256, item.detected_book_order,
+       item.storage_key, item.mime_type, item.size_bytes, item.sha256,
        item.confirmed_book_order, item.preflight_status, item.preflight_error_json,
-       item.import_job_id, item.book_id, item.created_at, item.updated_at,
+       item.import_job_id, item.book_id, item.created_at, item.updated_at, item.skipped_at,
        COALESCE(import_job.status, '')::text AS import_job_status,
        COALESCE(import_job.retry_count, 0)::integer AS import_job_retry_count,
        import_job.error_json AS import_job_error_json
@@ -1017,7 +965,7 @@ ORDER BY item.position, item.id;
 -- name: ListImportQueueItemsForStart :many
 SELECT item.id, item.queue_id, item.project_id, item.client_item_id, item.position,
        item.source_file_name, item.storage_key, item.mime_type, item.size_bytes, item.sha256,
-       item.detected_book_order, item.confirmed_book_order, item.preflight_status,
+       item.confirmed_book_order, item.preflight_status,
        item.preflight_error_json, item.import_job_id, item.book_id, item.created_at, item.updated_at,
        COALESCE(upload.content IS NOT NULL, false)::boolean AS upload_present,
        COALESCE(upload.size_bytes = item.size_bytes AND octet_length(upload.content) = item.size_bytes, false)::boolean AS upload_size_matches,
@@ -1052,10 +1000,7 @@ ORDER BY item.position, item.id
 FOR UPDATE OF item;
 
 -- name: LoadImportQueueItemForUpdate :one
-SELECT id, queue_id, project_id, client_item_id, position, source_file_name,
-       storage_key, mime_type, size_bytes, sha256, detected_book_order,
-       confirmed_book_order, preflight_status, preflight_error_json,
-       import_job_id, book_id, created_at, updated_at
+SELECT id, source_file_name, storage_key
 FROM import_queue_items AS item
 WHERE item.id = sqlc.arg(item_id)
   AND item.queue_id = sqlc.arg(queue_id)
@@ -1069,8 +1014,6 @@ SET storage_key = sqlc.arg(storage_key),
     mime_type = sqlc.arg(mime_type),
     size_bytes = sqlc.arg(size_bytes),
     sha256 = sqlc.arg(sha256),
-    detected_book_order = sqlc.narg(detected_book_order),
-    confirmed_book_order = sqlc.narg(confirmed_book_order),
     preflight_status = sqlc.arg(preflight_status),
     preflight_error_json = sqlc.narg(preflight_error_json)::jsonb,
     updated_at = sqlc.arg(updated_at)
@@ -1105,12 +1048,14 @@ FOR UPDATE OF job;
 UPDATE import_queues
 SET version = version + 1,
     status = CASE
+      -- Every file is received — checked or not (specs/2026-11-11-ux7-upload.md UP1.2): a file that did not pass waits
+      -- at its place and holds the others back no more.
       WHEN status = 'uploading' AND NOT EXISTS (
         SELECT 1
         FROM import_queue_items
         WHERE queue_id = import_queues.id
           AND project_id = import_queues.project_id
-          AND (storage_key IS NULL OR preflight_status <> 'ready')
+          AND (storage_key IS NULL OR preflight_status = 'uploading')
       ) THEN 'draft'
       ELSE status
     END,
@@ -1189,18 +1134,22 @@ WHERE book.id = sqlc.arg(book_id)
   AND project.deleted_at IS NULL;
 
 -- name: ListBookExportChapters :many
-SELECT c.id, c.title, c.published_revision::bigint AS published_revision
+-- The chapters with text of one book, or of all the living books of a saga without a book, in the order of the shelf;
+-- the paragraphs count all of them, as the place of a drawing in the book counts them
+-- (specs/2026-11-12-ux10-book-pictures.md BP1.1).
+SELECT c.id, c.book_id, c.title, c.published_revision::bigint AS published_revision, chapter_text.paragraphs
 FROM chapters c
+JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id AND b.deleted_at IS NULL
+CROSS JOIN LATERAL (
+  SELECT count(*)::int AS paragraphs, COALESCE(bool_or(p.plain_text <> ''), false) AS worded
+  FROM chapter_paragraphs p
+  WHERE p.chapter_id = c.id
+    AND p.revision = c.published_revision
+    AND p.variant = 'published'
+) chapter_text
 WHERE c.project_id = sqlc.arg(project_id)
-  AND c.book_id = sqlc.arg(book_id)
+  AND (sqlc.narg(book_id)::uuid IS NULL OR c.book_id = sqlc.narg(book_id)::uuid)
   AND c.deleted_at IS NULL
   AND c.published_revision IS NOT NULL
-  AND EXISTS (
-    SELECT 1
-    FROM chapter_paragraphs p
-    WHERE p.chapter_id = c.id
-      AND p.revision = c.published_revision
-      AND p.variant = 'published'
-      AND p.plain_text <> ''
-  )
-ORDER BY c."order" ASC, c.id ASC;
+  AND chapter_text.worded
+ORDER BY b."order" ASC, b.id ASC, c."order" ASC, c.id ASC;

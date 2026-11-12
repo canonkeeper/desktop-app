@@ -1,36 +1,19 @@
-import { BookOpen, Info, RefreshCw, ShieldX, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, BookOpen, Info, RotateCcw, X } from 'lucide-react';
 import { Button } from '../../../ui/controls/Button';
-import { Alert } from '../../../ui/feedback/Alert';
+import { IconButton } from '../../../ui/controls/IconButton';
+import { EmptyState } from '../../../ui/feedback/EmptyState';
+import { ErrorBlock } from '../../../ui/feedback/ErrorBlock';
 import { Skeleton } from '../../../ui/feedback/Skeleton';
-import { SupportReference } from '../../../ui/feedback/SupportReference';
-import styles from './ReaderStates.module.css';
 import type { ReaderSourceProblem } from './reader-locator';
+import styles from './ReaderStates.module.css';
 
-export function ReaderStatusBanner({ message, onRetry, supportCode, tone = 'neutral' }: { message: string; onRetry?: () => void; supportCode?: string; tone?: 'neutral' | 'error' }) {
-  if (tone === 'error') {
-    return (
-      <Alert className={styles.errorState} tone="error">
-        <TriangleAlert aria-hidden="true" size={20} />
-        <span>
-          <strong>Не удалось открыть главу</strong>
-          <span>{message}</span>
-          {supportCode ? <SupportReference code={supportCode} /> : null}
-        </span>
-        {onRetry ? <Button onClick={onRetry} size="sm"><RefreshCw aria-hidden="true" size={15} />Повторить</Button> : null}
-      </Alert>
-    );
-  }
-  return (
-    <div className={styles.banner} role="status">
-      <span>{message}</span>
-      {onRetry ? <Button onClick={onRetry} size="sm">Повторить</Button> : null}
-    </div>
-  );
-}
+/** The one name of the way back from every state of the reader (RD3.5). */
+export const backWord = 'К книгам';
 
 export function ReaderLoadingState() {
   return (
-    <section aria-label="Загружаем главу" aria-live="polite" className={styles.loadingState} role="status">
+    // The form of a chapter, announced as busy, not by words (specs/2026-11-10-ux2-patterns-states.md PS3.1).
+    <section aria-busy="true" aria-label="Глава" className={styles.loadingState} data-loading="">
       <Skeleton className={styles.loadingTitle} />
       <Skeleton className={styles.loadingLine} />
       <Skeleton className={styles.loadingLine} />
@@ -39,47 +22,59 @@ export function ReaderLoadingState() {
   );
 }
 
-export function ReaderLocatorAlert({ kind, onOpenCurrent }: { kind: ReaderSourceProblem | 'replaced'; onOpenCurrent?: () => void }) {
-  const messages = {
-    invalid: ['Ссылка на источник недействительна', 'Откройте источник заново из поиска или выберите актуальную главу.'],
-    unavailable: ['Источник недоступен', 'Запрошенная глава больше недоступна. Выберите другой источник.'],
-    paragraph: ['Фрагмент больше не найден', 'Запрошенный абзац отсутствует в текущем тексте. Другой абзац не выбран.'],
-    version: ['Источник изменился', 'Глава изменилась с тех пор, как на неё сослались.'],
-    replaced: ['Открыта другая глава', 'Запрошенная глава недоступна. Показана первая доступная глава.'],
-  };
+/** A link that no longer leads to its place (RD3.4): what the line over the text says; the chapter opens all the same. */
+export type ReaderStaleLink = Exclude<ReaderSourceProblem, 'unavailable'> | 'unavailable';
+
+const staleWords: Readonly<Record<ReaderStaleLink, string>> = {
+  version: 'Глава изменилась после правки — показываю с начала. Абзац, на который вела ссылка, мог сдвинуться',
+  paragraph: 'Этого абзаца в главе больше нет — показываю главу с начала',
+  invalid: 'Не получилось открыть место по ссылке — показываю начало главы',
+  unavailable: 'Главы, на которую вела ссылка, в книге больше нет — показываю первую главу',
+};
+
+/**
+ * The line over the text of a link that went stale (specs/2026-11-10-ux7-reader.md RD3.4; Pattern/Reader/Stale Line): the
+ * chapter stands open, the line says why it starts from the top, and «×» takes it away with the old place of the link.
+ */
+export function StaleLinkLine({ kind, onClose }: { kind: ReaderStaleLink; onClose: () => void }) {
   return (
-    <Alert className={styles.locatorAlert} tone={kind === 'replaced' ? 'info' : 'warning'}>
-      {kind === 'replaced' ? <Info aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
-      <span>
-        <strong>{messages[kind][0]}</strong> {messages[kind][1]}
-      </span>
-      {onOpenCurrent ? <Button onClick={onOpenCurrent} size="sm">Открыть актуальную</Button> : null}
-    </Alert>
+    <p className={styles.stale} role="status">
+      <Info aria-hidden="true" size={16} />
+      <span>{staleWords[kind]}</span>
+      <IconButton aria-label="Закрыть строку" onClick={onClose} size="touch"><X aria-hidden="true" size={16} /></IconButton>
+    </p>
   );
 }
 
-export function ReaderEmptyState({ onBack }: { onBack: () => void }) {
+/** A book without chapters (RD3.5): the deleted ones come back from «Недавно удалённые», the way back is «К книгам». */
+export function ReaderEmptyState({ onBack, onRestore }: { onBack: () => void; onRestore?: (() => void) | undefined }) {
   return (
-    <section aria-label="Нет доступных глав" className={styles.workspaceState}>
-      <div className={styles.card}>
-        <BookOpen aria-hidden="true" size={36} />
-        <h1>Нет доступных глав</h1>
-        <p>Восстановите удалённую главу или загрузите книгу заново, чтобы продолжить чтение.</p>
-        <Button onClick={onBack} variant="primary">К моим книгам</Button>
-      </div>
+    <section aria-label="Глав нет" className={styles.workspaceState}>
+      <EmptyState
+        action={onRestore ? <Button onClick={onRestore} variant="primary"><RotateCcw aria-hidden="true" size={16} />Вернуть удалённые главы</Button> : undefined}
+        icon={<BookOpen size={28} />}
+        need={onRestore ? undefined : 'Главы добавляет владелец саги или её редактор.'}
+        title="В этой книге пока нет глав"
+        why={onRestore ? 'Удалённые главы хранятся в «Недавно удалённых» — их можно вернуть.' : undefined}
+      />
+      <Button onClick={onBack} variant="ghost"><ArrowLeft aria-hidden="true" size={16} />{backWord}</Button>
     </section>
   );
 }
 
+/** No right to the chapter (RD3.5): the one block of errors, the way back is «К книгам». */
 export function ReaderForbiddenState({ message, onBack }: { message: string; onBack: () => void }) {
   return (
     <section aria-label="Нет доступа" className={styles.workspaceState}>
-      <div className={styles.card}>
-        <ShieldX aria-hidden="true" size={36} />
-        <h1>Нет доступа к книге</h1>
-        <p>{message || 'У вас нет доступа к этой саге или книге. Вернитесь на полку и выберите доступный материал.'}</p>
-        <Button onClick={onBack} variant="primary">На полку</Button>
-      </div>
+      <ErrorBlock action={{ label: backWord, onClick: onBack }} cause={message || 'У вас нет доступа к этой саге или книге.'} kept="" title="Нет доступа к книге" />
+    </section>
+  );
+}
+
+export function ReaderErrorState({ message, onRetry, supportCode }: { message: string; onRetry: () => void; supportCode?: string | undefined }) {
+  return (
+    <section aria-label="Ошибка" className={styles.workspaceState}>
+      <ErrorBlock cause={message} code={supportCode} onRetry={onRetry} title="Не открылась глава" />
     </section>
   );
 }

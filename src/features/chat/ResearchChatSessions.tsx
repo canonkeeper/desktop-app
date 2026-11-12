@@ -1,6 +1,9 @@
+import { loadFailureWords } from '../../entities/api-errors';
+import { ErrorBlock } from '../../ui/feedback/ErrorBlock';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, MessageCircle, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react';
+import { MessageCircle, MoreHorizontal, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { isApiStatusFailure, publicApiErrorMessage } from '../../entities/api-errors';
 import {
   type ChatApiClient,
@@ -11,30 +14,36 @@ import {
 import { Button } from '../../ui/controls/Button';
 import { Field } from '../../ui/controls/Field';
 import { IconButton } from '../../ui/controls/IconButton';
-import { Alert } from '../../ui/feedback/Alert';
+import { SearchField } from '../../ui/controls/SearchField';
+import { EmptyFilter } from '../../ui/feedback/EmptyState';
 import { Skeleton } from '../../ui/feedback/Skeleton';
-import { SupportMailLink, SupportReference } from '../../ui/feedback/SupportReference';
+import { useWriteToUsAction } from '../../ui/feedback/SupportReference';
 import type { ToastInput } from '../../ui/feedback/useToastQueue';
-import { ActionSheet } from '../../ui/overlays/ActionSheet';
-import { Popover } from '../../ui/overlays/Popover';
 import { chatErrorRequestId, chatIsWorking, useRenameChatSessionMutation } from './api';
+import { chatActionsAnchor, ChatActionsMenu, useTouchActions, type ChatActionsAnchor } from './ChatActionsMenu';
+import { askedAt, chatDate, chatDayWords, chatsByDay } from './chat-days';
 import styles from './ResearchChatSessions.module.css';
 
 interface ResearchChatSessionsProps {
   api: ChatApiClient;
-  /** The selected chat works or changes: its actions wait. */
-  busy: boolean;
   canCreate: boolean;
   error: unknown;
   errorRequestId?: string;
   loading: boolean;
+  /** The head of the column the page keeps, beside its heading: «Новый чат» stands there (specs/2026-11-11-ux2-polish.md PL2.1). */
+  newChatIn?: HTMLElement | null;
   onAuthorityLost: () => void;
-  onDelete: () => void;
+  /** «Удалить чат…» of a row: the chat of that row, open or not (AA3.3). */
+  onDelete: (chatId: string) => void;
   onNotify: (toast: ToastInput) => void;
+  /** The row took the rename asked for by `renameRequest`. */
+  onRenameStarted?: () => void;
   onRetry: () => void;
   onSelect: (chatId: string) => void;
   onSessionGone: (chatId: string) => void;
   onStartNew: () => void;
+  /** The chat whose name «Переименовать» of the actions over the feed asks to change here (specs/2026-11-10-ux1-chat.md CH2.2). */
+  renameRequest?: string;
   scope: ChatScope;
   selectedChatId: string;
   sessions: ChatSession[];
@@ -42,45 +51,46 @@ interface ResearchChatSessionsProps {
   startBusy: boolean;
 }
 
-type SessionMenu = { chatId: string; left: number; top: number };
+type SessionMenu = ChatActionsAnchor & { chatId: string };
+
+/** The list finds a chat by its name from this many chats on (AA3.2). */
+const searchFrom = 10;
+
+/** A name as the author may type it: the case and «ё» do not matter. */
+const searchable = (text: string) => text.toLocaleLowerCase('ru-RU').replaceAll('ё', 'е');
 
 export function ResearchChatSessions({
   api,
-  busy,
   canCreate,
   error,
   errorRequestId,
   loading,
+  newChatIn = null,
   onAuthorityLost,
   onDelete,
   onNotify,
+  onRenameStarted,
   onRetry,
   onSelect,
   onSessionGone,
   onStartNew,
+  renameRequest = '',
   scope,
   selectedChatId,
   sessions,
   startBusy,
 }: ResearchChatSessionsProps) {
-  const [coarseActions, setCoarseActions] = useState(false);
+  const coarseActions = useTouchActions();
   const [editingChatId, setEditingChatId] = useState('');
   const [draft, setDraft] = useState('');
   const [renameError, setRenameError] = useState('');
   const [menu, setMenu] = useState<SessionMenu | null>(null);
   const [sheetChatId, setSheetChatId] = useState('');
+  const [search, setSearch] = useState('');
+  const writeToUs = useWriteToUsAction();
   const renameSubmitting = useRef(false);
   const queryClient = useQueryClient();
   const renameMutation = useRenameChatSessionMutation(api, scope);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const media = window.matchMedia('(pointer: coarse), (max-width: 760px)');
-    const update = () => setCoarseActions(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
 
   useEffect(() => {
     if (canCreate) return;
@@ -95,11 +105,24 @@ export function ResearchChatSessions({
     setSheetChatId('');
   }, [selectedChatId]);
 
+  // «Переименовать» of the actions over the feed: the name of that chat is changed in its row here.
+  useEffect(() => {
+    const session = renameRequest ? sessions.find((item) => item.id === renameRequest) : undefined;
+    if (!session) return;
+    beginRename(session);
+    onRenameStarted?.();
+  }, [renameRequest, sessions]);
+
   const actionSession = sessions.find((session) => session.id === (menu?.chatId || sheetChatId));
+  // The days of the list by the last question of each chat, by the clock of the author (AA3.1); a name found on the page (AA3.2).
+  const searching = sessions.length >= searchFrom ? search.trim() : '';
+  const found = useMemo(() => searching ? sessions.filter((session) => searchable(session.title).includes(searchable(searching))) : sessions, [searching, sessions]);
+  const groups = useMemo(() => chatsByDay(found, new Date()), [found]);
   const newChatButton = canCreate && !error ? (
     <button
       aria-current={!selectedChatId ? 'page' : undefined}
       className={styles.newChatButton}
+      data-in-row={newChatIn ? '' : undefined}
       disabled={startBusy || renameMutation.isPending}
       onClick={onStartNew}
       type="button"
@@ -125,8 +148,18 @@ export function ResearchChatSessions({
     setRenameError('');
   }
 
-  async function submitRename(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  /** Leaving the field keeps the name typed, as Enter does; an unchanged or empty name leaves the old one (AA3.4, Ч-61). */
+  function leaveRename() {
+    const editing = sessions.find((session) => session.id === editingChatId);
+    if (!editing || !draft.trim() || draft.trim() === editing.title) {
+      cancelRename();
+      return;
+    }
+    void submitRename();
+  }
+
+  async function submitRename(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!editingChatId || renameMutation.isPending || renameSubmitting.current) return;
     const normalized = draft.trim();
     const length = Array.from(normalized).length;
@@ -166,8 +199,9 @@ export function ResearchChatSessions({
       }
       const message = publicApiErrorMessage(renameFailure, 'Не удалось сохранить название.');
       const requestId = chatErrorRequestId(renameFailure);
-      // The notice offers the letter with the code as its action (R4.2.1).
-      onNotify({ action: requestId ? <SupportMailLink code={requestId} /> : undefined, message, tone: 'error' });
+      // The notice offers «Написать нам» with the code as its action (R4.2.1): the window of the site, as everywhere — the
+      // area of the lines lies above the account of the page (specs/2026-11-12-ux12-shell.md SH2.3).
+      onNotify({ action: requestId ? writeToUs({ code: requestId, topic: 'bug' }) : undefined, message, tone: 'error' });
     } finally {
       renameSubmitting.current = false;
     }
@@ -178,8 +212,7 @@ export function ResearchChatSessions({
       setSheetChatId(session.id);
       return;
     }
-    const bounds = event.currentTarget.getBoundingClientRect();
-    setMenu({ chatId: session.id, left: Math.max(8, bounds.right - 212), top: bounds.bottom + 4 });
+    setMenu({ chatId: session.id, ...chatActionsAnchor(event) });
   }
 
   function selectFromActions(chatId: string) {
@@ -190,141 +223,112 @@ export function ResearchChatSessions({
 
   return (
     <aside aria-label="Сохранённые чаты" className={styles.sessions}>
-      {newChatButton}
+      {newChatIn ? (newChatButton ? createPortal(newChatButton, newChatIn) : null) : newChatButton}
       {loading ? <div aria-label="Загрузка чатов" className={styles.loading} role="status">
         {[232, 232, 200, 220].map((width, index) => (
           <Skeleton key={index} style={{ width, maxWidth: '100%', height: 32 }} />
         ))}
       </div> : null}
-      {!error ? sessions.map((session) => editingChatId === session.id ? (
-        <form
-          className={styles.renameRow}
-          key={session.id}
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) cancelRename();
-          }}
-          onSubmit={(event) => void submitRename(event)}
-        >
-          <Field
-            autoFocus
-            className={styles.renameInput}
-            disabled={renameMutation.isPending}
-            error={renameError}
-            label={<span className={styles.srOnly}>Название чата</span>}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setRenameError('');
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelRename();
-              } else if (event.key === 'Enter') {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-            value={draft}
-          />
-          <IconButton
-            aria-label="Сохранить название"
-            className={styles.renameAction}
-            disabled={renameMutation.isPending}
-            size="sm"
-            type="submit"
-          >
-            <Check aria-hidden="true" size={15} />
-          </IconButton>
-          <IconButton
-            aria-label="Отменить переименование"
-            className={styles.renameAction}
-            disabled={renameMutation.isPending}
-            onClick={cancelRename}
-            size="sm"
-          >
-            <X aria-hidden="true" size={15} />
-          </IconButton>
-        </form>
-      ) : (
-        <div className={styles.sessionRow} data-selected={session.id === selectedChatId || undefined} key={session.id}>
-          <button
-            aria-current={session.id === selectedChatId ? 'page' : undefined}
-            aria-label={chatIsWorking(session) ? `${session.title}, идёт работа` : undefined}
-            className={styles.sessionSelect}
-            data-working={chatIsWorking(session) || undefined}
-            onClick={() => onSelect(session.id)}
-            type="button"
-          >
-            <MessageCircle aria-hidden="true" className={styles.sessionIcon} size={16} />
-            <span>{session.title}</span>
-            {chatIsWorking(session) ? <span aria-hidden="true" className={styles.working} /> : null}
-          </button>
-          {session.id === selectedChatId && (canCreate || coarseActions) ? (
-            <IconButton
-              aria-label={`Действия чата «${session.title}»`}
-              className={styles.sessionActions}
-              disabled={busy || renameMutation.isPending}
-              onClick={(event) => openActions(event, session)}
-              size={coarseActions ? 'touch' : 'sm'}
+      {!error && sessions.length >= searchFrom ? (
+        <SearchField className={styles.search} label="Найти в чатах" labelHidden onChange={(event) => setSearch(event.target.value)}
+          onClear={() => setSearch('')} placeholder="Найти в чатах" value={search} />
+      ) : null}
+      {!error && searching && found.length === 0 ? (
+        <EmptyFilter onReset={() => setSearch('')} reset="Сбросить поиск" words={`Ничего не нашлось по «${searching}»`} />
+      ) : null}
+      {!error ? groups.map((group) => (
+        <section aria-label={chatDayWords[group.day]} className={styles.group} key={group.day}>
+          <p aria-hidden="true" className={styles.groupLabel}>{chatDayWords[group.day]}</p>
+          {group.chats.map((session) => editingChatId === session.id ? (
+            <form
+              className={styles.renameRow}
+              key={session.id}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) leaveRename();
+              }}
+              onSubmit={(event) => void submitRename(event)}
             >
-              <MoreHorizontal aria-hidden="true" size={17} />
-            </IconButton>
-          ) : null}
-        </div>
+              <Field
+                autoFocus
+                className={styles.renameInput}
+                disabled={renameMutation.isPending}
+                error={renameError}
+                label={<span className={styles.srOnly}>Название чата</span>}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  setRenameError('');
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    cancelRename();
+                  } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                value={draft}
+              />
+              <div className={styles.renameActions}>
+                <Button aria-label="Сохранить название" disabled={renameMutation.isPending} size="sm" type="submit" variant="primary">Сохранить</Button>
+                <Button aria-label="Отменить переименование" disabled={renameMutation.isPending} onClick={cancelRename} size="sm" variant="ghost">Отменить</Button>
+              </div>
+            </form>
+          ) : (
+            <div className={styles.sessionRow} data-selected={session.id === selectedChatId || undefined} key={session.id}>
+              <button
+                aria-current={session.id === selectedChatId ? 'page' : undefined}
+                aria-label={chatIsWorking(session) ? `${session.title}, готовится` : session.title}
+                className={styles.sessionSelect}
+                data-working={chatIsWorking(session) || undefined}
+                onClick={() => onSelect(session.id)}
+                // The whole name where the row cuts it (AA3.1).
+                title={session.title}
+                type="button"
+              >
+                <MessageCircle aria-hidden="true" className={styles.sessionIcon} size={16} />
+                <span className={styles.sessionTitle}>{session.title}</span>
+                {chatIsWorking(session) ? <span aria-hidden="true" className={styles.working} /> : null}
+              </button>
+              {/* The second line of the row: the date of its last question and its state. It stands over the button and lets
+                  its press through, so the name of the button is the name of the chat the screen shows. */}
+              <span aria-hidden="true" className={styles.sessionMeta} data-chat-date="">
+                {chatDate(new Date(askedAt(session)), new Date())}{chatIsWorking(session) ? ' · готовится' : ''}
+              </span>
+              {canCreate || coarseActions ? (
+                <IconButton
+                  aria-label={`Действия чата «${session.title}»`}
+                  className={styles.sessionActions}
+                  data-touch={coarseActions || undefined}
+                  disabled={renameMutation.isPending}
+                  onClick={(event) => openActions(event, session)}
+                  size={coarseActions ? 'touch' : 'sm'}
+                >
+                  <MoreHorizontal aria-hidden="true" size={17} />
+                </IconButton>
+              ) : null}
+            </div>
+          ))}
+        </section>
       )) : null}
       {error ? (
-        <Alert className={styles.sessionsError} tone="error">
-          <p>{publicApiErrorMessage(error, 'Не удалось загрузить чаты.')}</p>
-          {errorRequestId ? <SupportReference code={errorRequestId} /> : null}
-          <Button aria-label="Повторить загрузку чатов" onClick={onRetry} size="sm" variant="outline">Повторить</Button>
-        </Alert>
+        <ErrorBlock className={styles.sessionsError} cause={loadFailureWords(error).cause} code={errorRequestId} onRetry={onRetry} title="Не открылся список чатов" />
       ) : null}
 
-      {menu && actionSession ? (
-        <Popover
-          className={styles.sessionMenu}
-          label={`Действия чата «${actionSession.title}»`}
-          onDismiss={() => setMenu(null)}
-          open
-          role="menu"
-          style={{ left: menu.left, top: menu.top }}
-        >
-          <button onClick={() => beginRename(actionSession)} role="menuitem" type="button">
-            <Pencil aria-hidden="true" size={16} />
-            Переименовать
-          </button>
-          <button className={styles.dangerAction} onClick={() => { setMenu(null); onDelete(); }} role="menuitem" type="button">
-            <Trash2 aria-hidden="true" size={16} />
-            Удалить чат
-          </button>
-        </Popover>
-      ) : null}
-
-      {sheetChatId && actionSession ? (
-        <ActionSheet
-          canDismiss={!renameMutation.isPending}
-          className={styles.sessionSheet}
-          label={`Действия чата «${actionSession.title}»`}
-          onDismiss={() => setSheetChatId('')}
-        >
-          <header><strong>Чат «{actionSession.title}»</strong></header>
-          {canCreate ? (
-            <Button onClick={() => beginRename(actionSession)} variant="ghost">
-              <Pencil aria-hidden="true" size={16} />
-              Переименовать
-            </Button>
-          ) : null}
-          <Button onClick={() => selectFromActions(actionSession.id)} variant="ghost">
-            <MessageCircle aria-hidden="true" size={16} />
-            Открыть чат
-          </Button>
-          {canCreate ? (
-            <Button onClick={() => { setSheetChatId(''); onDelete(); }} variant="danger">
-              <Trash2 aria-hidden="true" size={16} />
-              Удалить чат
-            </Button>
-          ) : null}
-        </ActionSheet>
+      {actionSession ? (
+        <ChatActionsMenu
+          anchor={menu ? { left: menu.left, top: menu.top } : null}
+          busy={renameMutation.isPending}
+          canEdit={canCreate}
+          // A chat whose question is being answered is deleted once the answer is ready or stopped (AA3.3).
+          deleteUnavailable={chatIsWorking(actionSession) ? 'Удалить чат можно, когда ответ будет готов или остановлен.' : null}
+          onDelete={() => { setMenu(null); setSheetChatId(''); onDelete(actionSession.id); }}
+          onDismiss={() => { setMenu(null); setSheetChatId(''); }}
+          onOpen={() => selectFromActions(actionSession.id)}
+          onRename={() => beginRename(actionSession)}
+          title={actionSession.title}
+        />
       ) : null}
 
     </aside>

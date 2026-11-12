@@ -2,7 +2,6 @@ package sagamemory
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -15,8 +14,6 @@ import (
 
 // IncompleteCardsCode marks a cards Job that ended with chapters still lacking cards.
 const IncompleteCardsCode = "cards.incomplete"
-
-const cardAttempts = 3
 
 // ErrRetryCards asks the worker to run the cards Job again later: some chapters failed and
 // the next attempt builds only those.
@@ -87,6 +84,9 @@ type CardStore interface {
 	// YieldCards puts the claimed Job back to the queue right away under the next claim
 	// incarnation, keeping its attempts and progress (R12.2).
 	YieldCards(ctx context.Context, claim jobs.WorkerClaim) error
+	// OthersWait reports whether a cards Job of another project waits for a worker it could take now
+	// (specs/2026-11-09-first-session.md, FS6.1).
+	OthersWait(ctx context.Context, claim jobs.WorkerClaim) (bool, error)
 }
 
 // CardText is the port the cards Job reads the chapter selection and the chapter texts through.
@@ -110,6 +110,11 @@ type CardBuildPolicy interface {
 // (specs/2026-11-01-writer-assistant-index.md, R2.2). The Job is already over, so it fails nothing.
 type CardsDone func(ctx context.Context, version TextVersion)
 
+// SagaReady hears that a cards Job found a card for every chapter of its text, before the name registry and the map are
+// refreshed: the wave of «Сага готова» closes there if the whole saga is ready (specs/2026-11-09-first-session.md,
+// FS1.3, FS6.3). It fails nothing.
+type SagaReady func(ctx context.Context, projectID string)
+
 // BuildCards runs the cards Job of one project text version (UC2 steps 2–3).
 type BuildCards struct {
 	text         CardText
@@ -125,6 +130,7 @@ type BuildCards struct {
 	maps         MapRefresher
 	mapFailure   NamesFailureLog
 	policy       CardBuildPolicy
+	ready        SagaReady
 }
 
 // NewBuildCards builds cards with the model; usage, namesFailure and done may be nil where nothing
@@ -151,6 +157,20 @@ func (build *BuildCards) WithPolicy(policy CardBuildPolicy) *BuildCards {
 	return build
 }
 
+// WithReady makes the Job tell when every chapter of its text has a card (FS1.3).
+func (build *BuildCards) WithReady(ready SagaReady) *BuildCards {
+	build.ready = ready
+	return build
+}
+
+// carded tells that every chapter of the Job's text has a card. The author is told before the name registry and the
+// map, which only sharpen the answers he may already ask for (FS6.3).
+func (build *BuildCards) carded(ctx context.Context, projectID string) {
+	if build.ready != nil && ctx.Err() == nil {
+		build.ready(ctx, projectID)
+	}
+}
+
 // modelAllowed reports whether the Job may call the model for the project: always without a policy.
 func (build *BuildCards) modelAllowed(ctx context.Context, projectID string) (bool, error) {
 	if build.policy == nil {
@@ -172,11 +192,12 @@ func (build *BuildCards) refreshMap(ctx context.Context, claim jobs.WorkerClaim,
 }
 
 // RunForClaim builds the cards of the version's chapters that have none for their current text,
-// in parallel and with up to three model attempts per chapter. New chapters go to the model for
-// one portion of time only; then a Job that built at least one card yields its turn and returns
-// queued (UC12). Otherwise it finishes the Job: succeeded when every chapter has a card, after the
-// name registry is refreshed, else ErrRetryCards, or failed with the number of chapters left on the
-// last attempt. It returns the status it committed.
+// in parallel and with up to three model attempts per chapter. New chapters go to the model in
+// portions of time; at the end of a portion a Job that built at least one card yields its turn to
+// the cards of another project that wait and returns queued (UC12, FS6.1). Otherwise it finishes
+// the Job: succeeded when every chapter has a card, after the name registry is refreshed, else
+// ErrRetryCards, or failed with the number of chapters left on the last attempt. It returns the
+// status it committed.
 func (build *BuildCards) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, subject jobs.ChapterCardsSubject, lastAttempt bool) (jobs.Status, error) {
 	if claim.Validate() != nil || claim.ProjectID != subject.ProjectID || subject.Type != jobs.KindChapterCards {
 		return "", ErrInvalid
@@ -245,22 +266,7 @@ func (build *BuildCards) RunForClaim(ctx context.Context, claim jobs.WorkerClaim
 			}
 		}()
 	}
-	portion := time.NewTimer(build.portion)
-	defer portion.Stop()
-	portionEnded := false
-dispatch:
-	for index := range chapters {
-		if runCtx.Err() != nil {
-			break
-		}
-		select {
-		case work <- index:
-		case <-runCtx.Done():
-		case <-portion.C:
-			portionEnded = true
-			break dispatch
-		}
-	}
+	portionEnded := build.handOut(ctx, runCtx, claim, string(subject.SourceView), work, len(chapters))
 	close(work)
 	workers.Wait()
 	if err := ctx.Err(); err != nil {
@@ -272,7 +278,7 @@ dispatch:
 	left := len(chapters) - built
 	if portionEnded && left > 0 && built > 0 {
 		// Every yield builds at least one card, so a Job always ends (R12.3). The map grows with the cards of a long first build.
-		build.refreshMap(ctx, claim, string(subject.SourceView))
+		build.growMaps(ctx, claim, string(subject.SourceView))
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
@@ -293,7 +299,17 @@ dispatch:
 			Code: IncompleteCardsCode, Message: fmt.Sprintf("Глав без карточек: %d из %d", left, total),
 		}}
 	} else {
-		build.refreshNames(ctx, claim, selection)
+		build.carded(ctx, subject.ProjectID)
+		// Chapters indexed while the Job worked — the next volume of an import queue — have no cards yet. The Job their
+		// text index queued builds the registry of all the names; this one does not ask the model for a half of them
+		// (FS6.2).
+		_, late, err := missingCards(ctx, build.text, build.store, subject.ProjectID, string(subject.SourceView))
+		if err != nil {
+			return "", err
+		}
+		if len(late.Chapters) == 0 {
+			build.refreshNames(ctx, claim, selection)
+		}
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
@@ -319,6 +335,7 @@ func (build *BuildCards) waitForConsent(
 ) (jobs.Status, error) {
 	waiting := len(missing.Chapters) > 0
 	if !waiting {
+		build.carded(ctx, subject.ProjectID)
 		needs, err := build.namesNeedModel(ctx, subject.ProjectID, selection)
 		if err != nil {
 			return "", err
@@ -346,76 +363,6 @@ func (build *BuildCards) waitForConsent(
 		build.done(ctx, TextVersion{ProjectID: subject.ProjectID, View: string(subject.SourceView)})
 	}
 	return outcome.Status, nil
-}
-
-// CardWriter writes the card of one chapter text with one instruction set: up to three model
-// attempts, each answer parsed and normalized by domain.ParseCard. The cards Job writes with the
-// current instructions; the operator's chapter-cards build writes with the same writer
-// (specs/2026-10-29-chapter-cards-quality.md, UC2).
-type CardWriter struct {
-	model        CardModel
-	instructions domain.CardInstructionSet
-}
-
-func NewCardWriter(model CardModel, instructions domain.CardInstructionSet) *CardWriter {
-	if model == nil || instructions.Text == "" || instructions.Version < 1 {
-		panic("saga memory: card model and instructions are required")
-	}
-	return &CardWriter{model: model, instructions: instructions}
-}
-
-// WrittenCard is a card with what writing it took: the model calls made and their spend.
-type WrittenCard struct {
-	Card     domain.Card
-	Attempts int
-	Usage    quota.ModelUsage
-}
-
-// Write asks the model for the card of one chapter, up to three times; the result carries what
-// the attempts cost also when every attempt failed.
-func (writer *CardWriter) Write(ctx context.Context, chapter *domain.Chapter) (WrittenCard, error) {
-	var lastErr error
-	var written WrittenCard
-	for range cardAttempts {
-		if err := ctx.Err(); err != nil {
-			return written, err
-		}
-		written.Attempts++
-		output, spent, err := writer.model.Complete(ctx, writer.instructions.Text, domain.ChapterText(chapter))
-		written.Usage = written.Usage.Add(spent)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		card, err := domain.ParseCard(output, len(chapter.Paragraphs))
-		if err == nil {
-			written.Card = card
-			writer.addMissed(ctx, chapter, &written)
-			return written, nil
-		}
-		lastErr = err
-	}
-	return written, lastErr
-}
-
-// addMissed runs the pass over the written card: the model sees the chapter and the card and names
-// what the card missed. A failed pass leaves the card as it is (specs/2026-11-01-index-foundation.md, R2.3).
-func (writer *CardWriter) addMissed(ctx context.Context, chapter *domain.Chapter, written *WrittenCard) {
-	if writer.instructions.Pass == "" {
-		return
-	}
-	card, err := json.Marshal(written.Card)
-	if err != nil {
-		return
-	}
-	output, spent, err := writer.model.Complete(ctx, writer.instructions.Pass, domain.ChapterText(chapter)+"\n\nКАРТОЧКА:\n"+string(card))
-	written.Usage = written.Usage.Add(spent)
-	if err != nil {
-		return
-	}
-	if more, err := domain.ParseCardAdditions(output, len(chapter.Paragraphs)); err == nil {
-		written.Card.Add(more)
-	}
 }
 
 // recordUsage counts the spend of one chapter for the project owner (R7.2), also when the card

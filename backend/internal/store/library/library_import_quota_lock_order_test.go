@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/projects"
@@ -115,7 +116,7 @@ func TestImportFinishingAndUploadInAnotherSagaDoNotDeadlock(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer finish.Rollback(context.Background())
-			if err := quotastore.CheckOwnerSourcesInTx(fixture.ctx, finish, fixture.projectID); err != nil {
+			if err := (quotastore.Fence{}).CheckOwnerSourcesInTx(fixture.ctx, finish, fixture.projectID, quota.MeasureBooks|quota.MeasureChapters|quota.MeasureCharacters); err != nil {
 				t.Fatal(err)
 			}
 			uploaded := make(chan error, 1)

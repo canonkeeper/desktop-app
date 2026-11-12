@@ -1,5 +1,5 @@
-github.com/Dirard/codex/sdk/go v0.165.4 h1:JZUAEOOTti8WAyZy4inNi6KofhkfSvL8K0C299cFeko=
-github.com/Dirard/codex/sdk/go v0.165.4/go.mod h1:5854rwopVPRrVXIrCRdtfgc8T5ZUt1Biuzflm8qGShU=
+github.com/Dirard/codex/sdk/go v0.167.2 h1:sYdRxF+lY75VglyYynrf0lu+1NYIIAm5yzvZ8CjiB+A=
+github.com/Dirard/codex/sdk/go v0.167.2/go.mod h1:5854rwopVPRrVXIrCRdtfgc8T5ZUt1Biuzflm8qGShU=
 github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
 github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

@@ -1975,7 +1975,38 @@ func TestLibraryStoreBookSummariesIncludeCounts(t *testing.T) {
 	}
 }
 
-func TestLibraryStoreNextBookOrderReturnsFirstMissingUniqueOrder(t *testing.T) {
+// The shelf knows how each book begins (specs/2026-11-11-ux9-shelf-chat.md SC1.3): the first paragraphs of its first live
+// chapter, by which a file of the same text is asked about as this book, whatever its name.
+func TestLibraryStoreListBooksTellsHowABookBegins(t *testing.T) {
+	ctx := context.Background()
+	db := openCurrentStoreTestDB(t)
+	store := New(db)
+	fixture := createIndexingStoreFixtureForTest(t, db, 1870)
+	now := indexingStoreTestNow()
+	if _, err := db.Pool.Exec(ctx, `
+		UPDATE chapter_paragraphs SET markdown = 'Туман лежал на *Белом* порту.', plain_text = 'Туман лежал на Белом порту.' WHERE id = $1
+	`, fixture.paragraphID); err != nil {
+		t.Fatalf("first paragraph: %v", err)
+	}
+	if _, err := db.Pool.Exec(ctx, `
+		INSERT INTO chapter_paragraphs (id, chapter_id, revision, variant, kind, "order", markdown, plain_text, word_count, created_at, updated_at)
+		VALUES ($1, $2, 1, 'draft', 'paragraph', 2, 'Мара ждала.', 'Мара ждала.', 2, $3, $3),
+		       ($4, $2, 1, 'draft', 'paragraph', 3, ' ', ' ', 0, $3, $3)
+	`, indexingStoreUUIDForTest(1877), fixture.chapterID, now, indexingStoreUUIDForTest(1878)); err != nil {
+		t.Fatalf("second paragraph: %v", err)
+	}
+	createChapterForOrderTest(t, store, fixture.projectID, fixture.bookID, indexingStoreUUIDForTest(1879), "Second", 2, now)
+	books, err := store.ListBooks(ctx, library.ListBooksStoreInput{ProjectID: fixture.projectID, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListBooks() error = %v", err)
+	}
+	if len(books) != 1 || books[0].Opening != "Туман лежал на Белом порту. Мара ждала." {
+		t.Fatalf("ListBooks() opening = %#v, want the first paragraphs of the first chapter", books)
+	}
+}
+
+// A new book stands after the live books of the shelf (specs/2026-11-11-ux7-upload.md UP2.3).
+func TestLibraryStoreNextBookOrderStandsAfterTheBooks(t *testing.T) {
 	ctx := context.Background()
 	db := openCurrentStoreTestDB(t)
 	now := indexingStoreTestNow()
@@ -1988,8 +2019,8 @@ func TestLibraryStoreNextBookOrderReturnsFirstMissingUniqueOrder(t *testing.T) {
 	}{
 		{name: "empty", wantOrder: 1},
 		{name: "contiguous", orders: []int{1, 2}, wantOrder: 3},
-		{name: "missing first", orders: []int{2, 3}, wantOrder: 1},
-		{name: "missing middle", orders: []int{1, 3}, wantOrder: 2},
+		{name: "missing first", orders: []int{2, 3}, wantOrder: 4},
+		{name: "missing middle", orders: []int{1, 3}, wantOrder: 4},
 		{name: "duplicate", orders: []int{1, 2, 2}, wantErr: library.ErrImportSequenceConflict},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2049,7 +2080,8 @@ func TestLibraryStoreNextBookOrderDoesNotWaitOnProjectMutationLock(t *testing.T)
 	}
 }
 
-func TestLibraryStoreDeleteMiddleBookMakesItsOrderAvailableForReplacement(t *testing.T) {
+// The place a deleted book keeps stays for its return: a new book stands after the books (UP2.3).
+func TestLibraryStoreDeleteMiddleBookKeepsItsPlaceForItsReturn(t *testing.T) {
 	ctx := context.Background()
 	db := openCurrentStoreTestDB(t)
 	store := New(db)
@@ -2069,16 +2101,19 @@ func TestLibraryStoreDeleteMiddleBookMakesItsOrderAvailableForReplacement(t *tes
 	}); err != nil {
 		t.Fatalf("FenceBookDeletion() error = %v", err)
 	}
-	if got, err := store.NextBookOrder(ctx, projectID); err != nil || got != 2 {
-		t.Fatalf("NextBookOrder() = %d, %v, want 2, nil", got, err)
+	if got, err := store.NextBookOrder(ctx, projectID); err != nil || got != 4 {
+		t.Fatalf("NextBookOrder() = %d, %v, want 4, nil", got, err)
 	}
 }
 
-func TestLibraryStoreRestoreBookRejectsReusedActiveOrder(t *testing.T) {
+// specs/2026-11-11-ux7-reorder.md RK1.1: the keys of the chapters do not depend on the places, so a book comes back to
+// its place on the shelf and the book that took it meanwhile steps one place on.
+func TestLibraryStoreRestoreBookTakesItsPlaceBack(t *testing.T) {
 	ctx := context.Background()
 	db := openCurrentStoreTestDB(t)
 	store := New(db)
-	now := indexingStoreTestNow()
+	// A deletion of now: the book is still in «Недавно удалённые».
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	actorID := indexingStoreUUIDForTest(3301)
 	projectID := indexingStoreUUIDForTest(3302)
 	membershipID := indexingStoreUUIDForTest(3303)
@@ -2099,13 +2134,14 @@ func TestLibraryStoreRestoreBookRejectsReusedActiveOrder(t *testing.T) {
 	}
 	createBookForOrderTest(t, store, projectID, replacementBookID, "Replacement", 1, "1", now.Add(2*time.Minute))
 
-	if _, err := store.RestoreBook(ctx, restoreBookInputForTest(actorID, projectID, deletedBookID)); !errors.Is(err, library.ErrConflict) {
-		t.Fatalf("RestoreBook() error = %v, want ErrConflict", err)
+	restored, err := store.RestoreBook(ctx, restoreBookInputForTest(actorID, projectID, deletedBookID))
+	if err != nil || restored.Order != 1 {
+		t.Fatalf("RestoreBook() = order %d, %v; want its place 1", restored.Order, err)
 	}
 	if got := countJobsStoreRowsForTest(t, db, `
-		SELECT count(*) FROM books WHERE project_id = $1 AND "order" = 1 AND deleted_at IS NULL
-	`, projectID); got != 1 {
-		t.Fatalf("active books at order 1 = %d, want 1", got)
+		SELECT count(*) FROM books WHERE project_id = $1 AND id = $2 AND "order" = 2 AND deleted_at IS NULL
+	`, projectID, replacementBookID); got != 1 {
+		t.Fatalf("the book that took the place stands at 2: %d", got)
 	}
 }
 

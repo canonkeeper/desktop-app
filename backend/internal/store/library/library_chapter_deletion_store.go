@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/deletion"
+	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/governance"
 	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/projects"
 	deletionstore "canonkeeper/backend/internal/repository/postgres/deletion"
 	"canonkeeper/backend/internal/store/db"
-	quotastore "canonkeeper/backend/internal/store/quota"
+	jobstore "canonkeeper/backend/internal/store/jobs"
 	"canonkeeper/backend/internal/store/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -208,6 +209,14 @@ func (s *Store) fenceLockedChapterInTx(
 	); err != nil {
 		return deletion.SourceFenceResult{}, err
 	}
+	// The work on the chapter's text versions stops with it (deletion-stops-processing UC1); an update of the book
+	// from a file, which may be the caller, pairs the chapters when it ends and goes on.
+	if err := s.jobs.StopDeletedSourceWorkInTx(ctx, tx, jobstore.DeletedSourceWork{
+		ProjectID: request.ProjectID, ProjectGeneration: projectGeneration,
+		Views: revisionViews(revisions), At: request.FencedAt,
+	}); err != nil {
+		return deletion.SourceFenceResult{}, err
+	}
 	deletedVector := governance.SourceGenerationVector{
 		ProjectID:         request.ProjectID,
 		ProjectGeneration: governance.LifecycleGeneration(projectGeneration),
@@ -327,29 +336,10 @@ func (s *Store) RestoreChapter(ctx context.Context, input library.RestoreChapter
 		if !beforePurge {
 			return library.ErrConflict
 		}
-		var restoredGeneration int64
-		if err := tx.QueryRow(ctx, `
-			UPDATE chapters
-			SET deleted_at = NULL,
-			    governance_retention_started_at = NULL,
-			    purge_after = NULL,
-			    purge_deadline = NULL,
-			    updated_at = clock_timestamp()
-			WHERE id = $1 AND book_id = $2 AND project_id = $3
-			  AND deleted_at IS NOT NULL
-			  AND lifecycle_generation = $4
-			  AND hard_purge_started_at IS NULL
-			  AND clock_timestamp() < purge_after
-			RETURNING lifecycle_generation
-		`, chapterID, bookID, projectID, chapterGeneration).Scan(&restoredGeneration); errors.Is(err, pgx.ErrNoRows) {
-			return library.ErrConflict
-		} else if err != nil {
+		if err := restoreLockedChapterInTx(ctx, tx, projectID, bookID, chapterID, chapterGeneration); err != nil {
 			return err
 		}
-		if restoredGeneration != chapterGeneration {
-			return library.ErrConflict
-		}
-		if err := quotastore.CheckOwnerSourcesInTx(ctx, tx, projectID.String()); err != nil {
+		if err := s.quota.CheckAdmittedSourcesInTx(ctx, tx, projectID.String(), quota.MeasureChapters|quota.MeasureCharacters); err != nil {
 			return err
 		}
 		if err := s.RestoreProjectSourceCatalog(ctx, tx, projectID, projectGeneration); err != nil {
@@ -369,4 +359,34 @@ func (s *Store) RestoreChapter(ctx context.Context, input library.RestoreChapter
 		return library.Chapter{}, err
 	}
 	return restored, nil
+}
+
+// restoreLockedChapterInTx takes a deleted chapter whose rows the caller's transaction locked out of «Недавно удалённые»
+// while its 7 days go and its purge has not begun, at the generation it has: «Вернуть» of the trash and the return of a
+// book to the version before its update (specs/2026-11-12-ux10-book-revert.md BR2.2). The caller restores the source
+// catalog.
+func restoreLockedChapterInTx(ctx context.Context, tx pgx.Tx, projectID, bookID, chapterID pgtype.UUID, generation int64) error {
+	var restoredGeneration int64
+	if err := tx.QueryRow(ctx, `
+		UPDATE chapters
+		SET deleted_at = NULL,
+		    governance_retention_started_at = NULL,
+		    purge_after = NULL,
+		    purge_deadline = NULL,
+		    updated_at = clock_timestamp()
+		WHERE id = $1 AND book_id = $2 AND project_id = $3
+		  AND deleted_at IS NOT NULL
+		  AND lifecycle_generation = $4
+		  AND hard_purge_started_at IS NULL
+		  AND clock_timestamp() < purge_after
+		RETURNING lifecycle_generation
+	`, chapterID, bookID, projectID, generation).Scan(&restoredGeneration); errors.Is(err, pgx.ErrNoRows) {
+		return library.ErrConflict
+	} else if err != nil {
+		return err
+	}
+	if restoredGeneration != generation {
+		return library.ErrConflict
+	}
+	return nil
 }

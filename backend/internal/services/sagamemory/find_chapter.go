@@ -4,6 +4,7 @@ import (
 	"context"
 
 	domain "canonkeeper/backend/internal/domain/sagamemory"
+	"canonkeeper/backend/internal/governance"
 )
 
 // FindChapter resolves an agent-facing chapter key («481», «b3c51») in the current text
@@ -42,8 +43,25 @@ func outlineVersion(selection Selection) *domain.Version {
 	for i, selected := range selection.Chapters {
 		chapters[i] = domain.Chapter{
 			ID: selected.ID, Revision: selected.Revision, ContentHash: selected.ContentHash, BookID: selected.BookID,
-			BookOrder: selected.BookOrder, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
+			BookOrder: selected.BookOrder, BookKeyNumber: selected.BookKeyNumber, BookTitle: selected.BookTitle, Order: selected.Order, Title: selected.Title,
 		}
 	}
 	return domain.NewVersion(selection.ProjectID, selection.View, selection.Fingerprint, chapters)
+}
+
+// pageView is the text version the pages of a saga show: the saga has one, the published.
+const pageView = string(governance.SourceViewPublished)
+
+// Places names the chapters of the keys as the author reads them on the pages of the saga («Книга 2, гл. 12 „Белый
+// порт“»), by the key as written; a key the text has no chapter for is left out, and no keys read nothing
+// (specs/2026-11-10-ux1-names.md N1.3).
+func (saga *Saga) Places(ctx context.Context, projectID string, keys []string) (map[string]string, error) {
+	if len(keys) == 0 {
+		return map[string]string{}, nil
+	}
+	version, err := saga.ChapterVersion(ctx, projectID, pageView)
+	if err != nil {
+		return nil, err
+	}
+	return version.Places(keys), nil
 }

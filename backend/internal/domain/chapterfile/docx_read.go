@@ -18,8 +18,10 @@ func parseDOCX(data []byte) (Document, error) {
 	if err != nil {
 		return Document{}, ErrUnreadable
 	}
-	var body, styles []byte
+	var body, styles, relationships []byte
+	parts := map[string]*zip.File{}
 	for _, file := range archive.File {
+		parts[file.Name] = file
 		switch file.Name {
 		case "word/document.xml":
 			if body != nil {
@@ -32,6 +34,10 @@ func parseDOCX(data []byte) (Document, error) {
 			if styles, err = readPart(file); err != nil {
 				return Document{}, err
 			}
+		case "word/_rels/document.xml.rels":
+			if relationships, err = readPart(file); err != nil {
+				return Document{}, err
+			}
 		}
 	}
 	if body == nil {
@@ -41,7 +47,24 @@ func parseDOCX(data []byte) (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
-	return documentOf(body, headings)
+	faces, err := ReadStyles(styles)
+	if err != nil {
+		return Document{}, err
+	}
+	document, err := documentOf(body, headings, faces)
+	if err != nil || document.Layout == nil {
+		return document, err
+	}
+	// The styles and the theme as they stood (PR1.7); a larger part is not kept.
+	if len(styles) <= maxLayoutPartBytes {
+		document.Layout.Styles = string(styles)
+	}
+	if theme := parts[themeTarget(relationships)]; theme != nil && theme.UncompressedSize64 <= maxLayoutPartBytes {
+		if content, err := readPart(theme); err == nil {
+			document.Layout.Theme = string(content)
+		}
+	}
+	return document, nil
 }
 
 func readPart(file *zip.File) ([]byte, error) {
@@ -123,15 +146,18 @@ func on(element xml.StartElement) bool {
 }
 
 // skipped are the elements whose text is not the chapter: what a revision deleted or moved away, pictures and text
-// boxes (and the copy Word keeps of them for old readers), the codes of fields, the marks of notes and comments.
+// boxes (and the copy Word keeps of them for old readers), the codes of fields, the marks of notes and comments, and the
+// former properties a revision of formatting keeps.
 var skipped = map[string]bool{
 	"del": true, "moveFrom": true, "delText": true, "drawing": true, "pict": true, "object": true, "AlternateContent": true,
 	"txbxContent": true, "instrText": true, "delInstrText": true, "footnoteReference": true, "endnoteReference": true,
 	"commentReference": true, "commentRangeStart": true, "commentRangeEnd": true,
+	// The former properties a revision of the file keeps are not its look (PR1.7).
+	"pPrChange": true, "rPrChange": true, "sectPrChange": true,
 }
 
-// documentOf walks the body of a Word file.
-func documentOf(body []byte, headings map[string]bool) (Document, error) {
+// documentOf walks the body of a Word file; a run takes the face Word shows by its styles (TF4.2).
+func documentOf(body []byte, headings map[string]bool, styles Styles) (Document, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(body))
 	document := Document{Format: FormatDOCX}
 	var (
@@ -140,18 +166,28 @@ func documentOf(body []byte, headings map[string]bool) (Document, error) {
 		inProperties, inRun bool
 		inRunProperties     bool
 		inText              bool
-		italic, bold        bool
+		own                 Faces
+		paragraphStyle      string
+		runStyle            string
 		text                strings.Builder
 		skip                int
 		seenText            bool
+		// The look of the file (PR1.7): where the properties of a paragraph, of a run and the section of the body start
+		// in the bytes of the body, and the properties of the run being read.
+		rooted                    bool
+		propertiesFrom, runFrom   int64
+		sectionFrom, sectionInner int64
+		runProps                  string
 	)
 	endRun := func() {
 		if paragraph != nil && text.Len() > 0 {
-			paragraph.Runs = append(paragraph.Runs, Run{Text: text.String(), Italic: italic, Bold: bold})
+			italic, bold := styles.Face(paragraphStyle, runStyle, own)
+			paragraph.Runs = append(paragraph.Runs, Run{Text: text.String(), Italic: italic, Bold: bold, Props: runProps})
 		}
 		text.Reset()
 	}
 	for {
+		before := decoder.InputOffset()
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
 			break
@@ -159,8 +195,16 @@ func documentOf(body []byte, headings map[string]bool) (Document, error) {
 		if err != nil {
 			return Document{}, ErrUnreadable
 		}
+		after := decoder.InputOffset()
 		switch element := token.(type) {
 		case xml.StartElement:
+			if !rooted {
+				// The root declares the namespaces the properties are written in; a Strict file keeps no look.
+				rooted = true
+				if namespaces, ok := namespacesOf(body[before:after]); ok {
+					document.Layout = &Layout{Namespaces: namespaces}
+				}
+			}
 			if skip > 0 {
 				skip++
 				continue
@@ -172,10 +216,13 @@ func documentOf(body []byte, headings map[string]bool) (Document, error) {
 			}
 			switch name {
 			case "p":
-				paragraph, heading = &Paragraph{}, false
+				paragraph, heading, paragraphStyle = &Paragraph{}, false, ""
 			case "pPr":
-				inProperties = true
+				inProperties, propertiesFrom = true, after
 			case "pStyle":
+				if inProperties {
+					paragraphStyle = attribute(element, "val")
+				}
 				if inProperties && headings[attribute(element, "val")] || inProperties && headingName(attribute(element, "val")) {
 					heading = true
 				}
@@ -184,17 +231,25 @@ func documentOf(body []byte, headings map[string]bool) (Document, error) {
 					heading = true
 				}
 			case "r":
-				inRun, italic, bold = true, false, false
+				inRun, own, runStyle, runProps = true, Faces{}, "", ""
 				text.Reset()
 			case "rPr":
-				inRunProperties = inRun
+				inRunProperties, runFrom = inRun, after
+			case "sectPr":
+				if paragraph == nil {
+					sectionFrom, sectionInner = before, after
+				}
+			case "rStyle":
+				if inRunProperties {
+					runStyle = attribute(element, "val")
+				}
 			case "i":
 				if inRunProperties {
-					italic = on(element)
+					own.Italic = ToggleOf(element)
 				}
 			case "b":
 				if inRunProperties {
-					bold = on(element)
+					own.Bold = ToggleOf(element)
 				}
 			case "t":
 				inText = inRun
@@ -229,11 +284,22 @@ func documentOf(body []byte, headings map[string]bool) (Document, error) {
 				paragraph = nil
 			case "pPr":
 				inProperties = false
+				if paragraph != nil && document.Layout != nil {
+					// A paragraph whose properties do not read keeps none.
+					paragraph.Props, _ = properties(body[propertiesFrom:before], paragraphDropped, &paragraph.Mark)
+				}
 			case "r":
 				endRun()
 				inRun = false
 			case "rPr":
+				if inRunProperties && document.Layout != nil {
+					runProps, _ = properties(body[runFrom:before], runDropped, nil)
+				}
 				inRunProperties = false
+			case "sectPr":
+				if paragraph == nil && document.Layout != nil {
+					document.Layout.Section, _ = section(body[sectionFrom:sectionInner], body[sectionInner:before])
+				}
 			case "t":
 				inText = false
 			}
