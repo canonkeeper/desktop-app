@@ -45,7 +45,7 @@
     "e2e:production:large-book": "CK_E2E_PROFILE=production playwright test --config=playwright.production.config.ts --project=production-large-book",
     "e2e:production:saga": "CK_E2E_PROFILE=production playwright test --config=playwright.production.config.ts --project=production-saga",
     "build": "vite build",
-    "build:desktop": "CK_EDITION=desktop vite build --outDir dist-desktop",
+    "build:desktop": "node scripts/desktop-web.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:desktop": "tsc --noEmit -p tsconfig.desktop.json",
     "build:desktop:backend": "node scripts/desktop-backend.mjs dist-desktop-backend/canonkeeper-backend",

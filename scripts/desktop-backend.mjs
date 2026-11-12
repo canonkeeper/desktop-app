@@ -12,6 +12,8 @@ import { cpSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { buildDesktopWeb } from './desktop-web.mjs';
+
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 export const embeddedWeb = path.join(repositoryRoot, 'backend', 'internal', 'app', 'desktop', 'web');
 
@@ -31,8 +33,7 @@ function run(command, args, options) {
 export function main(args = process.argv.slice(2)) {
   if (args.length !== 1) throw new Error('usage: desktop-backend.mjs <output binary>');
   const output = path.resolve(args[0]);
-  // npm is a script on Windows and starts only through the shell; go takes its arguments as they are.
-  run('npm', ['run', 'build:desktop'], { cwd: repositoryRoot, shell: process.platform === 'win32' });
+  buildDesktopWeb();
   placeWeb(path.join(repositoryRoot, 'dist-desktop'), embeddedWeb);
   run('go', ['build', '-trimpath', '-ldflags=-s -w', '-o', output, './cmd/desktop'], {
     cwd: path.join(repositoryRoot, 'backend'), env: { ...process.env, CGO_ENABLED: '0' },
