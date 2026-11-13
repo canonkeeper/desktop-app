@@ -104,6 +104,14 @@ func DeletionTableInventory() []TableDisposition {
 		// The new chapters charged against a writer's tier (0120): they outlive the draft and the project, so a deletion
 		// never resets the window (TR7.5), and go with the account (TR10.1).
 		{"subscription_chapter_charges", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The codes of the link of the app and the linked apps of an account (specs/2026-11-13-desk-link.md LK4.4): the
+		// deletion of a saga does not touch them; they go with the account.
+		{"app_link_codes", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		{"app_devices", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The permits of a linked app to work on the models of the site and the corrections under them
+		// (specs/2026-11-13-desk-permits.md PM3.3): rows of account, not of a saga; they go with the account.
+		{"model_permits", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		{"model_permit_units", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_usage_days", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_limit_samples", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		// The blind comparison of texts has no link to the product: only `reading-test delete` removes it (specs/2026-11-05-reading-test.md).

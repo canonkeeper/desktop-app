@@ -1,0 +1,266 @@
+/*
+ * The editor of a chapter without the helper (specs/2026-11-13-desk-editor.md; board 44·20, 44·21, Pattern/Desktop/Plain
+ * Editor): the head with the way back and the place on the left, the main button and «⋯» on the right; the title field;
+ * the sheet of text in the font of the reader and «Письмо»; «Фон текста» and the saved line under it. «Фон текста» paints
+ * the whole editor, as it paints the workplace of «Письмо» (data-reading-theme, src/styles/reading-themes.css).
+ */
+.editor {
+  display: flex;
+  min-width: 0;
+  min-height: 100%;
+  flex-direction: column;
+  gap: var(--ck-space-4);
+  padding: var(--ck-space-4) var(--ck-space-6) var(--ck-space-6);
+  background: var(--ck-background);
+  color: var(--ck-foreground);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-3);
+}
+
+.way {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--ck-space-3);
+}
+
+.back {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.place {
+  overflow: hidden;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ck-space-3);
+  margin-left: auto;
+}
+
+/* «Место в книге» before its choice, in one row with the main button (board 44·21). */
+.placeChoice > * {
+  grid-auto-flow: column;
+  align-items: center;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2) var(--ck-space-3);
+}
+
+/* The sheet of text: the font of the reader and of «Письмо», a paragraph a blank line (TF6). */
+.sheet {
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-xl);
+  padding: var(--ck-space-6) var(--ck-space-7);
+  background: var(--ck-reader);
+}
+
+.text {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 6em;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ck-radius-sm);
+  padding: var(--ck-space-1) var(--ck-space-2);
+  color: var(--ck-reader-foreground);
+  font-family: var(--ck-font-serif);
+  /* The size of «Аа» of the reader: one choice of the author for reading and writing (specs/2026-11-10-ux7-reader.md RD1.4). */
+  font-size: var(--reader-text-size, 17.5px);
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.text p {
+  margin: 0 0 1.1em;
+}
+
+.text p:last-child {
+  margin-bottom: 0;
+}
+
+.text:focus-visible {
+  border-color: var(--ck-ring);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ck-focus-shadow);
+}
+
+.text p[data-placeholder]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--ck-muted-foreground);
+  pointer-events: none;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ck-space-3);
+}
+
+.saved {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+/* «Версии текста» (board 44·20): the rows by when, the version open with its text. */
+.window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-4);
+}
+
+.windowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-3);
+}
+
+.windowTitle {
+  margin: 0;
+  font-size: var(--ck-font-size-ui-h1);
+  font-weight: 600;
+}
+
+.windowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ck-space-3);
+}
+
+.take {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+
+.take small,
+.versionLine,
+.versionEmpty {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.versionList {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: var(--ck-space-1);
+  list-style: none;
+}
+
+.versionRow {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: flex-start;
+  gap: var(--ck-space-3);
+  border: 0;
+  border-radius: var(--ck-radius-sm);
+  padding: var(--ck-space-2);
+  background: transparent;
+  color: var(--ck-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.versionRow:hover {
+  background: var(--ck-muted);
+}
+
+.versionRow:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: 1px;
+}
+
+.versionRow span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.versionRow b {
+  font-weight: 500;
+}
+
+.versionRow small {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+}
+
+.versionOpen {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ck-space-3);
+}
+
+.versionText {
+  width: 100%;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: var(--ck-space-3) var(--ck-space-4);
+  background: var(--ck-reader);
+}
+
+.versionField {
+  color: var(--ck-reader-foreground);
+  font-family: var(--ck-font-serif);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.versionField p {
+  margin: 0 0 0.8em;
+}
+
+/* 900 and narrower (board 44·20, 44·21 at 900): the sheet takes the width of the content. */
+@media (max-width: 1100px) {
+  .editor {
+    padding: var(--ck-space-3) var(--ck-space-4) var(--ck-space-5);
+  }
+
+  .sheet {
+    padding: var(--ck-space-5) var(--ck-space-5);
+  }
+}
+
+@media (max-width: 600px) {
+  .sheet {
+    padding: var(--ck-space-3);
+  }
+}

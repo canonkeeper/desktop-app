@@ -1,0 +1,61 @@
+This module is the Responses <-> Chat Completions translation of codex-lb, taken
+for the "own AI" gateway of the CanonKeeper desktop app:
+
+  source:  https://github.com/Dirard/codex-lb (fork of https://github.com/Soju06/codex-lb)
+  commit:  656687fb2924a896a3ce4ed89dd4178c0df4c3da
+  files:   internal/adapters/upstream -> internal/provider/
+           internal/adapters/wirejson -> internal/wirejson/
+
+Parts of the translation are derived from codex-relay
+(https://github.com/MetaFARS/codex-relay), and internal/think/ is a port of its
+src/think.rs (commit 8491f16) with its tests.
+
+The module is licensed under the MIT License, not under the AGPL of the rest of
+the CanonKeeper repository:
+
+  - LICENSE             MIT, Copyright (c) 2025 Soju06 (codex-lb)
+  - LICENSE.codex-relay MIT, Copyright (c) 2025 Sapient Inc. (codex-relay)
+
+Changes against the source:
+
+  - Removed: the WebSocket transport (responses_websocket.go, websocket_*.go and
+    the github.com/coder/websocket dependency), the image-limit classification
+    with internal/domain/image_limits.go, the account-pool fields of the target
+    (provider, account, key, generation, route revision, session), hosted tools
+    allowed per provider, and the continuation store for previous_response_id:
+    a Chat Completions target refuses previous_response_id, and a follow-up
+    resends the whole conversation with its reasoning items.
+  - Fixed, each with its test: the instructions and the system and developer
+    messages join into one first system message in the order of the input;
+    reasoning of a model without reasoning is dropped instead of refused, and
+    an effort above the profile's highest one (high unless declared) is
+    lowered to it; a stream or a response without usage ends normally with
+    unknown tokens; a usage whose total disagrees is accepted with the total
+    recomputed; a Chat answer cut by its length (or a content filter) ends as
+    response.incomplete, never as response.completed; with the profile's flag,
+    <think>, <thinking> and ◁think▷ markup leaked into the text goes to the
+    reasoning, also when a stream tears a tag; tool_choice reaches a Chat
+    provider in its form; a tool output given as an array of items is joined
+    into its text; a call_id that comes again keeps both calls and outputs,
+    told apart and in order; an HTTP refusal carries the provider's
+    Retry-After; the caller sets the request body ceiling (64 MiB unless set)
+    and a body over it is refused as request_too_large; the passthrough sends
+    the headers the target names instead of a fixed list of ChatGPT headers.
+  - Added: the face of the module, package translate at its root (the rest is
+    internal/); the target names the provider's model instead of a table of
+    model mappings; an error carries at most 4 KiB of the provider's refusal,
+    and a refused result no copy of it; the provider's key is replaced in the
+    text of a failure (an error, the error of a result and of its
+    response.failed event) before that text is cut, while the answer and the
+    other events are left as they are; built-in Responses tools and their
+    input items are refused before the provider is called, in both protocols.
+  - The package is named provider and the module has its own path.
+
+Tests of the source not carried over: the WebSocket tests (22: the three of
+responses_interrupt_test.go, the eighteen WebSocket tests of
+websocket_*_test.go and TestResponsesWebSocketUsesResponseCreateAndStopsAtTerminal,
+with the websocket cases of the shared tests) and the continuation store tests
+(2: TestContinuationBoundedLRU, TestVirtualContinuationDoesNotCrossRouteRevision).
+TestSSELineBoundBeforeUnboundedAllocation of websocket_sessions_test.go bounds
+the SSE reader and is carried over to stream_bound_test.go.
+BenchmarkWebSocketRequestPipeline became BenchmarkChatRequestPipeline.

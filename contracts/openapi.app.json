@@ -1,0 +1,1129 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Canon Keeper Backend-first API",
+    "version": "1.0.0-backend-first",
+    "summary": "Client/server contract for Canon Keeper projects, manuscripts, collaboration and user-facing agent workflows.",
+    "description": "Backend-first OpenAPI 3.1 contract for Canon Keeper. Research Chat uses the same canonical resources, commands, private queries and shared Job lifecycle as import and indexing."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Same-origin API base path"
+    }
+  ],
+  "security": [
+    {
+      "devicePass": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "App",
+      "description": "The operations of the CanonKeeper app on the computer of an author (specs/2026-11-13-desk-link.md): they take no cookie and refuse any request with Origin; the exchange of a code of the link is anonymous, every other operation takes only the pass of a linked app. Their subset is the open file contracts/openapi.app.json."
+    }
+  ],
+  "paths": {
+    "/app/link/token": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "exchangeAppLinkCode",
+        "summary": "Change a code of the link for the pass of the app.",
+        "description": "specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author and his tier. The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code also unlinks the app made by it. The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppLinkExchange"
+              },
+              "examples": {
+                "exchange": {
+                  "summary": "Synthetic exchange",
+                  "value": {
+                    "code": "synthetic_code_0000000000000000000000000000",
+                    "verifier": "synthetic-verifier-0000000000000000000000000",
+                    "name": "Ноутбук",
+                    "appVersion": "1.0.0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pass of the app, once, and its account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppLinkToken"
+                },
+                "examples": {
+                  "linked": {
+                    "summary": "Synthetic pass",
+                    "value": {
+                      "pass": "ckd_synthetic_pass_0000000000000000000000000000",
+                      "account": {
+                        "name": "Автор",
+                        "tier": {
+                          "code": "writer",
+                          "title": "Писатель",
+                          "until": "2026-12-13T09:30:00Z"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Anonymous: the code of the link and the verifier of its challenge prove the author confirmed the link on this computer. Counted per client address: 10 a minute, 50 a day."
+      }
+    },
+    "/app/account": {
+      "get": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "getAppAccount",
+        "summary": "Read the account a linked app works for.",
+        "description": "specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account of the app.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppAccountState"
+                },
+                "examples": {
+                  "writer": {
+                    "summary": "Synthetic account",
+                    "value": {
+                      "name": "Автор",
+                      "tier": {
+                        "code": "writer",
+                        "title": "Писатель",
+                        "until": "2026-12-13T09:30:00Z"
+                      },
+                      "quota": {
+                        "day": "2026-11-13",
+                        "resetsAt": "2026-11-13T21:00:00Z",
+                        "chatTurns": {
+                          "used": 4,
+                          "limit": 30
+                        },
+                        "activeTurns": {
+                          "used": 1,
+                          "limit": 2
+                        },
+                        "imports": {
+                          "used": 1,
+                          "limit": 30
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/query",
+        "x-authz": "Only the pass of a live linked app; it reads the account of its own author."
+      }
+    },
+    "/app/device": {
+      "delete": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "unlinkApp",
+        "summary": "Unlink this app from the account.",
+        "description": "specs/2026-11-13-desk-link.md LK3.4: «Отвязать» in the app unlinks it; its pass opens nothing after it, and nothing of the computer of the author is deleted. The admission of getAppAccount. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The app is unlinked.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; it unlinks only itself."
+      }
+    },
+    "/app/permits": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "openModelPermit",
+        "summary": "Open a permit to work on the models of the site.",
+        "description": "specs/2026-11-13-desk-permits.md PM1.1–PM1.4: before a turn of the chat (chat_turn), a reading of the author's materials by the model (materials) or of his books (reading) the app asks for a permit. ref is an opaque value of the app, 1–128 unreserved signs; the site keeps only its SHA-256. chat_turn spends a question of the author's Moscow day (chat_turns_per_day) and a place at once (active_turns) with the counters and the fence of the site: the turns of the site and the live permits of turns of every app of the account are one number. materials spends an upload of the day (imports_per_day); reading spends nothing. A refusal is the site's own: 429 quota.chat_turns_daily or quota.imports_daily with Retry-After until 00:00 Moscow time, 429 quota.active_turns. Another kind is 400 app.permit_kind. The same ref of the same app and kind answers 200 with the same permit and spends nothing, and an ended permit stays ended; a new permit is 201. A turn lives 5 minutes after its last activity, materials and reading 24 hours. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPermitOpen"
+              },
+              "examples": {
+                "turn": {
+                  "summary": "Synthetic turn of the chat",
+                  "value": {
+                    "kind": "chat_turn",
+                    "ref": "job-5d0c7a1e"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The permit of this ref, as it is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermit"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermit"
+                },
+                "examples": {
+                  "turn": {
+                    "summary": "Synthetic permit of a turn",
+                    "value": {
+                      "id": "5d0c7a1e-0000-4000-8000-000000000001",
+                      "kind": "chat_turn",
+                      "state": "open",
+                      "outcome": null,
+                      "day": "2026-11-13",
+                      "validUntil": "2026-11-13T12:05:00Z",
+                      "returned": false
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; it works only with its own permits."
+      }
+    },
+    "/app/permits/{permitId}/units": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "chargeModelPermit",
+        "summary": "Charge a correction of a running turn under its permit.",
+        "description": "specs/2026-11-13-desk-permits.md PM1.5, PM1.6: a correction of a running turn is one more question of the author's Moscow day of the correction, under the lock of his day as on the site; it is activity of the turn and its lease starts again. ref names the correction: the same ref answers 200 with the same unit and spends nothing; a ref given back is charged again. A permit that is not a turn is 400 app.permit_kind; a permit of another app or none is 404 app.permit_not_found without details; a permit that ended is 409 app.permit_closed; over the day 429 quota.chat_turns_daily with Retry-After. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "permitId",
+            "in": "path",
+            "required": true,
+            "description": "A permit of this app from openModelPermit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPermitUnitCharge"
+              },
+              "examples": {
+                "steer": {
+                  "summary": "Synthetic correction",
+                  "value": {
+                    "ref": "steer-5d0c7a1e-1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The unit of this ref, as it is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermitUnit"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new unit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermitUnit"
+                },
+                "examples": {
+                  "charged": {
+                    "summary": "Synthetic unit",
+                    "value": {
+                      "day": "2026-11-13",
+                      "returned": false
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; it works only with its own permits."
+      }
+    },
+    "/app/permits/{permitId}/units/{ref}": {
+      "delete": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "returnModelPermitUnit",
+        "summary": "Give back a correction the turn did not take.",
+        "description": "specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. A second return changes nothing and answers the same. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "permitId",
+            "in": "path",
+            "required": true,
+            "description": "A permit of this app from openModelPermit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "description": "The ref of the correction given to chargeModelPermit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._~-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The unit is given back.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; it works only with its own permits."
+      }
+    },
+    "/app/permits/{permitId}/close": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "closeModelPermit",
+        "summary": "Close a permit when the work under it ended.",
+        "description": "specs/2026-11-13-desk-permits.md PM2.1–PM2.4: the app names how the work ended — answered, done, canceled or failed — and the site decides the return by what it saw itself under the permit. The unit of the work comes back only for failed when no answer of the model passed under the permit: when requests passed, the site saw them fail; when none passed, it is the word of the app alone, given back at most app_returns_per_day times in a Moscow day of the account (5 by default) and over it the permit closes without a return. answered, done and canceled keep the unit, and the corrections are never given back by the end of the turn. A return goes to the Moscow day the permit started on, never below zero. What the site saw is not in the request: a body with any other field is 400 request.validation. A permit that ended — closed, expired or canceled with the unlinking of its app — answers as it is, so a repeat of the close changes nothing; a permit whose lease ended answers its expiry. A permit of another app or none is 404 app.permit_not_found without details. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "permitId",
+            "in": "path",
+            "required": true,
+            "description": "A permit of this app from openModelPermit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppPermitClose"
+              },
+              "examples": {
+                "failed": {
+                  "summary": "Synthetic failure",
+                  "value": {
+                    "outcome": "failed"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The permit as it ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermit"
+                },
+                "examples": {
+                  "failed": {
+                    "summary": "Synthetic failure given back",
+                    "value": {
+                      "id": "5d0c7a1e-0000-4000-8000-000000000001",
+                      "kind": "chat_turn",
+                      "state": "closed",
+                      "outcome": "failed",
+                      "day": "2026-11-13",
+                      "validUntil": "2026-11-13T12:05:00Z",
+                      "returned": true
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; it works only with its own permits."
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "devicePass": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The pass of a linked CanonKeeper app (specs/2026-11-13-desk-link.md LK2.2, LK3): ckd_ and 32 random bytes, given once by exchangeAppLinkCode; the site keeps only its SHA-256. It opens only the operations of the app (tag App) and nothing of the site; an operation of the app refuses a cookie and any request with Origin."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "bad_request": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/bad_request",
+                  "title": "Bad request",
+                  "status": 400,
+                  "code": "bad_request",
+                  "requestId": "req_synthetic_01"
+                }
+              },
+              "invalidSearchFilters": {
+                "summary": "Unsupported search filter key",
+                "value": {
+                  "type": "https://canonkeeper.local/problems/validation_failed",
+                  "title": "Bad Request",
+                  "status": 400,
+                  "code": "validation_failed",
+                  "detail": "Search filters contain unsupported keys.",
+                  "requestId": "req_synthetic_search_filters"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "unauthorized": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/unauthorized",
+                  "title": "Authentication required",
+                  "status": 401,
+                  "code": "unauthorized",
+                  "requestId": "req_synthetic_01"
+                }
+              },
+              "authFailed": {
+                "summary": "Non-enumerating authentication failure",
+                "value": {
+                  "type": "https://canonkeeper.local/problems/auth.invalid_credentials",
+                  "title": "Unauthorized",
+                  "status": 401,
+                  "code": "auth.invalid_credentials",
+                  "requestId": "req_synthetic_invalid_credentials",
+                  "attemptsLeft": 2,
+                  "lockMinutes": 15
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "not_found": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/not_found",
+                  "title": "Resource not found",
+                  "status": 404,
+                  "code": "not_found",
+                  "requestId": "req_synthetic_01"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Revision, idempotency or state conflict",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "conflict": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/conflict",
+                  "title": "Revision, idempotency or state conflict",
+                  "status": 409,
+                  "code": "conflict",
+                  "requestId": "req_synthetic_01"
+                }
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limited",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Seconds before retrying this operation."
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "rate_limited": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/rate_limited",
+                  "title": "Rate limited",
+                  "status": 429,
+                  "code": "rate_limited",
+                  "requestId": "req_synthetic_01"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AppLinkExchange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "verifier",
+          "name",
+          "appVersion"
+        ],
+        "description": "specs/2026-11-13-desk-link.md LK2.1: the code of the link and what the app links with it.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "The code the app got on 127.0.0.1."
+          },
+          "verifier": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{43,128}$",
+            "description": "The PKCE verifier of the challenge of the link."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The name of the computer, without control signs."
+          },
+          "appVersion": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z.+-]{1,32}$",
+            "description": "The version of the app."
+          }
+        }
+      },
+      "AppLinkToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pass",
+          "account"
+        ],
+        "description": "specs/2026-11-13-desk-link.md LK2.2: the pass of the app, given once, and its account.",
+        "properties": {
+          "pass": {
+            "type": "string",
+            "pattern": "^ckd_[A-Za-z0-9_-]{43}$",
+            "description": "The pass of the app; the site keeps only its SHA-256."
+          },
+          "account": {
+            "$ref": "#/components/schemas/AppAccount"
+          }
+        }
+      },
+      "AppAccount": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "tier"
+        ],
+        "description": "specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the author."
+          },
+          "tier": {
+            "$ref": "#/components/schemas/AppTier"
+          }
+        }
+      },
+      "AppTier": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "title",
+          "until"
+        ],
+        "description": "The tier of the site in force for the account.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code of the tier."
+          },
+          "title": {
+            "type": "string",
+            "description": "The title of the tier."
+          },
+          "until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "null — without term, or «Бесплатно»."
+          }
+        }
+      },
+      "AppQuota": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "day",
+          "resetsAt",
+          "chatTurns",
+          "activeTurns",
+          "imports"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt.",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "Current Moscow calendar day."
+          },
+          "resetsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Next 00:00 Moscow time, when daily counters reset."
+          },
+          "chatTurns": {
+            "$ref": "#/components/schemas/QuotaCounter"
+          },
+          "activeTurns": {
+            "$ref": "#/components/schemas/QuotaCounter"
+          },
+          "imports": {
+            "$ref": "#/components/schemas/QuotaCounter"
+          }
+        }
+      },
+      "AppAccountState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "tier",
+          "quota"
+        ],
+        "description": "specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the author."
+          },
+          "tier": {
+            "$ref": "#/components/schemas/AppTier"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/AppQuota"
+          }
+        }
+      },
+      "AppPermitOpen": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM1.1: the work the app asks a permit for and its ref.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat_turn",
+              "materials",
+              "reading"
+            ],
+            "description": "chat_turn — a turn of the chat; materials — a reading of the author's materials by the model; reading — a reading of his books by the model."
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._~-]+$",
+            "description": "An opaque value of the app naming the work; the site keeps only its SHA-256."
+          }
+        }
+      },
+      "AppPermit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "outcome",
+          "day",
+          "validUntil",
+          "returned"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM1, PM2: a permit as the app sees it — never its ref, nor what the site saw under it.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chat_turn",
+              "materials",
+              "reading"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "expired"
+            ],
+            "description": "open — takes work until validUntil; closed — by the app or with its unlinking; expired — its lease ended."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "answered",
+              "done",
+              "canceled",
+              "failed",
+              "expired_unused",
+              null
+            ],
+            "description": "null while open."
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "The Moscow day the unit of the work counts on and comes back to."
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The end of the lease: a turn — 5 minutes after its last activity, materials and reading — 24 hours after the start."
+          },
+          "returned": {
+            "type": "boolean",
+            "description": "The unit of the work came back to its day."
+          }
+        }
+      },
+      "AppPermitUnitCharge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM1.5: the ref of a correction of a running turn.",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._~-]+$",
+            "description": "An opaque value of the app naming the correction; the site keeps only its SHA-256."
+          }
+        }
+      },
+      "AppPermitUnit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "day",
+          "returned"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit.",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "The Moscow day the correction counts on."
+          },
+          "returned": {
+            "type": "boolean",
+            "description": "Always false: a unit given back is charged again by the same ref."
+          }
+        }
+      },
+      "AppPermitClose": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "outcome"
+        ],
+        "description": "specs/2026-11-13-desk-permits.md PM2.1: how the work under a permit ended, as the app names it; what the site saw under it is the site's alone.",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "done",
+              "canceled",
+              "failed"
+            ],
+            "description": "answered — the work got its answer; done — it ended without an answer to give; canceled — the author stopped it; failed — the model, the connection or the app failed."
+          }
+        }
+      },
+      "QuotaCounter": {
+        "type": "object",
+        "description": "Use of one limit.",
+        "required": [
+          "used",
+          "limit"
+        ],
+        "properties": {
+          "used": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "Problem": {
+        "type": "object",
+        "description": "RFC 9457-style problem details with stable machine code and redacted request id.",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "requestId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri-reference",
+            "default": "about:blank"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            }
+          },
+          "attemptsLeft": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "auth.invalid_credentials of loginUser (specs/2026-11-10-ux3-auth.md AU3.3): how many more sign-ins the smaller window of this email takes — from this client address and from all of them; the same for an existing and an unknown email."
+          },
+          "lockMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "auth.invalid_credentials of loginUser: how many minutes a full window keeps the sign-in closed (429 with Retry-After)."
+          },
+          "materialId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "author_materials.name_taken of createAuthorMaterial and updateAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.3): the record of the materials that has the name."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ValidationIssue": {
+        "type": "object",
+        "required": [
+          "path",
+          "message",
+          "code"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "JSON Pointer when applicable."
+          },
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

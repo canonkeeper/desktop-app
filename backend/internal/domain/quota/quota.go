@@ -40,6 +40,10 @@ const (
 	// KeyDraftRewritesPerDay counts the rewrites of a selection and the checks of the seams of the writing agent a writer
 	// starts in a Moscow day (specs/2026-11-06-writing-agent.md, WA5.13): cheap and frequent, so apart from the chapters.
 	KeyDraftRewritesPerDay Key = "draft_rewrites_per_day"
+	// KeyAppReturnsPerDay counts the units a Moscow day of a writer gives back on the word of a linked app alone — a
+	// failure under which no request passed (specs/2026-11-13-desk-permits.md PM2.4): over it the unit stays spent. A
+	// platform key: no tier sets it.
+	KeyAppReturnsPerDay Key = "app_returns_per_day"
 )
 
 // Keys lists every limit in the order the operator command and the reports show them.
@@ -48,7 +52,7 @@ func Keys() []Key {
 		KeyChatTurnsPerDay, KeyActiveTurns, KeyImportsPerDay, KeyProjects,
 		KeyProjectBooks, KeyProjectChapters, KeyProjectCharacters,
 		KeyAccountBooks, KeyAccountChapters, KeyAccountCharacters, KeyImagesPerDay, KeyImageUploadsPerDay, KeyChapterDraftsPerDay,
-		KeyDrawingTurnsPerDay, KeyDraftTurnsPerDay, KeyDraftRewritesPerDay,
+		KeyDrawingTurnsPerDay, KeyDraftTurnsPerDay, KeyDraftRewritesPerDay, KeyAppReturnsPerDay,
 	}
 }
 
@@ -80,6 +84,7 @@ type Limits struct {
 	DrawingTurnsPerDay  int64
 	DraftTurnsPerDay    int64
 	DraftRewritesPerDay int64
+	AppReturnsPerDay    int64
 }
 
 // Defaults are the limits of every writer without an override; changing them is a release.
@@ -101,6 +106,7 @@ func Defaults() Limits {
 		DrawingTurnsPerDay:  60,
 		DraftTurnsPerDay:    60,
 		DraftRewritesPerDay: 200,
+		AppReturnsPerDay:    5,
 	}
 }
 
@@ -138,6 +144,8 @@ func (limits *Limits) field(key Key) *int64 {
 		return &limits.DraftTurnsPerDay
 	case KeyDraftRewritesPerDay:
 		return &limits.DraftRewritesPerDay
+	case KeyAppReturnsPerDay:
+		return &limits.AppReturnsPerDay
 	default:
 		return nil
 	}
@@ -218,7 +226,8 @@ func Code(key Key) string {
 // Daily reports whether the limit resets at Moscow midnight.
 func (key Key) Daily() bool {
 	return key == KeyChatTurnsPerDay || key == KeyImportsPerDay || key == KeyImagesPerDay || key == KeyImageUploadsPerDay ||
-		key == KeyChapterDraftsPerDay || key == KeyDrawingTurnsPerDay || key == KeyDraftTurnsPerDay || key == KeyDraftRewritesPerDay
+		key == KeyChapterDraftsPerDay || key == KeyDrawingTurnsPerDay || key == KeyDraftTurnsPerDay || key == KeyDraftRewritesPerDay ||
+		key == KeyAppReturnsPerDay
 }
 
 // AsExceeded finds a quota refusal in an error chain.

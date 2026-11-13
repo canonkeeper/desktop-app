@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowUpDown, BookOpen, Download, FileUp, History, Image, ListTree, Pencil, X } from 'lucide-react';
+import { ArrowUpDown, BookOpen, Download, FilePlus2, FileUp, History, Image, ListTree, Pencil, X } from 'lucide-react';
 import type { Book } from '../../../entities/manuscript/api';
 import { IconButton } from '../../../ui/controls/IconButton';
 import { DeleteMenuItem } from '../../../ui/overlays/DeleteMenuItem';
@@ -44,6 +44,8 @@ export interface BookActionMenuProps {
   onDownload: () => void;
   /** «Переставить…» (specs/2026-11-11-ux7-reorder.md RK2.1): none for a saga of one book or the example. */
   onMove?: (() => void) | undefined;
+  /** «Новая глава» (specs/2026-11-13-desk-editor.md ED2.1, board 44·21): the editor of the app; the site has none. */
+  onNewChapter?: (() => void) | undefined;
   /** Why «Переставить…» waits now — the reading of the saga, the upload (RK2.2) — or null. */
   moveReason?: string | null;
   onReadFromStart: () => void;
@@ -63,16 +65,16 @@ export interface BookActionMenuProps {
 }
 
 /**
- * «⋯» of a book (SF1.4): «Читать с начала», «Новая версия из файла…» second — the way of a new version of the book
- * (specs/2026-11-11-ux9-shelf-chat.md SC1.3) — «Как разобралась книга» (specs/2026-11-11-ux7-upload.md UP4.2), «Переименовать»,
+ * «⋯» of a book (SF1.4): «Читать с начала», «Новая глава» of the app (specs/2026-11-13-desk-editor.md ED2.1), «Новая
+ * версия из файла…» next — the way of a new version of the book (specs/2026-11-11-ux9-shelf-chat.md SC1.3) — «Как разобралась книга» (specs/2026-11-11-ux7-upload.md UP4.2), «Переименовать»,
  * «Переставить…» (specs/2026-11-11-ux7-reorder.md RK2.1), «Обложка…», «Скачать книгу…» with the window of its file (SC1.5)
  * and «Удалить книгу…» last. An item that waits stays in its place,
  * dimmed, and says why under its word. The address does not know the menu; on a phone it is a sheet from the bottom (the
  * styles).
  */
 export function BookActionMenu({
-  anchor, book, canEdit, deleteReason, moveReason = null, onChangeCover, onClose, onDelete, onDownload, onMove, onParseSummary, onReadFromStart,
-  onRename, onUpdateFromFile, state, updateReason, updated,
+  anchor, book, canEdit, deleteReason, moveReason = null, onChangeCover, onClose, onDelete, onDownload, onMove, onNewChapter, onParseSummary,
+  onReadFromStart, onRename, onUpdateFromFile, state, updateReason, updated,
 }: BookActionMenuProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const deleteReasonId = useId();
@@ -116,6 +118,7 @@ export function BookActionMenu({
         ) : null}
         <MenuItem icon={<BookOpen aria-hidden="true" size={17} />} label="Читать с начала" onClick={onReadFromStart} />
         {canEdit ? <>
+          {onNewChapter ? <MenuItem icon={<FilePlus2 aria-hidden="true" size={17} />} label="Новая глава" onClick={onNewChapter} /> : null}
           {onUpdateFromFile ? (
             <MenuItem icon={<FileUp aria-hidden="true" size={17} />} label="Новая версия из файла…" onClick={onUpdateFromFile} reason={updateReason} />
           ) : null}

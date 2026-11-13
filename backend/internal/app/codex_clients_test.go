@@ -69,3 +69,23 @@ func TestCodexClientsSelectExactFlowAndCloseZeroValue(t *testing.T) {
 		t.Fatalf("zero close: %v", err)
 	}
 }
+
+// specs/2026-11-13-desk-home.md HM1.1: the build names the way of the home — the client of every flow copies the profile
+// when the configuration says so — and the configuration of the site, read from the environment, links it.
+func TestCodexClientConfigCopiesTheHomeOnlyWhereTheBuildSaysSo(t *testing.T) {
+	cfg := config.Config{
+		CodexPath: "/opt/codex", CodexCWD: "/srv/work", CodexRepositoryHome: "/srv/codex-homes", CodexHome: "/var/lib/codex-home",
+		CodexSQLiteHome: "/var/lib/codex-sqlite", CodexPrivateHome: "/var/lib/codex-private", CodexTempDir: "/var/lib/codex-tmp",
+	}
+	for _, copies := range []bool{false, true} {
+		cfg.CodexHomeCopies = copies
+		for _, flow := range agentdomain.Flows() {
+			if got, err := codexClientConfig(cfg, flow); err != nil || got.HomeCopies != copies {
+				t.Fatalf("codexClientConfig(%q) with copies %v = %v, %v", flow, copies, got.HomeCopies, err)
+			}
+		}
+	}
+	if config.Load().CodexHomeCopies {
+		t.Fatal("the configuration of the site copies the home")
+	}
+}

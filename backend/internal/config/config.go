@@ -27,6 +27,10 @@ type Config struct {
 	CodexCWD             string
 	CodexRepositoryHome  string
 	CodexHome            string
+	// CodexHomeCopies copies the profile into the homes of Codex instead of linking it (specs/2026-11-13-desk-home.md
+	// HM1.1): only the app sets it — its bundle lies at another place from run to run, and a link needs a privilege on
+	// Windows; the site links.
+	CodexHomeCopies      bool
 	CodexSQLiteHome      string
 	CodexPrivateHome     string
 	CodexTempDir         string

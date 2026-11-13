@@ -457,7 +457,6 @@ describe('useCanonicalAgentTimeline', () => {
     act(() => {
       FakeWebSocket.instances[0]?.message({
         context: {
-          compacted: false,
           contextWindow: 128_000,
           providerTurnId: 'turn-root',
           role: 'main',
@@ -467,7 +466,6 @@ describe('useCanonicalAgentTimeline', () => {
       });
       FakeWebSocket.instances[0]?.message({
         context: {
-          compacted: false,
           contextWindow: 64_000,
           providerTurnId: 'turn-reviewer',
           role: 'source_evidence',

@@ -145,7 +145,6 @@ type ContextUpdate struct {
 	TurnID        string
 	UsedTokens    *int64
 	ContextWindow *int64
-	Compacted     bool
 }
 
 type Update struct {

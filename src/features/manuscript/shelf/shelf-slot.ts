@@ -61,6 +61,11 @@ export interface ShelfSlot {
   materialsFromFiles?: boolean;
   /** The drawings of the saga for «Выбрать из рисунков саги» of the window of a cover (SC1.6, L-11); none without drawings. */
   CoverDrawings?: ComponentType<CoverDrawingsProps>;
+  /**
+   * «Новая глава» of the menu of a book: the editor of the desktop app without the helper (specs/2026-11-13-desk-editor.md
+   * ED2.1); without it the menu has no such item — the site writes a chapter in «Письмо».
+   */
+  newChapterAt?: (book: { id: string; projectId: string }) => { path: string; query: Record<string, string> };
 }
 
 /** The shelf without the demo saga of the site: nothing is offered. */

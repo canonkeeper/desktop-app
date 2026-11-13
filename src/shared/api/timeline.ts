@@ -77,7 +77,6 @@ const deltaSchema = z.object({
 }).strict();
 
 const contextSchema = z.object({
-  compacted: z.boolean(),
   contextWindow: z.number().int().positive().optional(),
   providerTurnId: z.string().min(1),
   role: z.enum(['main', 'completeness', 'source_evidence', 'saga_history']),

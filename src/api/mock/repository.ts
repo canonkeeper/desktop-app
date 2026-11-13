@@ -15,6 +15,7 @@ import { createAuthorMaterialOperations } from './repository/author-materials';
 import { createAuthorMemoryOperations } from './repository/author-memory';
 import { createChapterDraftOperations } from './repository/chapter-drafts';
 import { createLettersOperations } from './repository/letters';
+import { createAppLinkOperations } from './repository/app-links';
 import { createVoiceOperations } from './repository/voice';
 import { createSagaOperations } from './repository/saga';
 import { createQuotaOperations } from './repository/quota';
@@ -55,6 +56,7 @@ export function createMockApiClient() {
     ...createChapterDraftOperations(context, chat, jobs),
     ...createVoiceOperations(context),
     ...createLettersOperations(context),
+    ...createAppLinkOperations(context),
     ...createQuotaOperations(context),
     ...createImageOperations(context),
     ...createImageDrawingOperations(context),

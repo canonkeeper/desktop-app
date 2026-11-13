@@ -261,7 +261,7 @@ func TestLiveStreamWritesContextUsageWithoutSnapshotRead(t *testing.T) {
 	if live.Type != "context" || live.Cursor != "" || live.Context == nil ||
 		live.Context.Role != "main" || live.Context.ProviderTurnID != "turn-1" ||
 		live.Context.UsedTokens == nil || *live.Context.UsedTokens != usedTokens ||
-		live.Context.ContextWindow == nil || *live.Context.ContextWindow != contextWindow || live.Context.Compacted {
+		live.Context.ContextWindow == nil || *live.Context.ContextWindow != contextWindow {
 		t.Fatalf("context envelope = %#v", live)
 	}
 	if timeline.calls != 1 {

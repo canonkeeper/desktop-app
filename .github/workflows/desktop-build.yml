@@ -1,20 +1,25 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # The installers of the CanonKeeper desktop app (specs/2026-11-12-desk-shell.md SH4.3), for the public repository
 # canonkeeper/desktop-app: the monorepo keeps it in desktop/ci and never runs it; the export puts it into
-# .github/workflows. Windows: NSIS for the current user; Linux (built on ubuntu-24.04): .deb, .rpm and AppImage. Every
-# third-party action is pinned by its commit; the workflow needs no secret (the token of the run reads the releases).
+# .github/workflows (open-source/manifest.json export.place). Windows: NSIS for the current user; Linux (built on
+# ubuntu-24.04): .deb, .rpm and AppImage. Every third-party action is pinned by its commit; the workflow needs no secret
+# (the token of the run reads the releases).
+#
+# It runs on a push to main, to a branch of an export (export/<date>) and on a tag v*, and by hand. Not on a pull
+# request: the merge commit GitHub makes for one carries the identity of the account that opened it, and the public
+# repository takes no such commit (specs/2026-11-13-desk-export.md EX2.2).
 #
 #   postgres — the PostgreSQL 18 set built from the source pinned in desktop/release.json (desktop/postgres), cached;
-#   app      — the core of the shell (cargo test, clippy), the set (scripts/desktop-app.mjs: the backend with the web,
+#   app      — the core of the shell (cargo test, clippy), on Windows the copy of the Codex homes on a real Windows
+#              (backend/internal/adapters/codex), the set (scripts/desktop-app.mjs: the backend with the web,
 #              PostgreSQL, codex-app-server by its pinned sha256), tauri build, a smoke run of the installed app — start,
 #              the window gets the page of the backend, stop with no process left — and the installers as artifacts.
 name: Desktop installers
 
 on:
   push:
-    branches: [main]
+    branches: [main, "export/**"]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -121,6 +126,10 @@ jobs:
           cargo fmt --check
           cargo test --locked -p canonkeeper-desktop-core
           cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: The copy of the Codex homes on a real Windows — a file of a home a scanner holds (specs/2026-11-13-desk-home.md)
+        if: runner.os == 'Windows'
+        working-directory: backend
+        run: go test ./internal/adapters/codex -run 'Copy|Hold' -count=1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: pg-${{ matrix.os }}

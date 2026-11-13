@@ -113,6 +113,10 @@ type Extension struct {
 	// Plans is the writer's plan the quota fence puts between his own limits and the platform's
 	// (specs/2026-11-08-subscription-tiers.md TR2.3); without it — the desktop — the fence has no plan.
 	Plans quotastore.Plans
+	// Elsewhere is the writer's turns that run outside this database and hold places of active_turns with his turns here
+	// (specs/2026-11-13-desk-permits.md PM1.4): the site answers with the live permits of turns of his linked apps; without
+	// it — the desktop — active_turns counts his Jobs alone.
+	Elsewhere quotastore.Elsewhere
 	// Listener is the build's own listener (the desktop's 127.0.0.1:0, DA3.1); without one the core listens on
 	// cfg.HTTPAddr.
 	Listener net.Listener
@@ -381,7 +385,7 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 
 	canonStore := canonstore.New(db)
 	jobsStore := jobstore.New(db)
-	fence := quotastore.Fence{Plans: extension.Plans}
+	fence := quotastore.Fence{Plans: extension.Plans, Elsewhere: extension.Elsewhere}
 	libraryStore := librarystore.New(db, librarystore.WithQuota(fence))
 	product, err := composeProduct(Core{
 		Config: cfg, Logger: logger, DB: db, Files: fileRoot, Codex: clients, Model: model, Quota: fence, Jobs: jobsStore,

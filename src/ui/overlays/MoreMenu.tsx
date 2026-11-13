@@ -2,7 +2,7 @@ import { Check, Ellipsis, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { ControlSize } from '../controls/Button';
 import { IconButton } from '../controls/IconButton';
-import { DeleteMenuItem } from './DeleteMenuItem';
+import { DeleteMenuItem, type DeletionLabel } from './DeleteMenuItem';
 import { onMenuButtonKey, Popover } from './Popover';
 import styles from './MoreMenu.module.css';
 
@@ -26,7 +26,7 @@ export function MoreMenu({ buttonClassName, disabled = false, items = [], label,
   items?: readonly MoreMenuItem[];
   /** The name of the button and of the menu: «Действия записи». */
   label: string;
-  remove?: { label: `Удалить ${string}…`; run: () => void };
+  remove?: { label: DeletionLabel; run: () => void; icon?: LucideIcon };
   size?: ControlSize;
 }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +47,7 @@ export function MoreMenu({ buttonClassName, disabled = false, items = [], label,
             {checked ? <Check aria-hidden="true" className={styles.check} size={16} /> : null}
           </button>
         ))}
-        {remove ? <DeleteMenuItem label={remove.label} onClick={run(remove.run)} /> : null}
+        {remove ? <DeleteMenuItem {...(remove.icon ? { icon: remove.icon } : {})} label={remove.label} onClick={run(remove.run)} /> : null}
       </Popover>
     </div>
   );

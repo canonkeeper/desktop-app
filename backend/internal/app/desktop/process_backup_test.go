@@ -24,19 +24,24 @@ import (
 )
 
 // The programs the process tests run are cmd/desktop of this tree, built once per test binary. The earlier and the later
-// versions are the same tree built with go build -overlay: an earlier program does not know the last migrations of the
-// tree, a broken later one knows one more that fails. No file of the tree changes.
+// versions are the same tree built with go build -overlay: the program of the tree is the earliest, a later program knows
+// migrations after the last of the tree that change nothing, and a broken later one knows one more that fails. The code
+// of the tree runs only on the schema of its migrations or a later one: a program that did not know the last migrations
+// of the tree would run the code of the tree on a schema without what they add (specs/2026-11-13-desk-permits.md: the
+// limit 0144 adds is read by every check of the quota fence). No file of the tree changes.
 type programVariant struct {
 	name   string
-	behind int  // the last migrations of the tree the program does not know
+	ahead  int  // the migrations after the last of the tree the program knows; they change nothing
 	broken bool // the program knows one migration more, which fails
 	edited bool // the last migration of the tree is changed after it was applied
+	// version is the version of the app the program is built with, as scripts/desktop-backend.mjs builds it.
+	version string
 }
 
 var programOfTheTree = programVariant{name: "tree"}
 
-func programBehind(count int) programVariant {
-	return programVariant{name: "behind-" + strconv.Itoa(count), behind: count}
+func programAhead(count int) programVariant {
+	return programVariant{name: "ahead-" + strconv.Itoa(count), ahead: count}
 }
 
 var programWithABrokenMigration = programVariant{name: "broken", broken: true}
@@ -102,11 +107,20 @@ func program(t *testing.T, variant programVariant) string {
 		binary += ".exe"
 	}
 	args := []string{"build", "-o", binary}
-	if variant.behind > 0 || variant.broken || variant.edited {
+	if variant.version != "" {
+		args = append(args, "-ldflags=-X main.version="+variant.version)
+	}
+	if variant.ahead > 0 || variant.broken || variant.edited {
 		replace := map[string]string{}
 		files := treeMigrations(t)
-		for _, file := range files[len(files)-variant.behind:] {
-			replace[file] = ""
+		if variant.ahead > 0 {
+			later := filepath.Join(programs.directory, "later.sql")
+			if err := os.WriteFile(later, []byte("SELECT 1;\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for step := int64(1); step <= int64(variant.ahead); step++ {
+				replace[filepath.Join(filepath.Dir(files[0]), fmt.Sprintf("%04d_desktop_test_later_%d.sql", lastVersion(t)+step, step))] = later
+			}
 		}
 		if variant.edited {
 			original, err := os.ReadFile(files[len(files)-1])
@@ -285,11 +299,11 @@ func TestAnUpdateCopiesTheDataBeforeItsMigrations(t *testing.T) {
 	_, resources := desktopBinary(t)
 	last := lastVersion(t)
 	data := filepath.Join(t.TempDir(), "data")
-	// One bundle for every start: the home of Codex links to the profile of the bundle it started with.
+	// One bundle for every start: its pg_dump records how the copy ran it.
 	record := t.TempDir()
 	bundle := bundleWithDump(t, resources, recordingDump(resources, record))
 
-	first := startBackend(t, program(t, programBehind(3)), bundle, data, nil)
+	first := startBackend(t, program(t, programOfTheTree), bundle, data, nil)
 	makeSaga(t, first)
 	first.stop()
 	if complete, other := copies(t, data); len(complete) != 0 || len(other) != 0 {
@@ -301,9 +315,9 @@ func TestAnUpdateCopiesTheDataBeforeItsMigrations(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(record, "cmdline")); err == nil {
 		t.Fatal("the first start ran pg_dump")
 	}
-	second := startBackend(t, program(t, programBehind(2)), bundle, data, nil)
+	second := startBackend(t, program(t, programAhead(1)), bundle, data, nil)
 	complete, other := copies(t, data)
-	if len(complete) != 1 || !strings.HasPrefix(complete[0], fmt.Sprintf("pre-%d-", last-3)) || !slices.Equal(other, []string{"notes.txt"}) {
+	if len(complete) != 1 || !strings.HasPrefix(complete[0], fmt.Sprintf("pre-%d-", last)) || !slices.Equal(other, []string{"notes.txt"}) {
 		t.Fatalf("backups after the first update = %v %v", complete, other)
 	}
 	copyPath := filepath.Join(data, "backups", complete[0])
@@ -313,6 +327,16 @@ func TestAnUpdateCopiesTheDataBeforeItsMigrations(t *testing.T) {
 	for _, part := range []string{backupDump, filepath.Join("codex", "home"), filepath.Join("codex", "sqlite")} {
 		if _, err := os.Stat(filepath.Join(copyPath, part)); err != nil {
 			t.Fatalf("the copy has no %s: %v", part, err)
+		}
+	}
+	// specs/2026-11-13-desk-home.md HM1.5: the profile the start copied into the home is the bundle's, and the copy
+	// leaves it out.
+	for _, name := range []string{"config.toml", "model-catalog.json", "AGENTS.md", "skills"} {
+		if _, err := os.Stat(filepath.Join(data, "codex", "home", "research-chat", name)); err != nil {
+			t.Fatalf("the home has no %s of the profile: %v", name, err)
+		}
+		if _, err := os.Lstat(filepath.Join(copyPath, "codex", "home", "research-chat", name)); !os.IsNotExist(err) {
+			t.Fatalf("the copy holds %s of the profile: %v", name, err)
 		}
 	}
 	secrets, err := loadClusterSecrets(DataDir{Root: data}.Secret())
@@ -337,16 +361,16 @@ func TestAnUpdateCopiesTheDataBeforeItsMigrations(t *testing.T) {
 	}
 
 	admin := administrator(t, data, "postgres")
-	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last-2 {
-		t.Fatalf("the schema after the update = %d; want %d", schema, last-2)
+	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last+1 {
+		t.Fatalf("the schema after the update = %d; want %d", schema, last+1)
 	}
 	if _, err := admin.Exec(context.Background(), "CREATE DATABASE restored"); err != nil {
 		t.Fatal(err)
 	}
 	postgresProgram(t, resources, data, "pg_restore", "--exit-on-error", "-d", "restored", filepath.Join(copyPath, backupDump))
 	restored := administrator(t, data, "restored")
-	if schema, saga := schemaOf(t, restored), sagas(t, restored); schema != last-3 || saga != 1 {
-		t.Fatalf("the restored copy = schema %d with %d sagas; want %d with 1", schema, saga, last-3)
+	if schema, saga := schemaOf(t, restored), sagas(t, restored); schema != last || saga != 1 {
+		t.Fatalf("the restored copy = schema %d with %d sagas; want %d with 1", schema, saga, last)
 	}
 	_ = restored.Close(context.Background())
 	if _, err := admin.Exec(context.Background(), "DROP DATABASE restored"); err != nil {
@@ -355,13 +379,13 @@ func TestAnUpdateCopiesTheDataBeforeItsMigrations(t *testing.T) {
 	_ = admin.Close(context.Background())
 	second.stop()
 
-	startBackend(t, program(t, programBehind(1)), bundle, data, nil).stop()
-	third := startBackend(t, program(t, programOfTheTree), bundle, data, nil)
+	startBackend(t, program(t, programAhead(2)), bundle, data, nil).stop()
+	third := startBackend(t, program(t, programAhead(3)), bundle, data, nil)
 	complete, _ = copies(t, data)
-	if len(complete) != 2 || !strings.HasPrefix(complete[0], fmt.Sprintf("pre-%d-", last-2)) || !strings.HasPrefix(complete[1], fmt.Sprintf("pre-%d-", last-1)) {
+	if len(complete) != 2 || !strings.HasPrefix(complete[0], fmt.Sprintf("pre-%d-", last+1)) || !strings.HasPrefix(complete[1], fmt.Sprintf("pre-%d-", last+2)) {
 		t.Fatalf("the copies after three updates = %v", complete)
 	}
-	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last {
+	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last+3 {
 		t.Fatalf("the schema after three updates = %d", schema)
 	}
 	third.stop()
@@ -374,19 +398,19 @@ func TestAFailedCopyOrMigrationLeavesTheDataAsTheyWere(t *testing.T) {
 	_, resources := desktopBinary(t)
 	last := lastVersion(t)
 	data := filepath.Join(t.TempDir(), "data")
-	earlier := program(t, programBehind(1))
+	earlier := program(t, programOfTheTree)
 
 	first := startBackend(t, earlier, resources, data, nil)
 	makeSaga(t, first)
 	first.stop()
 
-	withoutDump := launchBackend(t, program(t, programOfTheTree), bundleWithDump(t, resources, ""), data, nil)
+	withoutDump := launchBackend(t, program(t, programAhead(1)), bundleWithDump(t, resources, ""), data, nil)
 	if withoutDump.ready.Type != messageFatal || withoutDump.ready.Reason != "backup" || withoutDump.ready.Backup != "" {
 		t.Fatalf("a start without pg_dump answered %+v", withoutDump.ready)
 	}
 	withoutDump.exited(60 * time.Second)
 	again := startBackend(t, earlier, resources, data, nil)
-	if schema, saga := schemaOf(t, administrator(t, data, databaseName)), sagas(t, administrator(t, data, databaseName)); schema != last-1 || saga != 1 {
+	if schema, saga := schemaOf(t, administrator(t, data, databaseName)), sagas(t, administrator(t, data, databaseName)); schema != last || saga != 1 {
 		t.Fatalf("after a failed copy = schema %d with %d sagas", schema, saga)
 	}
 	if complete, other := copies(t, data); len(complete) != 0 || len(other) != 0 {
@@ -394,7 +418,6 @@ func TestAFailedCopyOrMigrationLeavesTheDataAsTheyWere(t *testing.T) {
 	}
 	again.stop()
 
-	startBackend(t, program(t, programOfTheTree), resources, data, nil).stop()
 	broken := launchBackend(t, program(t, programWithABrokenMigration), resources, data, nil)
 	if broken.ready.Type != messageFatal || broken.ready.Reason != "migrate" || !strings.HasPrefix(broken.ready.Backup, fmt.Sprintf("pre-%d-", last)) {
 		t.Fatalf("a broken migration answered %+v", broken.ready)
@@ -460,7 +483,7 @@ func stoppedFingerprint(t *testing.T, resources, data string) []byte {
 func TestAProgramOlderThanItsDataRefusesToStart(t *testing.T) {
 	_, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
-	current := startBackend(t, program(t, programOfTheTree), resources, data, nil)
+	current := startBackend(t, program(t, programAhead(1)), resources, data, nil)
 	makeSaga(t, current)
 	current.stop()
 
@@ -468,7 +491,7 @@ func TestAProgramOlderThanItsDataRefusesToStart(t *testing.T) {
 	if !bytes.Contains(before, []byte("Северный предел")) {
 		t.Fatal("the fingerprint does not hold the saga")
 	}
-	older := launchBackend(t, program(t, programBehind(1)), resources, data, nil)
+	older := launchBackend(t, program(t, programOfTheTree), resources, data, nil)
 	if older.ready.Type != messageFatal || older.ready.Reason != "newer_schema" {
 		t.Fatalf("an older program answered %+v", older.ready)
 	}

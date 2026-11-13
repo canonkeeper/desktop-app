@@ -31,6 +31,17 @@ describe('Markdown source links', () => {
     expect(container.textContent).not.toMatch(/b\d+c\d+|¶/u);
   });
 
+  // specs/2026-11-13-desk-tidy.md TD2.3: a host that opens no source (the feeds of the helpers) shows a citation as its
+  // place in words; only a broken link is «Место недоступно».
+  it('names a place as words where the host opens no source, and calls only a broken link unavailable', () => {
+    const { container } = render(<MarkdownContent places={{ b2c12: 'Книга 2, гл. 12 „Белый порт“' }}>
+      {'О героях — [«Белый порт», ¶1–3](source:b2c12/1-3), а прежняя ссылка [Гл. 12](source:s7/p1-p2).'}
+    </MarkdownContent>);
+    expect(container.textContent).toBe('О героях — Книга 2, гл. 12 „Белый порт“, абзацы 1–3, а прежняя ссылка Гл. 12.');
+    expect(screen.getByText('Книга 2, гл. 12 „Белый порт“, абзацы 1–3').getAttribute('title')).toBeNull();
+    expect(screen.getByText('Гл. 12').getAttribute('title')).toBe('Место недоступно');
+  });
+
   it('keeps a citation together with the punctuation that touches it', () => {
     const text = 'Мара гл. 1 абзац 23, а Сава (гл. 2 абзац 4). Конец гл. 3 абзац 1 и дальше.';
     const { container } = render(<MarkdownContent renderSourceLink={(_source, label) => <SourceLink>{label}</SourceLink>}>

@@ -30,10 +30,19 @@ type Plans interface {
 	PlanSettingsInTx(ctx context.Context, db Querier, userID string) (quota.Settings, error)
 }
 
+// Elsewhere is the writer's turns that run outside this database and hold places of active_turns with his turns here
+// (specs/2026-11-13-desk-permits.md PM1.4): on the site, the live permits of turns of his linked apps. The fence declares
+// it and a build implements it; it reads in the fence's own transaction at the fence's moment.
+type Elsewhere interface {
+	ActiveTurnsInTx(ctx context.Context, db Querier, userID string, at time.Time) (int64, error)
+}
+
 // Fence is the quota fence of a build (TR2.4): every limit is read and checked through it. Without Plans — the
-// desktop, a test — the limits are the writer's own, the platform's and the code's, as before plans.
+// desktop, a test — the limits are the writer's own, the platform's and the code's, as before plans; without Elsewhere
+// his active turns are his Jobs alone.
 type Fence struct {
-	Plans Plans
+	Plans     Plans
+	Elsewhere Elsewhere
 }
 
 // EffectiveLimitsInTx returns the writer's limits in force (R1.1; admin-panel R7.2; TR2.2): his own value, else his
@@ -104,6 +113,7 @@ var dailyColumns = map[quota.Key]string{
 	quota.KeyDrawingTurnsPerDay:  "drawing_turns",
 	quota.KeyDraftTurnsPerDay:    "draft_turns",
 	quota.KeyDraftRewritesPerDay: "draft_rewrites",
+	quota.KeyAppReturnsPerDay:    "app_returns",
 }
 
 // ErrNotDaily means a key that no day counts: a caller's mistake, never a refusal of the writer.
@@ -120,7 +130,7 @@ func (fence Fence) ReserveTurnInTx(ctx context.Context, tx pgx.Tx, actorUserID s
 	if err != nil {
 		return err
 	}
-	active, err := activeTurns(ctx, tx, actorUserID)
+	active, err := fence.activeTurnsInTx(ctx, tx, actorUserID, at)
 	if err != nil {
 		return err
 	}
@@ -191,7 +201,9 @@ func (fence Fence) ReleaseDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID 
 	return err
 }
 
-func activeTurns(ctx context.Context, db Querier, userID string) (int64, error) {
+// activeTurnsInTx is the one count of active_turns (specs/2026-11-13-desk-permits.md PM1.4, PM3.2): the writer's turns of
+// the chat and of the helpers that are not over, and his turns elsewhere.
+func (fence Fence) activeTurnsInTx(ctx context.Context, db Querier, userID string, at time.Time) (int64, error) {
 	var active int64
 	err := db.QueryRow(ctx, `
 		SELECT count(*)
@@ -199,7 +211,11 @@ func activeTurns(ctx context.Context, db Querier, userID string) (int64, error) 
 		WHERE creator_user_id = $1::uuid AND kind = 'research_chat_turn'
 		  AND status IN ('queued', 'running', 'canceling')
 	`, userID).Scan(&active)
-	return active, err
+	if err != nil || fence.Elsewhere == nil {
+		return active, err
+	}
+	elsewhere, err := fence.Elsewhere.ActiveTurnsInTx(ctx, db, userID, at)
+	return active + elsewhere, err
 }
 
 // moscowDate is the Moscow day as a date literal: a timestamp would be cast to a date in the

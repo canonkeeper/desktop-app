@@ -24,11 +24,13 @@ import (
 
 // Options are what the process gives a run: the control channel — stdin and the real stdout of the backend — and, when
 // set, Logs, which hears the log file of the run: cmd/desktop sends there whatever else writes to stdout and the
-// standard log, since stdout belongs to the channel.
+// standard log, since stdout belongs to the channel. Version is the version of the app the build names
+// (specs/2026-11-13-desk-settings.md ST4.2), empty for a build that does not.
 type Options struct {
 	In      io.Reader
 	Control io.Writer
 	Logs    func(*os.File)
+	Version string
 }
 
 // The reasons of fatal name the step that failed, never its content (DA3, «Types»).
@@ -132,6 +134,7 @@ func Run(ctx context.Context, options Options) error {
 		return failLogged(channel, logger, reasonDataDir, err)
 	}
 	cluster := newCluster(resources.PostgresBin(), data, secrets)
+	cluster.version = options.Version
 	if err := cluster.Start(ctx); err != nil {
 		return failLogged(channel, logger, reasonPostgres, err)
 	}
@@ -178,7 +181,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	codes := domain.NewOpenCodes(time.Now)
-	desktop := &build{host: listener.Addr().String(), authorID: authorID, codes: codes, files: webFiles()}
+	desktop := &build{host: listener.Addr().String(), authorID: authorID, codes: codes, files: webFiles(), state: appState(data, options.Version)}
 	desktop.ready = func() {
 		if err := channel.send(ControlMessage{Type: messageReady, Port: port, PortChanged: portChanged, Code: codes.Issue()}); err != nil {
 			logger.Print(`{"event":"desktop_ready_not_sent"}`)

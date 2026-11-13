@@ -1,4 +1,4 @@
-import { ChevronDown, Menu, Search, StickyNote, type LucideIcon } from 'lucide-react';
+import { ChevronDown, Menu, Search, Settings, StickyNote, type LucideIcon } from 'lucide-react';
 import type { ComponentPropsWithRef } from 'react';
 import { Button } from '../controls/Button';
 import { IconButton } from '../controls/IconButton';
@@ -16,6 +16,16 @@ export interface ShellSaga {
   menuOpen: boolean;
   /** Opens the menu under the name pressed, or as a sheet without one; closes it when it is open. */
   onOpenMenu: (trigger?: HTMLElement) => void;
+}
+
+/**
+ * «Настройки» in the place of the account menu (specs/2026-11-13-desk-settings.md ST1.1): an edition without an account
+ * of the site — the desktop app — has its settings there.
+ */
+export interface ShellSettings {
+  /** The page «Настройки» is open. */
+  active: boolean;
+  onOpen: () => void;
 }
 
 /** The three widths of the shell (S1.3): from 1100 px, 768–1099 px, below 768 px. */
@@ -38,6 +48,8 @@ export interface ShellTopBarProps {
   /** «Поговорить» of the edition (specs/2026-11-03-voice-assistant.md V1.1). */
   talk?: boolean;
   account?: ShellAccountProps;
+  /** «Настройки» of an edition without an account, in its place. */
+  settings?: ShellSettings;
   /** The drawer of a phone and its mark: a reply of support or a ready answer of the chat waits inside. */
   onOpenMenu?: () => void;
   menuMark?: boolean;
@@ -50,7 +62,7 @@ export interface ShellTopBarProps {
  * below 768 px — «Меню» · the saga · «Поиск» · «Поговорить» · «Заметка», the rest is in the drawer (Decision log of the
  * wave). The name of the product is not here: it is in the tab.
  */
-export function ShellTopBar({ account, menuMark = false, onNote, onOpenMenu, onOpenSearch, place, saga, searchRef, talk = false, width }: ShellTopBarProps) {
+export function ShellTopBar({ account, menuMark = false, onNote, onOpenMenu, onOpenSearch, place, saga, searchRef, settings, talk = false, width }: ShellTopBarProps) {
   // Below 768 px the account is in the drawer: «Меню» says what its button said — the admin working as another user, a
   // reply of support (Decision log of the wave).
   const accountLabel = useAccountButtonLabel();
@@ -70,6 +82,7 @@ export function ShellTopBar({ account, menuMark = false, onNote, onOpenMenu, onO
         {onOpenSearch ? <CaptionButton Icon={Search} label="Поиск" name="Поиск по книгам" onClick={onOpenSearch} ref={searchRef} /> : null}
         {talk ? <TopBarTalk /> : null}
         {onNote ? <CaptionButton Icon={StickyNote} label="Заметка" onClick={onNote} /> : null}
+        {settings ? <SettingsButton caption settings={settings} /> : null}
         {/* A page without the drawer — the admin panel — keeps the account in its top bar. */}
         {!onOpenMenu && account ? <ShellAccount {...account} /> : null}
       </header>
@@ -105,9 +118,24 @@ export function ShellTopBar({ account, menuMark = false, onNote, onOpenMenu, onO
         {onNote ? (compact
           ? <CaptionButton Icon={StickyNote} label="Заметка" onClick={onNote} />
           : <Button className={styles.noteButton} onClick={onNote} size="touch" variant="ghost"><StickyNote aria-hidden="true" size={16} />Заметка</Button>) : null}
-        {account ? <ShellAccount {...account} /> : null}
+        {/* «Настройки» are the icon and the word in a row on 1440 and on 900 alike (board 44·11). */}
+        {account ? <ShellAccount {...account} /> : settings ? <SettingsButton caption={false} settings={settings} /> : null}
       </div>
     </header>
+  );
+}
+
+/** «Настройки» (`Pattern/Shell/Top Bar` → `Settings`, board 44): marked on its own page, where it leads nowhere else. */
+function SettingsButton({ caption, settings }: { caption: boolean; settings: ShellSettings }) {
+  const props = {
+    'aria-current': settings.active ? 'page' as const : undefined,
+    onClick: settings.active ? undefined : settings.onOpen,
+  };
+  if (caption) return <CaptionButton {...props} Icon={Settings} label="Настройки" />;
+  return (
+    <Button {...props} className={`${styles.noteButton} ${styles.settingsButton}`} size="touch" variant="ghost">
+      <Settings aria-hidden="true" size={16} />Настройки
+    </Button>
   );
 }
 

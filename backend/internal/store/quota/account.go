@@ -25,8 +25,9 @@ func New(db *storedb.DB, fence Fence) *Store {
 	return &Store{db: db, fence: fence}
 }
 
-// AccountQuota is getAccountQuota (R5.1): limits, the day's use, active questions and the text of
-// the projects the writer owns. Only the writer's own rows are read.
+// AccountQuota is getAccountQuota (R5.1): limits, the day's use, active questions — with his turns elsewhere, as the
+// fence counts them (specs/2026-11-13-desk-permits.md PM3.2) — and the text of the projects the writer owns. Only the
+// writer's own rows are read.
 func (store *Store) AccountQuota(ctx context.Context, userID string, at time.Time) (quota.Account, error) {
 	if _, err := storedb.ParseUUID(userID); err != nil {
 		return quota.Account{}, quota.ErrNotFound
@@ -43,7 +44,7 @@ func (store *Store) AccountQuota(ctx context.Context, userID string, at time.Tim
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return quota.Account{}, err
 	}
-	if account.ActiveTurns, err = activeTurns(ctx, store.db.Pool, userID); err != nil {
+	if account.ActiveTurns, err = store.fence.activeTurnsInTx(ctx, store.db.Pool, userID, at); err != nil {
 		return quota.Account{}, err
 	}
 	if account.OwnedProjects, err = ownerSources(ctx, store.db.Pool, userID); err != nil {

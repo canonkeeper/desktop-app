@@ -45,6 +45,13 @@ var productRuntimeTableContract = roleTableContract{
 				"subscription_periods", "subscription_usage",
 				// The new chapters charged against a writer's tier (0120, TR7.2, TR10.3).
 				"subscription_chapter_charges",
+				// The codes of the link of the app and the linked apps of an account (0143, specs/2026-11-13-desk-link.md):
+				// they go with the account.
+				"app_link_codes", "app_devices",
+				// The permits of a linked app to work on the models of the site and the corrections under them (0144,
+				// specs/2026-11-13-desk-permits.md): they go with the account. 0144 also adds the returns on the word of an app
+				// to the writer's limits, the platform's and the writer's day: columns of the same rows, the same privileges.
+				"model_permits", "model_permit_units",
 				// 0121 adds the trial calls of the voice co-author to the counters of the tiers of an account and the seconds
 				// of its calls to the writer's day (writer_usage_days): columns of the same rows, the same privileges.
 			},

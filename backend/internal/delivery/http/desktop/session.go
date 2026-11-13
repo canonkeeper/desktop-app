@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package desktop is the HTTP of the desktop build (specs/2026-11-07-desktop-app.md DA3): the operation that opens the
-// session of the window and «кто автор» of the window (specs/2026-11-12-desk-window.md WN1.1).
+// session of the window, «кто автор» of the window (specs/2026-11-12-desk-window.md WN1.1) and the state of the app its
+// «Настройки» show (specs/2026-11-13-desk-settings.md ST2.1).
 package desktop
 
 import (
@@ -30,17 +31,19 @@ type Sessions interface {
 	CurrentUser(ctx context.Context, cookieValue string) (auth.User, error)
 }
 
-// Handlers mount openDesktopSession behind the strict Origin of the window and the CSRF check of the core, and
-// getCurrentUser, which names the local author of the session of the window.
+// Handlers mount openDesktopSession behind the strict Origin of the window and the CSRF check of the core,
+// getCurrentUser, which names the local author of the session of the window, and getDesktopState.
 type Handlers struct {
 	Open           OpenSession
 	Sessions       Sessions
+	State          ReadState
 	CSRF           func(http.Handler) http.Handler
 	AllowedOrigins []string
 }
 
 func (handlers Handlers) Mount(router chi.Router) {
 	router.Get("/auth/session", handlers.currentUser)
+	router.Get("/desktop/state", handlers.state)
 	router.With(httpapi.StrictOriginRequiredMiddleware(handlers.AllowedOrigins...), handlers.CSRF).
 		Post("/desktop/session", handlers.openSession)
 }

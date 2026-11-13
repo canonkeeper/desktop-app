@@ -35,6 +35,7 @@ func codexClientConfig(cfg config.Config, flow agentdomain.Flow) (codexadapter.C
 		CodexPath: cfg.CodexPath, CodeModeHostPath: cfg.CodexCodeModeHost, CWD: cfg.CodexCWD,
 		RepositoryHome:  filepath.Join(cfg.CodexRepositoryHome, directory),
 		CodexHome:       filepath.Join(cfg.CodexHome, directory),
+		HomeCopies:      cfg.CodexHomeCopies,
 		CodexSQLiteHome: filepath.Join(cfg.CodexSQLiteHome, directory),
 		PrivateHome:     filepath.Join(cfg.CodexPrivateHome, directory),
 		TempDir:         filepath.Join(cfg.CodexTempDir, directory),

@@ -58,7 +58,7 @@ const (
 
 // desktopConfig is the configuration of the open core on the computer of the author: one origin of the window, the
 // cluster of the data directory, the files, Codex homes and workspace under it, the codex-app-server and profile of the
-// bundle, and no model address yet.
+// bundle — copied into the homes at every start (specs/2026-11-13-desk-home.md HM1) — and no model address yet.
 func desktopConfig(data DataDir, resources Resources, cluster *Cluster, listener net.Listener) config.Config {
 	return config.Config{
 		HTTPAddr: listener.Addr().String(), Environment: "desktop",
@@ -66,7 +66,8 @@ func desktopConfig(data DataDir, resources Resources, cluster *Cluster, listener
 		AllowedOrigins: []string{"http://" + listener.Addr().String()},
 		FileStorageDir: data.Files(),
 		CodexPath:      resources.CodexAppServer(), CodexCWD: data.CodexWorkspace(),
-		CodexRepositoryHome: resources.CodexHomes(), CodexHome: data.CodexHome(), CodexSQLiteHome: data.CodexSQLite(),
+		CodexRepositoryHome: resources.CodexHomes(), CodexHome: data.CodexHome(), CodexHomeCopies: true,
+		CodexSQLiteHome:  data.CodexSQLite(),
 		CodexPrivateHome: data.CodexPrivate(), CodexTempDir: data.CodexTemp(),
 		ModelAPI: config.ModelAPI{Model: chatModel, CardsModel: cardsModel},
 	}
@@ -80,6 +81,8 @@ type build struct {
 	authorID string
 	codes    *domain.OpenCodes
 	files    fs.FS
+	// state reads what «Настройки» of the app show (specs/2026-11-13-desk-settings.md ST2.1).
+	state service.ReadAppState
 	// ready tells the shell the backend serves; stopTurns cancels the chat turns of the author once compose built it —
 	// a shutdown may come before.
 	ready     func()
@@ -109,6 +112,7 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 	open := httpdesktop.Handlers{
 		Open:           service.OpenSession{Codes: desktop.codes, Sessions: sessions, LocalAuthorID: desktop.authorID, Now: time.Now},
 		Sessions:       sessions,
+		State:          desktop.state,
 		CSRF:           sessionHandlers.CSRFMiddleware,
 		AllowedOrigins: core.Config.AllowedOrigins,
 	}

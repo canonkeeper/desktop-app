@@ -11,7 +11,7 @@ import { useLowScreen, useNarrowScreen } from '../use-narrow-screen';
 import { SectionNav, type ChatMark } from './SectionNav';
 import { AccountBlock, useShellHelp, useShellHelpReplies, type ShellAccountProps } from './ShellAccount';
 import type { ContentWidth } from './shell-routes';
-import { ShellTopBar, type ShellSaga, type ShellWidth } from './ShellTopBar';
+import { ShellTopBar, type ShellSaga, type ShellSettings, type ShellWidth } from './ShellTopBar';
 import styles from './Shell.module.css';
 
 export interface ShellSections {
@@ -49,6 +49,8 @@ export interface ShellProps {
   /** The quiet line under «Новая сага» when the sagas take their place (specs/2026-11-10-ux2-patterns-refusals.md PR2.7). */
   newSagaNote?: ReactNode;
   account?: ShellAccountProps;
+  /** «Настройки» in the place of the account of an edition without one (specs/2026-11-13-desk-settings.md ST1.1). */
+  settings?: ShellSettings;
   /** The line under the top bar of a reader of the saga (S1.4, П-22). */
   notice?: ReactNode;
   /** The name of the content for the reader of the screen. */
@@ -75,7 +77,7 @@ export function useShellWidth(): ShellWidth {
  * around every page of the author once; a page gives only its content. A low window (to 760 px high) and a workplace keep
  * the narrow column; a phone has the drawer.
  */
-export function Shell({ account, back, bare = false, chat = null, children, drawing = null, label, memory = null, narrow = false, newSagaNote, notice, onNewSaga, onOpenSearch, overlays, place, saga, searchRef, sections, width: contentWidth = 'wide' }: ShellProps) {
+export function Shell({ account, back, bare = false, chat = null, children, drawing = null, label, memory = null, narrow = false, newSagaNote, notice, onNewSaga, onOpenSearch, overlays, place, saga, searchRef, sections, settings, width: contentWidth = 'wide' }: ShellProps) {
   const width = useShellWidth();
   const low = useLowScreen(760);
   const notes = useNotes();
@@ -101,7 +103,7 @@ export function Shell({ account, back, bare = false, chat = null, children, draw
       data-shell="" data-width={width} onPointerDown={bare ? (event) => reveal(event, event.pointerType !== 'mouse') : undefined}
       onPointerMove={bare ? (event) => { if (event.pointerType === 'mouse') reveal(event); } : undefined}>
       <ShellTopBar account={account} menuMark={chat !== null || drawing !== null || memory !== null || helpReplies > 0} onNote={onNote} onOpenMenu={() => setDrawer(true)}
-        onOpenSearch={saga ? onOpenSearch : undefined} place={place} saga={saga} searchRef={searchRef} talk width={width} />
+        onOpenSearch={saga ? onOpenSearch : undefined} place={place} saga={saga} searchRef={searchRef} settings={settings} talk width={width} />
       <TopBarStrip />
       {bare ? null : notice}
       <div className={styles.body}>

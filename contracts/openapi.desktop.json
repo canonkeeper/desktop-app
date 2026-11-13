@@ -3386,6 +3386,73 @@
         "x-authz": "Anonymous exchange of the one-time code of the shell; only the desktop build mounts it, and the session it opens is that of the one local author of the computer."
       }
     },
+    "/desktop/state": {
+      "get": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "getDesktopState",
+        "summary": "Read the state of the app its «Настройки» show.",
+        "responses": {
+          "200": {
+            "description": "The version of the app, its data directory and the place it takes, the copies before an update and the hosts the app goes to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopState"
+                },
+                "examples": {
+                  "computerOfTheAuthor": {
+                    "summary": "Synthetic state of the app on the computer of the author",
+                    "value": {
+                      "version": "1.2.0",
+                      "dataDir": "/home/author/.local/share/canonkeeper",
+                      "usage": {
+                        "bytes": 1288490188,
+                        "counting": false
+                      },
+                      "backups": [
+                        {
+                          "madeAt": "2026-11-12T09:15:00.000Z",
+                          "version": "1.1.4"
+                        },
+                        {
+                          "madeAt": "2026-11-02T08:00:00.000Z",
+                          "version": null
+                        }
+                      ],
+                      "network": []
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "description": "Mounted only by the desktop build (specs/2026-11-13-desk-settings.md ST2.1): the version of the window, the backend and the installer; the data directory as the author sees its path; the place it takes, counted without following links and waited for no longer than 2 s — while a count goes on, the last known place with counting true (null before the first count ended); the complete copies before an update, the newest first and no more than two, each with the version of the app that made it (null for a copy made before the copies named it); and the hosts the app goes to in this build and its settings. Responses are no-store.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-authz": "The session of the window of the one local author of the computer reads the state of its own app; no project is involved.",
+        "x-backend-purpose": "resource/query"
+      }
+    },
     "/auth/csrf": {
       "get": {
         "operationId": "getCsrfToken",
@@ -9551,6 +9618,100 @@
             "minLength": 1,
             "maxLength": 128,
             "description": "The one-time code the shell put into the fragment of the address of the window."
+          }
+        }
+      },
+      "DesktopState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "dataDir",
+          "usage",
+          "backups",
+          "network"
+        ],
+        "properties": {
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "description": "The version of the app the build names; null for a build that does not."
+          },
+          "dataDir": {
+            "type": "string",
+            "description": "The data directory of the app as the author sees its path, without the prefix \\\\?\\ of Windows."
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bytes",
+              "counting"
+            ],
+            "properties": {
+              "bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0,
+                "description": "The place the data directory takes; while it is counted, the last known one, null before the first count ended."
+              },
+              "counting": {
+                "type": "boolean",
+                "description": "The count did not end within the limit of the request; the page asks again."
+              }
+            }
+          },
+          "backups": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "madeAt",
+                "version"
+              ],
+              "properties": {
+                "madeAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 64,
+                  "description": "The version of the app that made the copy before its migrations; null for a copy made before the copies named it."
+                }
+              }
+            }
+          },
+          "network": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "host",
+                "purpose"
+              ],
+              "properties": {
+                "host": {
+                  "type": "string"
+                },
+                "purpose": {
+                  "type": "string",
+                  "description": "What the app goes there for, in the words of the author."
+                }
+              }
+            }
           }
         }
       },

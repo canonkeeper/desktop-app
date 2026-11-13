@@ -155,10 +155,10 @@ export function MarkdownContent({ children, className, places, renderImage, rend
       if (workshop !== null) return workshopRenderer.current ? <>{workshopRenderer.current(workshop, label, scene)}</> : <>{label}</>;
       if (!href || !citationLink(href)) return addressAsText(node, href, label);
       const source = citationOf(href);
-      const words = source ? citationWords(source, node ? textOf(node) : '', placesRef.current) : label;
-      return source && sourceRenderer.current
-        ? sourceRenderer.current(source, words)
-        : <span title="Место недоступно">{source ? words : withoutDeviceWords(node ? textOf(node) : '') || label}</span>;
+      if (!source) return <span title="Место недоступно">{withoutDeviceWords(node ? textOf(node) : '') || label}</span>;
+      const words = citationWords(source, node ? textOf(node) : '', placesRef.current);
+      // A host that opens no source — the feeds of the helpers — names the place in words (specs/2026-11-13-desk-tidy.md TD2.3).
+      return sourceRenderer.current ? sourceRenderer.current(source, words) : <span>{words}</span>;
     },
     img: ({ alt, src }) => typeof src === 'string' && src.startsWith('image:') && imageRenderer.current
       ? <>{imageRenderer.current({ src, alt: alt ?? '' })}</>

@@ -151,6 +151,12 @@
   gap: 6px;
 }
 
+/* «Настройки» of the app on their own page (board 44: `Settings` with the fill `--secondary`). */
+.settingsButton[aria-current='page'],
+.captionButton[aria-current='page'] {
+  background: var(--ck-secondary);
+}
+
 /* A word under its icon, a target of 44×44 (Button/Ghost Caption). */
 .captionButton {
   display: inline-flex;

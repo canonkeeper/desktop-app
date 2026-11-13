@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -101,7 +102,7 @@ func TestTheCopyOfTheThreadsTakesTheFilesOfTheAuthor(t *testing.T) {
 		}
 	}
 	target := filepath.Join(t.TempDir(), "copy", "codex", "home")
-	if err := copyTree(source, target); err != nil {
+	if err := copyTree(source, target, profileOfAFlow); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(target, "research-chat", "sessions", "2026", "11", "rollout.jsonl"))
@@ -121,7 +122,46 @@ func TestTheCopyOfTheThreadsTakesTheFilesOfTheAuthor(t *testing.T) {
 			t.Fatalf("a copied file = %v, %v", info.Mode(), err)
 		}
 	}
-	if err := copyTree(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "copy-of-nothing")); err != nil {
+	if err := copyTree(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "copy-of-nothing"), nil); err != nil {
 		t.Fatalf("a directory Codex has not made yet: %v", err)
+	}
+}
+
+// specs/2026-11-13-desk-home.md HM1.5: the copy before the migrations leaves out the entries of the profile in the home of
+// every flow — files and trees the start copied from the bundle, and the staging a stopped copy left — since the next
+// start copies them again; the threads and the state of Codex beside them are copied.
+func TestTheCopyBeforeTheMigrationsLeavesTheProfileOut(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "home")
+	for _, flow := range []string{"research-chat", "image-workshop"} {
+		for _, name := range []string{"config.toml", "model-catalog.json", "AGENTS.md", filepath.Join("skills", "chat", "SKILL.md"),
+			filepath.Join("agents", "reader.toml"), filepath.Join(".canonkeeper-stage-0001", "skills", "chat", "SKILL.md"),
+			filepath.Join("sessions", "2026", "11", "rollout.jsonl"), "state.sqlite", filepath.Join("memories", "skills", "notes.md")} {
+			path := filepath.Join(source, flow, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, path, name)
+		}
+	}
+	writeFile(t, filepath.Join(source, "config.toml"), "not of a flow")
+	target := filepath.Join(t.TempDir(), "copy", "codex", "home")
+	if err := copyTree(source, target, profileOfAFlow); err != nil {
+		t.Fatal(err)
+	}
+	var copied []string
+	if err := filepath.WalkDir(target, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			relative, _ := filepath.Rel(target, path)
+			copied = append(copied, filepath.ToSlash(relative))
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"config.toml",
+		"image-workshop/memories/skills/notes.md", "image-workshop/sessions/2026/11/rollout.jsonl", "image-workshop/state.sqlite",
+		"research-chat/memories/skills/notes.md", "research-chat/sessions/2026/11/rollout.jsonl", "research-chat/state.sqlite"}
+	if !slices.Equal(copied, want) {
+		t.Fatalf("the copy of the homes = %v; want %v", copied, want)
 	}
 }

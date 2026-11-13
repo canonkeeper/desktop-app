@@ -1155,11 +1155,21 @@ func TestTimelineUpdatePublishesCurrentContextUsage(t *testing.T) {
 		t.Fatalf("usage = %#v", update.Context)
 	}
 
+}
+
+// The app-server sends no thread/compacted to v2 clients (CX4), so the feed stream carries no compaction flag:
+// a compaction is the contextCompaction item of the run, not a context update of the feed (TD1).
+func TestTimelineUpdateCarriesNoCompactionFlag(t *testing.T) {
 	compacted, publish := timelineUpdate(protocol.ContextCompactedNotification{
 		ThreadID: "thread-root", TurnID: "turn-1",
 	}, agenttimeline.RoleMain)
-	if !publish || compacted.Context == nil || !compacted.Context.Compacted || compacted.Context.UsedTokens != nil {
+	if publish || compacted.Context != nil || compacted.Delta != nil {
 		t.Fatalf("compaction = %#v, publish = %v", compacted, publish)
+	}
+	if threadID := timelineNotificationThreadID(protocol.ContextCompactedNotification{
+		ThreadID: "thread-root", TurnID: "turn-1",
+	}); threadID != "" {
+		t.Fatalf("thread of a compaction notification = %q", threadID)
 	}
 }
 

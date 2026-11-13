@@ -79,13 +79,24 @@ export function createProjectOperations(context: MockRepositoryContext) {
     return paginateList('listProjects', data, pagination, { actorRole: context.actorRole(), state });
   }
 
+  /**
+   * The id of a new saga: the next number by the count of the living ones, past every id a living or a deleted saga holds —
+   * a deleted saga keeps its id and its books in «Недавно удалённые», a new one never takes them.
+   */
+  function newProjectId() {
+    const taken = new Set([...context.state.projects.map((project) => project.id), ...context.state.deletedProjects.map((source) => source.resource.id)]);
+    let number = context.state.projects.length + 1;
+    while (taken.has(`project-${number}`)) number += 1;
+    return `project-${number}`;
+  }
+
   async function createProject(body: OperationRequest<'createProject'>): Promise<OperationResponse<'createProject', '201'>> {
     context.applyOperation('createProject');
     if (context.scenario.preset === 'failed-create') {
       throw new MockApiError(500, 'Не удалось создать проект.', 'createProject');
     }
     const projectBase = {
-      id: `project-${context.state.projects.length + 1}`,
+      id: newProjectId(),
       title: body.title,
       description: body.description ?? null,
       bookCount: 0,
@@ -119,7 +130,7 @@ export function createProjectOperations(context: MockRepositoryContext) {
     const existing = context.state.projects.find((project) => project.demo && project.currentMembership.role === 'owner');
     if (existing) return context.visibleProject(existing);
     const projectBase = {
-      id: `project-${context.state.projects.length + 1}`,
+      id: newProjectId(),
       title: demoSagaTitle,
       description: demoSagaDescription,
       demo: true as const,

@@ -115,21 +115,19 @@ func SetOverridesInTx(ctx context.Context, tx pgx.Tx, userID string, changes []q
 	return changed, nil
 }
 
-func readOverrides(ctx context.Context, db Querier, userID string, lock bool) ([16]*int64, error) {
-	var values [16]*int64
-	query := `
-		SELECT chat_turns_per_day::bigint, active_turns::bigint, imports_per_day::bigint, projects::bigint,
-		       project_books::bigint, project_chapters::bigint, project_characters,
-		       account_books::bigint, account_chapters::bigint, account_characters, images_per_day::bigint,
-		       image_uploads_per_day::bigint, chapter_drafts_per_day::bigint, drawing_turns_per_day::bigint, draft_turns_per_day::bigint,
-		       draft_rewrites_per_day::bigint
-		FROM writer_quota_overrides
-		WHERE user_id = $1::uuid`
+func readOverrides(ctx context.Context, db Querier, userID string, lock bool) ([]*int64, error) {
+	keys := quota.Keys()
+	values := make([]*int64, len(keys))
+	targets := make([]any, len(values))
+	for index := range values {
+		targets[index] = &values[index]
+	}
+	// The columns are named by quota.Keys only, so they are safe to splice.
+	query := `SELECT ` + limitColumns("own", keys) + ` FROM writer_quota_overrides AS own WHERE own.user_id = $1::uuid`
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	err := db.QueryRow(ctx, query, userID).Scan(&values[0], &values[1], &values[2], &values[3], &values[4],
-		&values[5], &values[6], &values[7], &values[8], &values[9], &values[10], &values[11], &values[12], &values[13], &values[14], &values[15])
+	err := db.QueryRow(ctx, query, userID).Scan(targets...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return values, nil
 	}

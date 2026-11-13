@@ -87,6 +87,16 @@ describe('mock API repository', () => {
     expect((await api.createProject({ title: 'Своя сага' })).demo).toBeUndefined();
   });
 
+  // A deleted saga keeps its id with its books in «Недавно удалённые»: a new saga takes another one, never its books
+  // (specs/2026-11-13-desk-editor.md, the scenarios of the desktop app share one mock).
+  it('gives a new saga an id no deleted saga holds', async () => {
+    const api = createMockApiClient();
+    const first = await api.createProject({ title: 'Северный предел' });
+    await api.deleteProject(first.id);
+    const second = await api.createProject({ title: 'Северный предел' });
+    expect(second.id).not.toBe(first.id);
+  });
+
   it('keeps state in memory and resets to seeded data', async () => {
     const api = createMockApiClient();
     const initialCount = (await api.listProjects()).data.length;

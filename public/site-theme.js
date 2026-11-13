@@ -3,12 +3,15 @@
 // A file of its own, not a script in the page: the policy of the site runs no script written into the page.
 /* global window, document */
 (function () {
-  var choice = 'light';
+  // The theme of the edition until the author chooses one: the build of the app writes it on <html>; the site is light
+  // (specs/2026-11-13-desk-settings.md ST3.1).
+  var edition = document.documentElement.getAttribute('data-theme-default');
+  var choice = edition === 'dark' || edition === 'system' ? edition : 'light';
   try {
     var stored = window.localStorage.getItem('canonkeeper.site.theme.v1');
-    if (stored === 'dark' || stored === 'system') choice = stored;
+    if (stored === 'light' || stored === 'dark' || stored === 'system') choice = stored;
   } catch {
-    // A closed storage leaves the site light.
+    // A closed storage leaves the theme of the edition.
   }
   var dark = choice === 'dark'
     || (choice === 'system' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -161,6 +161,45 @@ test('the workflow builds both systems with pinned actions and no secret', () =>
   }
   // The monorepo does not run it.
   assert.ok(!existsSync(path.join(repositoryRoot, '.github', 'workflows', 'desktop-build.yml')));
+});
+
+// specs/2026-11-13-desk-export.md EX2.2, EX2.3: the workflows of the public repository run on a push to main or to a
+// branch export/**, the build also on a tag v*, both by hand; a pull request runs nothing — the merge commit GitHub makes
+// carries the identity of the account that opened it. The Windows job tests the copy of the Codex homes on a real
+// Windows before it builds the installer. actionlint finds nothing.
+test('the workflows run on a push to main and to export/** and by hand, never on a pull request', () => {
+  const directory = path.join(repositoryRoot, 'desktop', 'ci');
+  const workflows = readdirSync(directory).filter((name) => name.endsWith('.yml')).sort();
+  assert.deepEqual(workflows, ['desktop-build.yml', 'forbidden.yml']);
+  for (const name of workflows) {
+    const text = readFileSync(path.join(directory, name), 'utf8');
+    const workflow = yaml.load(text);
+    const triggers = workflow.on;
+    assert.deepEqual(Object.keys(triggers).sort(), ['push', 'workflow_dispatch'], name);
+    assert.deepEqual(triggers.push.branches, ['main', 'export/**'], name);
+    assert.deepEqual(triggers.push.tags, name === 'desktop-build.yml' ? ['v*'] : undefined, name);
+    assert.deepEqual(workflow.permissions, { contents: 'read' }, name);
+    const steps = Object.values(workflow.jobs).flatMap((job) => job.steps);
+    for (const step of steps.filter((entry) => entry.uses)) assert.match(step.uses, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/u, `${name}: ${step.uses}`);
+    assert.ok(!/\bsecrets\./u.test(text), `${name} reads a secret`);
+  }
+  const forbidden = yaml.load(readFileSync(path.join(directory, 'forbidden.yml'), 'utf8'));
+  assert.ok(forbidden.jobs.forbidden.steps.some((step) => step.run === 'python3 -I scripts/check-forbidden.py --ci'));
+
+  const app = yaml.load(readFileSync(path.join(directory, 'desktop-build.yml'), 'utf8')).jobs.app.steps;
+  const homes = app.findIndex((step) => /go test \.\/internal\/adapters\/codex -run 'Copy\|Hold' -count=1/u.test(step.run ?? ''));
+  assert.ok(homes >= 0, 'no test of the copy of the Codex homes');
+  assert.equal(app[homes].if, "runner.os == 'Windows'");
+  assert.equal(app[homes]['working-directory'], 'backend');
+  assert.ok(homes > app.findIndex((step) => step.uses?.startsWith('actions/setup-go@')));
+  assert.ok(homes < app.findIndex((step) => /npx tauri build/u.test(step.run ?? '')));
+});
+
+test('actionlint finds nothing in the workflows', { skip: spawnSync('actionlint', ['-version']).status !== 0 && 'actionlint is missing' }, () => {
+  const directory = path.join(repositoryRoot, 'desktop', 'ci');
+  const files = readdirSync(directory).filter((name) => name.endsWith('.yml')).map((name) => path.join(directory, name));
+  const result = spawnSync('actionlint', ['-no-color', ...files], { encoding: 'utf8' });
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
 });
 
 /**

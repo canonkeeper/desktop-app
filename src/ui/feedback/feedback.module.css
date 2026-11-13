@@ -225,6 +225,15 @@
   color: var(--ck-color-error-foreground);
 }
 
+.toast[data-tone='info'] {
+  color: var(--ck-color-info-foreground);
+}
+
+/* The icon of a line in place of its mark, in the colour of its tone. */
+.toastIcon {
+  flex: 0 0 auto;
+}
+
 .toastMessage {
   flex: 1;
   color: var(--ck-foreground);

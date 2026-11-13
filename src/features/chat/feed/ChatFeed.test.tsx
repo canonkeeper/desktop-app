@@ -366,6 +366,22 @@ describe('ChatFeed of a helper', () => {
     rerender(<ChatFeed helper jobStatus="canceled" events={[event('user', { text: 'Сверь.' }), event('assistant', { text: 'Читаю.' }), event('turn_outcome', { outcome: 'interrupted' })]} />);
     expect(screen.getByRole('status', { name: 'Ответ остановлен' }).textContent).toContain('Остановленное сообщение засчитано.');
   });
+
+  // specs/2026-11-13-desk-tidy.md TD2.3: a helper names a place of the book by a link, and its feed — the feed of the chat —
+  // shows it as the place the server wrote beside the key, with the paragraphs in words. Its page opens no source, so the
+  // place stands as words, without the hint of a broken link.
+  it('names a place of the book in an answer of a helper by its place, not by «¶» and a key', () => {
+    const whitePort = 'Книга 2, гл. 12 „Белый порт“';
+    const { container } = render(<ChatFeed helper jobStatus="succeeded" events={[
+      event('user', { text: 'Что ты знаешь из книги о героях главы?' }),
+      event('assistant', { phase: 'final_answer', places: { b2c12: whitePort }, text: 'Мара и Ольм впервые встречаются в [«Белый порт», ¶1–3](source:b2c12/1-3).' }),
+      event('turn_outcome', { outcome: 'completed' }),
+    ]} />);
+    const answerSection = container.querySelector('[data-answer]')!;
+    expect(answerSection.textContent).toBe(`Мара и Ольм впервые встречаются в ${whitePort}, абзацы 1–3.`);
+    expect(answerSection.textContent).not.toMatch(/¶|b\d+c\d+/u);
+    expect(screen.queryByTitle('Место недоступно')).toBeNull();
+  });
 });
 
 // specs/2026-10-30-chat-steering.md UC3.

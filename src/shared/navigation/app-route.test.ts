@@ -46,6 +46,16 @@ describe('standalone notes navigation', () => {
     expect(Object.fromEntries(createAppRoute('/manuscript/books', { projectId: 'saga-a', sourceView: 'published' }).query)).toEqual({ projectId: 'saga-a' });
   });
 
+  // specs/2026-11-13-desk-editor.md ED1.1: the draft is a key of the editor of the desktop app only; the addresses of «Книги»
+  // of the site keep none, as before the editor.
+  it('keeps the draft of the editor of the app only at its own address', () => {
+    expect(Object.fromEntries(createAppRoute('/manuscript/edit', { projectId: 'saga-a', draftId: 'draft-1' }).query)).toEqual({ projectId: 'saga-a', draftId: 'draft-1' });
+    expect(toHref('/manuscript/edit', { projectId: 'saga-a', draftId: 'draft-1' })).toBe('/manuscript/edit?projectId=saga-a&draftId=draft-1');
+    expect(Object.fromEntries(createAppRoute('/manuscript/books', { projectId: 'saga-a', draftId: 'draft-1' }).query)).toEqual({ projectId: 'saga-a' });
+    expect(toHref('/manuscript/books', { projectId: 'saga-a', bookId: 'book-1', draftId: 'draft-1' })).toBe('/manuscript/books?projectId=saga-a&bookId=book-1');
+    expect(createAppRoute('/auth/login', { returnTo: '/manuscript/books?projectId=saga-a&draftId=draft-1' }).query.get('returnTo')).toBe('/manuscript/books?projectId=saga-a');
+  });
+
   it('drops invalid enums and a book of «Все саги»; a book is a book of the open saga (specs/2026-11-11-ux7-notes.md NT3.2)', () => {
     expect(Object.fromEntries(createAppRoute('/notes', { type: 'bad', source: 'bad', sagas: 'other', bookId: 'book-2' }).query)).toEqual({ bookId: 'book-2' });
     expect(Object.fromEntries(createAppRoute('/notes', { sagas: 'all', bookId: 'book-2', note: 'n1' }).query)).toEqual({ sagas: 'all', note: 'n1' });

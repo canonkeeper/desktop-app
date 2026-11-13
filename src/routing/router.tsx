@@ -64,7 +64,7 @@ export function CanonKeeperRouterProvider({
  * only on the page it is for, and a place to return to only when it is one the app knows.
  */
 export function routeOfLocation(location: { pathname: string; searchStr: string; state: unknown }): AppRoute {
-  const route = createAppRoute(location.pathname, new URLSearchParams(location.searchStr));
+  const route = routeOfEdition(createAppRoute(location.pathname, new URLSearchParams(location.searchStr)));
   const historyState = (location.state ?? {}) as { chatSourceReturnHref?: unknown; authEmail?: unknown; sendLetter?: unknown; drawingIdea?: unknown; chatQuestion?: unknown; returnPlace?: unknown; from?: unknown; drawingList?: unknown };
   const sourceReturnHref = historyState.chatSourceReturnHref;
   const authEmail = route.surface === 'auth' && typeof historyState.authEmail === 'string' ? historyState.authEmail : undefined;
@@ -86,6 +86,15 @@ export function routeOfLocation(location: { pathname: string; searchStr: string;
     // The list of «Рисунки» an open drawing came from (specs/2026-11-10-ux6-drawings-section.md DS1.9).
     ...(drawingList !== undefined ? { drawingList } : {}),
   };
+}
+
+/**
+ * «Настройки» are a page of the desktop app alone (specs/2026-11-13-desk-settings.md ST1.2): in an edition without their
+ * page their address is the route of no page, as before them — the tab, the guest and the shell read it so.
+ */
+function routeOfEdition(route: AppRoute): AppRoute {
+  if (route.surface !== 'settings' || edition.pages.settings) return route;
+  return { invalidQuery: false, path: route.path, surface: 'unknown', query: new URLSearchParams(), overlay: undefined };
 }
 
 /**

@@ -279,6 +279,28 @@ export function createSessionOperations(context: MockRepositoryContext) {
     return clone(context.state.session);
   }
 
+  /**
+   * getDesktopState (specs/2026-11-13-desk-settings.md ST2.1): the app on the computer of the local author — its version,
+   * where its data lie and the place they take, two copies before an update (the older one made before the copies named
+   * their version) and no host of the network.
+   */
+  async function getDesktopState(): Promise<OperationResponse<'getDesktopState', '200'>> {
+    context.applyOperation('getDesktopState');
+    if (!context.state.session) {
+      throw new MockApiError(401, 'Сессия отсутствует.', 'getDesktopState');
+    }
+    return {
+      version: '1.2.0',
+      dataDir: '/home/author/.local/share/canonkeeper',
+      usage: { bytes: 1_288_490_188, counting: false },
+      backups: [
+        { madeAt: '2026-11-12T09:15:00.000Z', version: '1.1.4' },
+        { madeAt: '2026-11-02T08:00:00.000Z', version: null },
+      ],
+      network: [],
+    };
+  }
+
   async function getCurrentUser(): Promise<OperationResponse<'getCurrentUser', '200'>> {
     context.applyOperation('getCurrentUser');
     if (!context.state.session) {
@@ -313,6 +335,7 @@ export function createSessionOperations(context: MockRepositoryContext) {
     reportClientError,
     startDesktop,
     openDesktopSession,
+    getDesktopState,
     getCurrentUser,
   };
 }

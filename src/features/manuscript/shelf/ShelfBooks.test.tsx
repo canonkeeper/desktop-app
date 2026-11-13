@@ -224,6 +224,14 @@ describe('the menu of a book', () => {
     return { props, menu: screen.getByRole('menu', { name: 'Действия книги' }) };
   }
 
+  // specs/2026-11-13-desk-editor.md ED2.1 (board 44·21): the app puts «Новая глава» after «Читать с начала»; the site has none.
+  it('puts «Новая глава» of the app after «Читать с начала»', () => {
+    const { menu } = renderMenu({ onMove: vi.fn(), onNewChapter: vi.fn() });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Читать с начала', 'Новая глава', 'Новая версия из файла…', 'Переименовать', 'Переставить…', 'Обложка…', 'Скачать книгу…', 'Удалить книгу…',
+    ]);
+  });
+
   // specs/2026-11-11-ux9-shelf-chat.md SC1.3, SC1.5: «Новая версия из файла…» second, one «Скачать книгу…».
   it('lists its items: «Новая версия из файла…» second, one «Скачать книгу…», «Удалить книгу…» last', () => {
     const { menu, props } = renderMenu({ onMove: vi.fn() });

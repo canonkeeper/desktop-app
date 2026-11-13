@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { RotateCcw } from 'lucide-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { NoticeSlot } from './notice-slot';
@@ -63,6 +64,24 @@ describe('Toast detail', () => {
     const toast = screen.getByRole('status');
     expect(toast.textContent).toContain('Сага готова — можно спрашивать');
     expect(screen.getByText('Прочитано: 2 книги, 41 глава.').parentElement?.textContent).toBe('Сага готова — можно спрашиватьПрочитано: 2 книги, 41 глава.');
+  });
+});
+
+// specs/2026-11-13-desk-settings.md ST4.4 (board 44·22): a line of a launch of the app has its icon in place of the mark;
+// every other line keeps the mark of its tone as it was.
+describe('Toast mark', () => {
+  it('is the mark of the tone, or the icon a line brings in place of it', () => {
+    render(
+      <ToastRegion onDismiss={() => undefined} queue={[
+        { born: 1, id: 1, message: 'Готово', tone: 'success' },
+        { born: 2, icon: RotateCcw, id: 2, message: 'CanonKeeper перезапущен после сбоя', tone: 'info' },
+      ]} />,
+    );
+    const [plain, launch] = screen.getAllByRole('status');
+    expect(plain!.firstElementChild!.tagName).toBe('SPAN');
+    expect(plain!.querySelectorAll('svg')).toHaveLength(1);
+    expect(launch!.firstElementChild!.matches('svg.lucide-rotate-ccw')).toBe(true);
+    expect(launch!.getAttribute('data-tone')).toBe('info');
   });
 });
 

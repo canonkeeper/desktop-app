@@ -123,7 +123,8 @@ export function ManuscriptReaderMode({ api, navigate, route }: ReaderPageProps) 
 
   // A step from the reader to another section carries the way back to this chapter (PS4.1, RD3.2).
   const from: BackFrom = { section: 'manuscript', ...(chapter?.title ? { name: chapter.title } : {}) };
-  const useDrawings = useReaderSlot()?.useDrawings ?? useNoDrawings;
+  const slot = useReaderSlot();
+  const useDrawings = slot?.useDrawings ?? useNoDrawings;
   const readerDrawings = useDrawings({
     projectId: project?.id ?? '', bookId: book?.id ?? '', chapter, sourceView: textSourceView, canEdit: editor, route, navigate, from,
   });
@@ -239,8 +240,13 @@ export function ManuscriptReaderMode({ api, navigate, route }: ReaderPageProps) 
   // The demo saga of the site takes no text of the author (specs/2026-11-09-demo-saga.md DS4.2): its chapters are not edited.
   const more: MoreMenuItem[] = [
     ...(chapter && project && editor && !project.demo ? [{ label: 'Править главу', icon: PenLine, run: () => editChapter.mutate({ projectId: project.id, chapterId: chapter.id }, {
-      // The edit offers «← К главе в книге» back to this chapter (specs/2026-11-11-ux9-writing-a.md WA4.2).
-      onSuccess: (draft) => navigate('/writing', { projectId: project.id, draft: draft.id }, { from: { section: 'manuscript' } }),
+      // The edit offers «← К главе в книге» back to this chapter (specs/2026-11-11-ux9-writing-a.md WA4.2): «Письмо» of the
+      // site, or the editor the edition names (specs/2026-11-13-desk-editor.md ED1.1), which has that way back of its own.
+      onSuccess: (draft) => {
+        const at = slot?.editAt?.(project.id, draft.id);
+        if (at) navigate(at.path, at.query);
+        else navigate('/writing', { projectId: project.id, draft: draft.id }, { from: { section: 'manuscript' } });
+      },
       onError: (error) => toasts.push({ message: publicApiErrorMessage(error, 'Не удалось открыть главу для правки. Попробуйте ещё раз.', {
         forbidden: 'Править главы может владелец саги, администратор или редактор.',
       }), tone: 'error' }),

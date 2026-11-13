@@ -224,6 +224,8 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
   return (
     <Shell
       account={onLogout ? { onLogout, userEmail: user.email, userName: user.displayName } : undefined}
+      // «Настройки» in the place of the account menu where the edition has their page (specs/2026-11-13-desk-settings.md ST1.1).
+      settings={edition.pages.settings ? { active: route.surface === 'settings', onOpen: () => navigate('/settings') } : undefined}
       bare={focusReading}
       chat={chat}
       drawing={drawing}

@@ -31,6 +31,9 @@ type ClientConfig struct {
 	TempDir          string
 	ConfigOverrides  []string
 	PassEnv          []string
+	// HomeCopies puts the profile into the home by copy, not by links: the way of the app (CopyHome); the site links it
+	// (PrepareHome).
+	HomeCopies bool
 	// Logger receives the stderr tail of an app-server that exits unexpectedly or fails to start.
 	Logger *log.Logger
 }
@@ -56,7 +59,11 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 		return nil, ErrInvalid
 	}
 	if config.RepositoryHome != "" || config.CodexHome != "" {
-		if err := PrepareHome(config.CodexHome, config.RepositoryHome); err != nil {
+		prepare := PrepareHome
+		if config.HomeCopies {
+			prepare = CopyHome
+		}
+		if err := prepare(config.CodexHome, config.RepositoryHome); err != nil {
 			return nil, err
 		}
 	}

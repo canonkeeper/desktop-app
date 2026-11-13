@@ -94,7 +94,6 @@ type ContextDTO struct {
 	ProviderTurnID string `json:"providerTurnId"`
 	UsedTokens     *int64 `json:"usedTokens,omitempty"`
 	ContextWindow  *int64 `json:"contextWindow,omitempty"`
-	Compacted      bool   `json:"compacted"`
 }
 
 type SnapshotDTO struct {
@@ -249,7 +248,7 @@ func deltaEnvelope(jobID string, delta domain.Delta) EnvelopeDTO {
 func contextEnvelope(update domain.ContextUpdate) EnvelopeDTO {
 	return EnvelopeDTO{Type: "context", Context: &ContextDTO{
 		Role: string(update.Role), ProviderTurnID: update.TurnID,
-		UsedTokens: update.UsedTokens, ContextWindow: update.ContextWindow, Compacted: update.Compacted,
+		UsedTokens: update.UsedTokens, ContextWindow: update.ContextWindow,
 	}}
 }
 

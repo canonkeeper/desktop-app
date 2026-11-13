@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The generic rules of the forbidden-content check (scripts/check-forbidden.py --ci) over the whole history on every
+# push to main and to a branch of an export (export/<date>), and by hand: no key, no home directory of a real user, no
+# address outside the allowlist, no public IPv4, no identity of a commit outside the allowlist. The closed deny list
+# stays with the maintainers and runs before a push (scripts/hooks/pre-push). The monorepo keeps this file in desktop/ci
+# and the export puts it into .github/workflows; no pull request runs it — the merge commit GitHub makes for one carries
+# the identity of the account that opened it (specs/2026-11-13-desk-export.md EX2.2).
+name: Forbidden content
+
+on:
+  push:
+    branches: [main, "export/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forbidden:
+    name: Forbidden content (generic rules)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -I scripts/check-forbidden.py --ci

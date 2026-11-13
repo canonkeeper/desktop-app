@@ -189,6 +189,9 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.get(mswPath('getCurrentUser'), ({ request }) =>
       jsonResponse(() => repository.getCurrentUser(), undefined, { csrfState, operationId: 'getCurrentUser', request, repository }),
     ),
+    // «Настройки» of the desktop app (specs/2026-11-13-desk-settings.md ST2.1).
+    http.get(mswPath('getDesktopState'), ({ request }) =>
+      jsonResponse(() => repository.getDesktopState(), undefined, { csrfState, operationId: 'getDesktopState', request, repository })),
     http.get(mswPath('listRecentlyDeleted'), ({ request }) =>
       jsonResponse(() => repository.listRecentlyDeleted(), undefined, { csrfState, operationId: 'listRecentlyDeleted', request, repository })),
     http.get(mswPath('getAccountQuota'), ({ request }) =>
@@ -415,6 +418,16 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.put(mswPath('setAccountLetters'), async ({ request }) => jsonResponse(
       async () => repository.setAccountLetters((await readJson(request)) as OperationRequest<'setAccountLetters'>),
       undefined, { operationId: 'setAccountLetters', request, repository },
+    )),
+    http.post(mswPath('startAppLink'), async ({ request }) => jsonResponse(
+      async () => repository.startAppLink((await readJson(request)) as OperationRequest<'startAppLink'>),
+      undefined, { operationId: 'startAppLink', request, repository },
+    )),
+    http.get(mswPath('listLinkedApps'), ({ request }) => jsonResponse(
+      () => repository.listLinkedApps(), undefined, { operationId: 'listLinkedApps', request, repository },
+    )),
+    http.delete(mswPath('revokeLinkedApp'), ({ params, request }) => emptyResponse(
+      () => repository.revokeLinkedApp(oneParam(params.appId)), { operationId: 'revokeLinkedApp', request, repository },
     )),
     http.patch(mswPath('updateChapterDraft'), async ({ params, request }) => jsonResponse(
       async () => repository.updateChapterDraft(oneParam(params.projectId), oneParam(params.draftId), (await readJson(request)) as OperationRequest<'updateChapterDraft'>),

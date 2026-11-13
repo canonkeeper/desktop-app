@@ -80,11 +80,13 @@ func chatsBefore0059(t *testing.T, name string) *quotaChats {
 	db := testutil.OpenIsolatedPostgresTestDB(t, name, 58)
 	// The questions are asked with today's quota and chat code, which reads the limit column of
 	// 0061, the platform defaults of 0068, the uploads limit of 0069, the writing limit of 0087
-	// and the kind of a session and the helper's limit and counter of 0089 and 0091, and the limit of rewrites of 0108;
-	// they exist only while the questions are asked, so migration 0059 meets the schema of 58.
+	// and the kind of a session and the helper's limit and counter of 0089 and 0091, the limit of rewrites of 0108 and the
+	// limit of the returns on the word of an app of 0144; they exist only while the questions are asked, so migration 0059
+	// meets the schema of 58.
 	if _, err := db.Pool.Exec(ctx, `
 		ALTER TABLE writer_quota_overrides ADD COLUMN images_per_day integer, ADD COLUMN image_uploads_per_day integer, ADD COLUMN chapter_drafts_per_day integer,
-		  ADD COLUMN drawing_turns_per_day integer, ADD COLUMN draft_turns_per_day integer, ADD COLUMN draft_rewrites_per_day integer;
+		  ADD COLUMN drawing_turns_per_day integer, ADD COLUMN draft_turns_per_day integer, ADD COLUMN draft_rewrites_per_day integer,
+		  ADD COLUMN app_returns_per_day integer;
 		ALTER TABLE writer_usage_days ADD COLUMN drawing_turns integer NOT NULL DEFAULT 0, ADD COLUMN draft_turns integer NOT NULL DEFAULT 0;
 		ALTER TABLE chat_sessions ADD COLUMN kind text NOT NULL DEFAULT 'research';
 		CREATE TABLE platform_quota_defaults (
@@ -92,7 +94,7 @@ func chatsBefore0059(t *testing.T, name string) *quotaChats {
 		  imports_per_day integer, projects integer, project_books integer, project_chapters integer,
 		  project_characters bigint, account_books integer, account_chapters integer, account_characters bigint,
 		  images_per_day integer, image_uploads_per_day integer, chapter_drafts_per_day integer, drawing_turns_per_day integer, draft_turns_per_day integer, draft_rewrites_per_day integer,
-		  updated_at timestamptz, updated_by uuid
+		  app_returns_per_day integer, updated_at timestamptz, updated_by uuid
 		)`); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +114,7 @@ func chatsBefore0059(t *testing.T, name string) *quotaChats {
 	}
 	if _, err := db.Pool.Exec(ctx, `
 		ALTER TABLE writer_quota_overrides DROP COLUMN images_per_day, DROP COLUMN image_uploads_per_day, DROP COLUMN chapter_drafts_per_day,
-		  DROP COLUMN drawing_turns_per_day, DROP COLUMN draft_turns_per_day, DROP COLUMN draft_rewrites_per_day;
+		  DROP COLUMN drawing_turns_per_day, DROP COLUMN draft_turns_per_day, DROP COLUMN draft_rewrites_per_day, DROP COLUMN app_returns_per_day;
 		ALTER TABLE writer_usage_days DROP COLUMN drawing_turns, DROP COLUMN draft_turns;
 		ALTER TABLE chat_sessions DROP COLUMN kind;
 		DROP TABLE platform_quota_defaults`); err != nil {

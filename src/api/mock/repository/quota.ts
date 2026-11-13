@@ -25,6 +25,7 @@ export const mockCodeDefaults: Readonly<Record<DefaultKey, number>> = {
   drawing_turns_per_day: 60,
   draft_turns_per_day: 60,
   draft_rewrites_per_day: 200,
+  app_returns_per_day: 5,
 };
 
 /** A limit by default in force: the platform's value, else the code's (R7.2). */

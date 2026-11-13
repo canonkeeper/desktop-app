@@ -63,6 +63,8 @@ type Cluster struct {
 	host     string
 	port     int
 	fallback string
+	// version is the version of the app, written into a copy before the migrations (specs/2026-11-13-desk-settings.md ST2.3).
+	version string
 }
 
 var (

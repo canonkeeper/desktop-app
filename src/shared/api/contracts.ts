@@ -255,6 +255,11 @@ export interface CanonKeeperApiClient {
   /** The letters of the site the author chose to get (FS3.2 of the spec «Сага готова», specs/2026-11-09). */
   getAccountLetters(options?: ApiRequestOptions): Promise<OperationResponse<'getAccountLetters', '200'>>;
   setAccountLetters(body: OperationRequest<'setAccountLetters'>): Promise<OperationResponse<'setAccountLetters', '200'>>;
+  /** The link of the CanonKeeper app of this computer with the account: the page /link (specs/2026-11-13-desk-link.md LK1). */
+  startAppLink(body: OperationRequest<'startAppLink'>): Promise<OperationResponse<'startAppLink', '200'>>;
+  /** «Аккаунт → Приложения на компьютере» (specs/2026-11-13-desk-link.md LK4). */
+  listLinkedApps(options?: ApiRequestOptions): Promise<OperationResponse<'listLinkedApps', '200'>>;
+  revokeLinkedApp(appId: string): Promise<void>;
   listAdminSubscriptionTiers(options?: ApiRequestOptions): Promise<OperationResponse<'listAdminSubscriptionTiers', '200'>>;
   setAdminSubscriptionTier(tier: Schema<'SubscriptionTierCode'>, body: OperationRequest<'setAdminSubscriptionTier'>): Promise<OperationResponse<'setAdminSubscriptionTier', '200'>>;
   grantAdminWriterTier(userId: string, body: OperationRequest<'grantAdminWriterTier'>): Promise<OperationResponse<'grantAdminWriterTier', '201'>>;
@@ -289,6 +294,7 @@ export interface CanonKeeperApiClient {
   startImpersonation(body: OperationRequest<'startImpersonation'>): Promise<OperationResponse<'startImpersonation', '200'>>;
   stopImpersonation(): Promise<OperationResponse<'stopImpersonation', '200'>>;
   getCurrentUser(options?: ApiRequestOptions): Promise<OperationResponse<'getCurrentUser', '200'>>;
+  getDesktopState(options?: ApiRequestOptions): Promise<OperationResponse<'getDesktopState', '200'>>;
   listNotes(options?: NotesListOptions): Promise<OperationResponse<'listNotes', '200'>>;
   createPersonalNote(body: OperationRequest<'createPersonalNote'>, options: RequiredIdempotencyOptions): Promise<PersonalNote>;
   getPersonalNote(noteId: string, options?: ApiRequestOptions): Promise<PersonalNote>;

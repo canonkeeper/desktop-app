@@ -3,11 +3,13 @@
 
   python3 -I scripts/check-forbidden.py --ci
   python3 -I scripts/check-forbidden.py --strict --deny-list <file> --monorepo <dir>
+  python3 -I scripts/check-forbidden.py --tree <dir>
 
 It reads every blob reachable from any local ref (the whole history that a push publishes) and
 every commit message and identity, and reports:
 
-  - secrets: private keys, provider and GitHub tokens, Tauri/minisign secret keys, JWTs;
+  - secrets: private keys, provider and GitHub tokens, Tauri/minisign secret keys, JWTs — by the
+    file and the kind, never the value;
   - public IPv4 addresses (loopback, private and documentation ranges are allowed);
   - home directories of real users (/home/<name>, /Users/<name>, C:\\Users\\<name>), except the
     GitHub runner accounts;
@@ -21,7 +23,9 @@ every commit message and identity, and reports:
   - binary blobs larger than 1 MiB.
 
 --ci runs the generic rules only (the public CI has neither private input). --strict requires
-both private inputs and is what the pre-push hook runs.
+both private inputs and is what the pre-push hook runs. --tree checks a directory without history
+by the same rules of content — no identities of commits, no closed repository; the closed
+repository runs it over the tree of every export before the export (npm run open-source:check).
 
 With --strict, what is reachable from refs/remotes/origin/* is already published: a blob, a commit
 and its identities and message there cannot be unpublished by not pushing. Their findings are
@@ -36,10 +40,18 @@ import re
 import subprocess
 import sys
 
-ALLOWED_EMAILS = {
+# Built from parts, as the pattern of a minisign key below: the check of the closed repository, which exports this file,
+# takes a whole address outside its own allowlist for a foreign one.
+# The identity of a commit is the service one only: a commit made through the site of GitHub carries the account of a
+# person, and a pull request makes one — the repository takes commits pushed from a clone.
+SERVICE_EMAILS = {
     "support@canonkeeper.ru",
-    "noreply@anthropic.com",
-    "noreply@github.com",
+}
+# What a file may name besides: the plain machine addresses of GitHub and of an assistant stand in documents and in the
+# published history of this file.
+ALLOWED_EMAILS = SERVICE_EMAILS | {
+    "noreply" + "@anthropic.com",
+    "noreply" + "@github.com",
 }
 ALLOWED_EMAIL_DOMAINS = ("users.noreply.github.com", "example.com", "example.org", "example.test", "desktop.invalid")
 # Names of home directories that are plainly made up: the placeholders of the docs and the fixtures of the tests of the
@@ -65,7 +77,8 @@ SECRET_PATTERNS = [
 # literally, so they are allowed in their one file and for their kinds only.
 CANARIES = "backend/internal/governance/testdata/redaction_forbidden_strings.json"
 ALLOWED_FINDINGS = {(CANARIES, "private key"), (CANARIES, "openai-style key"), (CANARIES, "home directory")}
-IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.])")
+# An address may end a sentence: the dot after it is no part of a longer number unless a digit follows (a version).
+IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\w)(?!\.\d)")
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 HOME = re.compile(r"(?:/home/|/Users/|[Cc]:\\\\?Users\\\\?)([\w.-]+)")
 FILE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".ico", ".icns", ".webp", ".gif")
@@ -148,12 +161,16 @@ def email_allowed(address):
     return address in ALLOWED_EMAILS or address.endswith(ALLOWED_EMAIL_DOMAINS)
 
 
+def identity_allowed(address):
+    return address.lower() in SERVICE_EMAILS
+
+
 def scan_text(where, text, deny, findings):
     for label, pattern in SECRET_PATTERNS:
         if (where, label) in ALLOWED_FINDINGS:
             continue
-        for match in pattern.finditer(text):
-            findings.append(f"{where}: {label}: {match.group(0)[:12]}…")
+        if pattern.search(text):
+            findings.append(f"{where}: {label}")
     for match in IPV4.finditer(text):
         if public_ip(match.groups()):
             findings.append(f"{where}: public IPv4 {match.group(0)}")
@@ -175,18 +192,63 @@ def scan_text(where, text, deny, findings):
                 findings.append(f"{where}: term from line {number} of the deny list")
 
 
+def scan_data(where, data, deny, findings):
+    """The rules of content for one file: a binary one by its size only, a text one by scan_text."""
+    if b"\0" in data[:8192]:
+        if len(data) > 1 << 20:
+            findings.append(f"{where}: binary blob of {len(data)} bytes")
+        return
+    scan_text(where, data.decode("utf-8", "replace"), deny, findings)
+
+
+def report(findings, scope, checked, notices=()):
+    if notices:
+        print(f"check-forbidden: {len(set(notices))} finding(s) already published (notice), not failing:")
+        for notice in sorted(set(notices)):
+            print("  " + notice)
+    if findings:
+        print(f"check-forbidden: {len(set(findings))} finding(s), {scope}:")
+        for finding in sorted(set(findings)):
+            print("  " + finding)
+        sys.exit(1)
+    published_note = f", {len(set(notices))} already published (notice)" if notices else ""
+    print(f"check-forbidden: clean, {checked}, {scope}{published_note}")
+
+
+def check_tree(root):
+    """Every regular file under root, the directory .git and links aside: the tree of an export before it has history."""
+    findings = []
+    count = 0
+    for directory, subdirectories, files in os.walk(root):
+        subdirectories[:] = sorted(name for name in subdirectories if name != ".git")
+        for name in sorted(files):
+            path = os.path.join(directory, name)
+            if os.path.islink(path):
+                continue
+            with open(path, "rb") as stream:
+                data = stream.read()
+            count += 1
+            scan_data(os.path.relpath(path, root).replace(os.sep, "/"), data, [], findings)
+    report(findings, "tree (generic rules)", f"{count} files checked")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default=".")
     parser.add_argument("--deny-list")
     parser.add_argument("--monorepo")
-    parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--ci", action="store_true")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--strict", action="store_true", help="before a push: the deny list and the closed repository")
+    mode.add_argument("--ci", action="store_true", help="the generic rules over the whole history")
+    mode.add_argument("--tree", metavar="DIR", help="the rules of content over a directory without history")
     args = parser.parse_args()
     if args.strict and not (args.deny_list and args.monorepo):
         raise SystemExit("--strict needs --deny-list and --monorepo")
-    if not args.strict and not args.ci:
-        raise SystemExit("choose --strict (before a push) or --ci (generic rules only)")
+    if args.tree:
+        if args.deny_list or args.monorepo:
+            raise SystemExit("--tree runs the generic rules only: no deny list, no closed repository")
+        check_tree(os.path.abspath(args.tree))
+        return
     repo = os.path.abspath(args.repo)
     deny = load_deny_list(args.deny_list) if args.deny_list else []
     closed = monorepo_blobs(args.monorepo) if args.monorepo else {}
@@ -217,12 +279,7 @@ def main():
         target = notices if object_id in published else findings
         if object_id in closed:
             target.append(f"{where}: same content as the closed repository file {closed[object_id]}")
-        data = git(repo, "cat-file", "-p", object_id, binary=True)
-        if b"\0" in data[:8192]:
-            if len(data) > 1 << 20:
-                target.append(f"{where}: binary blob of {len(data)} bytes")
-            continue
-        scan_text(where, data.decode("utf-8", "replace"), deny, target)
+        scan_data(where, git(repo, "cat-file", "-p", object_id, binary=True), deny, target)
 
     history = git(repo, "log", "--all", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e") if objects else ""
     for record in history.split("\x1e"):
@@ -233,22 +290,12 @@ def main():
         target = notices if commit in published_commits else findings
         for identity in (author, committer):
             address = identity[identity.rfind("<") + 1:-1]
-            if not email_allowed(address):
+            if not identity_allowed(address):
                 target.append(f"commit {commit[:10]}: identity {identity}")
         scan_text(f"commit {commit[:10]} message", message, deny, target)
 
     scope = "strict (deny list and closed repository)" if args.strict else "ci (generic rules)"
-    if notices:
-        print(f"check-forbidden: {len(set(notices))} finding(s) already published (notice), not failing:")
-        for notice in sorted(set(notices)):
-            print("  " + notice)
-    if findings:
-        print(f"check-forbidden: {len(findings)} finding(s), {scope}:")
-        for finding in sorted(set(findings)):
-            print("  " + finding)
-        sys.exit(1)
-    published_note = f", {len(set(notices))} already published (notice)" if notices else ""
-    print(f"check-forbidden: clean, {len(blob_ids)} blobs and every commit checked, {scope}{published_note}")
+    report(findings, scope, f"{len(blob_ids)} blobs and every commit checked", notices)
 
 
 if __name__ == "__main__":

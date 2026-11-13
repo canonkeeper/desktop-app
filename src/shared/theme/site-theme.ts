@@ -3,7 +3,8 @@ import { withoutColorTransitions } from './switching';
 
 /**
  * The theme of the site (specs/2026-11-12-ux11-dark-core.md TH1.1): the author's choice «Светлая», «Тёмная» or «Как в
- * системе», light by default — the site does not turn dark by the device on its own (the owner, 07.11). The choice lives
+ * системе», light by default — the site does not turn dark by the device on its own (the owner, 07.11); the app is «Как в
+ * системе» until the author chooses (specs/2026-11-13-desk-settings.md ST3.1). The choice lives
  * in this browser; `public/site-theme.js` reads the same key and puts the theme on <html> before the first paint, this
  * module keeps it there afterwards and follows the device while «Как в системе» is chosen.
  */
@@ -36,13 +37,25 @@ function isChoice(value: unknown): value is SiteThemeChoice {
   return value === 'light' || value === 'dark' || value === 'system';
 }
 
-/** The choice kept in this browser; light when there is none or the storage is closed. */
-export function readSiteThemeChoice(storage: ThemeStorage | null = browserStorage()): SiteThemeChoice {
+/**
+ * The theme of the edition until the author chooses one (specs/2026-11-13-desk-settings.md ST3.1): the build of the app
+ * writes it on <html> as `data-theme-default`; the site has none and is light.
+ */
+function editionChoice(root: HTMLElement | null): SiteThemeChoice {
+  const choice = root?.getAttribute('data-theme-default');
+  return isChoice(choice) ? choice : 'light';
+}
+
+/** The choice kept in this browser; the theme of the edition when there is none or the storage is closed. */
+export function readSiteThemeChoice(
+  storage: ThemeStorage | null = browserStorage(),
+  root: HTMLElement | null = typeof document === 'undefined' ? null : document.documentElement,
+): SiteThemeChoice {
   try {
     const stored = storage?.getItem(SITE_THEME_STORAGE_KEY);
-    return isChoice(stored) ? stored : 'light';
+    return isChoice(stored) ? stored : editionChoice(root);
   } catch {
-    return 'light';
+    return editionChoice(root);
   }
 }
 

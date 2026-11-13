@@ -14,13 +14,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	codexadapter "canonkeeper/backend/internal/adapters/codex"
 )
 
 // The copy before the migrations of a new version (specs/2026-11-12-desk-process.md PR3): backups/pre-<the last
 // applied migration>-<UTC time>/ holds db.dump — pg_dump -Fc of the database of the product by the program of the
-// bundle — and the threads of the chats, codex/home and codex/sqlite of the data directory; the mark complete is
-// written last. pg_restore brings the database back and the threads are copied back; files/ is not copied, the
-// migrations of the schema do not touch it.
+// bundle — and the threads of the chats, codex/home without the profile of each flow and codex/sqlite of the data
+// directory; the mark complete is written last. pg_restore brings the database back and the threads are copied back;
+// files/ is not copied, the migrations of the schema do not touch it.
 const (
 	backupPrefix   = "pre-"
 	backupDump     = "db.dump"
@@ -34,6 +36,9 @@ const (
 	// arguments or the environment of a process (DA3.2).
 	passFile = "pg.pass"
 )
+
+// backupVersion holds the version of the app that made the copy (specs/2026-11-13-desk-settings.md ST2.3).
+const backupVersion = "version"
 
 // The failed steps of the start the shell tells apart (PR3.3, PR3.4).
 var errNewerSchema = errors.New("desktop: the database holds a migration newer than the program")
@@ -169,19 +174,38 @@ func (cluster *Cluster) copyInto(ctx context.Context, directory string) error {
 		"-f", filepath.Join(directory, backupDump)); err != nil {
 		return err
 	}
-	if err := copyTree(cluster.data.CodexHome(), filepath.Join(directory, "codex", "home")); err != nil {
+	if err := copyTree(cluster.data.CodexHome(), filepath.Join(directory, "codex", "home"), profileOfAFlow); err != nil {
 		return err
 	}
-	if err := copyTree(cluster.data.CodexSQLite(), filepath.Join(directory, "codex", "sqlite")); err != nil {
+	if err := copyTree(cluster.data.CodexSQLite(), filepath.Join(directory, "codex", "sqlite"), nil); err != nil {
+		return err
+	}
+	if err := cluster.writeVersion(directory); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(directory, backupComplete), nil, 0o600)
 }
 
-// copyTree copies the directories and regular files of source into target, private to the user: 0700 and 0600. Links
-// are not copied: in the home of Codex they point at the profile of the bundle, and the start makes them again. A source
-// Codex has not made yet is an empty copy.
-func copyTree(source, target string) error {
+// writeVersion names the version of the app in its copy; a program that does not know its version names none.
+func (cluster *Cluster) writeVersion(directory string) error {
+	if cluster.version == "" {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(directory, backupVersion), []byte(cluster.version+"\n"), 0o600)
+}
+
+// profileOfAFlow says whether a path of codex/home, <flow>/<name>, is the program's in the home of its flow
+// (specs/2026-11-13-desk-home.md HM1.5): an entry of the profile, which every start copies from the bundle again, or the
+// staging of that copy (codex.HomeEntry). The copy before the migrations leaves them out: the threads are the author's,
+// the profile is the bundle's.
+func profileOfAFlow(relative string) bool {
+	flow, name, found := strings.Cut(filepath.ToSlash(relative), "/")
+	return found && flow != "" && !strings.Contains(name, "/") && codexadapter.HomeEntry(name)
+}
+
+// copyTree copies the directories and regular files of source into target, private to the user: 0700 and 0600, but for
+// the paths leave names, when it names any. Links are not copied. A source Codex has not made yet is an empty copy.
+func copyTree(source, target string, leave func(relative string) bool) error {
 	if err := os.MkdirAll(target, 0o700); err != nil {
 		return err
 	}
@@ -195,6 +219,12 @@ func copyTree(source, target string) error {
 		relative, err := filepath.Rel(source, path)
 		if err != nil {
 			return err
+		}
+		if leave != nil && leave(relative) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		destination := filepath.Join(target, relative)
 		switch {

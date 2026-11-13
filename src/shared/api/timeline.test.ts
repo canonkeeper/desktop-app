@@ -59,7 +59,6 @@ describe('canonical timeline transport', () => {
   it('parses live context-window usage without treating cumulative tokens as occupancy', () => {
     const parsed = parseAgentTimelineStreamEnvelope(JSON.stringify({
       context: {
-        compacted: false,
         contextWindow: 128_000,
         providerTurnId: 'turn-1',
         role: 'main',
@@ -73,6 +72,15 @@ describe('canonical timeline transport', () => {
       expect(parsed.data.context.usedTokens).toBe(96_000);
       expect(parsed.data.context.contextWindow).toBe(128_000);
     }
+  });
+
+  it('knows no compaction flag in the context of the stream: the server never sends one', () => {
+    const parsed = parseAgentTimelineStreamEnvelope(JSON.stringify({
+      context: { compacted: true, providerTurnId: 'turn-1', role: 'main' },
+      type: 'context',
+    }));
+
+    expect(parsed.success).toBe(false);
   });
 
   it('uses the generated snapshot operation with the exact project and Job path', async () => {

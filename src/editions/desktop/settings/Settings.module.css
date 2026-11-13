@@ -1,0 +1,181 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* «Настройки» of the app (board 44, Pattern/Desktop/Settings and its parts). */
+
+/* The page lays itself out in the wide content of the shell (PS1.2): the padding of `Pattern/Desktop/Settings`. */
+.page {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+  width: 100%;
+  padding: var(--ck-space-6) var(--ck-space-5) var(--ck-space-7);
+}
+
+.body {
+  display: flex;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+.nav {
+  flex: none;
+  width: 200px;
+}
+
+.navList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  gap: var(--ck-space-2);
+  border-radius: var(--ck-radius-sm);
+  padding: var(--ck-space-2) 10px;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  text-decoration: none;
+}
+
+.navItem:hover {
+  background: var(--ck-muted);
+}
+
+.navItem[aria-current='page'] {
+  background: var(--ck-sidebar-accent);
+  color: var(--ck-foreground);
+}
+
+.part {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  max-width: 720px;
+  gap: 20px;
+}
+
+.partTitle {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-ui-h1);
+  font-weight: 600;
+}
+
+/* The parts: Pattern/Desktop/Settings Data, Settings Look, Settings About. */
+.block {
+  display: grid;
+  gap: 10px;
+}
+
+.section {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--ck-border);
+  padding-top: 18px;
+}
+
+.label {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.text {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.note {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.pathRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.path {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-font-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.rows {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row,
+.networkRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.networkRow {
+  font-size: var(--ck-font-size-label);
+  overflow-wrap: anywhere;
+}
+
+.rowIcon {
+  flex: none;
+  color: var(--ck-muted-foreground);
+}
+
+/* «Исходный код»: a small link of the line (`Source`, `--text-ui-sm`). */
+.source {
+  font-size: var(--ck-font-size-label);
+}
+
+.themeRow,
+.openRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid var(--ck-border);
+  padding-top: 18px;
+}
+
+/* A window narrower than the parts and their list side by side: the list goes over the part. */
+@media (max-width: 767px) {
+  .body {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .nav {
+    width: 100%;
+  }
+
+  .navList {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}

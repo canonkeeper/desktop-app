@@ -72,6 +72,11 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	want = append(want, "saga_ready_waves")
 	// Added by forward migration 0142: the snapshot of the last update of a book from a file, removed with the book.
 	want = append(want, "book_update_snapshots", "book_update_snapshot_chapters")
+	// Added by forward migration 0143: the codes of the link of the app and the linked apps, account data.
+	want = append(want, "app_link_codes", "app_devices")
+	// Added by forward migration 0144: the permits of a linked app to work on the models and the corrections under them,
+	// account data.
+	want = append(want, "model_permits", "model_permit_units")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},

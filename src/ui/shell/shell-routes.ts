@@ -14,12 +14,14 @@ export const shellOfSurface: Readonly<Record<Surface, boolean>> = {
   drawing: true,
   home: false,
   legal: true,
+  link: true,
   manuscript: true,
   memory: true,
   notes: true,
   promo: true,
   'promo-link': false,
   saga: true,
+  settings: true,
   tariff: true,
   unknown: true,
   writing: true,
@@ -66,7 +68,7 @@ export function narrowColumn(route: Pick<AppRoute, 'query' | 'surface'>) {
  */
 export type ContentWidth = 'reading' | 'wide';
 
-const readingSurfaces: ReadonlySet<Surface> = new Set<Surface>(['account', 'legal', 'promo', 'tariff', 'unknown']);
+const readingSurfaces: ReadonlySet<Surface> = new Set<Surface>(['account', 'legal', 'link', 'promo', 'tariff', 'unknown']);
 
 export function contentWidth(route: Pick<AppRoute, 'surface'>): ContentWidth {
   return readingSurfaces.has(route.surface) ? 'reading' : 'wide';

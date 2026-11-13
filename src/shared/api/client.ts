@@ -184,6 +184,18 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'setAccountLetters', '200'>('setAccountLetters', { body });
   }
 
+  startAppLink(body: OperationRequest<'startAppLink'>) {
+    return this.request<'startAppLink', '200'>('startAppLink', { body });
+  }
+
+  listLinkedApps(options: ApiRequestOptions = {}) {
+    return this.request<'listLinkedApps', '200'>('listLinkedApps', { signal: options.signal });
+  }
+
+  async revokeLinkedApp(appId: string) {
+    await this.request<'revokeLinkedApp', '204'>('revokeLinkedApp', { params: { path: { appId } } });
+  }
+
   listAdminSubscriptionTiers(options: ApiRequestOptions = {}) {
     return this.request<'listAdminSubscriptionTiers', '200'>('listAdminSubscriptionTiers', { signal: options.signal });
   }
@@ -363,6 +375,11 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
 
   getCurrentUser(options: ApiRequestOptions = {}) {
     return this.request<'getCurrentUser', '200'>('getCurrentUser', options);
+  }
+
+  /** The state of the desktop app its «Настройки» show (specs/2026-11-13-desk-settings.md ST2.1). */
+  getDesktopState(options: ApiRequestOptions = {}) {
+    return this.request<'getDesktopState', '200'>('getDesktopState', options);
   }
 
   listNotes(options: NotesListOptions = {}) {

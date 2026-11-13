@@ -18,11 +18,12 @@ import { ManuscriptReaderMode } from './ManuscriptReaderMode';
 import { readingPlaceOf, rememberReadingPlace } from './reading-place';
 import { ToastsProvider } from '../../../ui/feedback/Toast';
 import { NotesContext, type NotesActions } from '../../../shared/notes/notes-context';
+import { ReaderSlotProvider, type ReaderSlot } from './reader-slot';
 
 type ReaderTestApi = ReturnType<typeof createMockApiClient>;
 const chapterQuery = '?mode=read&projectId=project-white-port&bookId=book-02&chapterId=chapter-12';
 
-function renderReader(search = chapterQuery, configureApi?: (api: ReaderTestApi) => void) {
+function renderReader(search = chapterQuery, configureApi?: (api: ReaderTestApi) => void, slot: ReaderSlot | null = null) {
   const api = createMockApiClient();
   configureApi?.(api);
   const navigate = vi.fn();
@@ -35,9 +36,9 @@ function renderReader(search = chapterQuery, configureApi?: (api: ReaderTestApi)
       if (destination === '/manuscript/books') setRoute(createAppRoute(destination, query));
     };
     // The notes of the root: «Заметка» of a selection asks them for a new note (the window is src/features/notes).
-    return <NotesContext.Provider value={notes}>
+    return <NotesContext.Provider value={notes}><ReaderSlotProvider value={slot}>
       <InShell api={api} navigate={go} route={route}><ManuscriptReaderMode api={api} navigate={go} route={route} /></InShell>
-    </NotesContext.Provider>;
+    </ReaderSlotProvider></NotesContext.Provider>;
   }
   const view = render(<QueryClientProvider client={queryClient}><ToastsProvider><RoutedReader /></ToastsProvider></QueryClientProvider>);
   return { api, navigate, queryClient, ...view };
@@ -324,6 +325,21 @@ describe('«Содержание» and «⋯»', () => {
     // The edit offers «← К главе в книге» back here (specs/2026-11-11-ux9-writing-a.md WA4.2).
     await waitFor(() => expect(navigate).toHaveBeenLastCalledWith('/writing', { projectId: 'project-white-port', draft: draft.id }, { from: { section: 'manuscript' } }));
     expect(screen.queryByRole('menuitemcheckbox')).toBeNull();
+  });
+
+  // specs/2026-11-13-desk-editor.md ED1.1: the edition that names its editor opens the draft there — the desktop app, whose
+  // editor has its own way back; the same draft again for the same chapter.
+  it('opens the chapter in the editor the edition names from «⋯» → «Править главу»', async () => {
+    const editAt = (projectId: string, draftId: string) => ({ path: '/manuscript/edit', query: { projectId, draftId } });
+    const { api, navigate } = renderReader(chapterQuery, undefined, { editAt });
+    const open = vi.spyOn(api, 'openChapterEdit');
+    await heading();
+    fireEvent.click(screen.getByRole('button', { name: 'Ещё' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Править главу' }));
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    const draft = await open.mock.results[0]!.value;
+    await waitFor(() => expect(navigate.mock.calls.at(-1)?.slice(0, 2)).toEqual(['/manuscript/edit', { projectId: 'project-white-port', draftId: draft.id }]));
+    expect((await api.openChapterEdit('project-white-port', 'chapter-12')).id).toBe(draft.id);
   });
 
   it('gives a reader of the saga only what he may: no «Править главу» and no download', async () => {

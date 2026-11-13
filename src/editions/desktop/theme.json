@@ -1,0 +1,4 @@
+{
+  "about": "The theme of the app until the author chooses one (specs/2026-11-13-desk-settings.md ST3.1): the build writes it on <html> as data-theme-default, public/site-theme.js and src/shared/theme/site-theme.ts read it there.",
+  "default": "system"
+}

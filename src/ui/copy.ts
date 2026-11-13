@@ -43,11 +43,15 @@ export function formatCount(value: number, one: string, few: string, many: strin
 
 const sizeFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
 
-/** A file size with a decimal comma: «1,2 МБ»; below 0,1 МБ in kilobytes, «4 КБ» — never «0,0 МБ» (pass on TEST 11.11). */
+/**
+ * A file size with a decimal comma: «1,2 МБ»; below 0,1 МБ in kilobytes, «4 КБ» — never «0,0 МБ» (pass on TEST 11.11); from
+ * a gigabyte in gigabytes, «1,2 ГБ» — the place of the data of the app (specs/2026-11-13-desk-settings.md ST2.4).
+ */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 0.1 * 1024 * 1024) return `${integerFormatter.format(Math.round(bytes / 1024))} КБ`;
-  return `${sizeFormatter.format(bytes / 1024 / 1024)} МБ`;
+  if (bytes < 1024 * 1024 * 1024) return `${sizeFormatter.format(bytes / 1024 / 1024)} МБ`;
+  return `${sizeFormatter.format(bytes / 1024 / 1024 / 1024)} ГБ`;
 }
 
 const timeFormatter = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });

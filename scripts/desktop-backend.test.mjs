@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { placeWeb } from './desktop-backend.mjs';
+import { backendBuildArgs, placeWeb, shellVersion } from './desktop-backend.mjs';
 import { desktopWebBuild } from './desktop-web.mjs';
 
 // specs/2026-11-07-desktop-app.md DA3.6: the backend embeds the new build of the web and nothing an earlier build left.
@@ -41,4 +41,16 @@ test('the web of the app builds without a shell: Node runs vite with the edition
   for (const name of ['build:desktop', 'build:desktop:backend']) {
     assert.doesNotMatch(scripts[name], /^[A-Z_][A-Z0-9_]*=/u, `${name} sets a variable in the syntax of a POSIX shell`);
   }
+});
+
+// specs/2026-11-13-desk-settings.md ST4.2: the backend names the version the installer and the shell name — the version
+// of the package of the shell in desktop/src-tauri/Cargo.toml — and no other.
+test('the backend is built with the version of the shell', () => {
+  const manifest = '[package]\nname = "canonkeeper"\nversion = "1.2.0"\nedition = "2021"\n\n[dependencies]\ntauri = { version = "2.12.5" }\n';
+  assert.equal(shellVersion(manifest), '1.2.0');
+  assert.throws(() => shellVersion('[package]\nname = "canonkeeper"\n'), /no version/u);
+  assert.deepEqual(backendBuildArgs('1.2.0', 'out/canonkeeper-backend'), [
+    'build', '-trimpath', '-ldflags=-s -w -X main.version=1.2.0', '-o', 'out/canonkeeper-backend', './cmd/desktop',
+  ]);
+  assert.match(shellVersion(readFileSync(path.join(import.meta.dirname, '..', 'desktop', 'src-tauri', 'Cargo.toml'), 'utf8')), /^\d+\.\d+\.\d+$/u);
 });

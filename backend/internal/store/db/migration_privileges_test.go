@@ -182,6 +182,19 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 		}
 		assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", snapshot, "SELECT", true)
 	}
+	// The codes of the link of the app and the linked apps (0143, specs/2026-11-13-desk-link.md): the runtime of the site
+	// alone; nobody else reads a hash of a code or of a pass.
+	// The permits of a linked app and the corrections under them (0144, specs/2026-11-13-desk-permits.md): the runtime of
+	// the site alone, as the apps they belong to.
+	for _, table := range []string{"app_link_codes", "app_devices", "model_permits", "model_permit_units"} {
+		linked := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
+		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
+			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", linked, privilege, true)
+			assertTablePrivilege(t, db.Pool, "canonkeeper_worker_discovery", linked, privilege, false)
+			assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", linked, privilege, false)
+			assertTablePublicPrivilege(t, db.Pool, linked, privilege, false)
+		}
+	}
 	// The marks of the letters by time and the author's switch of the letters of his tier (0126): the runtime reads and
 	// writes them, nobody else (specs/2026-11-10-service-letters.md M3.2, M4.4, M4.5).
 	for table, columns := range map[string][]string{

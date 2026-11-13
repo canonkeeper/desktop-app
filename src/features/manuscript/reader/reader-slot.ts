@@ -45,7 +45,12 @@ export interface ReaderDrawings {
 
 /** The closed blocks of the reader (specs/2026-11-07-desktop-app.md DA16.4); without them the reader shows no drawings. */
 export interface ReaderSlot {
-  useDrawings: (options: ReaderDrawingsOptions) => ReaderDrawings;
+  useDrawings?: (options: ReaderDrawingsOptions) => ReaderDrawings;
+  /**
+   * Where «Править главу» opens the draft of the chapter: the editor of the desktop app without the helper
+   * (specs/2026-11-13-desk-editor.md ED1.1); without it — «Письмо» of the site, as before.
+   */
+  editAt?: (projectId: string, draftId: string) => { path: string; query: Record<string, string> };
 }
 
 const ReaderSlotContext = createContext<ReaderSlot | null>(null);

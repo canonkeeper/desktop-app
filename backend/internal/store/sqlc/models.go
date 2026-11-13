@@ -33,6 +33,33 @@ type AgentWorkflowInput struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }
 
+type AppDevice struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	LinkCodeID    pgtype.UUID        `json:"link_code_id"`
+	PassHash      string             `json:"pass_hash"`
+	PassPrefix    string             `json:"pass_prefix"`
+	Name          string             `json:"name"`
+	Platform      string             `json:"platform"`
+	AppVersion    string             `json:"app_version"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
+type AppLinkCode struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CodeHash  string             `json:"code_hash"`
+	Challenge string             `json:"challenge"`
+	Port      int32              `json:"port"`
+	Platform  string             `json:"platform"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+}
+
 type ArtifactSourceOwner struct {
 	ID                  pgtype.UUID        `json:"id"`
 	ProjectID           pgtype.UUID        `json:"project_id"`
@@ -819,6 +846,36 @@ type ModelLimitSample struct {
 	ResetsAt      pgtype.Timestamptz `json:"resets_at"`
 }
 
+type ModelPermit struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	DeviceID       pgtype.UUID        `json:"device_id"`
+	Kind           string             `json:"kind"`
+	QuotaKey       pgtype.Text        `json:"quota_key"`
+	Units          int32              `json:"units"`
+	ReturnedUnits  int32              `json:"returned_units"`
+	Day            pgtype.Date        `json:"day"`
+	RefHash        string             `json:"ref_hash"`
+	State          string             `json:"state"`
+	Outcome        pgtype.Text        `json:"outcome"`
+	Answered       bool               `json:"answered"`
+	Requests       int32              `json:"requests"`
+	InputTokens    int64              `json:"input_tokens"`
+	CachedTokens   int64              `json:"cached_tokens"`
+	OutputTokens   int64              `json:"output_tokens"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	LastActivityAt pgtype.Timestamptz `json:"last_activity_at"`
+	ValidUntil     pgtype.Timestamptz `json:"valid_until"`
+	ClosedAt       pgtype.Timestamptz `json:"closed_at"`
+}
+
+type ModelPermitUnit struct {
+	PermitID   pgtype.UUID        `json:"permit_id"`
+	RefHash    string             `json:"ref_hash"`
+	ChargedAt  pgtype.Timestamptz `json:"charged_at"`
+	ReturnedAt pgtype.Timestamptz `json:"returned_at"`
+}
+
 type ModelRequest struct {
 	ID           pgtype.UUID        `json:"id"`
 	At           pgtype.Timestamptz `json:"at"`
@@ -896,6 +953,7 @@ type PlatformQuotaDefault struct {
 	DrawingTurnsPerDay  pgtype.Int4        `json:"drawing_turns_per_day"`
 	DraftTurnsPerDay    pgtype.Int4        `json:"draft_turns_per_day"`
 	DraftRewritesPerDay pgtype.Int4        `json:"draft_rewrites_per_day"`
+	AppReturnsPerDay    pgtype.Int4        `json:"app_returns_per_day"`
 }
 
 type Project struct {
@@ -1334,6 +1392,7 @@ type WriterQuotaOverride struct {
 	DrawingTurnsPerDay  pgtype.Int4        `json:"drawing_turns_per_day"`
 	DraftTurnsPerDay    pgtype.Int4        `json:"draft_turns_per_day"`
 	DraftRewritesPerDay pgtype.Int4        `json:"draft_rewrites_per_day"`
+	AppReturnsPerDay    pgtype.Int4        `json:"app_returns_per_day"`
 }
 
 type WriterUsageDay struct {
@@ -1354,4 +1413,5 @@ type WriterUsageDay struct {
 	DraftTurns         int32       `json:"draft_turns"`
 	DraftRewrites      int32       `json:"draft_rewrites"`
 	VoiceSeconds       int32       `json:"voice_seconds"`
+	AppReturns         int32       `json:"app_returns"`
 }

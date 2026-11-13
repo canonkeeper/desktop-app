@@ -43,6 +43,9 @@ describe('writer counts (R5.3)', () => {
     expect(formatFileSize(4 * 1024)).toBe('4 КБ');
     expect(formatFileSize(100 * 1024)).toBe('100 КБ');
     expect(formatFileSize(0.1 * 1024 * 1024)).toBe('0,1 МБ');
+    // The place of the data of the app (specs/2026-11-13-desk-settings.md ST2.4): from a gigabyte in gigabytes.
+    expect(formatFileSize(1023.9 * 1024 * 1024)).toBe('1\u00a0023,9 МБ');
+    expect(formatFileSize(1_288_490_188)).toBe('1,2 ГБ');
   });
 });
 

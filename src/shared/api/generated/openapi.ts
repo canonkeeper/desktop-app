@@ -886,6 +886,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/apps/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link the CanonKeeper app of this computer with the account.
+         * @description specs/2026-11-13-desk-link.md LK1.4, LK1.5: the page /link of the site confirms the link the app asked for. Only the signed-in author himself in his own session, with a verified address and an account that is not blocked; a session opened on his behalf is 403 account.own_session_required, an unverified address 403 auth.email_unverified, five linked apps 409 app.too_many_apps. The site keeps the SHA-256 of a new code of 32 random bytes for 5 minutes and one exchange, bound to the challenge, the port and the system, and answers the address of the return on 127.0.0.1 it builds from the port with the code and the state of the app: the code is in it and nowhere else, and the page goes there by script. 10 links an hour per account. Responses are no-store.
+         */
+        post: operations["startAppLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/link/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change a code of the link for the pass of the app.
+         * @description specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author and his tier. The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code also unlinks the app made by it. The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.
+         */
+        post: operations["exchangeAppLinkCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the account a linked app works for.
+         * @description specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.
+         */
+        get: operations["getAppAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink this app from the account.
+         * @description specs/2026-11-13-desk-link.md LK3.4: «Отвязать» in the app unlinks it; its pass opens nothing after it, and nothing of the computer of the author is deleted. The admission of getAppAccount. Responses are no-store.
+         */
+        delete: operations["unlinkApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/permits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a permit to work on the models of the site.
+         * @description specs/2026-11-13-desk-permits.md PM1.1–PM1.4: before a turn of the chat (chat_turn), a reading of the author's materials by the model (materials) or of his books (reading) the app asks for a permit. ref is an opaque value of the app, 1–128 unreserved signs; the site keeps only its SHA-256. chat_turn spends a question of the author's Moscow day (chat_turns_per_day) and a place at once (active_turns) with the counters and the fence of the site: the turns of the site and the live permits of turns of every app of the account are one number. materials spends an upload of the day (imports_per_day); reading spends nothing. A refusal is the site's own: 429 quota.chat_turns_daily or quota.imports_daily with Retry-After until 00:00 Moscow time, 429 quota.active_turns. Another kind is 400 app.permit_kind. The same ref of the same app and kind answers 200 with the same permit and spends nothing, and an ended permit stays ended; a new permit is 201. A turn lives 5 minutes after its last activity, materials and reading 24 hours. Counted per app. Responses are no-store.
+         */
+        post: operations["openModelPermit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/permits/{permitId}/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Charge a correction of a running turn under its permit.
+         * @description specs/2026-11-13-desk-permits.md PM1.5, PM1.6: a correction of a running turn is one more question of the author's Moscow day of the correction, under the lock of his day as on the site; it is activity of the turn and its lease starts again. ref names the correction: the same ref answers 200 with the same unit and spends nothing; a ref given back is charged again. A permit that is not a turn is 400 app.permit_kind; a permit of another app or none is 404 app.permit_not_found without details; a permit that ended is 409 app.permit_closed; over the day 429 quota.chat_turns_daily with Retry-After. Counted per app. Responses are no-store.
+         */
+        post: operations["chargeModelPermit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/permits/{permitId}/units/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Give back a correction the turn did not take.
+         * @description specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. A second return changes nothing and answers the same. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.
+         */
+        delete: operations["returnModelPermitUnit"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/permits/{permitId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a permit when the work under it ended.
+         * @description specs/2026-11-13-desk-permits.md PM2.1–PM2.4: the app names how the work ended — answered, done, canceled or failed — and the site decides the return by what it saw itself under the permit. The unit of the work comes back only for failed when no answer of the model passed under the permit: when requests passed, the site saw them fail; when none passed, it is the word of the app alone, given back at most app_returns_per_day times in a Moscow day of the account (5 by default) and over it the permit closes without a return. answered, done and canceled keep the unit, and the corrections are never given back by the end of the turn. A return goes to the Moscow day the permit started on, never below zero. What the site saw is not in the request: a body with any other field is 400 request.validation. A permit that ended — closed, expired or canceled with the unlinking of its app — answers as it is, so a repeat of the close changes nothing; a permit whose lease ended answers its expiry. A permit of another app or none is 404 app.permit_not_found without details. Counted per app. Responses are no-store.
+         */
+        post: operations["closeModelPermit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the CanonKeeper apps linked with the account.
+         * @description specs/2026-11-13-desk-link.md LK4.1: «Аккаунт → Приложения на компьютере» — the live apps of the signed-in author, the newest first: the name of the computer, its system, the version of the app, when it was linked and when it was last seen (kept at most once in 10 minutes). Neither the hash nor the first signs of a pass are answered. Responses are no-store.
+         */
+        get: operations["listLinkedApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/apps/{appId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink a CanonKeeper app from the account.
+         * @description specs/2026-11-13-desk-link.md LK4.2: «Отвязать» — the app is unlinked and its pass opens nothing after it; nothing of the computer of the author is deleted. Only the signed-in author himself in his own session with the CSRF token; a session opened on his behalf is 403 account.own_session_required, an app of another account or one unlinked already 404 app.not_found. Responses are no-store.
+         */
+        delete: operations["revokeLinkedApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/letters": {
         parameters: {
             query?: never;
@@ -1923,6 +2123,26 @@ export interface paths {
          * @description Mounted only by the desktop build (DA3.3): exchanges the one-time code the shell gave the window — 32 random bytes, good once and for 30 seconds — for a session of the local author, with the strict Origin of the window and the CSRF token before the cookie changes. A code that is unknown, used or late is 403 without telling which; responses are no-store.
          */
         post: operations["openDesktopSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the state of the app its «Настройки» show.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-settings.md ST2.1): the version of the window, the backend and the installer; the data directory as the author sees its path; the place it takes, counted without following links and waited for no longer than 2 s — while a count goes on, the last known place with counting true (null before the first count ended); the complete copies before an update, the newest first and no more than two, each with the version of the app that made it (null for a copy made before the copies named it); and the hosts the app goes to in this build and its settings. Responses are no-store.
+         */
+        get: operations["getDesktopState"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5295,6 +5515,181 @@ export interface components {
             /** @description The length of a trial call of the tier in force, in seconds. */
             callSeconds: number;
         };
+        /** @description specs/2026-11-13-desk-link.md LK1.1: what the page /link read from the link the app opened. */
+        AppLinkStart: {
+            /** @description The PKCE S256 challenge of the verifier the app keeps. */
+            challenge: string;
+            /** @description The opaque state of the app; the site puts it into the address of the return and does not keep it. */
+            state: string;
+            /** @description The port of the return of the app on 127.0.0.1. */
+            port: number;
+            /**
+             * @description The system of the computer of the app.
+             * @enum {string}
+             */
+            platform: "windows" | "linux";
+        };
+        /** @description specs/2026-11-13-desk-link.md LK1.5: where the page goes with the code. */
+        AppLinkStarted: {
+            /**
+             * Format: uri
+             * @description The address of the return on 127.0.0.1 with the code and the state; the only place the code stands.
+             */
+            callbackUrl: string;
+            /**
+             * Format: date-time
+             * @description Until when the code waits for the app.
+             */
+            expiresAt: string;
+        };
+        /** @description specs/2026-11-13-desk-link.md LK2.1: the code of the link and what the app links with it. */
+        AppLinkExchange: {
+            /** @description The code the app got on 127.0.0.1. */
+            code: string;
+            /** @description The PKCE verifier of the challenge of the link. */
+            verifier: string;
+            /** @description The name of the computer, without control signs. */
+            name: string;
+            /** @description The version of the app. */
+            appVersion: string;
+        };
+        /** @description specs/2026-11-13-desk-link.md LK2.2: the pass of the app, given once, and its account. */
+        AppLinkToken: {
+            /** @description The pass of the app; the site keeps only its SHA-256. */
+            pass: string;
+            account: components["schemas"]["AppAccount"];
+        };
+        /** @description specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for. */
+        AppAccount: {
+            /** @description The name of the author. */
+            name: string;
+            tier: components["schemas"]["AppTier"];
+        };
+        /** @description The tier of the site in force for the account. */
+        AppTier: {
+            /** @description The code of the tier. */
+            code: string;
+            /** @description The title of the tier. */
+            title: string;
+            /**
+             * Format: date-time
+             * @description null — without term, or «Бесплатно».
+             */
+            until: string | null;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt. */
+        AppQuota: {
+            /**
+             * Format: date
+             * @description Current Moscow calendar day.
+             */
+            day: string;
+            /**
+             * Format: date-time
+             * @description Next 00:00 Moscow time, when daily counters reset.
+             */
+            resetsAt: string;
+            chatTurns: components["schemas"]["QuotaCounter"];
+            activeTurns: components["schemas"]["QuotaCounter"];
+            imports: components["schemas"]["QuotaCounter"];
+        };
+        /** @description specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day. */
+        AppAccountState: {
+            /** @description The name of the author. */
+            name: string;
+            tier: components["schemas"]["AppTier"];
+            quota: components["schemas"]["AppQuota"];
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM1.1: the work the app asks a permit for and its ref. */
+        AppPermitOpen: {
+            /**
+             * @description chat_turn — a turn of the chat; materials — a reading of the author's materials by the model; reading — a reading of his books by the model.
+             * @enum {string}
+             */
+            kind: "chat_turn" | "materials" | "reading";
+            /** @description An opaque value of the app naming the work; the site keeps only its SHA-256. */
+            ref: string;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM1, PM2: a permit as the app sees it — never its ref, nor what the site saw under it. */
+        AppPermit: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "chat_turn" | "materials" | "reading";
+            /**
+             * @description open — takes work until validUntil; closed — by the app or with its unlinking; expired — its lease ended.
+             * @enum {string}
+             */
+            state: "open" | "closed" | "expired";
+            /**
+             * @description null while open.
+             * @enum {string|null}
+             */
+            outcome: "answered" | "done" | "canceled" | "failed" | "expired_unused" | null;
+            /**
+             * Format: date
+             * @description The Moscow day the unit of the work counts on and comes back to.
+             */
+            day: string;
+            /**
+             * Format: date-time
+             * @description The end of the lease: a turn — 5 minutes after its last activity, materials and reading — 24 hours after the start.
+             */
+            validUntil: string;
+            /** @description The unit of the work came back to its day. */
+            returned: boolean;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM1.5: the ref of a correction of a running turn. */
+        AppPermitUnitCharge: {
+            /** @description An opaque value of the app naming the correction; the site keeps only its SHA-256. */
+            ref: string;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit. */
+        AppPermitUnit: {
+            /**
+             * Format: date
+             * @description The Moscow day the correction counts on.
+             */
+            day: string;
+            /** @description Always false: a unit given back is charged again by the same ref. */
+            returned: boolean;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM2.1: how the work under a permit ended, as the app names it; what the site saw under it is the site's alone. */
+        AppPermitClose: {
+            /**
+             * @description answered — the work got its answer; done — it ended without an answer to give; canceled — the author stopped it; failed — the model, the connection or the app failed.
+             * @enum {string}
+             */
+            outcome: "answered" | "done" | "canceled" | "failed";
+        };
+        /** @description specs/2026-11-13-desk-link.md LK4.1: the live CanonKeeper apps of the account, the newest first. */
+        LinkedApps: {
+            apps: components["schemas"]["LinkedApp"][];
+        };
+        /** @description A CanonKeeper app linked with the account. */
+        LinkedApp: {
+            /** Format: uuid */
+            id: string;
+            /** @description The name of the computer the app sent. */
+            name: string;
+            /**
+             * @description The system of the computer.
+             * @enum {string}
+             */
+            platform: "windows" | "linux";
+            /** @description The version of the app when it was linked. */
+            appVersion: string;
+            /**
+             * Format: date-time
+             * @description When the author linked it.
+             */
+            linkedAt: string;
+            /**
+             * Format: date-time
+             * @description When it was last seen; null — not yet.
+             */
+            seenAt: string | null;
+        };
         /** @description specs/2026-11-09-first-session.md FS3, specs/2026-11-10-service-letters.md M4.5: the letters of the site the current user chose to get. */
         AccountLetters: {
             /** @description The letter «Сага готова»: one letter after books are loaded, when the saga can be asked. */
@@ -5557,7 +5952,7 @@ export interface components {
          * @description One writer limit; the order of the card is the order of this list.
          * @enum {string}
          */
-        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day";
+        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "app_returns_per_day";
         /** @description One limit in force with its use. */
         AdminQuotaLimit: {
             key: components["schemas"]["AdminQuotaKey"];
@@ -5628,6 +6023,7 @@ export interface components {
             drawing_turns_per_day?: components["schemas"]["AdminQuotaValue"];
             draft_turns_per_day?: components["schemas"]["AdminQuotaValue"];
             draft_rewrites_per_day?: components["schemas"]["AdminQuotaValue"];
+            app_returns_per_day?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every changed limit with the writer's own value before and after; null is the default. */
         AdminQuotaChanges: {
@@ -5638,10 +6034,10 @@ export interface components {
             }[];
         };
         /**
-         * @description One general limit by default: a writer limit (AdminQuotaKey) a tier does not set. Every other key a tier sets and has no platform default (specs/2026-11-08-admin-redesign.md AR7.1; specs/2026-11-11-tier-limits.md TL2.2): image_uploads_per_day alone stays, it spends no model.
+         * @description One general limit by default: a writer limit (AdminQuotaKey) a tier does not set. Every other key a tier sets and has no platform default (specs/2026-11-08-admin-redesign.md AR7.1; specs/2026-11-11-tier-limits.md TL2.2): image_uploads_per_day stays, it spends no model, and app_returns_per_day — the returns a Moscow day of an account takes on the word of a linked app alone (specs/2026-11-13-desk-permits.md PM2.4).
          * @enum {string}
          */
-        AdminQuotaDefaultKey: "image_uploads_per_day";
+        AdminQuotaDefaultKey: "image_uploads_per_day" | "app_returns_per_day";
         /** @description One limit by default. */
         AdminQuotaDefault: {
             key: components["schemas"]["AdminQuotaDefaultKey"];
@@ -5664,6 +6060,7 @@ export interface components {
         /** @description General limits by default to change, each key at most once: a number ≥ 0, or default to return it to the original value. A key a tier sets is refused (400 validation). */
         SetAdminQuotaDefaultsRequest: {
             image_uploads_per_day?: components["schemas"]["AdminQuotaValue"];
+            app_returns_per_day?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every limit by default whose value changed, with the platform's value before and after; null is the original value of the code. */
         AdminQuotaDefaultChanges: {
@@ -6073,6 +6470,32 @@ export interface components {
         DesktopSessionRequest: {
             /** @description The one-time code the shell put into the fragment of the address of the window. */
             code: string;
+        };
+        DesktopState: {
+            /** @description The version of the app the build names; null for a build that does not. */
+            version: string | null;
+            /** @description The data directory of the app as the author sees its path, without the prefix \\?\ of Windows. */
+            dataDir: string;
+            usage: {
+                /**
+                 * Format: int64
+                 * @description The place the data directory takes; while it is counted, the last known one, null before the first count ended.
+                 */
+                bytes: number | null;
+                /** @description The count did not end within the limit of the request; the page asks again. */
+                counting: boolean;
+            };
+            backups: {
+                /** Format: date-time */
+                madeAt: string;
+                /** @description The version of the app that made the copy before its migrations; null for a copy made before the copies named it. */
+                version: string | null;
+            }[];
+            network: {
+                host: string;
+                /** @description What the app goes there for, in the words of the author. */
+                purpose: string;
+            }[];
         };
         LoginRequest: {
             /** Format: email */
@@ -6886,7 +7309,6 @@ export interface components {
             usedTokens?: number;
             /** Format: int64 */
             contextWindow?: number;
-            compacted: boolean;
         };
         AgentTimelineToolCall: {
             namespace?: string;
@@ -10309,6 +10731,303 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    startAppLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppLinkStart"];
+            };
+        };
+        responses: {
+            /** @description The address of the return with the code, once. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLinkStarted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    exchangeAppLinkCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppLinkExchange"];
+            };
+        };
+        responses: {
+            /** @description The pass of the app, once, and its account. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLinkToken"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAppAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account of the app. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppAccountState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    unlinkApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The app is unlinked. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    openModelPermit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppPermitOpen"];
+            };
+        };
+        responses: {
+            /** @description The permit of this ref, as it is. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPermit"];
+                };
+            };
+            /** @description A new permit. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPermit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    chargeModelPermit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A permit of this app from openModelPermit. */
+                permitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppPermitUnitCharge"];
+            };
+        };
+        responses: {
+            /** @description The unit of this ref, as it is. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPermitUnit"];
+                };
+            };
+            /** @description A new unit. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPermitUnit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    returnModelPermitUnit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A permit of this app from openModelPermit. */
+                permitId: string;
+                /** @description The ref of the correction given to chargeModelPermit. */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The unit is given back. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    closeModelPermit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A permit of this app from openModelPermit. */
+                permitId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppPermitClose"];
+            };
+        };
+        responses: {
+            /** @description The permit as it ended. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppPermit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listLinkedApps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live apps of the account. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkedApps"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    revokeLinkedApp: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description An app from listLinkedApps. */
+                appId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The app is unlinked. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getAccountLetters: {
         parameters: {
             query?: never;
@@ -12477,6 +13196,29 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getDesktopState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version of the app, its data directory and the place it takes, the copies before an update and the hosts the app goes to. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
         };
     };

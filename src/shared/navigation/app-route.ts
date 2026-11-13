@@ -4,8 +4,8 @@ import { drawingStates, drawingsListKeys, drawingViews } from './drawings-addres
 
 /** Every surface of the routes: the name of the tab is read from one table by it (specs/2026-11-10-ux1-shell.md SH1.2). */
 export const surfaces = [
-  'account', 'admin', 'auth', 'chat', 'compare', 'drawing', 'home', 'legal', 'manuscript', 'memory',
-  'notes', 'promo', 'promo-link', 'saga', 'tariff', 'unknown', 'writing',
+  'account', 'admin', 'auth', 'chat', 'compare', 'drawing', 'home', 'legal', 'link', 'manuscript', 'memory',
+  'notes', 'promo', 'promo-link', 'saga', 'settings', 'tariff', 'unknown', 'writing',
 ] as const;
 export type Surface = typeof surfaces[number];
 
@@ -203,6 +203,11 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   // of the refusal the author came with: its card stands out (specs/2026-11-11-ux9-account.md AC2.1).
   tariff: new Set(['for']),
   account: new Set(),
+  // The page /link of the site, opened by the app on the computer of the author (specs/2026-11-13-desk-link.md LK1.1): its
+  // challenge, its state, the port of its return and its system.
+  link: new Set(['challenge', 'state', 'port', 'platform']),
+  // «Настройки» of the desktop app: the open part (specs/2026-11-13-desk-settings.md ST1.2).
+  settings: new Set(['part']),
   // The saga map: the open node, the surroundings shown, the chapter of the scale, the hidden categories (saga map R6.2) and
   // «только новое» (specs/2026-11-11-ux8-map.md MP3.5).
   saga: new Set(['projectId', 'node', 'focus', 'to', 'hide', 'removed', 'only']),
@@ -238,6 +243,13 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   ]),
   unknown: new Set(),
 };
+/**
+ * The keys one address of a surface takes besides the keys of its surface: the draft of the editor of the desktop app,
+ * /manuscript/edit (specs/2026-11-13-desk-editor.md ED1.1). The site has no such page, so its addresses of «Книги» keep none.
+ */
+const allowedSearchKeysByPath: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['/manuscript/edit', new Set(['draftId'])],
+]);
 
 export function parseRoute(url: string | URL): AppRoute {
   const parsed = typeof url === 'string' ? new URL(url, urlBase) : url;
@@ -246,7 +258,7 @@ export function parseRoute(url: string | URL): AppRoute {
 
 export function createAppRoute(path: string, search: URLSearchParams | Record<string, string | undefined> = {}) {
   const surface = surfaceFromPath(path);
-  const { invalidQuery, query } = sanitizeSearch(surface, search);
+  const { invalidQuery, query } = sanitizeSearch(surface, search, path);
   const overlay = query.get('menu') || undefined;
 
   return {
@@ -264,7 +276,7 @@ export function toHref(path: string, query?: Record<string, string | undefined>)
   if (surface === 'manuscript' && query?.expectedRevision !== undefined && !isExpectedRevision(query.expectedRevision)) {
     throw new Error('Invalid expected source revision');
   }
-  const sanitized = sanitizeSearch(surface, query ?? {}).query;
+  const sanitized = sanitizeSearch(surface, query ?? {}, next.pathname).query;
   for (const [key, value] of sanitized.entries()) {
     next.searchParams.set(key, value);
   }
@@ -288,8 +300,9 @@ export function isExpectedRevision(value: string) {
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
-function sanitizeSearch(surface: Surface, search: URLSearchParams | Record<string, string | undefined>) {
+function sanitizeSearch(surface: Surface, search: URLSearchParams | Record<string, string | undefined>, path: string) {
   const allowedKeys = allowedSearchKeysBySurface[surface];
+  const pathKeys = allowedSearchKeysByPath.get(path);
   const entries = search instanceof URLSearchParams ? search.entries() : Object.entries(search);
   const query = new URLSearchParams();
   let invalidQuery = false;
@@ -302,7 +315,7 @@ function sanitizeSearch(surface: Surface, search: URLSearchParams | Record<strin
       if (rawValue !== undefined && String(rawValue).length <= 300) query.append(key, String(rawValue));
       continue;
     }
-    if (!allowedKeys.has(key) || rawValue === undefined) {
+    if ((!allowedKeys.has(key) && !pathKeys?.has(key)) || rawValue === undefined) {
       if (surface === 'chat') invalidQuery = true;
       continue;
     }
@@ -345,9 +358,11 @@ function sanitizeReturnTo(value: string, workspaceOnly = false) {
     const target = new URL(value, urlBase);
     const surface = surfaceFromPath(target.pathname);
     // «Тариф» takes a guest with a key back after signing in (specs/2026-11-10-ux2-tariff-account.md TA3.4); it has no query.
-    if (target.origin !== urlBase || (surface !== 'chat' && surface !== 'manuscript' && surface !== 'notes' && !(surface === 'tariff' && !workspaceOnly))) return null;
+    // The page /link takes the author back after signing in or the registration (specs/2026-11-13-desk-link.md LK1.2).
+    const outsideWorkspace = !workspaceOnly && (surface === 'tariff' || surface === 'link');
+    if (target.origin !== urlBase || (surface !== 'chat' && surface !== 'manuscript' && surface !== 'notes' && !outsideWorkspace)) return null;
     if (workspaceOnly && target.pathname !== '/chat' && target.pathname !== '/manuscript/books') return null;
-    const sanitized = sanitizeSearch(surface, target.searchParams);
+    const sanitized = sanitizeSearch(surface, target.searchParams, target.pathname);
     if ((surface === 'manuscript' || workspaceOnly) && sanitized.invalidQuery) return null;
     if (workspaceOnly) {
       const contextKeys = surface === 'chat' ? ['projectId', 'chatId'] : ['projectId', 'bookId', 'chapterId', 'mode'];
@@ -395,6 +410,8 @@ function surfaceFromPath(path: string): Surface {
   if (path === '/promo/link') return 'promo-link';
   if (path === '/tariff') return 'tariff';
   if (path === '/account') return 'account';
+  if (path === '/link') return 'link';
+  if (path === '/settings') return 'settings';
   if (path === '/chat') {
     return 'chat';
   }

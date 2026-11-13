@@ -124,6 +124,19 @@ export type MockState = {
   lettersOff: string[];
   /** The accounts that turned «Письма о сроке тарифа» off (specs/2026-11-10-service-letters.md M4.5). */
   tierLettersOff: string[];
+  /** The linked apps of the accounts (specs/2026-11-13-desk-link.md LK4.1). */
+  linkedApps: MockLinkedApp[];
+};
+
+/** A linked CanonKeeper app of an account: the computer, its system and version, when linked and last seen. */
+export type MockLinkedApp = {
+  userId: string;
+  id: string;
+  name: string;
+  platform: 'windows' | 'linux';
+  appVersion: string;
+  linkedAt: string;
+  seenAt: string | null;
 };
 
 /**
@@ -570,6 +583,7 @@ function createInitialState(): MockState {
     sagaMapsPending: [],
     lettersOff: [],
     tierLettersOff: [],
+    linkedApps: [],
   };
 }
 export { createInitialState };

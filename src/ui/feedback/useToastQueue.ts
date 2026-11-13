@@ -1,12 +1,15 @@
+import type { LucideIcon } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
-export type ToastTone = 'neutral' | 'success' | 'warning' | 'error';
+/** `info` is a notice that is no result of the author's action: a line of a launch of the app (board 44·22). */
+export type ToastTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 /**
  * A line of the result of an action (specs/2026-11-10-ux2-patterns-actions.md UC1). `action` is «Отменить» or
  * «Вернуть» of a reversible action; `detail` is a quieter line under the message: what the message is about. A
- * persistent line stays until it is closed or its action is used.
+ * persistent line stays until it is closed or its action is used. `icon` stands in place of the mark of the tone where the
+ * board draws the line with one (the lines of a launch of the app, specs/2026-11-13-desk-settings.md ST4.4).
  */
-export type ToastInput = { action?: ReactNode; detail?: string; message: string; persistent?: boolean; tone: ToastTone };
+export type ToastInput = { action?: ReactNode; detail?: string; icon?: LucideIcon; message: string; persistent?: boolean; tone: ToastTone };
 /** `born` orders the lines of every queue as they came: a host may take only the lines born after it opened. */
 export type ToastItem = ToastInput & { born: number; expiresAt?: number; held?: number; id: number };
 

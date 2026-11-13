@@ -62,7 +62,7 @@ export function ToastRegion({ className, onDismiss, onHold, onRelease, queue, ..
           }}
           role={toast.tone === 'error' ? 'alert' : 'status'}
         >
-          <span className={styles.toastMark} />
+          {toast.icon ? <toast.icon aria-hidden="true" className={styles.toastIcon} size={16} /> : <span className={styles.toastMark} />}
           <span className={styles.toastMessage}>
             {toast.message}
             {toast.detail ? <span className={styles.toastDetail}>{toast.detail}</span> : null}

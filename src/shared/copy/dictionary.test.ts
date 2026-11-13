@@ -39,6 +39,8 @@ const letters = [
   'backend/internal/domain/subscriptions/words.go',
   'backend/internal/services/feedback/letters.go',
   'backend/internal/services/promo/letters.go',
+  // The letter of a linked desktop app (specs/2026-11-13-desk-link.md LK2.5).
+  'backend/internal/services/applink/letters.go',
   // The line under the signature of every letter to an author (specs/2026-11-12-ux12-shell.md SH3.2).
   'backend/internal/domain/contacts/contacts.go',
 ];

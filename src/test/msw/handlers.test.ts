@@ -85,6 +85,9 @@ describe('MSW API handlers', () => {
     for (const [operationId, route] of getOperationManifestEntries()) {
       // The WebSockets of the timeline and of a voice call are routed by the tests that open them.
       if (operationId === 'streamAgentTimeline' || operationId === 'streamVoiceCall') continue;
+      // The operations of the app are the backend's of the CanonKeeper app with its pass: no page calls them
+      // (specs/2026-11-13-desk-link.md LK3.5).
+      if (route.path.startsWith('/app/')) continue;
       const repository = createMockApiClient();
       const operationPathParams = await prepareRepositoryForOperation(repository, operationId);
       mswServer.resetHandlers(
@@ -1171,6 +1174,8 @@ function bodyFor(operationId: OperationId): unknown {
       return { voice: 'spruce' };
     case 'setAccountLetters':
       return { sagaReady: false };
+    case 'startAppLink':
+      return { challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'linux' };
     case 'resetPassword':
       return { token: mockAccountToken('password_reset', 'user-mira'), newPassword: 'white-port-12' };
     case 'checkPasswordResetLink':
@@ -1360,6 +1365,11 @@ async function prepareRepositoryForOperation(
       const file = await repository.createAdminKeyBatch({ tier: 'writer', count: 1 });
       preparedKey = (await file.blob.text()).trim();
       return {};
+    }
+    case 'revokeLinkedApp': {
+      // The mock links the app at the confirmation of the page /link (specs/2026-11-13-desk-link.md LK1, LK4.2).
+      await repository.startAppLink({ challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'linux' });
+      return { appId: (await repository.listLinkedApps()).apps[0]!.id };
     }
     case 'revokeAdminKeyBatch': {
       await repository.createAdminKeyBatch({ tier: 'writer', count: 1 });
@@ -1630,6 +1640,7 @@ const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
   startChapterProofread: 201,
   createChapterDraft: 201,
   deleteChapterDraft: 204,
+  revokeLinkedApp: 204,
   startChapterDraftJob: 201,
   createPersonalNote: 201,
   deletePersonalNote: 204,

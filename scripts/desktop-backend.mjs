@@ -6,9 +6,9 @@
 //
 // It builds the web edition desktop into dist-desktop, puts it into backend/internal/app/desktop/web — the directory
 // the backend embeds, where git keeps only its README.md — and builds cmd/desktop with CGO_ENABLED=0 for GOOS and
-// GOARCH of the environment.
+// GOARCH of the environment and the version of the shell's Cargo.toml.
 import { spawnSync } from 'node:child_process';
-import { cpSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -16,6 +16,20 @@ import { buildDesktopWeb } from './desktop-web.mjs';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 export const embeddedWeb = path.join(repositoryRoot, 'backend', 'internal', 'app', 'desktop', 'web');
+
+// shellVersion is the version of the package of the shell in its Cargo.toml: the installer and the shell name it, and the
+// backend is built with it, so the window, the backend and the installer name one (specs/2026-11-13-desk-settings.md ST4.2).
+export function shellVersion(manifest) {
+  const pkg = /^\[package\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/mu.exec(manifest)?.[1] ?? '';
+  const version = /^version\s*=\s*"([^"]+)"\s*$/mu.exec(pkg)?.[1];
+  if (!version) throw new Error('the Cargo.toml of the shell names no version of its package');
+  return version;
+}
+
+// backendBuildArgs are the arguments of go build for cmd/desktop: small, without local paths, with the version of the app.
+export function backendBuildArgs(version, output) {
+  return ['build', '-trimpath', `-ldflags=-s -w -X main.version=${version}`, '-o', output, './cmd/desktop'];
+}
 
 // placeWeb replaces what an earlier build left in the embedded directory with the files of the new build.
 export function placeWeb(built, embedded) {
@@ -35,7 +49,8 @@ export function main(args = process.argv.slice(2)) {
   const output = path.resolve(args[0]);
   buildDesktopWeb();
   placeWeb(path.join(repositoryRoot, 'dist-desktop'), embeddedWeb);
-  run('go', ['build', '-trimpath', '-ldflags=-s -w', '-o', output, './cmd/desktop'], {
+  const version = shellVersion(readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'Cargo.toml'), 'utf8'));
+  run('go', backendBuildArgs(version, output), {
     cwd: path.join(repositoryRoot, 'backend'), env: { ...process.env, CGO_ENABLED: '0' },
   });
 }

@@ -14,6 +14,10 @@ import (
 	"canonkeeper/backend/internal/app/desktop"
 )
 
+// version is the version of the app: scripts/desktop-backend.mjs sets it from the shell's Cargo.toml (-X main.version), so
+// the window, the backend and the installer name one (specs/2026-11-13-desk-settings.md ST4.2).
+var version string
+
 func main() {
 	if len(os.Args) != 1 {
 		log.Fatal("desktop: no arguments: the shell sends start on stdin")
@@ -23,7 +27,7 @@ func main() {
 	os.Stdout = os.Stderr
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := desktop.Run(ctx, desktop.Options{In: os.Stdin, Control: control, Logs: func(file *os.File) {
+	err := desktop.Run(ctx, desktop.Options{In: os.Stdin, Control: control, Version: version, Logs: func(file *os.File) {
 		os.Stdout = file
 		log.SetOutput(file)
 	}})

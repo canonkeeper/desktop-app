@@ -388,13 +388,6 @@ func timelineUpdate(payload any, role agenttimeline.Role) (agenttimeline.Update,
 			contextUpdate.ContextWindow = &window
 		}
 		return agenttimeline.Update{Context: contextUpdate}, true
-	case protocol.ContextCompactedNotification:
-		if value.TurnID == "" {
-			return agenttimeline.Update{}, false
-		}
-		return agenttimeline.Update{Context: &agenttimeline.ContextUpdate{
-			Role: role, TurnID: value.TurnID, Compacted: true,
-		}}, true
 	case protocol.ReasoningSummaryPartAddedNotification, protocol.PlanDeltaNotification,
 		protocol.ItemStartedNotification, protocol.ItemCompletedNotification,
 		protocol.TurnStartedNotification, protocol.TurnCompletedNotification,
@@ -428,8 +421,6 @@ func timelineNotificationThreadID(payload any) string {
 	case protocol.TurnCompletedNotification:
 		return value.ThreadID
 	case protocol.TurnPlanUpdatedNotification:
-		return value.ThreadID
-	case protocol.ContextCompactedNotification:
 		return value.ThreadID
 	case protocol.ThreadTokenUsageUpdatedNotification:
 		return value.ThreadID

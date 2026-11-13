@@ -461,6 +461,11 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
             bookActions.leaveMenu();
             bookMove.open(book, bookActions.menuTrigger);
           } : undefined}
+          onNewChapter={shelfSlot?.newChapterAt && !demo ? () => {
+            const at = shelfSlot.newChapterAt!(bookMenuPresence.value!);
+            bookActions.closeBookMenu();
+            navigate(at.path, at.query);
+          } : undefined}
           onParseSummary={() => {
             const book = bookMenuPresence.value!;
             bookActions.closeBookMenu();

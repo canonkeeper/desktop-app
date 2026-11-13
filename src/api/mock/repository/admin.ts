@@ -17,10 +17,11 @@ const stages: AdminWriterStage[] = ['unverified', 'no_documents', 'no_book', 'no
 /** Every writer limit in the order of the card (backend domain/quota.Keys). */
 const quotaKeys = Object.keys(mockCodeDefaults) as AdminQuotaKey[];
 /**
- * The general limits by default in the order of «Настройки»: the key no tier sets (specs/2026-11-08-admin-redesign.md
- * AR7.1, specs/2026-11-11-tier-limits.md TL2.2); every other key is the tier's and has no platform default.
+ * The general limits by default in the order of «Настройки»: the keys no tier sets (specs/2026-11-08-admin-redesign.md
+ * AR7.1, specs/2026-11-11-tier-limits.md TL2.2, specs/2026-11-13-desk-permits.md PM2.4); every other key is the tier's and
+ * has no platform default.
  */
-const defaultKeys: AdminQuotaDefaultKey[] = ['image_uploads_per_day'];
+const defaultKeys: AdminQuotaDefaultKey[] = ['image_uploads_per_day', 'app_returns_per_day'];
 /** The largest value a limit keeps (backend domain/quota.Key.Max): bigint for the characters, integer otherwise. */
 const maxInteger = 2_147_483_647;
 

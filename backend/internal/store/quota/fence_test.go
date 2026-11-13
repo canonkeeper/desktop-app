@@ -168,3 +168,56 @@ func TestDailyUnitsAtOnceKeepToTheLimitPostgres(t *testing.T) {
 		t.Fatalf("a unit of a limit no day counts = %v", err)
 	}
 }
+
+// elsewhereStub is the turns of a writer that run outside this database — the live permits of his apps on the site
+// (specs/2026-11-13-desk-permits.md PM1.4) — and the queriers and moments it was read with.
+type elsewhereStub struct {
+	turns int64
+	seen  []Querier
+	at    []time.Time
+}
+
+func (elsewhere *elsewhereStub) ActiveTurnsInTx(_ context.Context, db Querier, _ string, at time.Time) (int64, error) {
+	elsewhere.seen = append(elsewhere.seen, db)
+	elsewhere.at = append(elsewhere.at, at)
+	return elsewhere.turns, nil
+}
+
+// specs/2026-11-13-desk-permits.md PM1.4, PM3.2: «разом» is one number — the turns of the site and the turns that run
+// elsewhere: a new turn is refused when they reach the limit together, the check reads them in its own transaction at its
+// own moment, and getAccountQuota shows the same sum. Without Elsewhere — the desktop — the count is the Jobs alone.
+func TestActiveTurnsCountTheTurnsElsewherePostgres(t *testing.T) {
+	db := testutil.OpenIsolatedPostgresTestDB(t, "ck_quota_fence_elsewhere")
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	seed := &sourceSeed{t: t, db: db, now: now}
+	seed.user(quotaWriterA, "elsewhere@example.test")
+	seed.exec(`INSERT INTO writer_quota_overrides (user_id, active_turns, updated_at) VALUES ($1, 2, $2)`, quotaWriterA, now)
+	ctx := context.Background()
+	elsewhere := &elsewhereStub{turns: 2}
+	fence := Fence{Elsewhere: elsewhere}
+
+	var reserving pgx.Tx
+	err := db.WithTx(ctx, func(tx pgx.Tx) error {
+		reserving = tx
+		return fence.ReserveTurnInTx(ctx, tx, quotaWriterA, quota.KeyChatTurnsPerDay, now)
+	})
+	if exceeded, ok := quota.AsExceeded(err); !ok || exceeded.Key != quota.KeyActiveTurns || exceeded.Limit != 2 {
+		t.Fatalf("a turn with two turns elsewhere = %v; want quota.active_turns at 2", err)
+	}
+	if len(elsewhere.seen) != 1 || elsewhere.seen[0] != Querier(reserving) || !elsewhere.at[0].Equal(now) {
+		t.Fatal("the turns elsewhere were not read in the transaction of the check at its moment")
+	}
+	elsewhere.turns = 1
+	if err := db.WithTx(ctx, func(tx pgx.Tx) error {
+		return fence.ReserveTurnInTx(ctx, tx, quotaWriterA, quota.KeyChatTurnsPerDay, now)
+	}); err != nil {
+		t.Fatalf("a turn with one turn elsewhere = %v", err)
+	}
+	account, err := New(db, fence).AccountQuota(ctx, quotaWriterA, now)
+	if err != nil || account.ActiveTurns != 1 || account.Limits.ActiveTurns != 2 {
+		t.Fatalf("account quota with one turn elsewhere = %+v, %v", account, err)
+	}
+	if account, err := New(db, Fence{}).AccountQuota(ctx, quotaWriterA, now); err != nil || account.ActiveTurns != 0 {
+		t.Fatalf("account quota without elsewhere = %+v, %v", account, err)
+	}
+}
