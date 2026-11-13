@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -303,6 +304,10 @@ func TestTheClientCopiesTheHomeWhenTheBuildSaysSo(t *testing.T) {
 func TestTheCopyStartsInAHomeWhosePathHoldsAPattern(t *testing.T) {
 	bundle := profile(t, filepath.Join(t.TempDir(), "bundle"), "first", false)
 	for _, folder := range []string{"Автор [черновики", "Name [Work]", "звёзды * и ?"} {
+		// Windows names no file with a star or a question mark: there the brackets are the whole case.
+		if runtime.GOOS == "windows" && strings.ContainsAny(folder, "*?") {
+			continue
+		}
 		home := filepath.Join(t.TempDir(), folder, "codex", "home", "research-chat")
 		left := filepath.Join(home, ".canonkeeper-stage-0001", "skills")
 		if err := os.MkdirAll(left, 0o700); err != nil {
