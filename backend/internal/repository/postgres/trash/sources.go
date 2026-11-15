@@ -91,7 +91,7 @@ func (repository *Repository) ListDeletedSources(ctx context.Context, actorUserI
 		}
 		rows, err = tx.Query(ctx, `
 			SELECT chapter.id::text, project.id::text, project.name, book.id::text, book.title,
-			       chapter.title, chapter."order", chapter.deleted_at, chapter.purge_after, count(*) OVER ()::integer
+			       chapter.title, chapter.deleted_at, chapter.purge_after, count(*) OVER ()::integer
 			FROM chapters AS chapter
 			JOIN books AS book ON book.id = chapter.book_id AND book.project_id = chapter.project_id AND book.deleted_at IS NULL
 			JOIN projects AS project ON project.id = book.project_id AND project.deleted_at IS NULL
@@ -106,7 +106,7 @@ func (repository *Repository) ListDeletedSources(ctx context.Context, actorUserI
 		}
 		if err := collect(rows, &sources.Chapters, func(row pgx.Rows, chapter *trash.Chapter, total *int) error {
 			return row.Scan(&chapter.ID, &chapter.ProjectID, &chapter.SagaTitle, &chapter.BookID, &chapter.BookTitle,
-				&chapter.Title, &chapter.Order, &chapter.DeletedAt, &chapter.RestoreUntil, total)
+				&chapter.Title, &chapter.DeletedAt, &chapter.RestoreUntil, total)
 		}); err != nil {
 			return err
 		}

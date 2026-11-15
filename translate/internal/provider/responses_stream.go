@@ -10,9 +10,12 @@ import (
 	"strings"
 )
 
-func (a *HTTPAdapter) streamResponses(ctx context.Context, target Target, req responsesWireRequest, emit func(Event) error) (Result, error) {
+func (a *HTTPAdapter) streamResponses(ctx context.Context, target Target, req responsesWireRequest, request Request, emit func(Event) error) (Result, error) {
 	body, err := passthroughBody(req, target)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := request.sent(body); err != nil {
 		return Result{}, err
 	}
 	response, rejected, err := a.beginStream(ctx, target, endpoint(target.BaseURL, "responses"), body)

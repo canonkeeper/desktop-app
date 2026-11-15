@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"canonkeeper/backend/internal/domain/disclosure"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 )
 
@@ -78,7 +79,14 @@ func (tools *ReadTools) Attachment(ctx context.Context, call ToolContext, input 
 	if first > total || first > last {
 		return "", argumentError("$", "в приложении %d всего %d %s", attachment.Number, total, russianCount(total, "абзац", "абзаца", "абзацев"))
 	}
-	return renderAttachment(attachment, first, last), nil
+	rendered, shown := renderAttachment(attachment, first, last)
+	// The paragraphs shown are named before the answer goes (specs/2026-11-14-desk-journal.md JR1.3, JR1.4).
+	if err := name(ctx, tools.naming, authority, disclosure.Named{Attachments: []disclosure.Attachment{{
+		Chat: authority.ChatID, Number: attachment.Number, Paragraphs: []disclosure.Range{{From: first, To: shown}},
+	}}}); err != nil {
+		return "", err
+	}
+	return rendered, nil
 }
 
 func attachmentsOfChat(numbers []int) error {
@@ -97,8 +105,8 @@ func attachmentsOfChat(numbers []int) error {
 }
 
 // renderAttachment is the header with the signature and the paragraphs first..last, no more than
-// maxAttachmentWordsPerCall words; the rest is named by where to go on.
-func renderAttachment(attachment researchdomain.Attachment, first, last int) string {
+// maxAttachmentWordsPerCall words; the rest is named by where to go on. shown is the last paragraph shown.
+func renderAttachment(attachment researchdomain.Attachment, first, last int) (rendered string, shown int) {
 	total := len(attachment.Paragraphs)
 	title := attachment.Title
 	if title == "" {
@@ -109,7 +117,8 @@ func renderAttachment(attachment researchdomain.Attachment, first, last int) str
 		attachment.Number, title, researchdomain.AttachmentNote,
 		total, russianCount(total, "абзац", "абзаца", "абзацев"),
 		attachment.Words, russianCount(attachment.Words, "слово", "слова", "слов"), attachment.Number)
-	words, shown := 0, first-1
+	words := 0
+	shown = first - 1
 	for index := first; index <= last; index++ {
 		paragraph := attachment.Paragraphs[index-1]
 		count := wordCount(paragraph)
@@ -123,7 +132,7 @@ func renderAttachment(attachment researchdomain.Attachment, first, last int) str
 	if shown < last {
 		fmt.Fprintf(&out, "Показаны ¶%d–¶%d из %d; дальше — from=%d\n", first, shown, total, shown+1)
 	}
-	return out.String()
+	return out.String(), shown
 }
 
 // wordCount counts the words of a paragraph as the reader of a chapter file does: runs of letters and digits.

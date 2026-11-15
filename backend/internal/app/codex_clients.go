@@ -41,6 +41,7 @@ func codexClientConfig(cfg config.Config, flow agentdomain.Flow) (codexadapter.C
 		TempDir:         filepath.Join(cfg.CodexTempDir, directory),
 		ConfigOverrides: append([]string(nil), cfg.CodexConfigOverrides...),
 		PassEnv:         append([]string(nil), cfg.CodexPassEnv...),
+		Environment:     append([]string(nil), cfg.CodexEnvironment...),
 	}, nil
 }
 

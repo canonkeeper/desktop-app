@@ -901,16 +901,11 @@ func (q *Queries) GetChapterByID(ctx context.Context, arg GetChapterByIDParams) 
 }
 
 const getChapterWithNavigationByID = `-- name: GetChapterWithNavigationByID :one
-WITH navigation AS (
-  SELECT c.id,
-         row_number() OVER (ORDER BY c."order", c.id)::int AS position,
-         count(*) OVER ()::int AS total,
-         lag(c.id) OVER (ORDER BY c."order", c.id)::uuid AS previous_id,
-         coalesce(lag(c.title) OVER (ORDER BY c."order", c.id), '')::text AS previous_title,
-         coalesce(lag(c."order") OVER (ORDER BY c."order", c.id), 0)::int AS previous_order,
-         lead(c.id) OVER (ORDER BY c."order", c.id)::uuid AS next_id,
-         coalesce(lead(c.title) OVER (ORDER BY c."order", c.id), '')::text AS next_title,
-         coalesce(lead(c."order") OVER (ORDER BY c."order", c.id), 0)::int AS next_order
+WITH placed AS (
+  SELECT c.id, c.title, c."order",
+         (1 + count(*) FILTER (WHERE c.published_revision IS NOT NULL)
+           OVER (ORDER BY c."order", c.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING))::int AS place,
+         count(*) FILTER (WHERE c.published_revision IS NOT NULL) OVER ()::int AS total
   FROM chapters c
   JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
   JOIN projects p ON p.id = c.project_id
@@ -919,11 +914,22 @@ WITH navigation AS (
     AND c.deleted_at IS NULL
     AND b.deleted_at IS NULL
     AND p.deleted_at IS NULL
+    AND (c.published_revision IS NOT NULL OR c.id = $1)
+), navigation AS (
+  SELECT id, place AS position, total,
+         (lag(id) OVER reading)::uuid AS previous_id,
+         coalesce(lag(title) OVER reading, '')::text AS previous_title,
+         coalesce(lag(place) OVER reading, 0)::int AS previous_place,
+         (lead(id) OVER reading)::uuid AS next_id,
+         coalesce(lead(title) OVER reading, '')::text AS next_title,
+         coalesce(lead(place) OVER reading, 0)::int AS next_place
+  FROM placed
+  WINDOW reading AS (ORDER BY "order", id)
 )
 SELECT c.id, c.book_id, c.title, c."order", c.status, c.revision, c.published_revision, c.published_at, c.publish_error, c.deleted_at, c.purge_after, c.created_at, c.updated_at, c.lifecycle_generation, c.hard_purge_started_at, c.governance_retention_started_at, c.purge_deadline, c.project_id,
        nav.position, nav.total,
-       nav.previous_id, nav.previous_title, nav.previous_order,
-       nav.next_id, nav.next_title, nav.next_order
+       nav.previous_id, nav.previous_title, nav.previous_place,
+       nav.next_id, nav.next_title, nav.next_place
 FROM navigation AS nav
 JOIN chapters c ON c.id = nav.id
 WHERE c.id = $1
@@ -941,12 +947,15 @@ type GetChapterWithNavigationByIDRow struct {
 	Total         int32       `json:"total"`
 	PreviousID    pgtype.UUID `json:"previous_id"`
 	PreviousTitle string      `json:"previous_title"`
-	PreviousOrder int32       `json:"previous_order"`
+	PreviousPlace int32       `json:"previous_place"`
 	NextID        pgtype.UUID `json:"next_id"`
 	NextTitle     string      `json:"next_title"`
-	NextOrder     int32       `json:"next_order"`
+	NextPlace     int32       `json:"next_place"`
 }
 
+// The position of a chapter is its place in the contents of the reader — the living chapters of the book with a published
+// text — and its neighbours are the chapters of those contents before and after it, as ListChaptersByBook counts them; a
+// chapter without a published text is read at the place it would take (specs/2026-11-15-reader-chapter-number.md RN1.2).
 func (q *Queries) GetChapterWithNavigationByID(ctx context.Context, arg GetChapterWithNavigationByIDParams) (GetChapterWithNavigationByIDRow, error) {
 	row := q.db.QueryRow(ctx, getChapterWithNavigationByID, arg.ChapterID, arg.ProjectID, arg.BookID)
 	var i GetChapterWithNavigationByIDRow
@@ -973,10 +982,10 @@ func (q *Queries) GetChapterWithNavigationByID(ctx context.Context, arg GetChapt
 		&i.Total,
 		&i.PreviousID,
 		&i.PreviousTitle,
-		&i.PreviousOrder,
+		&i.PreviousPlace,
 		&i.NextID,
 		&i.NextTitle,
-		&i.NextOrder,
+		&i.NextPlace,
 	)
 	return i, err
 }
@@ -1662,69 +1671,82 @@ func (q *Queries) ListChapterParagraphsByChapterRevisionVariant(ctx context.Cont
 }
 
 const listChaptersByBook = `-- name: ListChaptersByBook :many
-SELECT c.id, c.book_id, c.title, c."order", c.status, c.revision,
-       c.published_revision, c.published_at, c.publish_error, c.deleted_at,
-       c.purge_after, c.created_at, c.updated_at, c.lifecycle_generation,
-       c.hard_purge_started_at, c.governance_retention_started_at,
-       c.purge_deadline, c.project_id
-FROM chapters c
-JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
-JOIN projects p ON p.id = c.project_id
-WHERE c.project_id = $1
-  AND c.book_id = $2
-  AND c.deleted_at IS NULL
-  AND b.deleted_at IS NULL
-  AND p.deleted_at IS NULL
-  AND (NOT $3::boolean
-    OR (c."order", c.id) > ($4::integer, $5::uuid))
+WITH living AS (
+  SELECT c.id,
+         (1 + count(*) FILTER (WHERE c.published_revision IS NOT NULL)
+           OVER (ORDER BY c."order", c.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING))::int AS place
+  FROM chapters c
+  JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
+  JOIN projects p ON p.id = c.project_id
+  WHERE c.project_id = $5
+    AND c.book_id = $6
+    AND c.deleted_at IS NULL
+    AND b.deleted_at IS NULL
+    AND p.deleted_at IS NULL
+)
+SELECT c.id, c.book_id, c.title, c."order", c.status, c.revision, c.published_revision, c.published_at, c.publish_error, c.deleted_at, c.purge_after, c.created_at, c.updated_at, c.lifecycle_generation, c.hard_purge_started_at, c.governance_retention_started_at, c.purge_deadline, c.project_id, living.place
+FROM living
+JOIN chapters c ON c.id = living.id
+WHERE NOT $1::boolean
+   OR (c."order", c.id) > ($2::integer, $3::uuid)
 ORDER BY c."order" ASC, c.id ASC
-LIMIT $6
+LIMIT $4
 `
 
 type ListChaptersByBookParams struct {
-	ProjectID   pgtype.UUID `json:"project_id"`
-	BookID      pgtype.UUID `json:"book_id"`
 	HasCursor   bool        `json:"has_cursor"`
 	CursorOrder int32       `json:"cursor_order"`
 	CursorID    pgtype.UUID `json:"cursor_id"`
 	LimitCount  int32       `json:"limit_count"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	BookID      pgtype.UUID `json:"book_id"`
 }
 
-func (q *Queries) ListChaptersByBook(ctx context.Context, arg ListChaptersByBookParams) ([]Chapter, error) {
+type ListChaptersByBookRow struct {
+	Chapter Chapter `json:"chapter"`
+	Place   int32   `json:"place"`
+}
+
+// The place of a chapter is its rank in the contents of the reader — the living chapters of the book with a published
+// text —, counted before the page is cut: one and the chapters of the published text before it, so a chapter without a
+// published text, which the reader does not show, takes the place it would have and leaves no gap
+// (specs/2026-11-15-reader-chapter-number.md RN1.2).
+func (q *Queries) ListChaptersByBook(ctx context.Context, arg ListChaptersByBookParams) ([]ListChaptersByBookRow, error) {
 	rows, err := q.db.Query(ctx, listChaptersByBook,
-		arg.ProjectID,
-		arg.BookID,
 		arg.HasCursor,
 		arg.CursorOrder,
 		arg.CursorID,
 		arg.LimitCount,
+		arg.ProjectID,
+		arg.BookID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Chapter
+	var items []ListChaptersByBookRow
 	for rows.Next() {
-		var i Chapter
+		var i ListChaptersByBookRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.BookID,
-			&i.Title,
-			&i.Order,
-			&i.Status,
-			&i.Revision,
-			&i.PublishedRevision,
-			&i.PublishedAt,
-			&i.PublishError,
-			&i.DeletedAt,
-			&i.PurgeAfter,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LifecycleGeneration,
-			&i.HardPurgeStartedAt,
-			&i.GovernanceRetentionStartedAt,
-			&i.PurgeDeadline,
-			&i.ProjectID,
+			&i.Chapter.ID,
+			&i.Chapter.BookID,
+			&i.Chapter.Title,
+			&i.Chapter.Order,
+			&i.Chapter.Status,
+			&i.Chapter.Revision,
+			&i.Chapter.PublishedRevision,
+			&i.Chapter.PublishedAt,
+			&i.Chapter.PublishError,
+			&i.Chapter.DeletedAt,
+			&i.Chapter.PurgeAfter,
+			&i.Chapter.CreatedAt,
+			&i.Chapter.UpdatedAt,
+			&i.Chapter.LifecycleGeneration,
+			&i.Chapter.HardPurgeStartedAt,
+			&i.Chapter.GovernanceRetentionStartedAt,
+			&i.Chapter.PurgeDeadline,
+			&i.Chapter.ProjectID,
+			&i.Place,
 		); err != nil {
 			return nil, err
 		}

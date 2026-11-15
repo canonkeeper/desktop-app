@@ -13,6 +13,7 @@ import { SegmentedControl } from '../../../ui/navigation/SegmentedControl';
 import { BookCover } from './BookCover';
 import { BookTitleField } from './BookTitleField';
 import { updateLine } from './book-revert-words';
+import { useBookUpdateWords } from './book-update-words';
 import { findBooks, keepShelfView, largeShelfFrom, readShelfView, type ShelfView } from './shelf-view';
 import { shelfEntries, type VolumeView } from './upload-files';
 import type { ImportQueue } from '../../../entities/manuscript/api';
@@ -162,6 +163,7 @@ export function ShelfBooks(props: ShelfBooksProps) {
 function BookEntry({ book, drag, fileOver, finishing, hrefOf, onChanges, onFinish, onOpen, onOpenMenu, onRename, onRenameEnd, renaming, shape, stateOf }:
   ShelfBooksProps & { book: Book; drag: DragProps; shape: 'card' | 'row' }) {
   const state = stateOf(book);
+  const words = useBookUpdateWords();
   const editing = renaming?.bookId === book.id;
   const open = (event: MouseEvent<HTMLAnchorElement>) => {
     // A new tab or window keeps the link of the browser.
@@ -193,10 +195,10 @@ function BookEntry({ book, drag, fileOver, finishing, hrefOf, onChanges, onFinis
       ) : null}
     </span>
   );
-  // BR3.1: «Обновлена из файла сегодня в 14:20 · Что изменилось» for the 7 days of the last update.
+  // BR3.1: «Обновлена из файла сегодня в 14:20 · Что изменилось» for the 7 days of the last update — in the words of the edition (OU3.2).
   const updated = book.update ? (
     <p className={shape === 'card' ? styles.bookUpdate : styles.rowUpdate}>
-      <span>{updateLine(book.update)}</span>
+      <span>{updateLine(book.update, Date.now(), words)}</span>
       {onChanges ? <> · <LinkAction className={styles.stateAction} onClick={() => onChanges(book)}>Что изменилось</LinkAction></> : null}
     </p>
   ) : null;

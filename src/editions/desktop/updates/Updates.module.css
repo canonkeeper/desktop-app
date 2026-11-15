@@ -1,0 +1,340 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The updates of the app (boards 44·1 Pattern/Desktop/Welcome, 44·14 Settings Updates, 44·15 Update Strip, 44·34 Whats New). */
+
+/* A path of the computer: whole, as the server gave it, broken anywhere on a narrow window. */
+.path {
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-font-size-meta);
+  overflow-wrap: anywhere;
+}
+
+/* «Добро пожаловать» (44·1). */
+.welcome {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+}
+
+.welcomeTitle {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.welcomeItems {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcomeItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.5;
+}
+
+.welcomeItem[data-waiting] {
+  display: block;
+}
+
+.welcomeIcon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--ck-muted-foreground);
+}
+
+.welcomeText {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The second line of an item: the journal under what goes out (specs/2026-11-14-desk-journal.md JR3.5). */
+.welcomeNote {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.welcomeSwitch {
+  margin-top: -10px;
+}
+
+.welcomeFailed {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.welcomeFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The part «Обновления» (44·14). */
+.part {
+  display: grid;
+  gap: 16px;
+}
+
+.text {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.note {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.daily {
+  display: grid;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.statusIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ck-muted-foreground);
+}
+
+.status[data-tone='latest'] .statusIcon {
+  color: var(--ck-color-success-foreground);
+}
+
+.statusLines {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.statusLines p {
+  margin: 0;
+}
+
+/* The sign of a check going on; still for those who asked for less motion. */
+.spin {
+  animation: update-spin 1s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* A state that waits for something: a check, the answer of the helper, the installation (`Long Work`). */
+.going {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 12px 14px;
+  background: var(--ck-card);
+  overflow-wrap: anywhere;
+}
+
+.going p {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  font-weight: 500;
+}
+
+.progress {
+  width: 100%;
+}
+
+/* A failure (`Alert/Error`) and a check that did not reach (`Alert/Warning`): the words, then the way out. */
+.alert {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.alertBody {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.alertBody svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.alertLines {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alertLines p {
+  margin: 0;
+}
+
+.alertAction {
+  padding-left: 24px;
+}
+
+/* «Доступна версия 1.3.0» (`Available`). */
+.card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 14px 16px;
+  background: var(--ck-card);
+}
+
+.cardTitle {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.adminNote {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+/* The strip under the top bar (44·15, `Pattern/Desktop/Update Strip`): the colour of a notice, above «Книга прочитана». */
+.strip {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 6px 28px;
+  background: var(--ck-color-info);
+  color: var(--ck-foreground);
+  font-size: 14px;
+}
+
+.stripIcon {
+  flex: none;
+  color: var(--ck-color-info-foreground);
+}
+
+.stripMessage {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stripProgress {
+  flex: 0 1 160px;
+  min-width: 80px;
+}
+
+.stripActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.stripNote {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+/* Heard by a screen reader, not seen. */
+.announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .strip {
+    padding: 6px 14px;
+  }
+}
+
+/* «Что нового в версии 1.3.0» (44·34): the notes scroll inside the window, «Закрыть» stays in its place. */
+.whatsNew {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.whatsNewHead {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.whatsNewBody {
+  max-height: min(360px, 60vh);
+  margin: 0;
+  overflow-y: auto;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.whatsNewBody p {
+  margin: 0;
+}
+
+.whatsNewBody ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.whatsNewFooter {
+  display: flex;
+  justify-content: flex-end;
+}

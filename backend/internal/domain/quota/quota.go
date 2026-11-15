@@ -44,6 +44,13 @@ const (
 	// failure under which no request passed (specs/2026-11-13-desk-permits.md PM2.4): over it the unit stays spent. A
 	// platform key: no tier sets it.
 	KeyAppReturnsPerDay Key = "app_returns_per_day"
+	// KeyAppTokensPerQuestion and KeyAppReadingTokensPerCharacter are the two fences of the work of linked apps on the
+	// models of the site (specs/2026-11-13-desk-proxy.md PX3.2, PX3.3), invisible to an author who works honestly: the
+	// tokens of the turns of a Moscow day are at most the questions of the day times the tokens of a question, the tokens
+	// of the reading of books in 30 days at most the characters of the account times the tokens of a character. Platform
+	// keys: no tier sets them.
+	KeyAppTokensPerQuestion         Key = "app_tokens_per_question"
+	KeyAppReadingTokensPerCharacter Key = "app_reading_tokens_per_character"
 )
 
 // Keys lists every limit in the order the operator command and the reports show them.
@@ -53,6 +60,7 @@ func Keys() []Key {
 		KeyProjectBooks, KeyProjectChapters, KeyProjectCharacters,
 		KeyAccountBooks, KeyAccountChapters, KeyAccountCharacters, KeyImagesPerDay, KeyImageUploadsPerDay, KeyChapterDraftsPerDay,
 		KeyDrawingTurnsPerDay, KeyDraftTurnsPerDay, KeyDraftRewritesPerDay, KeyAppReturnsPerDay,
+		KeyAppTokensPerQuestion, KeyAppReadingTokensPerCharacter,
 	}
 }
 
@@ -85,6 +93,9 @@ type Limits struct {
 	DraftTurnsPerDay    int64
 	DraftRewritesPerDay int64
 	AppReturnsPerDay    int64
+	// AppTokensPerQuestion and AppReadingTokensPerCharacter are the fences of the work of apps (PX3.2, PX3.3).
+	AppTokensPerQuestion         int64
+	AppReadingTokensPerCharacter int64
 }
 
 // Defaults are the limits of every writer without an override; changing them is a release.
@@ -107,6 +118,13 @@ func Defaults() Limits {
 		DraftTurnsPerDay:    60,
 		DraftRewritesPerDay: 200,
 		AppReturnsPerDay:    5,
+		// Four average questions of the chat of the site by the measure of production (specs/2026-11-12-desktop-target.md,
+		// Connected groups 2: 86 thousand uncached input and 2 thousand output tokens).
+		AppTokensPerQuestion: 360_000,
+		// An honest reading of the books — the cards, their passes, the names and the thread layer — spends about six tokens
+		// for a character of the text by the measure of production: eight leave it free, and the characters of the tier
+		// stop it first (specs/2026-11-13-desk-account-ai.md AI5.3).
+		AppReadingTokensPerCharacter: 8,
 	}
 }
 
@@ -146,6 +164,10 @@ func (limits *Limits) field(key Key) *int64 {
 		return &limits.DraftRewritesPerDay
 	case KeyAppReturnsPerDay:
 		return &limits.AppReturnsPerDay
+	case KeyAppTokensPerQuestion:
+		return &limits.AppTokensPerQuestion
+	case KeyAppReadingTokensPerCharacter:
+		return &limits.AppReadingTokensPerCharacter
 	default:
 		return nil
 	}
@@ -315,6 +337,17 @@ type Account struct {
 	Projects      int64
 	Sources       Sources
 	OwnedProjects []ProjectSources
+	// Places is who holds the places of ActiveTurns (specs/2026-11-15-desk-turns-here.md TH2.1): only the desktop app with the
+	// helper of the account tells it, from what its site said; nil everywhere else.
+	Places *ActivePlaces
+}
+
+// ActivePlaces is who holds the places of «разом» of an app linked with an account (TH2.1): its turns still answered here, the
+// places its site still counts for its questions already over here, and the site with the other apps of the account.
+type ActivePlaces struct {
+	Answering int64
+	Held      int64
+	Elsewhere int64
 }
 
 // Sum adds sources of several projects.
@@ -351,6 +384,15 @@ const (
 	UsageVoice UsageSource = "voice"
 	// UsageAuthorMaterials is the Job mapping the sections of a file of the author (specs/2026-11-04-saga-map.md, R9.2).
 	UsageAuthorMaterials UsageSource = "author_materials"
+	// The work of a linked app on the models of the site, under the account and no project (specs/2026-11-13-desk-proxy.md
+	// PX3.4): the requests of a turn of its chat through the proxy, and its steps — scan, the card of a chapter with its
+	// pass, the register of names, the thread layer and the mapping of materials.
+	UsageAppChat      UsageSource = "app_chat"
+	UsageAppScan      UsageSource = "app_scan"
+	UsageAppCards     UsageSource = "app_cards"
+	UsageAppNames     UsageSource = "app_names"
+	UsageAppLayer     UsageSource = "app_layer"
+	UsageAppMaterials UsageSource = "app_materials"
 )
 
 // ModelUsage is what model calls cost: calls (HTTP attempts answered, or model responses of a

@@ -55,6 +55,9 @@ type fileModelAPI struct {
 	VoiceModel       string `json:"voice_model"`
 	VoiceBrain       string `json:"voice_brain"`
 	VoiceBrainEffort string `json:"voice_brain_effort"`
+	// AppKeyEnv and AppParallel are the models of the site for linked apps (specs/2026-11-13-desk-proxy.md).
+	AppKeyEnv   string `json:"app_key_env"`
+	AppParallel int    `json:"app_parallel"`
 }
 
 func (input fileModelAPI) modelAPI() ModelAPI {
@@ -68,6 +71,7 @@ func (input fileModelAPI) modelAPI() ModelAPI {
 		WritingCheckModel: strings.TrimSpace(input.WritingCheckModel),
 		VoiceURL:          strings.TrimSpace(input.VoiceURL), VoiceModel: strings.TrimSpace(input.VoiceModel),
 		VoiceBrain: strings.TrimSpace(input.VoiceBrain), VoiceBrainEffort: strings.TrimSpace(input.VoiceBrainEffort),
+		AppKeyEnv: strings.TrimSpace(input.AppKeyEnv), AppParallel: input.AppParallel,
 	}
 }
 

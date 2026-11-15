@@ -52,3 +52,37 @@ describe('the mock account', () => {
     expect((await refusal(api.checkPasswordResetLink({ token: mockAccountToken('password_reset', 'user-unknown') }))).problem.code).toBe('auth.token_invalid');
   });
 });
+
+// specs/2026-11-15-desk-updates-web.md UW1, UW2 (mock): the computer of the mock begins as an app that has said its welcome
+// and checked nothing yet, so the scenarios of the app open without the window and without a strip; reset() brings that
+// state back after any welcome and any update.
+describe('the update and the welcome of the mock app', () => {
+  it('begin answered and unchecked, and reset() brings them back', async () => {
+    const api = createMockApiClient();
+    await api.openDesktopSession({ code: 'code-of-the-shell' });
+    const first = await api.getDesktopState();
+    expect([first.welcome, first.checkUpdates]).toEqual([false, true]);
+    expect(await api.getAppUpdate()).toMatchObject({ phase: 'idle', found: 'never', available: null, checkedAt: null, daily: true });
+
+    await api.updateAppUpdateSettings({ daily: false });
+    await api.checkAppUpdate();
+    await api.installAppUpdate();
+    expect((await api.getAppUpdate()).phase).toBe('downloading');
+
+    api.reset();
+    await api.openDesktopSession({ code: 'code-of-the-shell' });
+    const again = await api.getDesktopState();
+    expect([again.welcome, again.checkUpdates]).toEqual([false, true]);
+    expect(await api.getAppUpdate()).toMatchObject({ phase: 'idle', found: 'never', available: null, percent: null, checkedAt: null, daily: true });
+  });
+
+  it('keep the choice of the welcome and of the switch as one setting', async () => {
+    const api = createMockApiClient();
+    await api.openDesktopSession({ code: 'code-of-the-shell' });
+    await api.dismissWelcome({ checkUpdates: false });
+    expect((await api.getDesktopState()).checkUpdates).toBe(false);
+    expect((await api.getAppUpdate()).daily).toBe(false);
+    await api.updateAppUpdateSettings({ daily: true });
+    expect((await api.getDesktopState()).checkUpdates).toBe(true);
+  });
+});

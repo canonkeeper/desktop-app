@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	domain "canonkeeper/backend/internal/domain/authormemory"
 	"canonkeeper/backend/internal/projects"
@@ -118,7 +119,7 @@ func withOrigins(ctx context.Context, queries *sqlc.Queries, project pgtype.UUID
 		}
 	}
 	for index := range records {
-		records[index].Origin = domain.OriginOf(records[index].JobID, conversations[records[index].JobID])
+		records[index].Origin = domain.OriginOf(records[index].JobID, conversations[records[index].JobID], records[index].Carried)
 	}
 	return nil
 }
@@ -156,7 +157,8 @@ func ListInTx(ctx context.Context, tx pgx.Tx, projectID string, filter domain.Fi
 		page.Total = row.TotalCount
 		page.Records = append(page.Records, recordOf(sqlc.GetAuthorMemoryRow{
 			ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Body: row.Body, ChapterID: row.ChapterID, Name: row.Name,
-			Revision: row.Revision, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, JobID: row.JobID, AuthorName: row.AuthorName,
+			Revision: row.Revision, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, JobID: row.JobID,
+			CarriedOrigin: row.CarriedOrigin, AuthorName: row.AuthorName,
 		}))
 	}
 	if len(page.Records) > filter.Limit {
@@ -177,7 +179,8 @@ func recordOf(row sqlc.GetAuthorMemoryRow) domain.Record {
 	if row.JobID.Valid {
 		record.JobID = storedb.UUIDString(row.JobID)
 	}
-	record.Origin = domain.OriginOf(record.JobID, nil)
+	record.Carried = domain.OriginKind(row.CarriedOrigin.String)
+	record.Origin = domain.OriginOf(record.JobID, nil, record.Carried)
 	return record
 }
 
@@ -387,4 +390,41 @@ func (repository *Repository) ProjectRecords(ctx context.Context, projectID stri
 		}
 	})
 	return records, err
+}
+
+// SagaRecordsInTx reads every record of a project, oldest first, each with where it came from as the page says it: the
+// saga file carries it (specs/2026-11-13-desk-sagafile.md SF4.2). The caller has checked who reads them.
+func SagaRecordsInTx(ctx context.Context, tx pgx.Tx, projectID string) ([]domain.Record, error) {
+	page, err := ListInTx(ctx, tx, projectID, domain.Filter{Limit: 1 << 30})
+	if err != nil {
+		return nil, err
+	}
+	project, err := storedb.ParseUUID(projectID)
+	if err != nil {
+		return nil, domain.ErrNotFound
+	}
+	if err := withOrigins(ctx, sqlc.New(tx), project, true, page.Records); err != nil {
+		return nil, err
+	}
+	slices.Reverse(page.Records)
+	return page.Records, nil
+}
+
+// CreateCarriedInTx keeps a record a saga file brought, written by the author who opened it (specs/2026-11-13-desk-sagafile.md
+// SF3.7, SF4.2): its chapter is the chapter of the new saga, it has no Job, and it keeps where it came from and its dates.
+func CreateCarriedInTx(ctx context.Context, tx pgx.Tx, projectID, actorUserID string, record domain.Record) error {
+	project, actor, err := projectAndActor(projectID, actorUserID)
+	if err != nil {
+		return err
+	}
+	chapter, err := optionalUUID(record.ChapterID)
+	if err != nil {
+		return err
+	}
+	_, err = sqlc.New(tx).CreateCarriedAuthorMemory(ctx, sqlc.CreateCarriedAuthorMemoryParams{
+		ProjectID: project, Kind: string(record.Kind), Body: record.Text, ChapterID: chapter, Name: optionalText(record.Name),
+		CarriedOrigin: optionalText(string(record.Carried)), Actor: actor,
+		CreatedAt: storedb.Timestamptz(record.CreatedAt), UpdatedAt: storedb.Timestamptz(record.UpdatedAt),
+	})
+	return err
 }

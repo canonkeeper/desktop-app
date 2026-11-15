@@ -1,5 +1,6 @@
 import type { Book, BookRevertPreview } from '../../../entities/manuscript/api';
 import { formatCount, pluralize } from '../../../ui/copy';
+import { siteBookUpdateWords, type BookUpdateWords } from './book-update-words';
 
 /**
  * The words of the last update of a book from a file and of its return (specs/2026-11-12-ux10-book-revert.md BR3): when the
@@ -23,9 +24,9 @@ export function updatedWhen(value: string, now = Date.now()) {
   return date.format(at);
 }
 
-/** «Обновлена из файла сегодня в 14:20». */
-export function updateLine(update: Pick<BookUpdate, 'at'>, now = Date.now()) {
-  return `Обновлена из файла ${updatedWhen(update.at, now)}`;
+/** «Обновлена из файла сегодня в 14:20»; the app — «Обновлена сегодня в 14:20» (specs/2026-11-15-desk-obsidian-book-web.md OU3.2). */
+export function updateLine(update: Pick<BookUpdate, 'at'>, now = Date.now(), words: Pick<BookUpdateWords, 'updated'> = siteBookUpdateWords) {
+  return `${words.updated} ${updatedWhen(update.at, now)}`;
 }
 
 /** «можно вернуть прежнюю версию до 19 ноября». */
@@ -71,19 +72,22 @@ export const revertAction = 'Вернуть версию до обновлени
 
 /**
  * The question of «Вернуть прежнюю версию…» (BR3.2) by the preview of the server: what comes back, what the file added
- * and goes to «Недавно удалённые», what stays as it is and why, and that the helper reads the returned chapters again.
+ * and goes to «Недавно удалённые», what stays as it is and why, and that the helper reads the returned chapters again. What
+ * the update did is said in the words of the edition: the app does not name the file (OU3.2).
  */
-export function revertQuestion(preview: BookRevertPreview): { title: string; line: string; also: string } {
+export function revertQuestion(
+  preview: BookRevertPreview, words: Pick<BookUpdateWords, 'revert'> = siteBookUpdateWords,
+): { title: string; line: string; also: string } {
   const back = [
     preview.text.length ? `текст ${preview.text.length} ${pluralize(preview.text.length, 'главы', 'глав', 'глав')}` : '',
     preview.place.length ? `названия и места ${preview.place.length} ${pluralize(preview.place.length, 'главы', 'глав', 'глав')}` : '',
     preview.returned.length ? formatCount(preview.returned.length, 'убранная глава', 'убранные главы', 'убранных глав') : '',
   ].filter(Boolean);
   const gone = preview.removed.length === 1
-    ? `В «Недавно удалённые» уйдёт глава ${names(preview.removed)} — её добавил файл.`
-    : preview.removed.length > 1 ? `Главы, которые добавил файл (${preview.removed.length}), уйдут в «Недавно удалённые».` : '';
+    ? `В «Недавно удалённые» уйдёт глава ${names(preview.removed)} — ${words.revert.addedOne}.`
+    : preview.removed.length > 1 ? `${words.revert.addedMany(preview.removed.length)}, уйдут в «Недавно удалённые».` : '';
   const line = [back.length ? `Вернутся: ${back.join(', ')}.` : '', gone].filter(Boolean).join(' ')
-    || 'Всё, что изменил файл, уже поменяли после обновления — книга останется как сейчас.';
+    || `${words.revert.changedAll}, уже поменяли после обновления — книга останется как сейчас.`;
   const kept = (['edited', 'deleted', 'returned'] as const).flatMap((stay) => {
     const chapters = preview.kept.filter((chapter) => chapter.stay === stay);
     return chapters.length ? [`${names(chapters)} — ${stays[stay][chapters.length === 1 ? 0 : 1]}`] : [];

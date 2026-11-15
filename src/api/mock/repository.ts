@@ -16,6 +16,11 @@ import { createAuthorMemoryOperations } from './repository/author-memory';
 import { createChapterDraftOperations } from './repository/chapter-drafts';
 import { createLettersOperations } from './repository/letters';
 import { createAppLinkOperations } from './repository/app-links';
+import { createDesktopAccountOperations } from './repository/desktop-account';
+import { createProgramOperations } from './repository/programs';
+import { createSendLogOperations } from './repository/send-log';
+import { createDesktopAiOperations } from './repository/desktop-ai';
+import { createReadingOperations } from './repository/reading';
 import { createVoiceOperations } from './repository/voice';
 import { createSagaOperations } from './repository/saga';
 import { createQuotaOperations } from './repository/quota';
@@ -31,18 +36,22 @@ import { createContactOperations } from './repository/contact';
 import { createTierOperations } from './repository/tiers';
 import { createTierKeyOperations } from './repository/tier-keys';
 import { createTrashOperations } from './repository/trash';
+import { createSagaFileOperations } from './repository/saga-file';
+import { createObsidianOperations } from './repository/obsidian';
 
 export function createMockApiClient() {
   const context = createMockRepositoryContext();
   const chat = createChatOperations(context);
   const jobs = createJobOperations(context);
   const materials = createAuthorMaterialOperations(context);
+  const books = createBookOperations(context);
+  const importQueues = createImportQueueOperations(context);
 
   return {
     ...createSessionOperations(context),
     ...createProjectOperations(context),
-    ...createBookOperations(context),
-    ...createImportQueueOperations(context),
+    ...books,
+    ...importQueues,
     ...jobs,
     ...createIndexingOperations(context),
     ...createChapterOperations(context),
@@ -57,6 +66,11 @@ export function createMockApiClient() {
     ...createVoiceOperations(context),
     ...createLettersOperations(context),
     ...createAppLinkOperations(context),
+    ...createDesktopAiOperations(context),
+    ...createReadingOperations(context),
+    ...createDesktopAccountOperations(context),
+    ...createSendLogOperations(context),
+    ...createProgramOperations(context),
     ...createQuotaOperations(context),
     ...createImageOperations(context),
     ...createImageDrawingOperations(context),
@@ -70,6 +84,8 @@ export function createMockApiClient() {
     ...createTierOperations(context),
     ...createTierKeyOperations(context),
     ...createTrashOperations(context),
+    ...createSagaFileOperations(context),
+    ...createObsidianOperations(context, books, importQueues, materials),
   } satisfies CanonKeeperApiClient;
 }
 

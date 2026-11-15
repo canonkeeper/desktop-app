@@ -4,6 +4,8 @@ package desktop
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -65,6 +67,20 @@ type Cluster struct {
 	fallback string
 	// version is the version of the app, written into a copy before the migrations (specs/2026-11-13-desk-settings.md ST2.3).
 	version string
+	// mark is the setting canonkeeper.start of this start of the cluster: the migrations ask the cluster for it to know
+	// it is the one this backend started (specs/2026-11-13-desk-upgrade.md UG1.2).
+	mark string
+	// home is the directory of the cluster when it is not pg/ of the data directory: the cluster a return brings the
+	// copy back into, beside the one of the author (UG4.2).
+	home string
+}
+
+// directory is the directory of the cluster.
+func (cluster *Cluster) directory() string {
+	if cluster.home != "" {
+		return cluster.home
+	}
+	return cluster.data.Cluster()
 }
 
 var (
@@ -77,8 +93,19 @@ func newCluster(bin string, data DataDir, secrets clusterSecrets) *Cluster {
 }
 
 // Start brings the cluster up (DA1.6): the one a crashed backend left running stops first, a missing cluster is
-// created, and the cluster starts on this run's socket or port and waits until it accepts connections.
+// created, and the cluster starts on this run's socket or port and waits until it accepts connections. A cluster a later
+// major version of PostgreSQL made is the data of a newer program: it is refused before anything starts
+// (errNewerSchema, specs/2026-11-13-desk-upgrade.md UG2.3).
 func (cluster *Cluster) Start(ctx context.Context) error {
+	if made := clusterMajor(cluster.directory()); made != "" {
+		major, err := cluster.bundleMajor(ctx)
+		if err != nil {
+			return err
+		}
+		if newerMajor(made, major) {
+			return errNewerSchema
+		}
+	}
 	if err := cluster.stopLeftover(ctx); err != nil {
 		return err
 	}
@@ -98,12 +125,12 @@ func (cluster *Cluster) Start(ctx context.Context) error {
 		return err
 	}
 	logFile := filepath.Join(cluster.data.Logs(), "postgres-"+time.Now().UTC().Format("2006-01-02")+".log")
-	return cluster.tool(ctx, "pg_ctl", "start", "-w", "-t", "60", "-D", cluster.data.Cluster(), "-l", logFile)
+	return cluster.tool(ctx, "pg_ctl", "start", "-w", "-t", "60", "-D", cluster.directory(), "-l", logFile)
 }
 
 // Stop stops the cluster fast (pg_ctl stop -m fast): open transactions roll back, what was committed stays.
 func (cluster *Cluster) Stop(ctx context.Context) error {
-	err := cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "60", "-m", "fast", "-D", cluster.data.Cluster())
+	err := cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "60", "-m", "fast", "-D", cluster.directory())
 	if cluster.fallback != "" {
 		_ = os.RemoveAll(cluster.fallback)
 	}
@@ -113,15 +140,15 @@ func (cluster *Cluster) Stop(ctx context.Context) error {
 // stopLeftover stops the cluster a crashed backend left running: postmaster.pid names it, and pg_ctl status says
 // whether its process lives (DA1.6).
 func (cluster *Cluster) stopLeftover(ctx context.Context) error {
-	if _, err := os.Stat(filepath.Join(cluster.data.Cluster(), "postmaster.pid")); err != nil {
+	if _, err := os.Stat(filepath.Join(cluster.directory(), "postmaster.pid")); err != nil {
 		return nil
 	}
-	if cluster.tool(ctx, "pg_ctl", "status", "-D", cluster.data.Cluster()) != nil {
+	if cluster.tool(ctx, "pg_ctl", "status", "-D", cluster.directory()) != nil {
 		// No live server: pg_ctl start sees the stale file and starts anyway.
 		return nil
 	}
-	if err := cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "60", "-m", "fast", "-D", cluster.data.Cluster()); err != nil {
-		return cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "30", "-m", "immediate", "-D", cluster.data.Cluster())
+	if err := cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "60", "-m", "fast", "-D", cluster.directory()); err != nil {
+		return cluster.tool(ctx, "pg_ctl", "stop", "-w", "-t", "30", "-m", "immediate", "-D", cluster.directory())
 	}
 	return nil
 }
@@ -129,10 +156,10 @@ func (cluster *Cluster) stopLeftover(ctx context.Context) error {
 // initialized reports a cluster in the data directory; a directory with files but without PG_VERSION is refused, not
 // overwritten.
 func (cluster *Cluster) initialized() (bool, error) {
-	if _, err := os.Stat(filepath.Join(cluster.data.Cluster(), "PG_VERSION")); err == nil {
+	if _, err := os.Stat(filepath.Join(cluster.directory(), "PG_VERSION")); err == nil {
 		return true, nil
 	}
-	entries, err := os.ReadDir(cluster.data.Cluster())
+	entries, err := os.ReadDir(cluster.directory())
 	if errors.Is(err, fs.ErrNotExist) || err == nil && len(entries) == 0 {
 		return false, nil
 	}
@@ -152,7 +179,7 @@ func (cluster *Cluster) initialize(ctx context.Context) error {
 		return err
 	}
 	defer os.Remove(passwords)
-	return cluster.tool(ctx, "initdb", "-D", cluster.data.Cluster(), "-U", adminRole, "--pwfile="+passwords,
+	return cluster.tool(ctx, "initdb", "-D", cluster.directory(), "-U", adminRole, "--pwfile="+passwords,
 		"--auth=scram-sha-256", "--encoding=UTF8", "--locale-provider=builtin", "--builtin-locale=C.UTF-8",
 		"--lc-ctype="+systemUTF8Locale(), "--lc-collate=C", "--lc-messages=C", "--lc-monetary=C", "--lc-numeric=C",
 		"--lc-time=C", "--no-instructions")
@@ -173,7 +200,7 @@ func systemUTF8Locale() string {
 // ensureSettings adds clusterSettings to postgresql.conf once: an initdb interrupted before them gets them on the next
 // start.
 func (cluster *Cluster) ensureSettings() error {
-	path := filepath.Join(cluster.data.Cluster(), "postgresql.conf")
+	path := filepath.Join(cluster.directory(), "postgresql.conf")
 	current, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -194,16 +221,22 @@ func (cluster *Cluster) ensureSettings() error {
 
 // listen writes how this run's cluster listens (DA1.3, DA3.10): on macOS and Linux only a Unix socket in pg.run, or in
 // a short directory of the user's own when the path of the socket would be too long; on Windows 127.0.0.1 on a port
-// that is free now.
+// that is free now. A new mark of the start goes with it (specs/2026-11-13-desk-upgrade.md UG1.2): only the cluster
+// started with this file carries it.
 func (cluster *Cluster) listen() error {
-	var settings []string
+	mark := make([]byte, 16)
+	if _, err := rand.Read(mark); err != nil {
+		return err
+	}
+	cluster.mark = hex.EncodeToString(mark)
+	settings := []string{storedb.StartMarkSetting + " = '" + cluster.mark + "'"}
 	if runtime.GOOS == "windows" {
 		port, err := freePort()
 		if err != nil {
 			return err
 		}
 		cluster.host, cluster.port = "127.0.0.1", port
-		settings = []string{"listen_addresses = '127.0.0.1'", "port = " + strconv.Itoa(port), "unix_socket_directories = ''"}
+		settings = append(settings, "listen_addresses = '127.0.0.1'", "port = "+strconv.Itoa(port), "unix_socket_directories = ''")
 	} else {
 		directory := cluster.data.Socket()
 		if len(filepath.Join(directory, ".s.PGSQL."+strconv.Itoa(socketPort))) > maxSocketPath {
@@ -217,12 +250,12 @@ func (cluster *Cluster) listen() error {
 			return err
 		}
 		cluster.host, cluster.port = directory, socketPort
-		settings = []string{
-			"listen_addresses = ''", "port = " + strconv.Itoa(socketPort),
-			"unix_socket_directories = '" + strings.ReplaceAll(directory, "'", "''") + "'", "unix_socket_permissions = 0700",
-		}
+		settings = append(settings,
+			"listen_addresses = ''", "port = "+strconv.Itoa(socketPort),
+			"unix_socket_directories = '"+strings.ReplaceAll(directory, "'", "''")+"'", "unix_socket_permissions = 0700",
+		)
 	}
-	return os.WriteFile(filepath.Join(cluster.data.Cluster(), runSettings), []byte(strings.Join(settings, "\n")+"\n"), 0o600)
+	return os.WriteFile(filepath.Join(cluster.directory(), runSettings), []byte(strings.Join(settings, "\n")+"\n"), 0o600)
 }
 
 func freePort() (int, error) {
@@ -263,6 +296,13 @@ func (cluster *Cluster) WorkerURL() string {
 	})
 }
 
+// bootstrapHooks are what Bootstrap tells its run: step before a long step — the copy, the migrations — and migrated
+// right after the migrations committed (specs/2026-11-13-desk-upgrade.md UG2.2, UG3.1).
+type bootstrapHooks struct {
+	step     func(step string)
+	migrated func()
+}
+
 // Bootstrap prepares the database of the product (DA1.3): the roles and the database of init-local.sh with this
 // computer's passwords, the numbered migrations of the site as the administrator, and the runtime grants of
 // bootstrap-local.sh. Every step is repeatable, so an interrupted first start finishes on the next one.
@@ -271,7 +311,7 @@ func (cluster *Cluster) WorkerURL() string {
 // program migrated is refused before anything changes (errNewerSchema); an existing database with migrations pending is
 // copied first and backup names the copy (a failed copy is backupFailed, a migration failed after it migrationFailed);
 // an empty one is migrated without a copy; with nothing pending the runner is not called.
-func (cluster *Cluster) Bootstrap(ctx context.Context) (backup string, err error) {
+func (cluster *Cluster) Bootstrap(ctx context.Context, hooks bootstrapHooks) (backup string, err error) {
 	admin, err := pgx.Connect(ctx, cluster.url(adminRole, cluster.secrets.Admin, "postgres", nil))
 	if err != nil {
 		return "", fmt.Errorf("connect the administrator: %w", err)
@@ -298,18 +338,8 @@ func (cluster *Cluster) Bootstrap(ctx context.Context) (backup string, err error
 	if status.Newer {
 		return "", errNewerSchema
 	}
-	for role, password := range map[string]string{productRole: cluster.secrets.Product, workerRole: cluster.secrets.Worker} {
-		if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
-			return "", err
-		}
-		if !exists {
-			if _, err := admin.Exec(ctx, "CREATE ROLE "+role+" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"); err != nil {
-				return "", err
-			}
-		}
-		if _, err := admin.Exec(ctx, "ALTER ROLE "+role+" PASSWORD "+quoteLiteral(password)); err != nil {
-			return "", err
-		}
+	if err := cluster.loginRoles(ctx, admin); err != nil {
+		return "", err
 	}
 	for _, statement := range []string{
 		"REVOKE CONNECT ON DATABASE postgres FROM PUBLIC",
@@ -322,16 +352,21 @@ func (cluster *Cluster) Bootstrap(ctx context.Context) (backup string, err error
 	}
 	if status.Pending > 0 {
 		if status.Last >= 0 {
+			hooks.step(stepBackup)
 			if backup, err = cluster.backup(ctx, status.Last, time.Now()); err != nil {
 				return "", backupFailed{err}
 			}
+			// The first start migrates an empty database: that is no update, and no step is named.
+			hooks.step(stepMigrate)
 		}
-		if err := storedb.ApplyMigrations(ctx, database); err != nil {
+		// UG1.1: the database is this process's alone; the Jobs a dead program left are data for the migrations.
+		if err := storedb.ApplyMigrationsOfOneProcess(ctx, database, cluster.mark); err != nil {
 			if backup != "" {
 				return backup, migrationFailed{backup: backup, err: err}
 			}
 			return "", fmt.Errorf("apply migrations: %w", err)
 		}
+		hooks.migrated()
 	}
 	for _, statement := range []string{
 		"GRANT canonkeeper_product_runtime TO " + productRole,
@@ -342,6 +377,26 @@ func (cluster *Cluster) Bootstrap(ctx context.Context) (backup string, err error
 		}
 	}
 	return backup, nil
+}
+
+// loginRoles creates the roles the product and the worker log in with, when they are not there, with this computer's
+// passwords (bootstrap-local.sh).
+func (cluster *Cluster) loginRoles(ctx context.Context, admin *pgx.Conn) error {
+	for role, password := range map[string]string{productRole: cluster.secrets.Product, workerRole: cluster.secrets.Worker} {
+		var exists bool
+		if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			if _, err := admin.Exec(ctx, "CREATE ROLE "+role+" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"); err != nil {
+				return err
+			}
+		}
+		if _, err := admin.Exec(ctx, "ALTER ROLE "+role+" PASSWORD "+quoteLiteral(password)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // quoteLiteral quotes a string as an SQL literal; utility statements take no parameters.
@@ -359,15 +414,35 @@ func (cluster *Cluster) tool(ctx context.Context, name string, args ...string) e
 	return cluster.run(ctx, toolTimeout, nil, name, args...)
 }
 
+// bundleMajor is the major version of the PostgreSQL of the bundle, as pg_ctl --version says it (UG2.3).
+func (cluster *Cluster) bundleMajor(ctx context.Context) (string, error) {
+	output, err := cluster.output(ctx, toolTimeout, nil, "pg_ctl", "--version")
+	if err != nil {
+		return "", err
+	}
+	_, version, _ := strings.Cut(output, "(PostgreSQL) ")
+	major := majorOf(strings.TrimSpace(version))
+	if major == "" {
+		return "", fmt.Errorf("%w: pg_ctl --version said no version", errPostgresTool)
+	}
+	return major, nil
+}
+
 // run is tool with its own time limit and variables added to the environment of the program.
 func (cluster *Cluster) run(ctx context.Context, timeout time.Duration, environment []string, name string, args ...string) error {
+	_, err := cluster.output(ctx, timeout, environment, name, args...)
+	return err
+}
+
+// output is run that returns what the program wrote.
+func (cluster *Cluster) output(ctx context.Context, timeout time.Duration, environment []string, name string, args ...string) (string, error) {
 	program := filepath.Join(cluster.bin, name)
 	if runtime.GOOS == "windows" {
 		program += ".exe"
 	}
 	output, err := os.CreateTemp(cluster.data.Logs(), "pg-tool-*.log")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.Remove(output.Name())
 	defer output.Close()
@@ -376,11 +451,12 @@ func (cluster *Cluster) run(ctx context.Context, timeout time.Duration, environm
 	command := exec.CommandContext(toolCtx, program, args...)
 	command.Stdout, command.Stderr = output, output
 	command.Env = append(toolEnvironment(), environment...)
-	if err := command.Run(); err != nil {
-		raw, _ := os.ReadFile(output.Name())
-		return fmt.Errorf("%w: %s %s: %v: %s", errPostgresTool, name, firstArg(args), err, lastLines(string(raw), 8))
+	err = command.Run()
+	raw, _ := os.ReadFile(output.Name())
+	if err != nil {
+		return "", fmt.Errorf("%w: %s %s: %v: %s", errPostgresTool, name, firstArg(args), err, lastLines(string(raw), 8))
 	}
-	return nil
+	return string(raw), nil
 }
 
 // toolEnvironment is the environment of the programs: the user's, without the PG* variables that would point them at

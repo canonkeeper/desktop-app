@@ -143,9 +143,15 @@ func TestPersonalNoteChapterViewerCaptureCurrentChangedAndRevoked(t *testing.T) 
 // publishChapterDraftForTest publishes the chapter's current draft revision through the library store.
 func publishChapterDraftForTest(t *testing.T, manuscripts *librarystore.Store, revision int64) {
 	t.Helper()
+	publishBookChapterForTest(t, manuscripts, submitTurnChapterID, revision)
+}
+
+// publishBookChapterForTest publishes a draft revision of a chapter of the seeded book through the library store.
+func publishBookChapterForTest(t *testing.T, manuscripts *librarystore.Store, chapterID string, revision int64) {
+	t.Helper()
 	ctx := context.Background()
 	draft, err := manuscripts.ListChapterParagraphs(ctx, library.ListChapterParagraphsStoreInput{
-		ProjectID: submitTurnProjectID, BookID: submitTurnBookID, ChapterID: submitTurnChapterID,
+		ProjectID: submitTurnProjectID, BookID: submitTurnBookID, ChapterID: chapterID,
 		Revision: revision, Variant: library.ParagraphVariantDraft,
 	})
 	if err != nil {
@@ -159,7 +165,7 @@ func publishChapterDraftForTest(t *testing.T, manuscripts *librarystore.Store, r
 		published = append(published, paragraph)
 	}
 	if _, err := manuscripts.PublishChapter(ctx, library.PublishChapterStoreInput{
-		ProjectID: submitTurnProjectID, BookID: submitTurnBookID, ChapterID: submitTurnChapterID,
+		ProjectID: submitTurnProjectID, BookID: submitTurnBookID, ChapterID: chapterID,
 		Revision: revision, PublishedAt: now, Paragraphs: published,
 	}); err != nil {
 		t.Fatal(err)

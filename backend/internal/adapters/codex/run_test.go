@@ -30,45 +30,6 @@ func TestThreadStartUsesPermissionProfileWithoutConflictingSandbox(t *testing.T)
 	}
 }
 
-func TestGoalRunSetsNativeThreadGoal(t *testing.T) {
-	transport := newFakeTransport()
-	transport.autoComplete = true
-	transport.completeGoalOnContinuation = true
-	client := newTestClient(t, transport)
-	var boundTurn string
-	request := testRunRequest("job", "job-turn", "", false, &boundTurn)
-	request.GoalObjective = "complete the bound operation"
-
-	if _, err := client.Run(t.Context(), request); err != nil {
-		t.Fatal(err)
-	}
-	if got := transport.methodCount("thread/goal/set"); got != 1 {
-		t.Fatalf("thread/goal/set calls = %d, want 1", got)
-	}
-}
-
-func TestGoalRunReportsCompletedContextCompactionItem(t *testing.T) {
-	transport := newFakeTransport()
-	transport.autoComplete = true
-	transport.completeGoalOnContinuation = true
-	transport.completedItems = []protocol.ThreadItem{{TypeValue: "contextCompaction", ID: protocol.SomeNonNull("compact-1")}}
-	client := newTestClient(t, transport)
-	request := testRunRequest("job", "job-turn", "", false, new(string))
-	request.GoalObjective = "complete the bound operation"
-	var got string
-	request.OnContextCompaction = func(_ context.Context, threadID, turnID, itemID string) error {
-		got = threadID + "/" + turnID + "/" + itemID
-		return nil
-	}
-
-	if _, err := client.Run(t.Context(), request); err != nil {
-		t.Fatal(err)
-	}
-	if got != "root-1/turn-1/compact-1" {
-		t.Fatalf("compaction = %q", got)
-	}
-}
-
 func TestCompactionBarrierReplaysDurableItemBeforeFreezeHandler(t *testing.T) {
 	transport := newFakeTransport()
 	client := newTestClient(t, transport)
@@ -177,230 +138,6 @@ func TestRunPreservesRuntimeProcessExit(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("run did not observe process exit")
-	}
-}
-
-func TestGoalRunFollowsNativeContinuationUntilGoalTerminal(t *testing.T) {
-	transport := newFakeTransport()
-	transport.autoComplete = true
-	transport.completeGoalOnContinuation = true
-	client := newTestClient(t, transport)
-	boundTurns := make([]string, 0, 2)
-	request := testRunRequest("job", "job-turn", "", false, new(string))
-	request.GoalObjective = "complete the bound operation"
-	request.BindTurn = func(_ context.Context, _ string, turnID string) error {
-		boundTurns = append(boundTurns, turnID)
-		return nil
-	}
-
-	result, err := client.Run(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(boundTurns, []string{"turn-1", "turn-2"}) || result.TurnID != "turn-2" || result.FinalResponse != "goal done" {
-		t.Fatalf("bound=%v result=%+v", boundTurns, result)
-	}
-}
-
-func TestGoalRunResumesCompletedInitialThroughNativeContinuation(t *testing.T) {
-	transport := newFakeTransport()
-	transport.completeGoalOnContinuation = true
-	root := testProtocolThread("root-existing", "project-job", "", "")
-	transport.addThread(root, testTurn("turn-existing", "job-turn", protocol.TurnStatusCompleted))
-	transport.projects["job"] = "project-job"
-	client := newTestClient(t, transport)
-	boundTurns := make([]string, 0, 2)
-	request := testRunRequest("job", "job-turn", "root-existing", false, new(string))
-	request.GoalObjective = "complete the bound operation"
-	request.BindTurn = func(_ context.Context, _ string, turnID string) error {
-		boundTurns = append(boundTurns, turnID)
-		return nil
-	}
-
-	result, err := client.Run(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(boundTurns, []string{"turn-existing", "turn-1"}) || result.TurnID != "turn-1" || result.FinalResponse != "goal done" {
-		t.Fatalf("bound=%v result=%+v", boundTurns, result)
-	}
-}
-
-func TestGoalRunRestartsActiveGoalWithoutInProgressTurn(t *testing.T) {
-	transport := newFakeTransport()
-	transport.completeGoalOnContinuation = true
-	root := testProtocolThread("root-existing", "project-job", "", "")
-	transport.addThread(
-		root,
-		testTurn("turn-assigned", "job-turn", protocol.TurnStatusInterrupted),
-		testTurn("turn-consultation", "operator-consultation", protocol.TurnStatusCompleted),
-	)
-	transport.projects["job"] = "project-job"
-	transport.goals[root.ID] = protocol.ThreadGoal{
-		ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusActive,
-	}
-	client := newTestClient(t, transport)
-	boundTurns := make([]string, 0, 2)
-	request := testRunRequest("job", "job-turn", "root-existing", true, new(string))
-	request.GoalObjective = "complete the bound operation"
-	request.ExistingTurnID = "turn-assigned"
-	request.BindTurn = func(_ context.Context, _ string, turnID string) error {
-		boundTurns = append(boundTurns, turnID)
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-
-	result, err := client.Run(ctx, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(boundTurns, []string{"turn-consultation", "turn-1"}) ||
-		result.TurnID != "turn-1" || result.FinalResponse != "goal done" ||
-		transport.methodCount("thread/goal/set") != 1 {
-		t.Fatalf("bound=%v result=%+v goal sets=%d", boundTurns, result, transport.methodCount("thread/goal/set"))
-	}
-}
-
-func TestGoalRunRecoversLatestDurableContinuation(t *testing.T) {
-	transport := newFakeTransport()
-	root := testProtocolThread("root-existing", "project-job", "", "")
-	initial := testTurn("turn-initial", "job-turn", protocol.TurnStatusCompleted)
-	continuation := testTurn("turn-goal", "", protocol.TurnStatusCompleted)
-	continuation.Items = append(continuation.Items, protocol.ThreadItem{
-		TypeValue: "agentMessage", ID: protocol.SomeNonNull("agent-goal"), Text: protocol.SomeNonNull("goal done"),
-	})
-	transport.addThread(root, initial, continuation)
-	transport.projects["job"] = "project-job"
-	transport.goals[root.ID] = protocol.ThreadGoal{
-		ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusComplete,
-	}
-	client := newTestClient(t, transport)
-	var boundTurn string
-	request := testRunRequest("job", "job-turn", "root-existing", false, &boundTurn)
-	request.GoalObjective = "complete the bound operation"
-
-	result, err := client.Run(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if boundTurn != "turn-goal" || result.TurnID != "turn-goal" || result.FinalResponse != "goal done" {
-		t.Fatalf("bound=%q result=%+v", boundTurn, result)
-	}
-}
-
-func TestGoalResumeReactivatesOnlyExplicitUsageLimitedGoal(t *testing.T) {
-	limitedTransport := func() *fakeTransport {
-		transport := newFakeTransport()
-		root := testProtocolThread("root-existing", "project-job", "", "")
-		transport.addThread(root, testTurn("turn-limited", "job-turn", protocol.TurnStatusFailed))
-		transport.projects["job"] = "project-job"
-		transport.goals[root.ID] = protocol.ThreadGoal{
-			ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusUsageLimited,
-		}
-		return transport
-	}
-
-	t.Run("non-explicit recovery remains parked", func(t *testing.T) {
-		transport := limitedTransport()
-		client := newTestClient(t, transport)
-		request := testRunRequest("job", "job-turn", "root-existing", true, new(string))
-		request.GoalObjective = "complete the bound operation"
-		request.ExistingTurnID = "turn-limited"
-
-		result, err := client.Run(t.Context(), request)
-		if err != nil || result.Failure != agent.RunFailureUsageLimitExceeded || transport.methodCount("thread/goal/set") != 0 {
-			t.Fatalf("result=%+v goal sets=%d err=%v", result, transport.methodCount("thread/goal/set"), err)
-		}
-	})
-
-	t.Run("explicit recovery reactivates the same goal", func(t *testing.T) {
-		transport := limitedTransport()
-		transport.completeGoalOnContinuation = true
-		client := newTestClient(t, transport)
-		request := testRunRequest("job", "job-turn", "root-existing", true, new(string))
-		request.GoalObjective = "complete the bound operation"
-		request.ExistingTurnID = "turn-limited"
-		request.ResumeUsageLimitedGoal = true
-
-		result, err := client.Run(t.Context(), request)
-		if err != nil || result.RootThreadID != "root-existing" || result.Status != agent.TurnCompleted ||
-			result.Failure != "" || transport.methodCount("thread/goal/set") != 1 {
-			t.Fatalf("result=%+v goal sets=%d err=%v", result, transport.methodCount("thread/goal/set"), err)
-		}
-	})
-
-	t.Run("stale explicit marker does not reactivate a completed goal", func(t *testing.T) {
-		transport := limitedTransport()
-		transport.goals["root-existing"] = protocol.ThreadGoal{
-			ThreadID: "root-existing", Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusComplete,
-		}
-		client := newTestClient(t, transport)
-		request := testRunRequest("job", "job-turn", "root-existing", true, new(string))
-		request.GoalObjective = "complete the bound operation"
-		request.ExistingTurnID = "turn-limited"
-		request.ResumeUsageLimitedGoal = true
-
-		if _, err := client.Run(t.Context(), request); err != nil {
-			t.Fatal(err)
-		}
-		if transport.methodCount("thread/goal/set") != 0 {
-			t.Fatalf("stale resume goal sets = %d, want 0", transport.methodCount("thread/goal/set"))
-		}
-	})
-}
-
-func TestGoalRunRecoversTerminalGoalWhileLastTurnFinishes(t *testing.T) {
-	transport := newFakeTransport()
-	root := testProtocolThread("root-existing", "project-job", "", "")
-	turn := testTurn("turn-active", "job-turn", protocol.TurnStatusInProgress)
-	transport.addThread(root, turn)
-	transport.completeOnList[root.ID] = turn.ID
-	transport.projects["job"] = "project-job"
-	transport.goals[root.ID] = protocol.ThreadGoal{
-		ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusComplete,
-	}
-	client := newTestClient(t, transport)
-	request := testRunRequest("job", "job-turn", "root-existing", false, new(string))
-	request.GoalObjective = "complete the bound operation"
-	request.ExistingTurnID = turn.ID
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-
-	result, err := client.Run(ctx, request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.TurnID != turn.ID || result.FinalResponse != "observed" {
-		t.Fatalf("result=%+v", result)
-	}
-}
-
-func TestGoalResumeReplaysPersistedContextCompactionBeforeTerminalReturn(t *testing.T) {
-	transport := newFakeTransport()
-	root := testProtocolThread("root-existing", "project-job", "", "")
-	turn := testTurn("turn-existing", "job-turn", protocol.TurnStatusCompleted)
-	turn.Items = append(turn.Items,
-		protocol.ThreadItem{TypeValue: "contextCompaction", ID: protocol.SomeNonNull("compact-1")},
-		protocol.ThreadItem{TypeValue: "agentMessage", ID: protocol.SomeNonNull("agent-existing"), Text: protocol.SomeNonNull("done")},
-	)
-	transport.addThread(root, turn)
-	transport.projects["job"] = "project-job"
-	transport.goals[root.ID] = protocol.ThreadGoal{ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusComplete}
-	client := newTestClient(t, transport)
-	request := testRunRequest("job", "job-turn", "root-existing", false, new(string))
-	request.GoalObjective = "complete the bound operation"
-	var got string
-	request.OnContextCompaction = func(_ context.Context, threadID, turnID, itemID string) error {
-		got = threadID + "/" + turnID + "/" + itemID
-		return nil
-	}
-
-	if _, err := client.Run(t.Context(), request); err != nil {
-		t.Fatal(err)
-	}
-	if got != "root-existing/turn-existing/compact-1" {
-		t.Fatalf("replayed compaction = %q", got)
 	}
 }
 
@@ -708,20 +445,25 @@ func TestCancelRootTree(t *testing.T) {
 	}
 }
 
-func TestCancelRootClearsNativeGoalBeforeReturningIdle(t *testing.T) {
+// specs/2026-11-13-desk-gateway.md GW2.5: every profile turns the goals of a thread off, so no thread has a goal that
+// could start it again. The cancel of a turn and the deletion of a tree ask nothing of goals.
+func TestCancelAndDeleteAskNothingOfGoals(t *testing.T) {
 	transport := newFakeTransport()
-	root := testProtocolThread("root-goal", "project-job", "", "")
-	transport.addThread(root, testTurn("turn-complete", "job-turn", protocol.TurnStatusCompleted))
-	transport.goals[root.ID] = protocol.ThreadGoal{
-		ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusActive,
-	}
+	root := testProtocolThread("root", "project-job", "", "")
+	transport.addThread(root, testTurn("root-turn", "root-message", protocol.TurnStatusInProgress))
 	client := newTestClient(t, transport)
 
-	if _, err := client.CancelRoot(t.Context(), RootSelector{ThreadID: root.ID}); err != nil {
-		t.Fatal(err)
+	if rootID, err := client.CancelRoot(t.Context(), RootSelector{ThreadID: "root"}); err != nil || rootID != "root" ||
+		transport.methodCount("turn/interrupt") != 1 {
+		t.Fatalf("cancel = %q, %v, interrupts %d", rootID, err, transport.methodCount("turn/interrupt"))
 	}
-	if got := transport.methodCount("thread/goal/clear"); got != 1 {
-		t.Fatalf("thread/goal/clear calls = %d, want 1", got)
+	if rootID, err := client.DeleteTree(t.Context(), RootSelector{ThreadID: "root"}); err != nil || rootID != "root" {
+		t.Fatalf("delete = %q, %v", rootID, err)
+	}
+	for _, method := range []string{"thread/goal/get", "thread/goal/set", "thread/goal/clear"} {
+		if got := transport.methodCount(method); got != 0 {
+			t.Fatalf("%s calls = %d, want none", method, got)
+		}
 	}
 }
 
@@ -823,23 +565,6 @@ func TestDeleteRootInterruptsActiveTreeBeforeDeleting(t *testing.T) {
 		if transport.methods[index] == "turn/interrupt" {
 			t.Fatalf("interrupt after delete: methods = %v", transport.methods)
 		}
-	}
-}
-
-func TestDeleteRootClearsNativeGoalBeforeDeletingTree(t *testing.T) {
-	transport := newFakeTransport()
-	root := testProtocolThread("root-goal", "project-job", "", "")
-	transport.addThread(root)
-	transport.goals[root.ID] = protocol.ThreadGoal{
-		ThreadID: root.ID, Objective: "complete the bound operation", Status: protocol.ThreadGoalStatusActive,
-	}
-	client := newTestClient(t, transport)
-
-	if _, err := client.DeleteTree(t.Context(), RootSelector{ThreadID: root.ID}); err != nil {
-		t.Fatal(err)
-	}
-	if got := transport.methodCount("thread/goal/clear"); got != 1 {
-		t.Fatalf("thread/goal/clear calls = %d, want 1", got)
 	}
 }
 

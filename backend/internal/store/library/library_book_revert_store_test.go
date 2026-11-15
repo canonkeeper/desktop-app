@@ -464,6 +464,42 @@ func TestARevertBringsTheBookBackAsItWasBeforeTheUpdate(t *testing.T) {
 	}
 }
 
+// BR1.2: an update from a file that changes nothing — the same file again, a second Job of the same text — writes no
+// snapshot and leaves the one of the update before: «Вернуть» brings the book back as it was before that update.
+func TestAnUpdateThatChangesNothingKeepsTheSnapshotOfTheUpdateBefore(t *testing.T) {
+	fixture := newRevertFixture(t, 143_400)
+	first := fixture.firstBook()
+	before := fixture.chapters(first.BookID)
+	fixture.updateBook(first.BookID)
+	updated := fixture.chapters(first.BookID)
+	fixture.updateBook(first.BookID)
+	if again := fixture.chapters(first.BookID); len(again) != len(updated) {
+		t.Fatalf("the book after the update that changes nothing = %+v, after the first %+v", again, updated)
+	} else {
+		for id, was := range updated {
+			if now := again[id]; now != was {
+				t.Fatalf("a chapter after the update that changes nothing = %+v, after the first %+v", now, was)
+			}
+		}
+	}
+	if heads := fixture.count(`SELECT count(*) FROM book_update_snapshots WHERE book_id = $1 AND job_id = $2`, first.BookID, testUUID(143_400+100+2)); heads != 1 {
+		t.Fatalf("snapshots of the first update after one that changed nothing = %d, want 1", heads)
+	}
+	preview := fixture.preview(first.BookID)
+	if _, err := fixture.store.RevertBookUpdate(fixture.ctx, fixture.actor(), first.BookID, preview.Fingerprint); err != nil {
+		t.Fatalf("RevertBookUpdate() error = %v", err)
+	}
+	if got := fixture.live(first.BookID); got != "Глава 1, Глава 2, Глава 3, Глава 5, Глава 6" {
+		t.Fatalf("the book after the return = %s", got)
+	}
+	reverted := fixture.chapters(first.BookID)
+	for id, was := range before {
+		if now := reverted[id]; now.deleted || now.title != was.title || now.order != was.order || now.text != was.text || now.markdown != was.markdown {
+			t.Fatalf("%s after the return = %+v, before the first update %+v", was.title, now, was)
+		}
+	}
+}
+
 // BR2.1, BR2.2: a chapter changed after the update stays as it is and the preview names it; a chapter deleted after it
 // stays deleted; the rest comes back. A book changed between the preview and the return is refused, nothing changes.
 func TestARevertLeavesWhatTheAuthorChangedAfterTheUpdate(t *testing.T) {

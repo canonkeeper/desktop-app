@@ -239,14 +239,15 @@ export class OpenApiClientTransport implements ApiClient {
 
   /**
    * An operation that answers with a file: the bytes and the name the server gave it. A write goes with its body and the
-   * same request-forgery protection as request (the batch of keys of the tiers).
+   * same request-forgery protection as request (the batch of keys of the tiers); the signal breaks a long file off (the
+   * saga file, specs/2026-11-13-desk-sagafile-web.md SW1.2).
    */
-  protected async requestFile<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown): Promise<DownloadedFile> {
+  protected async requestFile<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown, signal?: AbortSignal): Promise<DownloadedFile> {
     const route = operationManifest[operationId];
-    return this.withCsrfRecovery(needsCsrf(route.method, {}), () => this.requestFileOnce(operationId, params, fallbackName, body));
+    return this.withCsrfRecovery(needsCsrf(route.method, {}), () => this.requestFileOnce(operationId, params, fallbackName, body, signal));
   }
 
-  private async requestFileOnce<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown): Promise<DownloadedFile> {
+  private async requestFileOnce<TOperation extends OperationId>(operationId: TOperation, params: unknown, fallbackName: string, body?: unknown, signal?: AbortSignal): Promise<DownloadedFile> {
     const route = operationManifest[operationId];
     const csrfToken = needsCsrf(route.method, {}) ? await this.ensureCsrfToken() : undefined;
     const openApiRequest = this.client.request as unknown as OpenApiFetchRequest;
@@ -254,6 +255,7 @@ export class OpenApiClientTransport implements ApiClient {
     try {
       result = await openApiRequest(route.method.toLowerCase() as Lowercase<typeof route.method>, route.path, {
         params: withContractHeaders(route.method, params, {}, csrfToken), parseAs: 'blob', ...(body === undefined ? {} : { body }),
+        ...(signal ? { signal } : {}),
       });
     } catch (error) {
       throw new NetworkApiError(error);

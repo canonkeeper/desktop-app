@@ -42,6 +42,9 @@ type transportConfig struct {
 	// PassEnv names backend environment variables (provider API keys) that the
 	// app-server may receive; everything else stays out of its environment.
 	PassEnv []string
+	// Environment are NAME=value pairs the backend holds in memory and gives the app-server alone — the token of the
+	// local gateway of the desktop app (specs/2026-11-13-desk-gateway.md GW2.2): never the environment of the backend.
+	Environment []string
 	// Logger receives the stderr tail of an app-server that exits unexpectedly or fails to start.
 	Logger *log.Logger
 }
@@ -116,6 +119,7 @@ func startTransport(ctx context.Context, config transportConfig) (*processTransp
 			command.Env = append(command.Env, name+"="+value)
 		}
 	}
+	command.Env = append(command.Env, config.Environment...)
 	stderr := &stderrTail{}
 	command.Stderr = stderr
 	startInOwnGroup(command)
@@ -299,5 +303,6 @@ func validTransportConfig(config transportConfig) bool {
 	if config.CodeModeHostPath != "" && !filepath.IsAbs(config.CodeModeHostPath) {
 		return false
 	}
-	return agentdomain.ValidConfigOverrides(config.ConfigOverrides) && agentdomain.ValidPassEnv(config.PassEnv)
+	return agentdomain.ValidConfigOverrides(config.ConfigOverrides) && agentdomain.ValidPassEnv(config.PassEnv) &&
+		agentdomain.ValidEnvironment(config.Environment)
 }

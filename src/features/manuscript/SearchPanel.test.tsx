@@ -68,13 +68,23 @@ describe('SearchPanel', () => {
   it('keeps a matching chapter from another saga visible when indexed text search fails', async () => {
     const props = baseProps();
     const locator = { projectId: 'other-saga', bookId: 'volume-9', chapterId: 'chapter-458', revision: 7, targetView: 'published' as const };
-    props.api.searchChapters.mockResolvedValue({ data: [{ projectTitle: 'Другая сага', bookTitle: 'Том 9', chapterTitle: 'Глава 458. Создание навыка', chapterNumber: '458', locator }], meta: { hasMore: false } });
+    props.api.searchChapters.mockResolvedValue({ data: [{ projectTitle: 'Другая сага', bookTitle: 'Том 9', chapterTitle: 'Глава 458. Создание навыка', chapterNumber: '458', chapterDisplayTitle: 'Создание навыка', locator }], meta: { hasMore: false } });
     render(<SearchPanel {...props} searchTerm="458" searchStatus="error" searchError="Текст ещё не проиндексирован" />);
     await screen.findByText('Глава 458. Создание навыка');
     expect(props.api.searchChapters).toHaveBeenCalledWith(expect.objectContaining({ query: '458', sourceView: 'published' }), expect.anything());
     fireEvent.click(screen.getByRole('button', { name: 'Открыть главу' }));
     expect(props.onOpenChapter).toHaveBeenCalledWith(locator);
     expect(screen.queryByRole('button', { name: 'Исправить канон' })).toBeNull();
+  });
+  // specs/2026-11-15-reader-chapter-number.md RN1.3: a found chapter is written as the head of the reader writes it, by the
+  // number and the title without it the server gives — the page reads no number from «12. Белый порт».
+  it('names a found chapter by the number and the title of the server', async () => {
+    const props = baseProps();
+    const locator = { projectId: 'saga', bookId: 'book', chapterId: 'chapter-9', revision: 1, targetView: 'published' as const };
+    props.api.searchChapters.mockResolvedValue({ data: [{ projectTitle: 'Сага', bookTitle: 'Книга', chapterTitle: '12. Белый порт', chapterNumber: '12', chapterDisplayTitle: 'Белый порт', locator }], meta: { hasMore: false } });
+    render(<SearchPanel {...props} searchTerm="12" results={[]} />);
+    await screen.findByText('Глава 12. Белый порт');
+    expect(screen.queryByText(/12\. Белый порт ·|· 12\. Белый порт/u)).toBeNull();
   });
   it('hides stale results and counters while loading or failed', () => {
     const props = baseProps();
@@ -96,14 +106,14 @@ describe('SearchPanel', () => {
 
   it('loads subsequent chapter matches on scroll without pagination buttons', async () => {
     const props = baseProps();
-    const chapter = (id: string) => ({ projectTitle: 'Сага', bookTitle: 'Книга', chapterTitle: `Глава ${id}`, chapterNumber: id,
+    const chapter = (id: string) => ({ projectTitle: 'Сага', bookTitle: 'Книга', chapterTitle: `Глава ${id}`, chapterNumber: id, chapterDisplayTitle: '',
       locator: { projectId: 'saga', bookId: 'book', chapterId: id, targetView: 'published' as const, revision: 1 } });
     props.api.searchChapters.mockResolvedValueOnce({ data: [chapter('458')], meta: { hasMore: true, nextCursor: 'next' } })
       .mockResolvedValueOnce({ data: [chapter('459')], meta: { hasMore: false } });
     render(<SearchPanel {...props} searchTerm="глава" results={[]} />);
-    await screen.findByText('Глава 458 · Глава 458');
+    await screen.findByText('Глава 458');
     fireEvent.scroll(screen.getByRole('region', { name: 'Результаты поиска' }));
-    await screen.findByText('Глава 459 · Глава 459');
+    await screen.findByText('Глава 459');
     expect(props.api.searchChapters).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'next' }), expect.anything());
     expect(screen.getAllByRole('button', { name: 'Открыть главу' })).toHaveLength(2);
     expect(screen.queryByRole('button', { name: 'Ещё главы' })).toBeNull();

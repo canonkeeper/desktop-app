@@ -48,14 +48,20 @@ pub enum PathError {
     Relative,
 }
 
-/// What the system says about the places of the user: `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME` and the home on
-/// Linux.
+/// What the system says about the places of the user: `%LOCALAPPDATA%` on Windows, `$XDG_DATA_HOME`,
+/// `$XDG_CACHE_HOME` and the home on Linux.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Places<'a> {
     pub local_app_data: Option<&'a str>,
     pub xdg_data_home: Option<&'a str>,
+    pub xdg_cache_home: Option<&'a str>,
     pub home: Option<&'a str>,
 }
+
+/// The name of the data directory of the user on Linux, in the directory of the data of the user.
+pub const DATA_NAME: &str = "canonkeeper";
+/// The name of the data directory of the user on Windows, in the directory of the identifier.
+pub const WINDOWS_DATA_NAME: &str = "data";
 
 /// The data directory of the user: Windows — `%LOCALAPPDATA%\ru.canonkeeper.desktop\data`, apart from the directory
 /// of the installation; Linux — `$XDG_DATA_HOME/canonkeeper` when it is absolute, otherwise
@@ -64,16 +70,29 @@ pub fn data_dir(system: System, places: Places<'_>) -> Result<String, PathError>
     match system {
         System::Windows => {
             let base = places.local_app_data.filter(|base| !base.is_empty()).ok_or(PathError::Unknown)?;
-            Ok(system.join(&plain(system, base)?, &[APP_IDENTIFIER, "data"]))
+            Ok(system.join(&plain(system, base)?, &[APP_IDENTIFIER, WINDOWS_DATA_NAME]))
         }
-        System::Linux => {
-            if let Some(base) = places.xdg_data_home.filter(|base| base.starts_with('/')) {
-                return Ok(system.join(base, &["canonkeeper"]));
-            }
-            let home = places.home.filter(|home| !home.is_empty()).ok_or(PathError::Unknown)?;
-            Ok(system.join(&plain(system, home)?, &[".local", "share", "canonkeeper"]))
-        }
+        System::Linux => Ok(system.join(&data_home(places)?, &[DATA_NAME])),
     }
+}
+
+/// The directory of the data of the user on Linux: `$XDG_DATA_HOME` when it is absolute, otherwise `~/.local/share` —
+/// what Tauri and the backend name too.
+pub fn data_home(places: Places<'_>) -> Result<String, PathError> {
+    if let Some(base) = places.xdg_data_home.filter(|base| base.starts_with('/')) {
+        return Ok(base.trim_end_matches('/').to_string());
+    }
+    let home = places.home.filter(|home| !home.is_empty()).ok_or(PathError::Unknown)?;
+    Ok(System::Linux.join(&plain(System::Linux, home)?, &[".local", "share"]))
+}
+
+/// The directory of the cache of the user on Linux: `$XDG_CACHE_HOME` when it is absolute, otherwise `~/.cache`.
+pub fn cache_home(places: Places<'_>) -> Result<String, PathError> {
+    if let Some(base) = places.xdg_cache_home.filter(|base| base.starts_with('/')) {
+        return Ok(base.trim_end_matches('/').to_string());
+    }
+    let home = places.home.filter(|home| !home.is_empty()).ok_or(PathError::Unknown)?;
+    Ok(System::Linux.join(&plain(System::Linux, home)?, &[".cache"]))
 }
 
 /// The plain form of an absolute path. On Windows the shell gets the directory of its resources as a verbatim path

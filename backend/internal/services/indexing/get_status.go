@@ -24,6 +24,14 @@ type Helper interface {
 	Connected(ctx context.Context) bool
 }
 
+// Reading is the reading of the books of a saga in a build that asks its author (specs/2026-11-13-desk-consent.md CN3.8):
+// what it waits for — the consent or a pause — and its state by the counts of the status. The app gives it, because the
+// author pays for the reading; the site gives no port and its status is as it was.
+type Reading interface {
+	Waiting(ctx context.Context, projectID string) (canon.PreparationWaiting, error)
+	State(ctx context.Context, projectID string, counts canon.IndexingPreparation) (*canon.IndexingReading, error)
+}
+
 type GetStatusPort interface {
 	GetStatus(context.Context, GetStatusInput) (canon.IndexingStatusResponse, error)
 }
@@ -41,13 +49,26 @@ func (service *Service) GetStatus(ctx context.Context, input GetStatusInput) (ca
 		return canon.IndexingStatusResponse{}, ErrInvalid
 	}
 	input.Waiting = ""
-	if service.helper != nil && !service.helper.Connected(ctx) {
+	switch {
+	case service.helper != nil && !service.helper.Connected(ctx):
 		input.Waiting = canon.PreparationWaitingHelper
+	case service.reading != nil:
+		waiting, err := service.reading.Waiting(ctx, input.ProjectID)
+		if err != nil {
+			return canon.IndexingStatusResponse{}, err
+		}
+		input.Waiting = waiting
 	}
 	status, err := service.getStatus.GetStatus(ctx, input)
 	if err != nil {
 		return canon.IndexingStatusResponse{}, err
 	}
+	if service.reading != nil && input.Waiting != canon.PreparationWaitingHelper && status.Counts != nil {
+		if status.Reading, err = service.reading.State(ctx, input.ProjectID, *status.Counts); err != nil {
+			return canon.IndexingStatusResponse{}, err
+		}
+	}
+	status.Counts = nil
 	// The store promises the letter to whom the wave will be told to; whether he is written to at all is the account's
 	// (FS5.6). A promise nobody can vouch for is not made.
 	if status.Preparation != nil && status.Preparation.LetterPromised {

@@ -213,7 +213,9 @@ export function waits(item: ImportQueueItem) {
  * this tab: «Ждёт загрузки» — waiting its turn, «Загружается» — the file goes or the server reads it, «Не загрузилась» —
  * it waits for the author, «Файл не дошёл» — its file was not sent, and this tab does not have it (UP3.1, UP3.2).
  */
-export function volumeViews(queue: ImportQueue | null, transfers: Readonly<Record<string, TransferState>>, shelfBookIds: ReadonlySet<string>): VolumeView[] {
+export function volumeViews(
+  queue: ImportQueue | null, transfers: Readonly<Record<string, TransferState>>, shelfBookIds: ReadonlySet<string>, elsewhere = false,
+): VolumeView[] {
   if (!queue || !['uploading', 'draft', 'running'].includes(queue.status)) return [];
   const items = liveItems(queue);
   const working = items.find((item) => ['importing', 'retrying'].includes(item.processingStatus))
@@ -236,6 +238,8 @@ export function volumeViews(queue: ImportQueue | null, transfers: Readonly<Recor
         return { ...base, state: 'transfer' as const, progress: transfer.total ? transfer.sent / transfer.total : null };
       }
       if (transfer?.state === 'failed') return { ...base, state: 'lost' as const };
+      // A file another work of the build sends goes on there (OW4.6): its volume is loaded, not lost.
+      if (!transfer && elsewhere) return { ...base, state: 'loading' as const };
       return { ...base, state: transfer ? 'waiting' as const : 'lost' as const };
     }
     if (item.id === working?.id || item.processingStatus === 'indexing' || item.processingStatus === 'succeeded') {

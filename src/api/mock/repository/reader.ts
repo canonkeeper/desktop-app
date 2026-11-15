@@ -12,6 +12,7 @@ import {
 } from './common';
 import type { MockRepositoryContext } from './context';
 import { textCoverage } from './indexing';
+import { numberedTitle, placeInBook } from './places';
 import {
   createCanonicalSourceLocator,
   createSourceAnchor,
@@ -88,9 +89,10 @@ async function searchChapters(context: MockRepositoryContext, body: OperationReq
         const chapters = context.state.chapters.filter((entry) => entry.bookId === book.id).sort((a, b) => a.order - b.order);
         for (const chapter of chapters) {
           const revision = body.sourceView === 'draft' ? chapter.draftRevision : chapter.publishedRevision;
-          const chapterNumber = /^Глава (\d+)\.(?: |$)/.exec(chapter.title)?.[1] ?? chapter.navigation.displayNumber;
+          // The number by the one rule of the server: the number the title writes or the place (RN1.1, RN1.2).
+          const { number: chapterNumber, name: chapterDisplayTitle } = numberedTitle(chapter.title, placeInBook(context, chapter));
           if (!revision || (number !== undefined ? chapterNumber.replace(/^0+(?=\d)/, '') !== number : !chapter.title.toLocaleLowerCase().includes(query))) continue;
-          rows.push({ projectTitle: project.title, bookTitle: book.title, chapterTitle: chapter.title, chapterNumber,
+          rows.push({ projectTitle: project.title, bookTitle: book.title, chapterTitle: chapter.title, chapterNumber, chapterDisplayTitle,
             locator: { projectId: project.id, bookId: book.id, chapterId: chapter.id, targetView: body.sourceView, revision } });
         }
       }
@@ -165,7 +167,7 @@ export function createReaderOperations(context: MockRepositoryContext) {
     const paragraphIndex = chapter?.paragraphs.findIndex((paragraph) => paragraph.text.toLocaleLowerCase().includes(request.query.toLocaleLowerCase())) ?? -1;
     const chapterLocator: Schema<'ChapterSearchLocator'> | null = chapter && revision ? {
       ...sourceLocator, sourceRevision: revision,
-      sourceAnchor: createSourceAnchor({ ...sourceLocator, sourceRevision: revision }, chapter, paragraphIndex),
+      sourceAnchor: createSourceAnchor({ ...sourceLocator, sourceRevision: revision }, chapter, numberedTitle(chapter.title, placeInBook(context, chapter)).number, paragraphIndex),
     } : null;
     const allResults: SearchResult[] = context.scenario.preset === 'empty-lists' || !chapterLocator
       ? []

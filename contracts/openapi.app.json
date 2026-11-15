@@ -31,7 +31,7 @@
         ],
         "operationId": "exchangeAppLinkCode",
         "summary": "Change a code of the link for the pass of the app.",
-        "description": "specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author and his tier. The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code also unlinks the app made by it. The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.",
+        "description": "specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author, his tier, the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days (specs/2026-11-13-desk-account.md AC2.6). The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code with the verifier of its challenge also unlinks the app made by it; with another verifier it changes nothing (specs/2026-11-13-desk-account.md AC2.6). The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -73,6 +73,21 @@
                           "code": "writer",
                           "title": "Писатель",
                           "until": "2026-12-13T09:30:00Z"
+                        },
+                        "email": "a…@example.test",
+                        "reading": {
+                          "used": 3200000,
+                          "limit": 40000000
+                        },
+                        "helper": {
+                          "chatModel": "gpt-north-chat",
+                          "cardsModel": "gpt-north-cards",
+                          "contextWindow": 1000000,
+                          "compactLimit": 950000
+                        },
+                        "readingWork": {
+                          "used": 5100000,
+                          "limit": 320000000
                         }
                       }
                     }
@@ -107,7 +122,7 @@
         ],
         "operationId": "getAppAccount",
         "summary": "Read the account a linked app works for.",
-        "description": "specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.",
+        "description": "specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account, and — specs/2026-11-15-desk-turns-here.md TH1.1 — thisApp, the live permits of turns of this app among them, read at the same moment) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days (the field reading of the quota), by the count of the fence of the reading. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.",
         "security": [
           {
             "devicePass": []
@@ -140,12 +155,28 @@
                         },
                         "activeTurns": {
                           "used": 1,
-                          "limit": 2
+                          "limit": 2,
+                          "thisApp": 1
                         },
                         "imports": {
                           "used": 1,
                           "limit": 30
+                        },
+                        "reading": {
+                          "used": 3200000,
+                          "limit": 40000000
+                        },
+                        "readingWork": {
+                          "used": 5100000,
+                          "limit": 320000000
                         }
+                      },
+                      "email": "a…@example.test",
+                      "helper": {
+                        "chatModel": "gpt-north-chat",
+                        "cardsModel": "gpt-north-cards",
+                        "contextWindow": 1000000,
+                        "compactLimit": 950000
                       }
                     }
                   }
@@ -378,8 +409,7 @@
                   "charged": {
                     "summary": "Synthetic unit",
                     "value": {
-                      "day": "2026-11-13",
-                      "returned": false
+                      "day": "2026-11-13"
                     }
                   }
                 }
@@ -421,7 +451,7 @@
         ],
         "operationId": "returnModelPermitUnit",
         "summary": "Give back a correction the turn did not take.",
-        "description": "specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. A second return changes nothing and answers the same. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.",
+        "description": "specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. The answer says whether the unit came back. The site never sees whether a turn took a correction, so a return is the word of the app: it counts in the ceiling of returns of the Moscow day of the account (app_returns_per_day, 5 by default) with the failures the site did not see (specs/2026-11-13-desk-proxy.md PX0.1), and over it the unit stays spent and the answer says returned false; a later return counts in the ceiling of its own day. A second return of a unit given back changes nothing and answers returned true. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.",
         "security": [
           {
             "devicePass": []
@@ -452,13 +482,28 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "The unit is given back.",
+          "200": {
+            "description": "Whether the unit came back.",
             "headers": {
               "Cache-Control": {
                 "schema": {
                   "type": "string",
                   "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPermitUnitReturn"
+                },
+                "examples": {
+                  "returned": {
+                    "summary": "Synthetic return",
+                    "value": {
+                      "returned": true
+                    }
+                  }
                 }
               }
             }
@@ -571,6 +616,398 @@
         },
         "x-backend-purpose": "resource/command",
         "x-authz": "Only the pass of a live linked app; it works only with its own permits."
+      }
+    },
+    "/app/ai/responses": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "streamAppResponses",
+        "summary": "Run a request of a turn of the chat of the app on the models of the site.",
+        "description": "specs/2026-11-13-desk-proxy.md PX1: the proxy of the Responses API for a turn of the chat of a linked app. Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of a turn (chat_turn) of this app: no pass is 401 app.pass_invalid; no permit, one of another app or none is 404 app.permit_not_found; one that ended is 409 app.permit_closed; one of another kind is 400 app.permit_kind — before any request to the provider. The body is a request of a turn of Codex, as it is or compressed by gzip (Content-Encoding: gzip), up to 64 MiB after its decompression: over it 413 app.request_too_large. The site trusts nothing of it: it streams and the provider keeps nothing (stream true, store false), the model and the effort of the reasoning are those of the chat of the site whatever the app names, the fields of a state, of the client, of a price, of a cache and of saved prompts are removed, the key of the cache is bound to the app, a field the site does not know is 400 request.validation, and a built-in tool of the provider, a choice of one or an item of its call in the input is 400 app.unsupported_capability; no header of the app goes to the provider. The turns of an account are bounded by the tokens of its Moscow day — the questions of a day of its tier times the tokens of a question (app_tokens_per_question, 360 000 by default), counted as the input the provider did not cache and the output of its requests and of its scan —: over it 403 ai.daily_fence, which Codex does not repeat, and the permit stays live (specs/2026-11-13-desk-proxy.md PX3.3). The requests of all apps take places of their own, apart from those of the site, and an app has two at once: over them 429 ai.busy with Retry-After 1. The answer is the stream of events of the provider as it comes; a refusal of the provider comes with its status and its Retry-After as 4xx or 5xx ai.provider_refused — a refusal of the key of the site for apps as 502 —, a provider out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. The site reads of the stream only its usage and whether it ended in an answer without a call of a tool, which keeps the unit of the turn spent; every request that went is activity of the permit. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CanonKeeper-Permit",
+            "in": "header",
+            "required": true,
+            "description": "A live permit of a turn of this app from openModelPermit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Content-Encoding",
+            "in": "header",
+            "required": false,
+            "description": "gzip when the body is compressed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "gzip",
+                "identity"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppResponsesRequest"
+              },
+              "examples": {
+                "turn": {
+                  "summary": "Synthetic request of a turn",
+                  "value": {
+                    "model": "canonkeeper-chat",
+                    "instructions": "Base instructions of Codex.",
+                    "input": [
+                      {
+                        "type": "message",
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "input_text",
+                            "text": "Кто ведёт караван?"
+                          }
+                        ]
+                      }
+                    ],
+                    "tools": [
+                      {
+                        "type": "namespace",
+                        "name": "saga",
+                        "description": "The tools of the saga.",
+                        "tools": [
+                          {
+                            "type": "function",
+                            "name": "search",
+                            "parameters": {
+                              "type": "object"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "tool_choice": "auto",
+                    "parallel_tool_calls": true,
+                    "reasoning": {
+                      "effort": "high",
+                      "summary": "auto"
+                    },
+                    "store": false,
+                    "stream": true,
+                    "include": [
+                      "reasoning.encrypted_content"
+                    ],
+                    "prompt_cache_key": "thread-5d0c7a1e"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The events of the provider as they come.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server-sent events of the Responses API."
+                },
+                "examples": {
+                  "answer": {
+                    "summary": "Synthetic start of a stream",
+                    "value": "event: response.created\ndata: {\"type\":\"response.created\"}\n\n"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The tokens of the turns of the Moscow day of the account reached their bound: a code Codex does not repeat; the permit stays live.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "ai_daily_fence": {
+                    "value": {
+                      "type": "about:blank",
+                      "title": "Forbidden",
+                      "status": 403,
+                      "code": "ai.daily_fence",
+                      "requestId": "req_synthetic_app_ai"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "The provider failed the request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "ai_provider_refused": {
+                    "value": {
+                      "type": "about:blank",
+                      "title": "Internal Server Error",
+                      "status": 500,
+                      "code": "ai.provider_refused",
+                      "requestId": "req_synthetic_app_ai"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The provider is out of reach or refused the key of the site.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "ai_provider_failed": {
+                    "value": {
+                      "type": "about:blank",
+                      "title": "Bad Gateway",
+                      "status": 502,
+                      "code": "ai.provider_failed",
+                      "requestId": "req_synthetic_app_ai"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "x-backend-purpose": "stream",
+        "x-authz": "Only the pass of a live linked app, under a live permit of a turn of its own."
+      }
+    },
+    "/app/ai/steps/{step}": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "runAppStep",
+        "summary": "Run one call of the core of the app on the models of the site.",
+        "description": "specs/2026-11-13-desk-proxy.md PX2: a call of the core of a linked app that gives a model its words and one input — the card of a chapter (card) and its pass (card_pass), the register of names (names), the steps of the thread layer (layer_book, layer_reduce, layer_verify, layer_gap), scan and the mapping of the author's materials (materials). Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of this app of the kind of the step: reading for the reading of books, chat_turn of its turn for scan, materials for materials; another kind is 400 app.permit_kind, no permit, one of another app or none 404 app.permit_not_found, one that ended 409 app.permit_closed. A step the core does not make is 404 app.step_unknown. The words are taken only when their SHA-256 is a print of the words of the core of this tree or of a released version of the app: other words are 400 app.step_instruction, and a step never takes free words. The body comes as it is or compressed by gzip, up to 64 MiB after its decompression. The card of a chapter spends the characters of the account once in 30 days by the SHA-256 of its input and its length — no text is kept —; a new chapter over the characters of the tier in force is the refusal of the site, 409 quota.account_characters, and a chapter read again spends nothing (PX3.1). The reading of books and materials is bounded by its tokens of 30 days — the characters of the account times the tokens of a character (app_reading_tokens_per_character, 8 by default) —: over it 403 ai.reading_fence; scan counts in the turns of the day: over them 403 ai.daily_fence (PX3.2, PX3.3). The site calls the model it calls for the same call of its own core with the key of apps — the cards model for the builds of a saga, the model of scan for scan, with their efforts — through the places of apps (429 ai.busy with Retry-After 1, two at once for an app) and retries a failure of the provider as its own client does; scan takes at most 50 seconds. The answer is the text of the model whole with its usage; a provider that kept failing or out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. Counted per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "step",
+            "in": "path",
+            "required": true,
+            "description": "The step of the core.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "card",
+                "card_pass",
+                "names",
+                "layer_book",
+                "layer_reduce",
+                "layer_verify",
+                "layer_gap",
+                "scan",
+                "materials"
+              ]
+            }
+          },
+          {
+            "name": "X-CanonKeeper-Permit",
+            "in": "header",
+            "required": true,
+            "description": "A live permit of this app of the kind of the step from openModelPermit.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Content-Encoding",
+            "in": "header",
+            "required": false,
+            "description": "gzip when the body is compressed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "gzip",
+                "identity"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppStepCall"
+              },
+              "examples": {
+                "names": {
+                  "summary": "Synthetic call",
+                  "value": {
+                    "instruction": "The words of the core for the step.",
+                    "input": "ярема | глав 3"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The text of the model whole.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppStepAnswer"
+                },
+                "examples": {
+                  "answer": {
+                    "summary": "Synthetic answer",
+                    "value": {
+                      "text": "{\"ok\":true}",
+                      "model": "gpt-north-cards",
+                      "usage": {
+                        "calls": 1,
+                        "inputTokens": 300,
+                        "cachedInputTokens": 0,
+                        "outputTokens": 20,
+                        "reasoningOutputTokens": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The tokens of the reading of the account or of the turns of its day reached their bound.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "ai_reading_fence": {
+                    "value": {
+                      "type": "about:blank",
+                      "title": "Forbidden",
+                      "status": 403,
+                      "code": "ai.reading_fence",
+                      "requestId": "req_synthetic_app_ai"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "502": {
+            "description": "The provider kept failing or is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "ai_provider_failed": {
+                    "value": {
+                      "type": "about:blank",
+                      "title": "Bad Gateway",
+                      "status": 502,
+                      "code": "ai.provider_failed",
+                      "requestId": "req_synthetic_app_ai"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app, under a live permit of its own of the kind of the step."
       }
     }
   },
@@ -690,6 +1127,27 @@
           }
         }
       },
+      "PayloadTooLarge": {
+        "description": "Upload exceeds configured limit",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "payload_too_large": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/payload_too_large",
+                  "title": "Upload exceeds configured limit",
+                  "status": 413,
+                  "code": "payload_too_large",
+                  "requestId": "req_synthetic_01"
+                }
+              }
+            }
+          }
+        }
+      },
       "TooManyRequests": {
         "description": "Rate limited",
         "headers": {
@@ -714,6 +1172,27 @@
                   "status": 429,
                   "code": "rate_limited",
                   "requestId": "req_synthetic_01"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Service temporarily unavailable",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "service_unavailable": {
+                "value": {
+                  "type": "https://canonkeeper.local/problems/agent_stream.unavailable",
+                  "title": "Поток агента временно недоступен.",
+                  "status": 503,
+                  "code": "agent_stream.unavailable",
+                  "requestId": "req_synthetic_agent_stream"
                 }
               }
             }
@@ -780,9 +1259,13 @@
         "additionalProperties": false,
         "required": [
           "name",
-          "tier"
+          "tier",
+          "email",
+          "reading",
+          "helper",
+          "readingWork"
         ],
-        "description": "specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for.",
+        "description": "specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days; specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for the app and the work of its reading of 30 days.",
         "properties": {
           "name": {
             "type": "string",
@@ -790,6 +1273,21 @@
           },
           "tier": {
             "$ref": "#/components/schemas/AppTier"
+          },
+          "email": {
+            "type": "string",
+            "description": "The address of the account hidden after its first letter, «a…@mail.ru», by the rule of the page /link."
+          },
+          "reading": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "«Прочитано помощником за 30 дней»: the characters the fence of the reading of the apps counts over 30 days and the characters of the account in force."
+          },
+          "helper": {
+            "$ref": "#/components/schemas/AppHelper"
+          },
+          "readingWork": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "specs/2026-11-13-desk-account-ai.md AI5.1: the work of the reading of the books and materials of the apps over 30 days — the tokens the fence of the reading counts — and its bound, the characters of the account times the tokens of a character."
           }
         }
       },
@@ -829,9 +1327,11 @@
           "resetsAt",
           "chatTurns",
           "activeTurns",
-          "imports"
+          "imports",
+          "reading",
+          "readingWork"
         ],
-        "description": "specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt.",
+        "description": "specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt. specs/2026-11-13-desk-account.md AC2.6: reading is not daily.",
         "properties": {
           "day": {
             "type": "string",
@@ -847,10 +1347,43 @@
             "$ref": "#/components/schemas/QuotaCounter"
           },
           "activeTurns": {
-            "$ref": "#/components/schemas/QuotaCounter"
+            "$ref": "#/components/schemas/AppActiveTurns"
           },
           "imports": {
             "$ref": "#/components/schemas/QuotaCounter"
+          },
+          "reading": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "«Прочитано помощником за 30 дней»: the characters the fence of the reading of the apps counts over 30 days and the characters of the account in force."
+          },
+          "readingWork": {
+            "$ref": "#/components/schemas/QuotaCounter",
+            "description": "specs/2026-11-13-desk-account-ai.md AI5.1: the work of the reading of the books and materials of the apps over 30 days — the tokens the fence of the reading counts — and its bound, the characters of the account times the tokens of a character."
+          }
+        }
+      },
+      "AppActiveTurns": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "used",
+          "limit",
+          "thisApp"
+        ],
+        "description": "specs/2026-11-15-desk-turns-here.md TH1.1: «разом» of the account as getAccountQuota of the site counts it — the turns of the site and the live permits of turns of all the apps of the account — and the live permits of turns of the app whose pass asks, by the same predicate at the same moment; nothing of the other apps of the account.",
+        "properties": {
+          "used": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "thisApp": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The live permits of turns of this app among used: never above the share of the apps in it."
           }
         }
       },
@@ -860,9 +1393,11 @@
         "required": [
           "name",
           "tier",
-          "quota"
+          "quota",
+          "email",
+          "helper"
         ],
-        "description": "specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day.",
+        "description": "specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter; specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for the app.",
         "properties": {
           "name": {
             "type": "string",
@@ -873,6 +1408,46 @@
           },
           "quota": {
             "$ref": "#/components/schemas/AppQuota"
+          },
+          "email": {
+            "type": "string",
+            "description": "The address of the account hidden after its first letter, «a…@mail.ru», by the rule of the page /link."
+          },
+          "helper": {
+            "$ref": "#/components/schemas/AppHelper"
+          }
+        }
+      },
+      "AppHelper": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chatModel",
+          "cardsModel",
+          "contextWindow",
+          "compactLimit"
+        ],
+        "description": "specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for a linked app — the values Codex of the site runs with, read as the site reads them; the app shows the names and runs its Codex with the window and its threshold of compaction.",
+        "properties": {
+          "chatModel": {
+            "type": "string",
+            "description": "The name of the model of the chat, for the page."
+          },
+          "cardsModel": {
+            "type": "string",
+            "description": "The name of the model of the reading of the books, for the page."
+          },
+          "contextWindow": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The window of the context of the chat, tokens."
+          },
+          "compactLimit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The threshold of compaction of the history of the chat, tokens."
           }
         }
       },
@@ -986,23 +1561,234 @@
           }
         }
       },
+      "AppPermitUnitReturn": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "returned"
+        ],
+        "description": "specs/2026-11-13-desk-proxy.md PX0.1: a return of a correction — whether its unit came back.",
+        "properties": {
+          "returned": {
+            "type": "boolean",
+            "description": "false over the ceiling of returns of the day: the unit stays spent."
+          }
+        }
+      },
+      "AppResponsesItem": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A part of a request of the Responses API as Codex makes it: an item of the thread, a tool, a choice of a tool, the settings of the reasoning or of the text. Its kind is in type.",
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "AppResponsesRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "specs/2026-11-13-desk-proxy.md PX1.3: a request of a turn of Codex. instructions, input, tools, tool_choice, parallel_tool_calls, include, text and stream_options go as they are; model, stream, store and the effort of reasoning are the site's; prompt_cache_key is bound to the app; the other fields named here are removed. A built-in tool of the provider in tools or tool_choice, or an item of its call in input, is refused.",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Replaced by the model of the chat of the site."
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Always true."
+          },
+          "store": {
+            "type": "boolean",
+            "description": "Always false."
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "input": {
+            "description": "The thread: a text, or the items of the Responses API.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AppResponsesItem"
+                }
+              }
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "description": "Tools of the kinds function, custom and namespace only.",
+            "items": {
+              "$ref": "#/components/schemas/AppResponsesItem"
+            }
+          },
+          "tool_choice": {
+            "description": "auto, none, required, or a tool of the turn.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/AppResponsesItem"
+              }
+            ]
+          },
+          "parallel_tool_calls": {
+            "type": "boolean"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/AppResponsesItem"
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "$ref": "#/components/schemas/AppResponsesItem"
+          },
+          "stream_options": {
+            "$ref": "#/components/schemas/AppResponsesItem"
+          },
+          "prompt_cache_key": {
+            "type": "string",
+            "description": "Bound to the app by the site."
+          },
+          "previous_response_id": {
+            "type": "string",
+            "description": "Removed."
+          },
+          "background": {
+            "type": "boolean",
+            "description": "Removed."
+          },
+          "conversation": {
+            "description": "Removed."
+          },
+          "metadata": {
+            "description": "Removed."
+          },
+          "user": {
+            "type": "string",
+            "description": "Removed."
+          },
+          "safety_identifier": {
+            "type": "string",
+            "description": "Removed."
+          },
+          "prompt_cache_retention": {
+            "type": "string",
+            "description": "Removed."
+          },
+          "prompt_cache_options": {
+            "description": "Removed."
+          },
+          "client_metadata": {
+            "description": "Removed: it names the installation of the app."
+          },
+          "service_tier": {
+            "type": "string",
+            "description": "Removed: the price of a request is the site's."
+          },
+          "prompt": {
+            "description": "Removed."
+          },
+          "access_programs": {
+            "description": "Removed."
+          }
+        }
+      },
+      "AppStepAnswer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "model",
+          "usage"
+        ],
+        "description": "specs/2026-11-13-desk-proxy.md PX2.4: the answer of a step.",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text of the model whole."
+          },
+          "model": {
+            "type": "string",
+            "description": "The model the site called."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AppStepUsage"
+          }
+        }
+      },
+      "AppStepCall": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "instruction",
+          "input"
+        ],
+        "description": "specs/2026-11-13-desk-proxy.md PX2.2: one call of the core: the words it gives the model — those of the core, never free words — and its input.",
+        "properties": {
+          "instruction": {
+            "type": "string"
+          },
+          "input": {
+            "type": "string"
+          }
+        }
+      },
+      "AppStepUsage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "calls",
+          "inputTokens",
+          "cachedInputTokens",
+          "outputTokens",
+          "reasoningOutputTokens"
+        ],
+        "description": "What a step spent: the answered attempts and their tokens.",
+        "properties": {
+          "calls": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cachedInputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outputTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reasoningOutputTokens": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "AppPermitUnit": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "day",
-          "returned"
+          "day"
         ],
-        "description": "specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit.",
+        "description": "specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit; a unit given back is charged again by the same ref.",
         "properties": {
           "day": {
             "type": "string",
             "format": "date",
             "description": "The Moscow day the correction counts on."
-          },
-          "returned": {
-            "type": "boolean",
-            "description": "Always false: a unit given back is charged again by the same ref."
           }
         }
       },
@@ -1099,6 +1885,130 @@
             "type": "string",
             "format": "uuid",
             "description": "author_materials.name_taken of createAuthorMaterial and updateAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.3): the record of the materials that has the name."
+          },
+          "mayReturn": {
+            "type": "boolean",
+            "description": "ai.account_unreachable (503) of the start of a turn, a correction or an upload of materials of the desktop app with the helper «Аккаунт CanonKeeper» (specs/2026-11-13-desk-account-ai.md AI2.1): the site of the account did not answer twice and the work did not start; true — the site may have counted the unit before its answer was lost and gives it back itself once the lease of the permit ends, at most five minutes. The other refusals of the counter of the account: helper.not_connected (409, the link broke), ai.daily_fence (429 with Retry-After until the Moscow midnight), ai.app_unfit and app.request_too_large (409)."
+          },
+          "vaultReason": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "not_folder",
+              "unreadable"
+            ],
+            "description": "obsidian.vault_missing: why the vault of the saga does not open (specs/2026-11-13-desk-obsidian.md OB1.5)."
+          },
+          "notes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "obsidian.too_large: the notes of the chosen folders (OB4.1)."
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "obsidian.too_large: the bytes of the chosen notes."
+          },
+          "limitNotes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large: the notes a preview reads at most."
+          },
+          "limitBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large: the bytes a preview reads at most."
+          },
+          "entries": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "obsidian.too_large: the files and folders of every kind the walk of the chosen folders counted when it stopped past limitEntries; notes and bytes are then what it counted until it stopped."
+          },
+          "limitEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large: the files and folders a walk of a preview goes through at most (the limit of the look)."
+          },
+          "folders": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root."
+            },
+            "description": "obsidian.folders_overlap: the folder that holds and the folder it holds; obsidian.folder_changed: the folders whose glue is not the one of the request; obsidian.folder_missing, obsidian.folder_linked: the folder."
+          },
+          "queue": {
+            "type": "object",
+            "required": [
+              "id",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "uploading",
+                  "draft",
+                  "running"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "description": "obsidian.queue_busy: the live queue of the volumes of the saga (specs/2026-11-14-desk-obsidian-books.md)."
+          },
+          "unread": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "reason",
+                "count"
+              ],
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "cloud_only",
+                    "unreadable"
+                  ]
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "obsidian.notes_unread: the notes of the folder that did not read now, by their passing reasons."
+          },
+          "bookId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "obsidian.folder_linked: the book that holds the folder."
+          },
+          "records": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large of the records of notes: the records of the preview or of the load (specs/2026-11-15-desk-obsidian-notes.md ON1.7)."
+          },
+          "sagaRecords": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large of the records of notes: the records of the saga after the new ones."
+          },
+          "limitRecords": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "obsidian.too_large of the records of notes: the records of a load and of a saga at most."
           }
         },
         "additionalProperties": false

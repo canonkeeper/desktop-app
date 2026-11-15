@@ -7,11 +7,15 @@ import (
 	"strings"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/disclosure"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 )
 
 type RunRepository interface {
 	LoadRun(context.Context, researchdomain.WorkerClaim) (researchdomain.TurnRun, error)
+	// SessionLive reads whether the session that started the turn is still the one the binding of its thread will check:
+	// the same rule of the same owner, read before the turn asks anything (specs/2026-11-15-desk-interrupted-turn.md IT1.1).
+	SessionLive(context.Context, researchdomain.TurnRun) (bool, error)
 	BindRoot(context.Context, researchdomain.TurnRun, string) error
 	BindTurn(context.Context, researchdomain.TurnRun, string, string) error
 	FinishResponse(context.Context, researchdomain.FinishResponse) error
@@ -32,7 +36,10 @@ type AgentRunRequest struct {
 	Tools                []agent.ToolSpec
 	BindRoot             func(context.Context, string) error
 	BindTurn             func(context.Context, string, string) error
-	Handler              func(context.Context, agent.ToolCall) (agent.ToolResult, error)
+	// BeforeTurn is called with the root thread right before a new turn of Codex starts with the initial input — never when
+	// a turn that runs is taken up (specs/2026-11-14-desk-journal.md JR1.3); nil calls nothing.
+	BeforeTurn func(context.Context, string) error
+	Handler    func(context.Context, agent.ToolCall) (agent.ToolResult, error)
 }
 
 type AgentRunner interface {
@@ -62,6 +69,57 @@ type RunTurn struct {
 	repository RunRepository
 	runner     AgentRunner
 	bundles    map[string]Bundle
+	threads    TurnThreads
+	work       TurnWork
+	naming     Naming
+}
+
+// WithNaming makes every new turn name its question before Codex starts it (specs/2026-11-14-desk-journal.md JR1.3).
+func (useCase *RunTurn) WithNaming(naming Naming) *RunTurn {
+	useCase.naming = naming
+	return useCase
+}
+
+// TurnWork is the work of a turn a site counts (specs/2026-11-13-desk-account-ai.md AI2.3, AI2.5, AI2.7): the app linked
+// with an account takes the work of the Job before the model — its permit alive, or the next one when it went by unused —,
+// names the reason the gateway heard when the turn fails, and closes the permit once the terminal transaction of the turn
+// is written. The site has none.
+type TurnWork interface {
+	// Begin takes the work of the Job before the model; a code ends the turn with it and asks no model.
+	Begin(ctx context.Context, run researchdomain.TurnRun) (failure string, err error)
+	// Failure is the code of the reason the gateway heard for the last refused request of the Job; "" — none.
+	Failure(jobID string) string
+	// End closes the work of the Job after its terminal transaction; it fails nothing.
+	End(ctx context.Context, jobID string, end researchdomain.TurnEnd)
+}
+
+// beforeModel is a turn that ended before the model: its session ended before it began
+// (specs/2026-11-15-desk-interrupted-turn.md IT1.1) or its work refused it (specs/2026-11-13-desk-account-ai.md AI2.3,
+// AI2.5). The code is the failure of its Job, which the worker writes as the failure of the claim.
+type beforeModel struct{ code string }
+
+func (ended beforeModel) Error() string {
+	return "research chat: the turn ended before the model: " + ended.code
+}
+
+func (ended beforeModel) SafeErrorCode() string { return ended.code }
+
+// WithWork makes every turn take, name and close the work a site counts.
+func (useCase *RunTurn) WithWork(work TurnWork) *RunTurn {
+	useCase.work = work
+	return useCase
+}
+
+// TurnThreads hears the root thread of a turn and its Job for the time of the turn (specs/2026-11-13-desk-gateway.md
+// GW2.4): the local gateway of the app names the Job of a request of Codex by its thread. The site has none.
+type TurnThreads interface {
+	Bind(threadID, jobID string) (release func())
+}
+
+// WithThreads makes every turn name its root thread and its Job to threads while it runs.
+func (useCase *RunTurn) WithThreads(threads TurnThreads) *RunTurn {
+	useCase.threads = threads
+	return useCase
 }
 
 // NewRunTurn runs the turns of the chat sessions with the bundle of their kind: research — the chat, drawing — the
@@ -94,7 +152,28 @@ func (useCase *RunTurn) Execute(ctx context.Context, claim researchdomain.Worker
 	if err != nil {
 		return researchdomain.TurnResult{}, err
 	}
+	// A turn whose session ended before it began — the desktop app revokes the sessions of its author at every start, the
+	// site at «Выйти везде», a change of the password, a block — would be refused by the binding of its thread: it ends now,
+	// before its work is taken, before Codex and before any binding (IT1.1, IT1.2). The binding still checks the session.
+	if live, err := useCase.repository.SessionLive(ctx, run); err != nil {
+		return researchdomain.TurnResult{}, err
+	} else if !live {
+		return researchdomain.TurnResult{}, beforeModel{code: researchdomain.CodeSessionEnded}
+	}
+	if useCase.work != nil {
+		failure, err := useCase.work.Begin(ctx, run)
+		if err != nil {
+			return researchdomain.TurnResult{}, err
+		}
+		if failure != "" {
+			// The turn has no thread or turn of Codex yet: the worker fails its claim with the code, and that failure closes
+			// the work (FailTurn), as for any turn that ended before the model.
+			return researchdomain.TurnResult{}, beforeModel{code: failure}
+		}
+	}
 	tools := append([]agent.ToolSpec(nil), bundle.Tools...)
+	release := func() {}
+	defer func() { release() }()
 	request := AgentRunRequest{
 		Flow: bundle.Flow, CorrelationID: run.ChatID, TurnCorrelationID: run.TurnID,
 		ExistingRootThreadID: run.RootThreadID, ExistingTurnID: run.ProviderTurnID,
@@ -102,22 +181,48 @@ func (useCase *RunTurn) Execute(ctx context.Context, claim researchdomain.Worker
 		SkillName: bundle.SkillName, InitialInput: input,
 		Tools: tools, Handler: bundle.Handler,
 		BindRoot: func(ctx context.Context, rootThreadID string) error {
-			return useCase.repository.BindRoot(ctx, run, rootThreadID)
+			if err := useCase.repository.BindRoot(ctx, run, rootThreadID); err != nil {
+				return err
+			}
+			// The root is bound before the model is asked: the gateway knows the Job of the first request.
+			if useCase.threads != nil {
+				release()
+				release = useCase.threads.Bind(rootThreadID, run.JobID)
+			}
+			return nil
 		},
 		BindTurn: func(ctx context.Context, rootThreadID, turnID string) error {
 			return useCase.repository.BindTurn(ctx, run, rootThreadID, turnID)
 		},
+	}
+	if useCase.naming != nil {
+		// The question — the words of the author, the header of the attached chapter, the titles of the places he chose — is
+		// named before Codex starts the turn with it; a turn taken up again sends no question (JR1.3).
+		request.BeforeTurn = func(ctx context.Context, rootThreadID string) error {
+			_, err := useCase.naming.Name(ctx, rootThreadID, run.ProjectID, disclosure.Named{Question: true})
+			return err
+		}
 	}
 	outcome, err := useCase.runner.Run(ctx, request)
 	if err != nil {
 		return researchdomain.TurnResult{}, err
 	}
 	if outcome.Status != agent.TurnCompleted || outcome.FinalResponse == "" {
+		code := failureCode(outcome)
+		if useCase.work != nil && outcome.Status != agent.TurnInterrupted {
+			// The reason of a failure on a site is the refusal of the last request of the Job the gateway heard (AI2.5).
+			if reason := useCase.work.Failure(run.JobID); reason != "" {
+				code = reason
+			}
+		}
 		if err := useCase.repository.FinishFailure(ctx, researchdomain.FinishFailure{
 			ProjectID: run.ProjectID, ChatID: run.ChatID, TurnID: run.TurnID, JobID: run.JobID,
-			ClaimIncarnation: run.ClaimIncarnation, Code: failureCode(outcome), Usage: outcome.Usage,
+			ClaimIncarnation: run.ClaimIncarnation, Code: code, Usage: outcome.Usage,
 		}); err != nil {
 			return researchdomain.TurnResult{}, err
+		}
+		if useCase.work != nil {
+			useCase.work.End(ctx, run.JobID, researchdomain.TurnFailed)
 		}
 		// Статус и ошибка хода от app-server доходят до строки job_diagnostic задания.
 		detail := "status=" + string(outcome.Status)
@@ -141,6 +246,9 @@ func (useCase *RunTurn) Execute(ctx context.Context, claim researchdomain.Worker
 	}
 	if err := useCase.repository.FinishResponse(ctx, finish); err != nil {
 		return researchdomain.TurnResult{}, err
+	}
+	if useCase.work != nil {
+		useCase.work.End(ctx, run.JobID, researchdomain.TurnAnswered)
 	}
 	return researchdomain.TurnResult{
 		RootThreadID: outcome.RootThreadID, ProviderTurnID: outcome.TurnID, Response: outcome.FinalResponse,

@@ -79,9 +79,8 @@ func TestJobFinishedLogAllowsOnlySafeTerminalErrorCode(t *testing.T) {
 		want string
 	}{
 		{name: "classified runtime", code: "runtime.session_unclosed", want: "runtime.session_unclosed"},
-		{name: "goal set", code: "runtime.goal_set_failed", want: "runtime.goal_set_failed"},
-		{name: "goal read", code: "runtime.goal_read_failed", want: "runtime.goal_read_failed"},
-		{name: "goal cleared", code: "runtime.goal_cleared", want: "runtime.goal_cleared"},
+		{name: "cards wait for the reading", code: "cards.consent", want: "cards.consent"},
+		{name: "layer waits for the reading", code: "layer.consent", want: "layer.consent"},
 		{name: "import over the chapter limit", code: "import.too_many_chapters", want: "import.too_many_chapters"},
 		{name: "import over the text limit", code: "import.too_large", want: "import.too_large"},
 		{name: "import encoding", code: "import.unsupported_encoding", want: "import.unsupported_encoding"},
@@ -161,6 +160,8 @@ func TestWorkerRequeuedLifecycleUsesOnlySafeModelClassification(t *testing.T) {
 	}
 	for _, code := range []string{
 		"model.input_too_large", "runtime.activation_failed", "runtime.turn_start_failed",
+		// The question of a turn of the app was not named before it began (specs/2026-11-14-desk-journal.md JR1.3).
+		"runtime.turn_name_failed",
 		"runtime.turn_stream_failed",
 		"runtime.reviewer_observation_failed", "runtime.reviewer_checkpoint_failed",
 		"runtime.book_delivery_build_failed", "runtime.book_delivery_variant_select_failed",
@@ -234,4 +235,16 @@ func TestNewWorkerRequiresLogger(t *testing.T) {
 	}()
 
 	NewWorker(store, []Handler{handler}, nil)
+}
+
+// specs/2026-11-15-desk-interrupted-turn.md IT1.3: a turn whose session ended before it began fails its claim with its own
+// code — a safe code of a Job —, not with the code of a failed handler.
+func TestTheCodeOfATurnWhoseSessionEndedIsSafe(t *testing.T) {
+	ended := safeLifecycleError{code: "model.session_ended", raw: "SECRET_SESSION_DETAILS"}
+	if got := handlerFailureErrorCode(ended); got != "model.session_ended" {
+		t.Fatalf("the failure of the claim = %q, want model.session_ended", got)
+	}
+	if got := safeTerminalJobErrorCode("model.session_ended"); got != "model.session_ended" {
+		t.Fatalf("the terminal code = %q", got)
+	}
 }

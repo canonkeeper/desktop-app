@@ -53,6 +53,7 @@ export function MaterialsPart({ api, canEdit, navigate, projectId, query }: Mate
           {materialsImport.add}
           {/* MR2.2: one record by hand, the same form as «Изменить запись». */}
           <Button onClick={() => setAdding(true)} variant={materialsImport.add ? 'outline' : 'primary'}><Plus aria-hidden="true" size={16} />Записать самому</Button>
+          {materialsImport.more}
         </div>
       ) : null}
       <MaterialList api={api} canEdit={canEdit} fromFiles={Boolean(materialsImport.add)} navigate={navigate} projectId={projectId} query={query} />
@@ -101,7 +102,7 @@ function MaterialList({ api, canEdit, fromFiles, navigate, projectId, query: ask
             <li key={material.id}>
               <div className={styles.recordText}>
                 <a className={styles.recordName} href={toHref('/saga', card)} onClick={open}>{material.name}</a>
-                <span className={styles.meta}>{materialOriginLine(material)}</span>
+                <span className={`${styles.meta} ${styles.origin}`}>{materialOriginLine(material)}</span>
                 {material.description ? <span className={styles.excerpt}>{material.description}</span> : null}
               </div>
               {canEdit ? (

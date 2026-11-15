@@ -39,11 +39,44 @@ func (CanonTextIndexSubject) jobSubject()       {}
 func (s CanonTextIndexSubject) Kind() Kind      { return s.Type }
 func (s CanonTextIndexSubject) Project() string { return s.ProjectID }
 
-// ChapterCardsSubject is the cards Job of one project text version (UC2).
+// ChapterCardsSubject is the cards Job of one project text version (UC2). Sample makes it the sample of three chapters of
+// the desktop app (specs/2026-11-13-desk-consent.md CN2): a Job of its own that reads only the chapters it names.
 type ChapterCardsSubject struct {
 	Type       Kind                  `json:"type"`
 	ProjectID  string                `json:"projectId"`
 	SourceView governance.SourceView `json:"sourceView"`
+	Sample     *CardsSample          `json:"sample,omitempty"`
+}
+
+// CardsSample is what the sample reads: the chapters chosen when the author pressed «Попробовать» — each by the text it had
+// then — and the host of the provider the window named.
+type CardsSample struct {
+	Host     string          `json:"host"`
+	Chapters []SampleChapter `json:"chapters"`
+}
+
+// SampleChapter is a chapter of the sample by its text.
+type SampleChapter struct {
+	ChapterID   string `json:"chapterId"`
+	ContentHash string `json:"contentHash"`
+}
+
+// MaxSampleChapters is how many chapters a sample reads at most.
+const MaxSampleChapters = 3
+
+func validCardsSample(sample *CardsSample) bool {
+	if sample == nil {
+		return true
+	}
+	if sample.Host == "" || len(sample.Host) > 255 || len(sample.Chapters) == 0 || len(sample.Chapters) > MaxSampleChapters {
+		return false
+	}
+	for _, chapter := range sample.Chapters {
+		if !uuidShaped(chapter.ChapterID) || chapter.ContentHash == "" || len(chapter.ContentHash) > 200 {
+			return false
+		}
+	}
+	return true
 }
 
 func (ChapterCardsSubject) jobSubject()       {}

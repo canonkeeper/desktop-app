@@ -9,9 +9,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
+	"canonkeeper/backend/internal/jobs"
 )
 
 const (
@@ -58,6 +60,9 @@ func (tools *ReadTools) Scan(ctx context.Context, call ToolContext, input ScanIn
 		return "", argumentError("$.task", "опишите, что искать, от 3 до %d символов", maxScanTaskRunes)
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		// The chunks name their chapters themselves to the gateway; the answer to Codex gives excerpts of the chapters with
+		// finds (specs/2026-11-14-desk-journal.md JR1.3).
+		saga.shownAs = ""
 		from, to, err := saga.chapterRange(input.From, input.To)
 		if err != nil {
 			return "", err
@@ -109,7 +114,9 @@ func (tools *ReadTools) scanChunks(saga *sagaScope, from, to int, books map[stri
 func (tools *ReadTools) runScan(ctx context.Context, task string, chunks []*scanChunk, saga *sagaScope) []scanPlace {
 	authority := saga.authority
 	deadline := time.Now().Add(tools.scan.Budget)
-	runCtx, cancel := context.WithDeadline(ctx, deadline)
+	// A tool runs in the context of Codex, not of the turn: the calls of the scan name the Job of the turn themselves
+	// (specs/2026-11-13-desk-gateway.md GW3.2).
+	runCtx, cancel := context.WithDeadline(jobs.WithJobID(ctx, authority.JobID), deadline)
 	defer cancel()
 	var mu sync.Mutex
 	var places []scanPlace
@@ -187,6 +194,15 @@ func (tools *ReadTools) scanChunk(ctx context.Context, task string, saga *sagaSc
 		text.WriteString("\n")
 		chapter.Paragraphs = nil
 	}
+	// The chapters of the chunk go whole, named by the chunk itself: the chunks run in parallel (specs/2026-11-14-desk-journal.md
+	// JR1.3). Without a port that hears what a turn gives (the site) no value is made.
+	if tools.naming != nil {
+		named := disclosure.Named{Chapters: make([]disclosure.Chapter, 0, len(chapters))}
+		for _, chapter := range chapters {
+			named.Chapters = append(named.Chapters, disclosure.Chapter{ID: chapter.ID, Precision: disclosure.Whole})
+		}
+		ctx = disclosure.With(ctx, named)
+	}
 	output, usage, err := tools.scanModel.Complete(ctx, sagamemory.ScanInstructions, "ЗАДАЧА: "+task+"\n\n"+text.String())
 	if err != nil {
 		return nil, usage, err
@@ -245,6 +261,7 @@ func renderScan(saga *sagaScope, chunks []*scanChunk, places []scanPlace) string
 		}
 		item.places = append(item.places, place)
 		saga.use(place.chapter)
+		saga.show(place.chapter, disclosure.Excerpts, 0, 0)
 	}
 	var out strings.Builder
 	if done := chunkRanges(chunks, scanDone); len(done) > 0 {

@@ -189,10 +189,15 @@ func (repository *Repository) createTurnProductInTx(
 		value := session.BookID
 		bookID = &value
 	}
+	// specs/2026-11-13-desk-account-ai.md AI2.1: the counter of the site of the build opens the turn as the last step of the
+	// transaction, after every local write and check.
+	work := quota.Work{Kind: quota.WorkTurn, JobID: ids.JobID, UserID: actorUserID, ChatID: session.ID, At: createdAt}
 	return jobstore.UserModelCreated{Subject: jobs.ResearchChatTurnSubject{
 		Type: jobs.KindResearchChatTurn, ProjectID: session.ProjectID, ChatID: session.ID,
 		TurnID: ids.TargetID, SourceView: session.SourceView, Scope: string(session.Scope), BookID: bookID,
-	}, Target: target}, nil
+	}, Target: target, Last: func(ctx context.Context, tx pgx.Tx) error {
+		return repository.quota.OpenWorkInTx(ctx, tx, work)
+	}}, nil
 }
 
 // turnQuotaKey is the daily limit a message of the author to the model of a session spends — a new turn and a

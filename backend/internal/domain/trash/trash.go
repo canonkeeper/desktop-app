@@ -36,7 +36,6 @@ type Chapter struct {
 	BookTitle         string
 	BookDisplayNumber string // the place of its living book on the shelf, «Книга N» (RK1.6)
 	Title             string
-	Order             int
 	DeletedAt         time.Time
 	RestoreUntil      time.Time
 }

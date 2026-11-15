@@ -50,6 +50,76 @@ type IndexingStatusResponse struct {
 	Preparation *IndexingPreparation `json:"preparation,omitempty"`
 	// SagaReady is there for seven days after the saga became ready (FS4.1).
 	SagaReady *IndexingSagaReady `json:"sagaReady,omitempty"`
+	// Reading is the state of the reading of the books in a build that asks its author (specs/2026-11-13-desk-consent.md
+	// CN3.8): the app; the site has none.
+	Reading *IndexingReading `json:"reading,omitempty"`
+	// Counts are the counts of the reading of the published text whether or not Preparation is there: the port of the
+	// reading of a build reads them; they are never answered.
+	Counts *IndexingPreparation `json:"-"`
+}
+
+// The states of the reading (CN3.8): it waits for the consent — none acts —, goes, is paused, or is done but for the
+// chapters that did not read.
+const (
+	ReadingWaitingConsent = "waiting_consent"
+	ReadingGoing          = "reading"
+	ReadingPaused         = "paused"
+	ReadingDone           = "done"
+)
+
+// IndexingReading is the state of the reading of the books of a saga by «Свой ИИ» (CN3.8): the state and why it waits or
+// stands, the chapters read and all of them, whether the names and whether the threads wait though the chapters are read,
+// the chapters that did not read and why, why the names and the threads did not come together
+// (specs/2026-11-15-desk-reading-rest.md RR2.1), what was spent with its stop and step in their unit and whether an estimate
+// is in it, and the time left. The lists of the reasons are open for another source of the AI.
+type IndexingReading struct {
+	State string `json:"state"`
+	// Source is who reads the books (specs/2026-11-13-desk-account-ai.md, the table «Страницам B2»): the source of the consent
+	// that acts, or of the settings while none does — own or account; nil without a helper.
+	Source           *string                `json:"source"`
+	Reason           *string                `json:"reason"`
+	Pause            *string                `json:"pause"`
+	ChaptersRead     int                    `json:"chaptersRead"`
+	ChaptersTotal    int                    `json:"chaptersTotal"`
+	NamesWait        bool                   `json:"namesWait"`
+	ThreadsWait      bool                   `json:"threadsWait"`
+	Unread           *IndexingReadingUnread `json:"unread"`
+	UnreadRest       *IndexingReadingRest   `json:"unreadRest"`
+	Spent            int64                  `json:"spent"`
+	Approximate      bool                   `json:"approximate"`
+	StopAt           *int64                 `json:"stopAt"`
+	Step             *int64                 `json:"step"`
+	Unit             string                 `json:"unit"`
+	RemainingSeconds *int                   `json:"remainingSeconds"`
+	// Limits are the two limits of the tier of the account for the reading over 30 days — the characters of the inputs of the
+	// card steps and the work of the reading in tokens, used and the limit — while the reading goes to the helper «Аккаунт
+	// CanonKeeper» and the site told them (specs/2026-11-13-desk-account-ai.md AI3.7); absent otherwise.
+	Limits *IndexingReadingLimits `json:"limits,omitempty"`
+}
+
+// IndexingReadingLimits are the two limits of the tier of the account for the reading (AI3.7).
+type IndexingReadingLimits struct {
+	Characters IndexingReadingLimit `json:"characters"`
+	Work       IndexingReadingLimit `json:"work"`
+}
+
+// IndexingReadingLimit is one of them: used over 30 days and the limit.
+type IndexingReadingLimit struct {
+	Used  int64 `json:"used"`
+	Limit int64 `json:"limit"`
+}
+
+// IndexingReadingRest is why the names of the heroes and why the threads of the plot did not come together — cut_answer,
+// unreadable, refused, no_answer — or nil for what did (specs/2026-11-15-desk-reading-rest.md RR2.1).
+type IndexingReadingRest struct {
+	Names   *string `json:"names"`
+	Threads *string `json:"threads"`
+}
+
+// IndexingReadingUnread are the chapters that did not read and why (CN3.6).
+type IndexingReadingUnread struct {
+	Chapters int    `json:"chapters"`
+	Reason   string `json:"reason"`
 }
 
 // IndexingPreparation is how far the reading of the saga is (SS1.1): the chapters of the published text with their
@@ -77,6 +147,14 @@ type PreparationWaiting string
 
 // PreparationWaitingHelper: the helper of the build is not connected (the desktop until the author connects one).
 const PreparationWaitingHelper PreparationWaiting = "helper"
+
+// PreparationWaitingConsent: the helper is connected and the author has not allowed it to read the books of the saga yet
+// (specs/2026-11-13-desk-gateway.md GW4.3).
+const PreparationWaitingConsent PreparationWaiting = "consent"
+
+// PreparationWaitingPaused: the consent of the author is given and the reading stands paused
+// (specs/2026-11-13-desk-consent.md CN3.8).
+const PreparationWaitingPaused PreparationWaiting = "paused"
 
 // IndexingPreparationBook is the reading of one book with chapters, in the order of the saga.
 type IndexingPreparationBook struct {

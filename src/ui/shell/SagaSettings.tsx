@@ -1,5 +1,5 @@
 import { Trash2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button } from '../controls/Button';
 import { Field } from '../controls/Field';
 import { IconButton } from '../controls/IconButton';
@@ -32,6 +32,8 @@ export interface SagaSettingsProps {
   onSave: (name: string) => void;
   /** «Удалить сагу»: the window of the deletion (specs/2026-11-10-ux1-shelf.md UXS4.3). */
   onDelete: () => void;
+  /** The item of the edition before «Удалить сагу…»: «Скачать сагу файлом…» of the site (specs/2026-11-13-desk-sagafile-web.md SW4.1). */
+  beforeDelete?: ReactNode;
   onClose: () => void;
 }
 
@@ -40,7 +42,7 @@ export interface SagaSettingsProps {
  * the role of the author in a saga he shares (specs/2026-11-11-ux9-shelf-chat.md SC1.1), «Удалить сагу» last and apart. To a reader or an editor the window says the role and who changes
  * the saga, without actions.
  */
-export function SagaSettings({ alone, error, name, onClose, onDelete, onSave, role, saving }: SagaSettingsProps) {
+export function SagaSettings({ alone, beforeDelete, error, name, onClose, onDelete, onSave, role, saving }: SagaSettingsProps) {
   const [draft, setDraft] = useState(name);
   const manager = role === 'owner' || role === 'admin';
   // The role is a word of a saga shared with others: an author alone hears none (SC1.1).
@@ -61,6 +63,7 @@ export function SagaSettings({ alone, error, name, onClose, onDelete, onSave, ro
         {roleShown ? <p className={styles.role}><span>Ваша роль</span><Badge>{roleWords[role]}</Badge></p> : null}
         {manager ? (
           <div className={styles.danger}>
+            {beforeDelete}
             <Button className={styles.delete} onClick={onDelete} size="touch" variant="ghost">
               <Trash2 aria-hidden="true" size={16} />Удалить сагу…
             </Button>

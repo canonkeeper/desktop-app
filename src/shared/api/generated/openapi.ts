@@ -4,6 +4,254 @@
  */
 
 export interface paths {
+    "/projects/{projectId}/saga-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Save a whole saga into one file .cksaga.
+         * @description The file canonkeeper-saga v1 (specs/2026-11-13-desk-sagafile.md SF1): the text of the books with their faces, the chapter cards that fit the text, the registry of names, the finished layer of threads, the records of the saga, the notes of the owner made in it and the turns of the owner in its chats. The rights and the saga are checked and the base is read in one snapshot before the first byte; the chats follow as their threads are read and the manifest goes last, so a file that cannot be finished ends with a broken connection and has no manifest. No model takes part. One save of an author at a time, four for the process, ten an hour.
+         */
+        get: operations["getSagaArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/saga-archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a saga file as a new saga.
+         * @description Only the desktop app mounts it (specs/2026-11-13-desk-sagafile.md SF3). The file is checked whole before anything is written: a refusal names one cause — saga_archive.not_archive, saga_archive.damaged, saga_archive.newer_version, saga_archive.too_large, saga_archive.no_space or saga_archive.invalid with the name of the record. The saga is new: new ids of the saga, its books, chapters and paragraphs, the text, the keys of the chapters and the numbers of the books as in the file; a card is taken when the digest of its chapter in the file is its own, and the report names the chapters left without one. Nothing existing changes and no model is called. A repeat with the same key and file answers the same saga; the same key with another file is 409.
+         */
+        post: operations["openSagaArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the link of a saga with the folder of its Obsidian vault.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-obsidian.md). OB1.5: whether the saga is linked, the absolute path of the vault and the name of its folder — the one absolute path any operation gives —, whether the vault opens now (waited for no longer than 2 s, otherwise unknown), whether a choice of a folder waits, and the reason the last choice was refused (not_found, not_folder, unreadable). specs/2026-11-14-desk-obsidian-books.md OK2.6: books — the live books that hold a folder of the vault, with the folder, the end of the last load or update from it and whether the folder is there by the same one check (unknown while it runs or past its time) — and relink, the live books whose folder another book holds.
+         */
+        get: operations["getObsidianVault"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove the link of a saga with its Obsidian vault.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-obsidian.md). OB1.5: the saga is not linked any more; its books, its records of the materials and the files of the vault stay as they are. No link is no error. The strict Origin of the window, the CSRF token and its session.
+         */
+        delete: operations["unlinkObsidianVault"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/choice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Declare a choice of the folder of the Obsidian vault of a saga to the shell.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-obsidian.md). OB1.1: the backend declares a choice — the saga, a number of 32 random bytes, 10 minutes, one in the process, a new one puts out the one before — and tells the shell the number with the title of the saga (folder-choice of the control channel). The window then calls the command pick_folder of the shell with the number: the shell opens the system window over the app and answers the window only with the outcome — linked, a refusal with its reason, canceled or expired — after the backend checked and kept the folder. The path never reaches the page. Without the shell obsidian.choice_unavailable (503). The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["beginObsidianVaultChoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look over the Obsidian vault of a saga: its folders with notes.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-obsidian.md). OB2: the tree of the folders of the vault by the entries of its directories, without a note read and without a link followed — the folders with notes, the notes in each folder and below it, what was skipped by its reasons (link, hidden, cloud_only, not_note, too_big, service, unreadable), and a hint to the folders of the first two levels: book (with _book.md or linked to a book), materials with the kind of their records, skip. Past 200 000 entries or 32 levels the tree is cut with truncated and its numbers, not refused. Nothing is written, no text of a note is given, every path is relative to the vault. One operation of a saga reads a vault at a time and two in the process (obsidian.busy, 429 with Retry-After); a vault that does not answer in 20 s is obsidian.slow (503); a saga without a vault obsidian.not_linked, a vault that does not open obsidian.vault_missing with its reason (409).
+         */
+        get: operations["scanObsidianVault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say what a load of the chosen folders of the Obsidian vault of a saga would give, writing nothing.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-obsidian.md). OB4: the choice — folders as books, folders as materials with the kind of their records, folders and notes left out, all relative to the vault — is checked before a note is read: no book holds another or a folder linked to a book (obsidian.folders_overlap with both, 422); a path of no folder of the vault, through a link or on a dot is request.validation. More than 20 000 notes or 200 MB, or chosen folders of more than 200 000 files and folders, is obsidian.too_large with the numbers (422). Each folder of a book becomes one text of Markdown read by the code of the import queue: the chapters and their signs, whether the queue takes it (refusal: its code), the warnings — chapters_differ with the notes that split or joined, book_in_note, order_by_name, title_cut —, what did not go into the text, its state (new; linked to a book — changed when «Обновить из файла» of the book by the text would change it, by the plan of the update against the book now; or queued, its volume in work of a queue — specs/2026-11-14-desk-obsidian-books.md OK0.3, OK0.4) and the fingerprint of the text. Each note of materials becomes a future record with its state — new, in_book, in_book_by_alias, same_note, edited_in_app, other_source — and warnings list_note, several_sections; the set has its fingerprint. reading says the chapters and signs of new and changed books and whether the saga waits for a helper or a consent. No model is called, nothing is written into the saga or the vault. One operation of a saga reads a vault at a time (obsidian.busy, 429); 2 minutes, 5 s a note (obsidian.slow, 503). The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["previewObsidianImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/books": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put the books of folders of the Obsidian vault of a saga onto its shelf by the queue of the volumes.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-obsidian-books.md OK1). The choice the author saw in the preview (previewObsidianImport) and the fingerprint of each folder of a book. The answer kept for the Idempotency-Key comes first, before the vault is read: after a success it is the same when a folder changed; another request under the key is idempotency.conflict; a key whose load made its queue and kept no answer — the process fell — is obsidian.load_interrupted (409): a new load needs a new key. Each folder is glued again by the code of the preview: another glue is obsidian.folder_changed with the folders (409) and nothing is written. Each volume is checked by the code of the queue. The outcome of each folder: queued in the queue, linked — a live book holds it —, in_trash — its book lies in «Недавно удалённые» —, refused with the code of the queue (a limit of the books of the saga refuses every volume). With no volume to queue there is no queue. The queue of the core is the first write: a saga with a live queue of the volumes is obsidian.queue_busy with that queue (409) and nothing is written; then the links of its volumes, their files and its start, one upload a volume as at the shelf. A failure after the queue was made cancels its draft and is kept for the key. No model is called. One operation of a saga reads a vault at a time (obsidian.busy, 429); only its reading is within 2 minutes (obsidian.slow, 503: nothing is written); its writes go to their end when the caller goes away. The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["importObsidianBooks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write the records of «Ваши материалы» of the notes of folders of the Obsidian vault of a saga.
+         * @description Mounted only by the desktop build (specs/2026-11-15-desk-obsidian-notes.md ON1). The choice the author saw in the preview (previewObsidianImport), the fingerprint of the records of each folder of materials (materials.folders of the preview), what the author saw of the record of each note (materials.records[].seen of the preview) and his decisions: replace or keep by a note, or one rule a state (replace: edited_in_app, other_source). The answer kept for the Idempotency-Key comes first, before the vault is read: after a success it is the same when a note changed; another request under the key is idempotency.conflict. The notes of the folders of materials are read again by the code of the preview: another fingerprint of a folder is obsidian.folder_changed with the folders (409) and nothing is written. Then one transaction: the states again by the exact keys of the names with the records locked — a record whose state is not the one its preview saw (the author made or changed a record since) is kept and named —; new, in_book and in_book_by_alias are new records of the source obsidian with the path of the note; same_note is written only when the note changed; edited_in_app and other_source only by a decision to replace — other_source gives the same record the note and its link, and the note the record had before loses its link —; a name another note of the load gets is never replaced; then the links of the notes and the answer of the key. A failure of any part writes nothing; a name another record took meanwhile is conflict (409), nothing written. More than 5 000 records of the load or of the saga after it is obsidian.too_large with records, sagaRecords and limitRecords (422). No model, no row of an import, no Job, no upload of the day; the records of notes gone are not deleted. One operation of a saga reads a vault at a time (obsidian.busy, 429); only its reading is within 2 minutes (obsidian.slow, 503: nothing is written); its writes go to their end when the caller goes away. The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["importObsidianMaterials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/books/{bookId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link a book of a saga with a folder of its Obsidian vault without a load.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-obsidian-books.md OK2.3). The book is a live book of the saga; the folder, relative to the vault («» or «.» is the root), is none another live book holds (obsidian.folder_linked with the folder and that book, 409), lies in none and holds none (obsidian.folders_overlap with both, 422), and is a folder of the vault now (obsidian.folder_missing with the folder, 409). The book has one link: the new one takes the place of the one before. A saga with a live queue of the volumes is obsidian.queue_busy (409). Nothing is read of the notes and nothing written into the vault. One operation of a saga reads a vault at a time (obsidian.busy, 429), within 2 minutes (obsidian.slow, 503). The strict Origin of the window, the CSRF token and its session.
+         */
+        put: operations["linkBookToObsidianFolder"];
+        post?: never;
+        /**
+         * Take the link of a book of a saga with a folder of its Obsidian vault off.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-obsidian-books.md OK2.3). The book — live or in «Недавно удалённые», whose folder would otherwise answer in_trash — is linked with no folder; the book and the vault stay as they are. No link is no error. The strict Origin of the window, the CSRF token and its session.
+         */
+        delete: operations["unlinkBookFromObsidianFolder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/obsidian/books/{bookId}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview or apply «Обновить из файла» of a linked book with the text of its Obsidian folder now.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-obsidian-books.md OK2). The folder of the book is glued now by the choice of its load — the folders of materials and of other books inside it and the notes the author left out are no chapters — and goes to «Обновить из файла» of the core (importBookFile in update_preview or update_book): the answer is its start of the Job, and the plan is in the result of the Job (getJob). A preview gives the fingerprint of the glue and the report of the reading of the folder beside it — the notes skipped by their reasons, the warnings, the chapters as the import reads them, its state changed when the plan changes the book —; it is refused nothing for a plan that changes nothing. An application names the fingerprint of its preview: another glue is obsidian.folder_changed (409); notes that did not read for a passing reason (cloud_only, unreadable) are obsidian.notes_unread with their counts (409) until confirmUnread; a plan that changes nothing is obsidian.nothing_to_apply (409) — the update of the core would take the place of «Вернуть» of the update before. The Job of the Idempotency-Key of an application answers before the folder is glued. A book no folder is held by is obsidian.book_not_linked, the folder gone obsidian.folder_missing with it (409), a saga with a live queue of the volumes obsidian.queue_busy (409) before the vault is read. The refusals of the import are those of importBookFile. No model is called. One operation of a saga reads a vault at a time (obsidian.busy, 429); only its reading is within 2 minutes (obsidian.slow, 503: no Job). The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["updateBookFromObsidian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/transcripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the chats a saga file brought into the saga.
+         * @description Records of the saga to read (specs/2026-11-13-desk-sagafile.md SF3.8): no thread of a model stands behind them, nobody continues them.
+         */
+        get: operations["listSagaTranscripts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/transcripts/{transcriptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a chat a saga file brought into the saga.
+         * @description The turns as the file brought them: the question, the answer with its links source:<chapter key>/<paragraphs>, the outcome and the title of the chapter attached to the question. places names each chapter key of the answers by its place in the saga now, as the answer of a chat does (specs/2026-11-13-desk-sagafile.md SF3.8).
+         */
+        get: operations["getSagaTranscript"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/contacts": {
         parameters: {
             query?: never;
@@ -917,7 +1165,7 @@ export interface paths {
         put?: never;
         /**
          * Change a code of the link for the pass of the app.
-         * @description specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author and his tier. The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code also unlinks the app made by it. The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.
+         * @description specs/2026-11-13-desk-link.md LK2: the backend of the app sends the code it got on 127.0.0.1 with the verifier of its challenge, the name of its computer and its version. It takes no cookie and refuses any request with Origin. The code is good once, before its 5 minutes, when S256 of the verifier equals its challenge and the account may work and has fewer than five linked apps; then in one transaction the code is spent and the app is linked, and the answer carries the pass — ckd_ and 32 random bytes — once, with the name of the author, his tier, the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days (specs/2026-11-13-desk-account.md AC2.6). The site keeps only the SHA-256 and the first 6 signs of the pass. Every refusal is 400 app.link_invalid without telling which; a second exchange of a spent code with the verifier of its challenge also unlinks the app made by it; with another verifier it changes nothing (specs/2026-11-13-desk-account.md AC2.6). The letter «К аккаунту привязано приложение CanonKeeper» goes to the author after the commit. 10 a minute and 50 a day per client address. Responses are no-store.
          */
         post: operations["exchangeAppLinkCode"];
         delete?: never;
@@ -935,7 +1183,7 @@ export interface paths {
         };
         /**
          * Read the account a linked app works for.
-         * @description specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.
+         * @description specs/2026-11-13-desk-link.md LK3.1, LK3.4: the name of the author and his tier — code, title and end — and, specs/2026-11-13-desk-permits.md PM3.1, the units of his Moscow day the app works with — questions (chatTurns), uploads (imports) and «разом» (activeTurns: the turns of the site and the live permits of turns of every app of the account, and — specs/2026-11-15-desk-turns-here.md TH1.1 — thisApp, the live permits of turns of this app among them, read at the same moment) — in the form of getAccountQuota of the site and from the same counters, so the app composes its own answer without a count of its own; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days (the field reading of the quota), by the count of the fence of the reading. Only the pass of a live app of an author who is not blocked nor deleted and whose address is confirmed; a cookie, an Origin, no pass, an unknown or unlinked pass and the pass of a blocked author are the one 401 app.pass_invalid, and the sixth refusal of a client address in a minute is 429. The moment of the use is kept at most once in 10 minutes. Counted per app. Responses are no-store.
          */
         get: operations["getAppAccount"];
         put?: never;
@@ -1018,7 +1266,7 @@ export interface paths {
         post?: never;
         /**
          * Give back a correction the turn did not take.
-         * @description specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. A second return changes nothing and answers the same. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.
+         * @description specs/2026-11-13-desk-permits.md PM1.5: the question of a correction the running turn did not take comes back once to the Moscow day it was charged on, as on the site; also after the permit ended, since a turn that ended takes no correction. The answer says whether the unit came back. The site never sees whether a turn took a correction, so a return is the word of the app: it counts in the ceiling of returns of the Moscow day of the account (app_returns_per_day, 5 by default) with the failures the site did not see (specs/2026-11-13-desk-proxy.md PX0.1), and over it the unit stays spent and the answer says returned false; a later return counts in the ceiling of its own day. A second return of a unit given back changes nothing and answers returned true. A ref never charged under the permit and a permit of another app or none are 404 app.permit_not_found without details. Counted per app. Responses are no-store.
          */
         delete: operations["returnModelPermitUnit"];
         options?: never;
@@ -1040,6 +1288,46 @@ export interface paths {
          * @description specs/2026-11-13-desk-permits.md PM2.1–PM2.4: the app names how the work ended — answered, done, canceled or failed — and the site decides the return by what it saw itself under the permit. The unit of the work comes back only for failed when no answer of the model passed under the permit: when requests passed, the site saw them fail; when none passed, it is the word of the app alone, given back at most app_returns_per_day times in a Moscow day of the account (5 by default) and over it the permit closes without a return. answered, done and canceled keep the unit, and the corrections are never given back by the end of the turn. A return goes to the Moscow day the permit started on, never below zero. What the site saw is not in the request: a body with any other field is 400 request.validation. A permit that ended — closed, expired or canceled with the unlinking of its app — answers as it is, so a repeat of the close changes nothing; a permit whose lease ended answers its expiry. A permit of another app or none is 404 app.permit_not_found without details. Counted per app. Responses are no-store.
          */
         post: operations["closeModelPermit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/ai/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a request of a turn of the chat of the app on the models of the site.
+         * @description specs/2026-11-13-desk-proxy.md PX1: the proxy of the Responses API for a turn of the chat of a linked app. Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of a turn (chat_turn) of this app: no pass is 401 app.pass_invalid; no permit, one of another app or none is 404 app.permit_not_found; one that ended is 409 app.permit_closed; one of another kind is 400 app.permit_kind — before any request to the provider. The body is a request of a turn of Codex, as it is or compressed by gzip (Content-Encoding: gzip), up to 64 MiB after its decompression: over it 413 app.request_too_large. The site trusts nothing of it: it streams and the provider keeps nothing (stream true, store false), the model and the effort of the reasoning are those of the chat of the site whatever the app names, the fields of a state, of the client, of a price, of a cache and of saved prompts are removed, the key of the cache is bound to the app, a field the site does not know is 400 request.validation, and a built-in tool of the provider, a choice of one or an item of its call in the input is 400 app.unsupported_capability; no header of the app goes to the provider. The turns of an account are bounded by the tokens of its Moscow day — the questions of a day of its tier times the tokens of a question (app_tokens_per_question, 360 000 by default), counted as the input the provider did not cache and the output of its requests and of its scan —: over it 403 ai.daily_fence, which Codex does not repeat, and the permit stays live (specs/2026-11-13-desk-proxy.md PX3.3). The requests of all apps take places of their own, apart from those of the site, and an app has two at once: over them 429 ai.busy with Retry-After 1. The answer is the stream of events of the provider as it comes; a refusal of the provider comes with its status and its Retry-After as 4xx or 5xx ai.provider_refused — a refusal of the key of the site for apps as 502 —, a provider out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. The site reads of the stream only its usage and whether it ended in an answer without a call of a tool, which keeps the unit of the turn spent; every request that went is activity of the permit. Counted per app. Responses are no-store.
+         */
+        post: operations["streamAppResponses"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/ai/steps/{step}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run one call of the core of the app on the models of the site.
+         * @description specs/2026-11-13-desk-proxy.md PX2: a call of the core of a linked app that gives a model its words and one input — the card of a chapter (card) and its pass (card_pass), the register of names (names), the steps of the thread layer (layer_book, layer_reduce, layer_verify, layer_gap), scan and the mapping of the author's materials (materials). Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of this app of the kind of the step: reading for the reading of books, chat_turn of its turn for scan, materials for materials; another kind is 400 app.permit_kind, no permit, one of another app or none 404 app.permit_not_found, one that ended 409 app.permit_closed. A step the core does not make is 404 app.step_unknown. The words are taken only when their SHA-256 is a print of the words of the core of this tree or of a released version of the app: other words are 400 app.step_instruction, and a step never takes free words. The body comes as it is or compressed by gzip, up to 64 MiB after its decompression. The card of a chapter spends the characters of the account once in 30 days by the SHA-256 of its input and its length — no text is kept —; a new chapter over the characters of the tier in force is the refusal of the site, 409 quota.account_characters, and a chapter read again spends nothing (PX3.1). The reading of books and materials is bounded by its tokens of 30 days — the characters of the account times the tokens of a character (app_reading_tokens_per_character, 8 by default) —: over it 403 ai.reading_fence; scan counts in the turns of the day: over them 403 ai.daily_fence (PX3.2, PX3.3). The site calls the model it calls for the same call of its own core with the key of apps — the cards model for the builds of a saga, the model of scan for scan, with their efforts — through the places of apps (429 ai.busy with Retry-After 1, two at once for an app) and retries a failure of the provider as its own client does; scan takes at most 50 seconds. The answer is the text of the model whole with its usage; a provider that kept failing or out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. Counted per app. Responses are no-store.
+         */
+        post: operations["runAppStep"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2129,6 +2417,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/desktop/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read whether the programs of the author may read the sagas, and how to connect them.
+         * @description Mounted only by the desktop build (specs/2026-11-15-desk-mcp.md MC3.1–MC3.3): whether the reading of the sagas by the programs of the author (Claude Code, Claude Desktop, Codex) is on, was ever on, whether the door of the app is open or failed to open, the commands that connect and disconnect the program of the bridge of this installation (none when the shell named no program of the bridge), the programs that turned to the door since the start of the app (from the memory of the process) and the last reading of the journal. The session of the window.
+         */
+        get: operations["getProgramAccess"];
+        /**
+         * Turn the reading of the sagas by the programs of the author on or off.
+         * @description Mounted only by the desktop build (specs/2026-11-15-desk-mcp.md MC3.1, MC1.6): settings.json keeps the choice, the door of the app on its local socket opens or closes and mcp.json of the data directory names it while it is open; the answer is the state after the door opened or closed — a door that did not open is a state that says so. Turned off, the calls that run get «закрыт или выключено». The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        put: operations["updateProgramAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/programs/claude-desktop-extension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Save the file of the extension of Claude Desktop for Windows.
+         * @description Mounted only by the desktop build (specs/2026-11-15-desk-mcp.md MC3.3): a package MCPB (manifest 0.3) the server builds on every call with the standard library — its manifest, the icon of the app and a copy of the program of the bridge, run with the data directory and the word extension. Only on Windows and only when the shell named the program of the bridge; else 404. The session of the window; ten a minute.
+         */
+        get: operations["getClaudeDesktopExtension"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/desktop/state": {
         parameters: {
             query?: never;
@@ -2138,10 +2470,430 @@ export interface paths {
         };
         /**
          * Read the state of the app its «Настройки» show.
-         * @description Mounted only by the desktop build (specs/2026-11-13-desk-settings.md ST2.1): the version of the window, the backend and the installer; the data directory as the author sees its path; the place it takes, counted without following links and waited for no longer than 2 s — while a count goes on, the last known place with counting true (null before the first count ended); the complete copies before an update, the newest first and no more than two, each with the version of the app that made it (null for a copy made before the copies named it); and the hosts the app goes to in this build and its settings. Responses are no-store.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-settings.md ST2.1): the version of the window, the backend and the installer; the data directory as the author sees its path; the place it takes, counted without following links and waited for no longer than 2 s — while a count goes on, the last known place with counting true (null before the first count ended); the complete copies before an update, the newest first and no more than two, each with the version of the app that made it (null for a copy made before the copies named it); the hosts the app goes to in this build and its settings; and whether «Добро пожаловать» is still to be shown with the choice to check for a new version once a day (specs/2026-11-13-desk-upgrade.md UG5.1). Responses are no-store.
          */
         get: operations["getDesktopState"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the settings of «Свой ИИ» of the app.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-secrets.md SE2.4): the one profile of «Свой ИИ» kept in settings.json of the data directory — the source, the ready variant with its address and protocol, the models of the chat and of the reading of the books, «Дополнительно» — whether the backend holds the key the shell kept, and whether the shell keeps the secrets in the store of the system or, without one, in a file of the data directory. The key and any part of it are never in the answer. Without the session of the window, the 401 of the site. Responses are no-store.
+         */
+        get: operations["getAiSettings"];
+        /**
+         * Replace the settings of «Свой ИИ» of the app.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-secrets.md SE2.1–SE2.3): replaces the settings whole. A ready variant gives the address and the protocol (deepseek — https://api.deepseek.com/v1, chat; openai — https://api.openai.com/v1, responses; ollama — http://127.0.0.1:11434/v1, chat), and a body that names others is refused; custom takes the author's address — http or https, no name or password in it, up to 300 characters — and the protocol auto unless he chose. A model is up to 120 characters without control characters, left out — not chosen. «Дополнительно» left out takes its defaults: a context window of 128 000 tokens (8 000 – 2 000 000), an answer of 16 000 (1 000 – 200 000), reasoning medium, 4 requests at a time (1 – 32), no prices (0 – 1 000 dollars a million tokens, up to four digits after the point). A field that is not valid is refused with ai.settings_invalid and its JSON pointer in errors, and nothing changes. The strict Origin of the window, the CSRF token and its session. Responses are no-store. specs/2026-11-13-desk-account-ai.md AI1.1: the source account is chosen only by a linked app — otherwise 409 helper.account_unlinked — whose site answered with its helper now — otherwise 503 ai.account_unreachable; neither changes the settings.
+         */
+        put: operations["updateAiSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/ai/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Hand the key of «Свой ИИ» to the shell to keep.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-secrets.md SE2.5, SE2.6): the key goes one way. The backend asks the shell to keep it (secret-save of the control channel) and answers 204 only after the shell kept it, waiting no longer than 5 s; a shell that refused or was silent is ai.key_not_saved, and the backend does not hold the key. A key is up to 1280 bytes of UTF-8 — what every store of the shell keeps, the Credential Manager of Windows holding 2560 bytes of UTF-16 — without spaces or control characters at its ends or inside (ai.key_invalid). The key is never answered, logged or put into an error. The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        put: operations["setAiKey"];
+        post?: never;
+        /**
+         * Have the shell remove the key of «Свой ИИ».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-secrets.md SE2.5): the backend asks the shell to remove the key (secret-delete of the control channel) and answers 204 once it did — a key that was not there is removed already; a shell that refused or was silent for 5 s is ai.key_not_saved and the backend holds what it held. The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        delete: operations["deleteAiKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the models of the provider of «Свой ИИ».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-probes.md PB1): the backend asks the provider of the saved settings GET {address}/models with the key of the author — a local server (Ollama) gets none — at that address alone, without following a redirect, and answers the names of its models, each once, by the alphabet, at most 500 (outcome listed); a provider that has no such list (404, 405) is outcome unlisted, and the author writes the name of the model himself; a provider that could not be asked is outcome failed with the code of the reason — unreachable, key_refused, rate_limited, other — never the words of the provider. Without a profile of «Свой ИИ», or for a variant that answers only with a key the backend does not hold, 409 ai.not_set and the provider is not asked. The list is kept nowhere: it is asked for every time. Without the session of the window, the 401 of the site. Thirty a minute; responses are no-store.
+         */
+        get: operations["listAiModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/ai/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how «Проверить связь» goes.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-probes.md PB2.1): the check of this run of the app — idle before any, running with the probe that runs and the probes that went, done with its report, canceled, or timed_out after three minutes with the report of what it learned. The page asks it again while the check runs. Probes are codes and models: no text of a probe or of an answer of the provider is ever here. Without the session of the window, the 401 of the site. Responses are no-store.
+         */
+        get: operations["getAiCheck"];
+        put?: never;
+        /**
+         * Start «Проверить связь» of «Свой ИИ».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-probes.md PB2): checks the saved settings and key — what is on the screen is saved first — and answers 202 at once with the check that runs; getAiCheck tells how it goes. The probes go the way the work goes, through the local gateway with the role, the profile of the author, the translation of the protocol and «Запросов одновременно», with made-up words and no word of a book, a record or a chat, and each leaves a row of the journal of requests with the purpose probe. The chat is probed by a short answer, a call of a tool and a long text of about 20 000 tokens whose fact from its start must come back; the reading of the books by the short answer, the long text, the calibration of the input tokens for 1 000 characters of Russian text, and last a long answer of at least 4 000 tokens of text that does not end at its limit — read only as far as 4 000 tokens by the calibration and closed then; one model in both roles is probed once, and a probe that fails on the connection or the key stops the others. The check ends in three minutes at most — a late one with slow for what it did not end; its report — the time, the models, the probes and the calibration — is kept in settings.json and given by getAiSettings. 409 helper.not_connected without the connected helper (no model, or no key the variant needs), 409 ai.check_running while one runs, 503 ai.check_unavailable as the app stops. The strict Origin of the window, the CSRF token and its session; ten a minute.
+         */
+        post: operations["startAiCheck"];
+        /**
+         * Stop «Проверить связь».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-probes.md PB2.1): the probe that runs stops its request to the provider, the check is canceled and keeps no report; the report kept before stays. Nothing running is nothing to stop. The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        delete: operations["cancelAiCheck"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask the shell to erase all the data of the app on this computer.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-erase.md ER1.2): «Стереть все данные» of «Настройки → Данные». With the word «стереть» — whatever its case and the spaces at its ends — the backend writes erase to its shell on the control channel and answers 202: the shell got the request. The backend removes nothing itself: the shell marks the erasure, stops the backend, closes the window and removes the data directory, the data of the window and the records of the app in the store of the system, then ends. Another word is desktop.erase_unconfirmed and asks nothing. The strict Origin of the window, the CSRF token and its session; five a minute.
+         */
+        post: operations["eraseDesktopData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/reading/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estimate the reading of the books of a saga by «Свой ИИ».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN1.3): what reading the rest of the published text will take before the author consents — the chapters without a card, the tokens in and out, the time, the amount in millionths of the currency of the prices when both prices are named (else the unit is tokens), the share of the thread layer, the host of the provider and whether the model works on the computer, rough or by the sample of this provider and model, the assumptions as codes, the stop the window offers, the chapters a sample would read and the cost of reading an edited chapter again. A saga whose chapters are read while the names or the threads wait counts only them. No model is called. 409 helper.not_connected without the connected helper. Cache-Control: no-store.
+         */
+        get: operations["getReadingEstimate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/reading/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the consent of the reading of the books of a saga by «Свой ИИ».
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN3.1, CN3.2): the consent that acts — given for «Свой ИИ» at the host of the settings now — with its state, the reason of a pause, the stop sum and the step «ещё на X» in their unit and the count since its start; none without one, with provider_changed when the saga has a consent for another host. Sums are in the unit: millionths of the currency or tokens, in and out. Cache-Control: no-store.
+         */
+        get: operations["getReadingConsent"];
+        /**
+         * Give, pause or continue the reading of the books of a saga.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN3.2): allowed or paused, and at most one of a new stop sum (stopAt; null — no sum), or «ещё на X» over what was spent (continueBy); retryUnread reads again the chapters that did not read. A new count begins only when no consent acts — for the source of the settings now at its host: «Свой ИИ» at the host of its provider, the helper «Аккаунт CanonKeeper» at the host of the site (specs/2026-11-13-desk-account-ai.md AI3.4; it has no stop sum: stopAt and continueBy are refused by their field); a pause, a continuation and a new sum keep it. A sum not above what was spent is refused by its field (400 reading.invalid), and so is «Продолжить» without a sum after the currency or the prices changed under a sum in money. allowed queues the Jobs of the cards and of the layer at once; paused puts the pause of the author and has the Jobs of the reading canceled the standard way — what was built stays. 409 reading.no_consent pauses nothing; 409 helper.not_connected without the connected helper. The strict Origin of the window, the CSRF token and its session; sixty a minute. Cache-Control: no-store.
+         */
+        put: operations["setReadingConsent"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/reading/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the sample of three chapters of a saga.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN2.4): the last sample of the saga — none, queued, running, succeeded, canceled or failed with why (the reasons of the pauses of the reading, helper when the helper left, other) —, how far it is, the cards of the chapters it read (the place of the chapter in words, the retelling, the events and who is in it), its time by the requests of its Job — without the idle time between its runs — and what it spent in tokens and, with prices, in the currency of the settings, approximate when an estimate is in it. What the sample spent is not in the sum of a consent. Cache-Control: no-store.
+         */
+        get: operations["getReadingSample"];
+        put?: never;
+        /**
+         * Try the reading on three chapters.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN2.1–CN2.3): the server chooses the first chapters of the published text without a card in the order of the books — three at most — and writes them, with the host of the provider, into the subject of a cards Job of its own: the press is the consent to exactly these chapters, the consent of the saga does not change, and the sample builds no names and no threads. One sample of a saga lives at a time: a repeat with the same Idempotency-Key, or while one lives, answers it. 409 reading.consent_given once a consent acts, 409 reading.nothing_to_read without a chapter to read, 409 helper.not_connected without the connected helper, 409 reading.no_sample while the helper is «Аккаунт CanonKeeper» — it reads by the tier of the site, not for money (specs/2026-11-13-desk-account-ai.md AI3.4). The strict Origin of the window, the CSRF token and its session; thirty a minute. Cache-Control: no-store.
+         */
+        post: operations["startReadingSample"];
+        /**
+         * Stop the sample of three chapters.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN2.4): the live sample of the saga is canceled the standard way, the page names no Job; the cards it read stay. Nothing live is nothing to stop. The strict Origin of the window, the CSRF token and its session; sixty a minute.
+         */
+        delete: operations["cancelReadingSample"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the link of the app with an account of the site.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-account.md AC2.1–AC2.3): the state of the link — not linked, waiting for the confirmation in the browser with the address of /link and its term, linked, broken by a refusal of the pass, or failed with its reason — and for a linked app what the site told of the account: the name, the address hidden after its first letter, the tier with its term, the questions of the day and the characters the helper read in 30 days, and when. The site is asked at most once a minute, or when fresh is true, within 5 s; no answer keeps what it told in this run with unreachable true. A refusal of the pass breaks the link at once and its record goes. The name of the computer the site sees, where the pass is kept and the pages of the site of the build come with every answer; the pass never does. The session of the window.
+         */
+        get: operations["getAccount"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlink the app from the account of the site.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-account.md AC2.4): the backend tells the site (unlinkApp) when it answers within 5 s, stops using the pass in any case and has the shell remove its record; a record the shell did not remove is removed by the next start, which is not linked. The answer says whether the site heard it and whether the pass went from the computer. Nothing else on the computer changes. The strict Origin of the window, the CSRF token and its session.
+         */
+        delete: operations["unlinkAccount"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/account/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a link of the app with an account of the site.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-account.md AC1.1): while the app is not linked, the link is broken or the last one failed, the backend makes a PKCE verifier and a state of 32 random bytes each, living 10 minutes and only in memory, and answers the address of /link of the site of the build with the challenge S256, the state, the port of the window and the system — nothing of the author. One link waits at a time; getAccount answers the same address while it lives. The optional body carries the intent of the author to choose the helper «Аккаунт CanonKeeper» (specs/2026-11-15-desk-account-link-web.md AW3.2): it lives with the waiting, and a link made switches the helper to the account when the intent was there or no helper is chosen yet; «Свой ИИ» chosen without the intent stays, and its profile stays in every case. Without a body — no intent. A linked app or one whose link waits is account.link_unavailable, a build the site cannot return to — a port of the window out of 20000–29999, a system other than Windows or Linux, no version — account.link_unsupported; both 409 and change nothing. The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["startAccountLink"];
+        /**
+         * Cancel the link that waits.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-account.md AC1.1): the waiting ends; its return from the browser is refused. The strict Origin of the window, the CSRF token and its session.
+         */
+        delete: operations["cancelAccountLink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/welcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close «Добро пожаловать» with the choice to check for a new version once a day.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-upgrade.md UG5.1): the author closed «Добро пожаловать» of the app; settings.json of the data directory keeps the mark and the choice to check for a new version once a day, which getDesktopState reads. The mark lives through a new port of the window and a new installation of the program; «Стереть все данные» takes it with the data. The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        post: operations["dismissWelcome"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the journal of what went out by days.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-journal.md JR2.1, JR2.2): the rows of the journal of what the app sent the helper from this computer, from the newest — fifty a page, by the cursor of the start of a row and its key. A row is a work the author knows for one day of his zone: a question of the chat with its scan, the reading of the books of one Job, the parsing of his materials, one check of the connection; its start is its first sending of the day. What went is in the words of the author by the places of now — never a word of his text, a key of a chapter or a Job. The numbers of «Свой ИИ» are the requests of its provider. The answer also says when the journal was cleared last and how many sagas it names. A zone of no name, a kind or a cursor it does not know is 400 (a zone the database does not know reads the days by UTC); without the session of the window, the 401 of the site. Responses are no-store.
+         */
+        get: operations["listSendLog"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear the journal of what went out.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-journal.md JR2.6): the records of the sendings and the rows of the requests there are at the moment of the call go in one transaction, and settings.json keeps when. What a thread of the chat named and has not sent yet, the helpers its thread went to, the count of the consents of the reading and the requests of the samples of three chapters stay. The strict Origin of the window, the CSRF token and its session; ten a minute.
+         */
+        delete: operations["clearSendLog"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/log/sendings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the sendings of a row of the journal.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-journal.md JR2.4): the sendings of a row in their order, a hundred a page — the time, to whom, the bytes, what the sending gave new in the words of the author, the first time to its helper, the words of its outcome (none for an answer) and whether it repeats the one before. A row, a zone of no name or a cursor it does not know is 400; without the session of the window, the 401 of the site. Responses are no-store.
+         */
+        get: operations["listSendLogSendings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/log/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the journal of a choice as the text of a file.
+         * @description Mounted only by the desktop build (specs/2026-11-14-desk-journal.md JR2.5): every row of the choice with all its sendings in the words of the page, as text, and the name of its file with the date of the author; the page saves it by the saving of a file of the window. A zone of no name or a kind it does not know is 400; without the session of the window, the 401 of the site; ten a minute. A choice longer than the file ends with the line «Показаны первые 50 000 строк — сузьте вид». Responses are no-store.
+         */
+        get: operations["getSendLogFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the update of the app.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-updates.md UB1.7). The version of the program; whether the app checks for a new version once a day; how this copy was installed — nsis, deb, rpm, appimage (only while it runs from its file) or none: a build updated by hand, which checks nothing; and the phase. idle names what the last check found — never, latest, available (with the version and the plain text of its notes, which the shell took only with the signature of a key of the app) or offline; checking; downloading with the percent; waiting_turn — the file is downloaded and checked, the update waits for the turns of the chat, and new turns are still taken; installing — no new turn is taken, the backend stops for the installation; download_failed, verify_failed — nothing changed; install_refused — the system did not install the package of Linux (refusal declined: the window of the password was closed; unavailable: the system cannot ask for it), the package is kept for the author at package; install_failed — nothing changed, the backend is back on the same data, package when a package of Linux was kept. The backend holds the schedule and the setting, the shell the network and the installation, and it tells the phase after every ready: a backend started again loses nothing. Without the session, 401.
+         */
+        get: operations["getAppUpdate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/update/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check for a new version now.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-updates.md UB1.7). «Проверить сейчас»: the shell asks its constant addresses in their order — the site, then the releases of the repository of the app — and takes a version only with the signature of a key of the app and only when it is later than the running one. 409 desktop.update_state while a check, a download or an installation goes on, and for a build updated by hand. The strict Origin of the window, the CSRF token and its session; ten a minute. The page asks the backend, the backend asks the shell only by the version the shell itself reported: no address, key or file goes from the page or the backend to the shell.
+         */
+        post: operations["checkAppUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/update/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install the later version found: download, check, wait for the turns, restart.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-updates.md UB1.7). «Обновить и перезапустить» (UB2.1): the shell downloads the file and checks its signature; then the update waits for the turns of the chat in work — new turns are taken meanwhile; the step that finds none closes the taking of new turns (a new turn is then 409 desktop.updating) and asks the shell to install: the window goes to the page of the start, the backend stops, and the shell installs once everything of the installation stopped. Any failure before the program changed brings the backend back on the same data. From an available version or after a download, a check or an installation that failed; otherwise 409 desktop.update_state. The strict Origin of the window, the CSRF token and its session; ten a minute. The page asks the backend, the backend asks the shell only by the version the shell itself reported: no address, key or file goes from the page or the backend to the shell.
+         */
+        post: operations["installAppUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/update/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop the download or the wait for the turns.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-updates.md UB1.7). The download or the wait for the turns stops, the version stays available and new turns are taken. An installation the backend already asked for is not canceled: 409 desktop.update_state. The strict Origin of the window, the CSRF token and its session; ten a minute. The page asks the backend, the backend asks the shell only by the version the shell itself reported: no address, key or file goes from the page or the backend to the shell.
+         */
+        post: operations["cancelAppUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/update/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turn the daily check for a new version on or off.
+         * @description Mounted only by the desktop build (specs/2026-11-13-desk-updates.md UB1.7). settings.json keeps the choice with «Добро пожаловать»: on, the app asks for a new version half a minute after its start and then once a day from the last check, once «Добро пожаловать» is answered; off, it makes no request at all. The strict Origin of the window, the CSRF token and its session; thirty a minute.
+         */
+        put: operations["updateAppUpdateSettings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3922,7 +4674,7 @@ export interface paths {
         put?: never;
         /**
          * Create one Chat turn and its canonical Job.
-         * @description The response is the shared Job start envelope. The Job subject contains the server-owned turn id; no second public lifecycle is created. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created.
+         * @description The response is the shared Job start envelope. The Job subject contains the server-owned turn id; no second public lifecycle is created. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created. A build whose helper is not connected — the app before the author connects his own AI (specs/2026-11-13-desk-gateway.md GW4.4) — answers 409 helper.not_connected: no turn starts and nothing is spent; the site never answers it. While the app installs an update (specs/2026-11-13-desk-updates.md UB2.1) a new turn is 409 desktop.updating: nothing starts, the question stays with the author; the site never answers it.
          */
         post: operations["createChatTurn"];
         delete?: never;
@@ -3962,7 +4714,7 @@ export interface paths {
         put?: never;
         /**
          * Create one Chat turn whose question carries a chapter of the author.
-         * @description specs/2026-11-07-chat-attach-chapter.md CA2: the same turn as createChatTurn, with the author's new chapter attached — a .docx, .txt or .md up to 10 MiB, read by the extension of its name, or a pasted text up to 400 000 signs. The chapter is parsed and kept with the turn, numbered in its chat; the input of the turn carries only its header, the agent reads it with saga.attachment and the timeline shows it at the question. One question quota, as any question. 413 chat.attachment_too_large; 422 chat.attachment_format, chat.attachment_unreadable, chat.attachment_too_long, chat.attachment_empty; a refusal starts nothing. A replay of the same question and chapter under the Idempotency-Key answers the same Job, another chapter under it is 409. An actor whose email is not verified gets 403 auth.email_unverified.
+         * @description specs/2026-11-07-chat-attach-chapter.md CA2: the same turn as createChatTurn, with the author's new chapter attached — a .docx, .txt or .md up to 10 MiB, read by the extension of its name, or a pasted text up to 400 000 signs. The chapter is parsed and kept with the turn, numbered in its chat; the input of the turn carries only its header, the agent reads it with saga.attachment and the timeline shows it at the question. One question quota, as any question. 413 chat.attachment_too_large; 422 chat.attachment_format, chat.attachment_unreadable, chat.attachment_too_long, chat.attachment_empty; a refusal starts nothing. A replay of the same question and chapter under the Idempotency-Key answers the same Job, another chapter under it is 409. An actor whose email is not verified gets 403 auth.email_unverified. A build whose helper is not connected answers 409 helper.not_connected, as createChatTurn does. While the app installs an update (specs/2026-11-13-desk-updates.md UB2.1) a new turn is 409 desktop.updating: nothing starts, the question stays with the author; the site never answers it.
          */
         post: operations["createChatTurnWithChapter"];
         delete?: never;
@@ -3995,6 +4747,445 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SagaArchiveOpenRequest: {
+            /**
+             * Format: binary
+             * @description The file .cksaga, up to 1 GiB.
+             */
+            file: string;
+        };
+        /** @description What the saga had and the file did not carry. */
+        SagaArchiveLeftOut: {
+            drafts: number;
+            drawings: number;
+            trashedBooks: number;
+            trashedChapters: number;
+            othersTurns: number;
+        };
+        SagaArchiveReport: {
+            books: number;
+            chapters: number;
+            cards: number;
+            chaptersWithoutCards: {
+                count: number;
+                /** @description Up to 20 places of chapters the file brought no card for. */
+                places: string[];
+            };
+            /** @description The registry of names is the one of the cards taken: building the memory calls no model for it. */
+            namesFresh: boolean;
+            /** @description The layer of threads came with the file. */
+            threads: boolean;
+            materials: number;
+            memory: number;
+            notes: number;
+            chats: number;
+            /** @description Chats of the saga whose threads could not be read when the file was saved. */
+            chatsNotRead: string[];
+            /** @description Titles of books whose cover was not taken. */
+            coversSkipped: string[];
+            leftOut: components["schemas"]["SagaArchiveLeftOut"];
+            /** @description Records of workshops this build does not read; the file opens again in a build that does. */
+            sections: string[];
+        };
+        SagaArchiveOpened: {
+            /** Format: uuid */
+            projectId: string;
+            name: string;
+            /** @description The author had a live saga of this name: the new one is «<name> — из файла от <date>». */
+            renamed: boolean;
+            report: components["schemas"]["SagaArchiveReport"];
+        };
+        SagaTranscriptSummary: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastTurnAt: string;
+            /** @description Turns of other members the file did not carry. */
+            othersTurns: number;
+            turns: number;
+        };
+        /**
+         * @description Why a chosen folder is not the vault of the saga (OB1.3): inside a folder «Стереть все данные» erases, a root of a volume or the home folder (the shell says them), not found, not a folder, does not read.
+         * @enum {string}
+         */
+        ObsidianChoiceReason: "data_dir" | "too_wide" | "not_found" | "not_folder" | "unreadable";
+        /** @description The link of a saga with its Obsidian vault (OB1.5). */
+        ObsidianVault: {
+            linked: boolean;
+            /** @description The absolute path of the vault: the one absolute path an operation gives. */
+            path?: string;
+            /** @description The name of the folder of the vault. */
+            name?: string;
+            /**
+             * @description Whether the vault opens now; unknown when it did not answer in 2 s.
+             * @enum {string}
+             */
+            availability?: "available" | "missing" | "unknown";
+            /** @description A choice of a folder for this saga waits for the shell. */
+            choosing: boolean;
+            refused?: components["schemas"]["ObsidianChoiceReason"];
+            /** @description A linked saga: the live books that hold a folder of the vault (specs/2026-11-14-desk-obsidian-books.md OK2.6). */
+            books?: components["schemas"]["ObsidianVaultBook"][];
+            /** @description A linked saga: the live books whose folder another book holds — to link anew or to take the link off. */
+            relink?: components["schemas"]["ObsidianVaultBook"][];
+        };
+        /** @description The number of a choice the shell holds (OB1.1). */
+        ObsidianVaultChoice: {
+            /** @description 32 random bytes, base64url without padding: the argument of pick_folder. */
+            request: string;
+        };
+        /**
+         * @description Why an entry of a vault or a note is not read (OB0.2, OB3).
+         * @enum {string}
+         */
+        ObsidianSkipReason: "link" | "hidden" | "cloud_only" | "not_note" | "encoding" | "too_big" | "empty" | "service" | "no_name" | "long_name" | "unreadable";
+        ObsidianSkipCount: {
+            reason: components["schemas"]["ObsidianSkipReason"];
+            count: number;
+        };
+        /** @description Only a hint (OB2.2): the author chooses. */
+        ObsidianFolderHint: {
+            /** @enum {string} */
+            kind: "book" | "materials" | "skip";
+            material?: components["schemas"]["AuthorMaterialKind"];
+        };
+        /** @description The book of the saga a folder is linked to. */
+        ObsidianLinkedBook: {
+            /** Format: uuid */
+            bookId: string;
+            title: string;
+        };
+        ObsidianTreeFolder: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            name: string;
+            depth: number;
+            /** @description The notes in the folder itself. */
+            notes: number;
+            /** @description The notes in its folders. */
+            below: number;
+            skipped: components["schemas"]["ObsidianSkipCount"][];
+            hint?: components["schemas"]["ObsidianFolderHint"];
+            book?: components["schemas"]["ObsidianLinkedBook"];
+        };
+        /** @description The tree of a vault (OB2.1): only the folders with notes, the root first. */
+        ObsidianTree: {
+            folders: components["schemas"]["ObsidianTreeFolder"][];
+            /** @description The look stopped at 200 000 entries or 32 levels. */
+            truncated: boolean;
+            entries: number;
+            skipped: components["schemas"]["ObsidianSkipCount"][];
+        };
+        /** @description The choice of a vault (OB4.1): every path relative to the vault. */
+        ObsidianPreviewRequest: {
+            /** @description Folders, each one book. */
+            books?: string[];
+            materials?: components["schemas"]["ObsidianMaterialFolder"][];
+            /** @description Folders and notes left out. */
+            exclude?: string[];
+        };
+        ObsidianMaterialFolder: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            kind?: components["schemas"]["AuthorMaterialKind"];
+        };
+        ObsidianBookWarning: {
+            /** @enum {string} */
+            code: "chapters_differ" | "book_in_note" | "order_by_name" | "title_cut";
+            /** @description The notes it names, no more than five. */
+            notes: string[];
+        };
+        ObsidianBookNote: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            title: string;
+            /**
+             * @description Where its place comes from: order or chapter of its header, the index note, its name.
+             * @enum {string}
+             */
+            orderBy: "front" | "index" | "name";
+            /** @description The chapters it is to give. */
+            chapters: string[];
+            /** @description A book in one note: its headings are its chapters. */
+            inNote: boolean;
+        };
+        ObsidianBookChapter: {
+            title: string;
+            characters: number;
+        };
+        /** @description What did not go into the text, by its kind. */
+        ObsidianDropped: {
+            footnotes: number;
+            embeds: number;
+            comments: number;
+            unpairedComments: number;
+            pluginBlocks: number;
+            tables: number;
+            frontKeys: number;
+        };
+        ObsidianFolderState: {
+            /**
+             * @description new; linked — a book holds the folder; queued — its volume is in work of the queue queueId (specs/2026-11-14-desk-obsidian-books.md OK0.3).
+             * @enum {string}
+             */
+            kind: "new" | "linked" | "queued";
+            /** Format: uuid */
+            bookId?: string;
+            title?: string;
+            /** @description «Обновить из файла» of the linked book by the text of the folder would change it: the plan of the update against the chapters of the book now (OK0.4), not a remembered load. */
+            changed: boolean;
+            /** @description The book lies in «Недавно удалённые». */
+            inTrash: boolean;
+            /**
+             * Format: uuid
+             * @description queued: the queue the volume of the folder is in.
+             */
+            queueId?: string;
+        };
+        ObsidianBookPreview: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            title: string;
+            notes: components["schemas"]["ObsidianBookNote"][];
+            chapters: components["schemas"]["ObsidianBookChapter"][];
+            characters: number;
+            /** @description The code the import queue refuses the book with; none when it takes it. */
+            refusal?: string;
+            warnings: components["schemas"]["ObsidianBookWarning"][];
+            dropped: components["schemas"]["ObsidianDropped"];
+            skipped: components["schemas"]["ObsidianSkipCount"][];
+            state: components["schemas"]["ObsidianFolderState"];
+            /** @description SHA-256, hex. */
+            fingerprint: string;
+        };
+        ObsidianRecordPreview: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            name: string;
+            kind: components["schemas"]["AuthorMaterialKind"];
+            /** @enum {string} */
+            state: "new" | "in_book" | "in_book_by_alias" | "same_note" | "edited_in_app" | "other_source";
+            /** @description same_note: the note changed since it was loaded. */
+            changed: boolean;
+            /** @description in_book, in_book_by_alias: the name the book has. */
+            bookName?: string;
+            aliases: string[];
+            properties: number;
+            warnings: ("list_note" | "several_sections")[];
+            /** @description Values and the description cut to the limits of a record. */
+            cut: number;
+            /** @description Keys too long and properties over the limit, left out. */
+            left: number;
+            /** @description What the author sees of the state — the state, the record a write goes to and its revision —: a load names it back, and a record whose state is not the one its preview saw is kept (specs/2026-11-15-desk-obsidian-notes.md ON1.3). */
+            seen: string;
+            /** @description other_source: a decision to replace gives the record that keeps the name what the note says; false when another note of the load gets the name — no decision replaces it (ON1.4). */
+            replaceable: boolean;
+            /** @description other_source: the path of the note of the load that has the name — gets it, or keeps it by its record (a swap with a record edited in the app names each the other) —; absent when a record no note of the load owns keeps the name (specs/2026-11-15-desk-obsidian-notes.md ON1.2). */
+            heldBy?: string;
+        };
+        ObsidianMaterialsPreview: {
+            records: components["schemas"]["ObsidianRecordPreview"][];
+            skipped: components["schemas"]["ObsidianSkipCount"][];
+            /** @description Each folder of materials of the choice with the fingerprint of its records (specs/2026-11-15-desk-obsidian-notes.md ON1.1). */
+            folders: components["schemas"]["ObsidianMaterialsFolderPrint"][];
+        };
+        /** @description A load of the records of notes (specs/2026-11-15-desk-obsidian-notes.md ON1.1, ON1.4): the choice of the preview — its folders of books only say which notes are no materials —, the fingerprint of the records of each folder of materials, what the author saw of the record of each note and his decisions: by a note, else one rule a state. */
+        ObsidianMaterialsLoadRequest: {
+            books?: string[];
+            materials: components["schemas"]["ObsidianMaterialsLoadFolder"][];
+            /** @description Folders and notes left out. */
+            exclude?: string[];
+            /** @description Every record of the preview with what the author saw of it: a load whose folders give a record not named here is request.validation, a record whose seen is not its state now is kept as changed since the preview (specs/2026-11-15-desk-obsidian-notes.md ON1.3). */
+            records?: components["schemas"]["ObsidianMaterialsLoadRecord"][];
+            /** @description The states whose records the load replaces by one rule; the decision of a record goes first. */
+            replace?: ("edited_in_app" | "other_source")[];
+        };
+        ObsidianMaterialsLoadFolder: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            kind?: components["schemas"]["AuthorMaterialKind"];
+            /** @description materials.folders[].fingerprint of the preview. */
+            fingerprint: string;
+        };
+        ObsidianMaterialsLoadRecord: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            path: string;
+            /** @description materials.records[].seen of the preview. */
+            seen: string;
+            /**
+             * @description edited_in_app, other_source: replace the record with what the note says, or keep it.
+             * @enum {string}
+             */
+            decision?: "replace" | "keep";
+        };
+        /** @description A group of the records of a load: how many, and the names of the first 50. */
+        ObsidianNoteGroup: {
+            count: number;
+            names: string[];
+        };
+        /** @description What a load of the records of notes did (ON1.8), by the states at the load: created; updated — the same note changed, or a record edited in the app replaced by a decision —; replaced — the record that kept the name of the note, replaced by a decision —; unchanged; kept — taken: a name another record keeps or another note of the load gets; edited: a record edited in the app; changed: a record whose state is not the one its preview saw —; the notes that gave no record, by their reasons. */
+        ObsidianMaterialsLoad: {
+            created: components["schemas"]["ObsidianNoteGroup"];
+            updated: components["schemas"]["ObsidianNoteGroup"];
+            replaced: components["schemas"]["ObsidianNoteGroup"];
+            unchanged: components["schemas"]["ObsidianNoteGroup"];
+            kept: {
+                taken: components["schemas"]["ObsidianNoteGroup"];
+                edited: components["schemas"]["ObsidianNoteGroup"];
+                changed: components["schemas"]["ObsidianNoteGroup"];
+            };
+            skipped: components["schemas"]["ObsidianSkipCount"][];
+        };
+        /** @description A folder of materials with the fingerprint of the records of its notes: a load of the records names it back (ON1.1). */
+        ObsidianMaterialsFolderPrint: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            /** @description SHA-256, hex. */
+            fingerprint: string;
+        };
+        /** @description What the page says of the reading (OB4.4). */
+        ObsidianReading: {
+            newChapters: number;
+            newCharacters: number;
+            /**
+             * @description Who reads the books for the app: nobody yet, «Свой ИИ», or the helper of the account of CanonKeeper.
+             * @enum {string}
+             */
+            helper: "none" | "own" | "account";
+            /** @description The author allowed the saga to be read. */
+            consent: boolean;
+        };
+        ObsidianPreview: {
+            books: components["schemas"]["ObsidianBookPreview"][];
+            materials: components["schemas"]["ObsidianMaterialsPreview"];
+            reading: components["schemas"]["ObsidianReading"];
+        };
+        /** @description The choice of a load (OK1.1): the folders of books with the fingerprints of their glue the preview gave, the folders of materials and what is left out, as the preview had them. */
+        ObsidianLoadRequest: {
+            books: components["schemas"]["ObsidianLoadBook"][];
+            materials?: components["schemas"]["ObsidianMaterialFolder"][];
+            /** @description Folders and notes left out. */
+            exclude?: string[];
+        };
+        ObsidianLoadBook: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            /** @description The fingerprint of the glue the preview gave. */
+            fingerprint: string;
+        };
+        /** @description A queue of the volumes of the saga and its status. */
+        ObsidianQueueRef: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "uploading" | "draft" | "running" | "succeeded" | "failed" | "canceled" | "expired";
+        };
+        /** @description What a load did with a folder of a book (OK1.2). */
+        ObsidianFolderOutcome: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            /** @enum {string} */
+            outcome: "queued" | "linked" | "in_trash" | "refused";
+            /**
+             * Format: uuid
+             * @description linked, in_trash: the book that holds the folder.
+             */
+            bookId?: string;
+            /** @description linked, in_trash: its title. */
+            title?: string;
+            /**
+             * Format: uuid
+             * @description queued: the queue its volume is in.
+             */
+            queueId?: string;
+            /** @description refused: the code of the queue. */
+            refusal?: string;
+        };
+        /** @description The answer of a load (OK1.2): the queue it started — null for none — and the outcome of each folder in the order of the request. */
+        ObsidianLoad: {
+            queue: components["schemas"]["ObsidianQueueRef"] | null;
+            folders: components["schemas"]["ObsidianFolderOutcome"][];
+        };
+        /** @description updateBookFromObsidian (OK2.1, OK2.2): a preview, or an application with the fingerprint of its preview and the word of the author that notes that did not read go. */
+        ObsidianBookUpdateRequest: {
+            /** @enum {string} */
+            mode: "preview" | "apply";
+            /** @description apply: the fingerprint of the glue its preview gave. */
+            expectedFingerprint?: string;
+            /** @description apply: the notes that did not read for a passing reason go, and their chapters with them. */
+            confirmUnread?: boolean;
+        };
+        /** @description The start of the import Job of an update as importBookFile gives it; a preview gives the fingerprint of the glue and the report of the folder beside it. */
+        ObsidianBookUpdate: {
+            jobId: string;
+            job: components["schemas"]["Job"];
+            links: {
+                job: string;
+            };
+            /** @description preview: the fingerprint an application names. */
+            fingerprint?: string;
+            book?: components["schemas"]["ObsidianBookPreview"];
+        };
+        ObsidianBookFolderRequest: {
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «» or «.» is the root. */
+            folder: string;
+        };
+        /** @description A book of the saga linked with a folder of the vault (OK2.6). */
+        ObsidianVaultBook: {
+            /** Format: uuid */
+            bookId: string;
+            title: string;
+            /** @description A path relative to the root of the vault, names joined by «/», in NFC; «.» is the root. */
+            folder: string;
+            /**
+             * Format: date-time
+             * @description The end of the last successful Job of its volume or of an update from the vault; null for none.
+             */
+            loadedAt: string | null;
+            /**
+             * @description Whether the folder is in the vault now, by the one check of the saga; unknown when it did not say.
+             * @enum {string}
+             */
+            presence: "present" | "missing" | "unknown";
+            /** @description The folders and notes under its folder its load left out, which the glue of its update leaves out too; empty for a book linked without a load (specs/2026-11-15-desk-obsidian-web.md OW2.5). */
+            excluded: string[];
+            /** @description The folders inside its folder its load chose otherwise — folders of records —, whose notes are no chapters of the book; empty for a book linked without a load. */
+            nested: string[];
+        };
+        SagaTranscriptList: {
+            data: components["schemas"]["SagaTranscriptSummary"][];
+        };
+        SagaTranscriptTurn: {
+            /** Format: date-time */
+            askedAt: string;
+            question: string;
+            answer?: string;
+            /** @enum {string} */
+            outcome: "answered" | "interrupted" | "failed" | "in_progress";
+            /** @description The title of the chapter attached to the question; its text is not in the file. */
+            attached?: string;
+        };
+        SagaTranscript: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastTurnAt: string;
+            /** @description Turns of other members the file did not carry. */
+            othersTurns: number;
+            turns: components["schemas"]["SagaTranscriptTurn"][];
+            /** @description The place of each chapter key the answers cite, as the saga reads it now. */
+            places: {
+                [key: string]: string;
+            };
+        };
         /** @description «Как с нами связаться» (specs/2026-11-07-contacts.md C2): null is a contact not given and not shown. */
         Contacts: {
             /** @description The link to the Telegram of support. */
@@ -5375,8 +6566,10 @@ export interface components {
             /** @description The place of its book on the shelf of the saga, «Книга N». */
             bookDisplayNumber: string;
             title: string;
-            /** @description Its place in its book when it was deleted. */
-            order: number;
+            /** @description The number its title writes; a deleted chapter has no place among the living chapters, so a title without a number gives none (specs/2026-11-15-reader-chapter-number.md RN1.4). */
+            displayNumber: string;
+            /** @description The title without the number it writes. */
+            displayTitle: string;
             /** Format: date-time */
             deletedAt: string;
             /** Format: date-time */
@@ -5559,11 +6752,18 @@ export interface components {
             pass: string;
             account: components["schemas"]["AppAccount"];
         };
-        /** @description specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for. */
+        /** @description specs/2026-11-13-desk-link.md LK2.2, LK3.4: the account a pass works for; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter and the characters the helper of the apps read in 30 days; specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for the app and the work of its reading of 30 days. */
         AppAccount: {
             /** @description The name of the author. */
             name: string;
             tier: components["schemas"]["AppTier"];
+            /** @description The address of the account hidden after its first letter, «a…@mail.ru», by the rule of the page /link. */
+            email: string;
+            /** @description «Прочитано помощником за 30 дней»: the characters the fence of the reading of the apps counts over 30 days and the characters of the account in force. */
+            reading: components["schemas"]["QuotaCounter"];
+            helper: components["schemas"]["AppHelper"];
+            /** @description specs/2026-11-13-desk-account-ai.md AI5.1: the work of the reading of the books and materials of the apps over 30 days — the tokens the fence of the reading counts — and its bound, the characters of the account times the tokens of a character. */
+            readingWork: components["schemas"]["QuotaCounter"];
         };
         /** @description The tier of the site in force for the account. */
         AppTier: {
@@ -5577,7 +6777,7 @@ export interface components {
              */
             until: string | null;
         };
-        /** @description specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt. */
+        /** @description specs/2026-11-13-desk-permits.md PM3.1: the limits of the model work of an app with their use, in the form of the same keys of AccountQuota. Daily counters are Moscow calendar days and reset at resetsAt. specs/2026-11-13-desk-account.md AC2.6: reading is not daily. */
         AppQuota: {
             /**
              * Format: date
@@ -5590,15 +6790,46 @@ export interface components {
              */
             resetsAt: string;
             chatTurns: components["schemas"]["QuotaCounter"];
-            activeTurns: components["schemas"]["QuotaCounter"];
+            activeTurns: components["schemas"]["AppActiveTurns"];
             imports: components["schemas"]["QuotaCounter"];
+            /** @description «Прочитано помощником за 30 дней»: the characters the fence of the reading of the apps counts over 30 days and the characters of the account in force. */
+            reading: components["schemas"]["QuotaCounter"];
+            /** @description specs/2026-11-13-desk-account-ai.md AI5.1: the work of the reading of the books and materials of the apps over 30 days — the tokens the fence of the reading counts — and its bound, the characters of the account times the tokens of a character. */
+            readingWork: components["schemas"]["QuotaCounter"];
         };
-        /** @description specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day. */
+        /** @description specs/2026-11-15-desk-turns-here.md TH1.1: «разом» of the account as getAccountQuota of the site counts it — the turns of the site and the live permits of turns of all the apps of the account — and the live permits of turns of the app whose pass asks, by the same predicate at the same moment; nothing of the other apps of the account. */
+        AppActiveTurns: {
+            used: number;
+            limit: number;
+            /** @description The live permits of turns of this app among used: never above the share of the apps in it. */
+            thisApp: number;
+        };
+        /** @description specs/2026-11-13-desk-link.md LK3.4, specs/2026-11-13-desk-permits.md PM3.1: the account a pass works for and the units of its day; specs/2026-11-13-desk-account.md AC2.6: the address of the account hidden after its first letter; specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for the app. */
         AppAccountState: {
             /** @description The name of the author. */
             name: string;
             tier: components["schemas"]["AppTier"];
             quota: components["schemas"]["AppQuota"];
+            /** @description The address of the account hidden after its first letter, «a…@mail.ru», by the rule of the page /link. */
+            email: string;
+            helper: components["schemas"]["AppHelper"];
+        };
+        /** @description specs/2026-11-13-desk-account-ai.md AI5.1: the helper of the site for a linked app — the values Codex of the site runs with, read as the site reads them; the app shows the names and runs its Codex with the window and its threshold of compaction. */
+        AppHelper: {
+            /** @description The name of the model of the chat, for the page. */
+            chatModel: string;
+            /** @description The name of the model of the reading of the books, for the page. */
+            cardsModel: string;
+            /**
+             * Format: int64
+             * @description The window of the context of the chat, tokens.
+             */
+            contextWindow: number;
+            /**
+             * Format: int64
+             * @description The threshold of compaction of the history of the chat, tokens.
+             */
+            compactLimit: number;
         };
         /** @description specs/2026-11-13-desk-permits.md PM1.1: the work the app asks a permit for and its ref. */
         AppPermitOpen: {
@@ -5644,15 +6875,92 @@ export interface components {
             /** @description An opaque value of the app naming the correction; the site keeps only its SHA-256. */
             ref: string;
         };
-        /** @description specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit. */
+        /** @description specs/2026-11-13-desk-proxy.md PX0.1: a return of a correction — whether its unit came back. */
+        AppPermitUnitReturn: {
+            /** @description false over the ceiling of returns of the day: the unit stays spent. */
+            returned: boolean;
+        };
+        /** @description A part of a request of the Responses API as Codex makes it: an item of the thread, a tool, a choice of a tool, the settings of the reasoning or of the text. Its kind is in type. */
+        AppResponsesItem: {
+            type?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description specs/2026-11-13-desk-proxy.md PX1.3: a request of a turn of Codex. instructions, input, tools, tool_choice, parallel_tool_calls, include, text and stream_options go as they are; model, stream, store and the effort of reasoning are the site's; prompt_cache_key is bound to the app; the other fields named here are removed. A built-in tool of the provider in tools or tool_choice, or an item of its call in input, is refused. */
+        AppResponsesRequest: {
+            /** @description Replaced by the model of the chat of the site. */
+            model?: string;
+            /** @description Always true. */
+            stream?: boolean;
+            /** @description Always false. */
+            store?: boolean;
+            instructions?: string;
+            /** @description The thread: a text, or the items of the Responses API. */
+            input?: string | components["schemas"]["AppResponsesItem"][];
+            /** @description Tools of the kinds function, custom and namespace only. */
+            tools?: components["schemas"]["AppResponsesItem"][];
+            /** @description auto, none, required, or a tool of the turn. */
+            tool_choice?: string | components["schemas"]["AppResponsesItem"];
+            parallel_tool_calls?: boolean;
+            reasoning?: components["schemas"]["AppResponsesItem"];
+            include?: string[];
+            text?: components["schemas"]["AppResponsesItem"];
+            stream_options?: components["schemas"]["AppResponsesItem"];
+            /** @description Bound to the app by the site. */
+            prompt_cache_key?: string;
+            /** @description Removed. */
+            previous_response_id?: string;
+            /** @description Removed. */
+            background?: boolean;
+            /** @description Removed. */
+            conversation?: unknown;
+            /** @description Removed. */
+            metadata?: unknown;
+            /** @description Removed. */
+            user?: string;
+            /** @description Removed. */
+            safety_identifier?: string;
+            /** @description Removed. */
+            prompt_cache_retention?: string;
+            /** @description Removed. */
+            prompt_cache_options?: unknown;
+            /** @description Removed: it names the installation of the app. */
+            client_metadata?: unknown;
+            /** @description Removed: the price of a request is the site's. */
+            service_tier?: string;
+            /** @description Removed. */
+            prompt?: unknown;
+            /** @description Removed. */
+            access_programs?: unknown;
+        };
+        /** @description specs/2026-11-13-desk-proxy.md PX2.4: the answer of a step. */
+        AppStepAnswer: {
+            /** @description The text of the model whole. */
+            text: string;
+            /** @description The model the site called. */
+            model: string;
+            usage: components["schemas"]["AppStepUsage"];
+        };
+        /** @description specs/2026-11-13-desk-proxy.md PX2.2: one call of the core: the words it gives the model — those of the core, never free words — and its input. */
+        AppStepCall: {
+            instruction: string;
+            input: string;
+        };
+        /** @description What a step spent: the answered attempts and their tokens. */
+        AppStepUsage: {
+            calls: number;
+            inputTokens: number;
+            cachedInputTokens: number;
+            outputTokens: number;
+            reasoningOutputTokens: number;
+        };
+        /** @description specs/2026-11-13-desk-permits.md PM1.5: a correction charged under a permit; a unit given back is charged again by the same ref. */
         AppPermitUnit: {
             /**
              * Format: date
              * @description The Moscow day the correction counts on.
              */
             day: string;
-            /** @description Always false: a unit given back is charged again by the same ref. */
-            returned: boolean;
         };
         /** @description specs/2026-11-13-desk-permits.md PM2.1: how the work under a permit ended, as the app names it; what the site saw under it is the site's alone. */
         AppPermitClose: {
@@ -5952,7 +7260,7 @@ export interface components {
          * @description One writer limit; the order of the card is the order of this list.
          * @enum {string}
          */
-        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "app_returns_per_day";
+        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "app_returns_per_day" | "app_tokens_per_question" | "app_reading_tokens_per_character";
         /** @description One limit in force with its use. */
         AdminQuotaLimit: {
             key: components["schemas"]["AdminQuotaKey"];
@@ -6024,6 +7332,8 @@ export interface components {
             draft_turns_per_day?: components["schemas"]["AdminQuotaValue"];
             draft_rewrites_per_day?: components["schemas"]["AdminQuotaValue"];
             app_returns_per_day?: components["schemas"]["AdminQuotaValue"];
+            app_tokens_per_question?: components["schemas"]["AdminQuotaValue"];
+            app_reading_tokens_per_character?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every changed limit with the writer's own value before and after; null is the default. */
         AdminQuotaChanges: {
@@ -6034,10 +7344,10 @@ export interface components {
             }[];
         };
         /**
-         * @description One general limit by default: a writer limit (AdminQuotaKey) a tier does not set. Every other key a tier sets and has no platform default (specs/2026-11-08-admin-redesign.md AR7.1; specs/2026-11-11-tier-limits.md TL2.2): image_uploads_per_day stays, it spends no model, and app_returns_per_day — the returns a Moscow day of an account takes on the word of a linked app alone (specs/2026-11-13-desk-permits.md PM2.4).
+         * @description One general limit by default: a writer limit (AdminQuotaKey) a tier does not set. Every other key a tier sets and has no platform default (specs/2026-11-08-admin-redesign.md AR7.1; specs/2026-11-11-tier-limits.md TL2.2): image_uploads_per_day stays, it spends no model, and app_returns_per_day — the returns a Moscow day of an account takes on the word of a linked app alone (specs/2026-11-13-desk-permits.md PM2.4), and the two fences of the work of linked apps on the models of the site — the tokens of a question of a day and the tokens of the reading of books by a character of the tier (specs/2026-11-13-desk-proxy.md PX3.2, PX3.3).
          * @enum {string}
          */
-        AdminQuotaDefaultKey: "image_uploads_per_day" | "app_returns_per_day";
+        AdminQuotaDefaultKey: "image_uploads_per_day" | "app_returns_per_day" | "app_tokens_per_question" | "app_reading_tokens_per_character";
         /** @description One limit by default. */
         AdminQuotaDefault: {
             key: components["schemas"]["AdminQuotaDefaultKey"];
@@ -6061,6 +7371,8 @@ export interface components {
         SetAdminQuotaDefaultsRequest: {
             image_uploads_per_day?: components["schemas"]["AdminQuotaValue"];
             app_returns_per_day?: components["schemas"]["AdminQuotaValue"];
+            app_tokens_per_question?: components["schemas"]["AdminQuotaValue"];
+            app_reading_tokens_per_character?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every limit by default whose value changed, with the platform's value before and after; null is the original value of the code. */
         AdminQuotaDefaultChanges: {
@@ -6205,7 +7517,7 @@ export interface components {
              */
             resetsAt: string;
             chatTurns: components["schemas"]["QuotaCounter"];
-            activeTurns: components["schemas"]["QuotaCounter"];
+            activeTurns: components["schemas"]["ActiveTurnsQuota"];
             imports: components["schemas"]["QuotaCounter"];
             images: components["schemas"]["QuotaCounter"];
             /** @description The author's own images uploaded today against image_uploads_per_day (refusal 429 quota.image_uploads_daily). */
@@ -6221,6 +7533,18 @@ export interface components {
             projects: components["schemas"]["QuotaCounter"];
             account: components["schemas"]["QuotaSources"];
             ownedProjects: components["schemas"]["ProjectQuota"][];
+        };
+        /** @description «Разом»: the questions being answered at once and their limit. specs/2026-11-15-desk-turns-here.md TH2.1: places — who holds them — only the desktop app with the helper of the account tells, from what its site said; the site never sends it. */
+        ActiveTurnsQuota: {
+            used: number;
+            limit: number;
+            places?: components["schemas"]["ActiveTurnPlaces"];
+        };
+        /** @description specs/2026-11-15-desk-turns-here.md TH2.1: who holds the places of «разом», counted by the server — the page subtracts nothing. answering: the turns of the account this app still answers, of any saga; held: the places the site still counts for questions of this app already over here (they free themselves within minutes); elsewhere: the site and the other apps of the account. */
+        ActiveTurnPlaces: {
+            answering: number;
+            held: number;
+            elsewhere: number;
         };
         /** @description Use of one limit. */
         QuotaCounter: {
@@ -6392,6 +7716,51 @@ export interface components {
              * @description author_materials.name_taken of createAuthorMaterial and updateAuthorMaterial (specs/2026-11-10-ux8-memory-records.md MR2.3): the record of the materials that has the name.
              */
             materialId?: string;
+            /** @description ai.account_unreachable (503) of the start of a turn, a correction or an upload of materials of the desktop app with the helper «Аккаунт CanonKeeper» (specs/2026-11-13-desk-account-ai.md AI2.1): the site of the account did not answer twice and the work did not start; true — the site may have counted the unit before its answer was lost and gives it back itself once the lease of the permit ends, at most five minutes. The other refusals of the counter of the account: helper.not_connected (409, the link broke), ai.daily_fence (429 with Retry-After until the Moscow midnight), ai.app_unfit and app.request_too_large (409). */
+            mayReturn?: boolean;
+            /**
+             * @description obsidian.vault_missing: why the vault of the saga does not open (specs/2026-11-13-desk-obsidian.md OB1.5).
+             * @enum {string}
+             */
+            vaultReason?: "not_found" | "not_folder" | "unreadable";
+            /** @description obsidian.too_large: the notes of the chosen folders (OB4.1). */
+            notes?: number;
+            /** @description obsidian.too_large: the bytes of the chosen notes. */
+            bytes?: number;
+            /** @description obsidian.too_large: the notes a preview reads at most. */
+            limitNotes?: number;
+            /** @description obsidian.too_large: the bytes a preview reads at most. */
+            limitBytes?: number;
+            /** @description obsidian.too_large: the files and folders of every kind the walk of the chosen folders counted when it stopped past limitEntries; notes and bytes are then what it counted until it stopped. */
+            entries?: number;
+            /** @description obsidian.too_large: the files and folders a walk of a preview goes through at most (the limit of the look). */
+            limitEntries?: number;
+            /** @description obsidian.folders_overlap: the folder that holds and the folder it holds; obsidian.folder_changed: the folders whose glue is not the one of the request; obsidian.folder_missing, obsidian.folder_linked: the folder. */
+            folders?: string[];
+            /** @description obsidian.queue_busy: the live queue of the volumes of the saga (specs/2026-11-14-desk-obsidian-books.md). */
+            queue?: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "uploading" | "draft" | "running";
+            };
+            /** @description obsidian.notes_unread: the notes of the folder that did not read now, by their passing reasons. */
+            unread?: {
+                /** @enum {string} */
+                reason: "cloud_only" | "unreadable";
+                count: number;
+            }[];
+            /**
+             * Format: uuid
+             * @description obsidian.folder_linked: the book that holds the folder.
+             */
+            bookId?: string;
+            /** @description obsidian.too_large of the records of notes: the records of the preview or of the load (specs/2026-11-15-desk-obsidian-notes.md ON1.7). */
+            records?: number;
+            /** @description obsidian.too_large of the records of notes: the records of the saga after the new ones. */
+            sagaRecords?: number;
+            /** @description obsidian.too_large of the records of notes: the records of a load and of a saga at most. */
+            limitRecords?: number;
         };
         /** @description Bounded content-free support aggregates for one authorized project. The response intentionally omits project identifiers, content, prompts, paths and timestamps. */
         ProjectSupportSnapshot: {
@@ -6471,6 +7840,56 @@ export interface components {
             /** @description The one-time code the shell put into the fragment of the address of the window. */
             code: string;
         };
+        /** @description The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3.1). */
+        ProgramAccess: {
+            /** @description The programs may read the sagas: the choice of the author, off by default. */
+            enabled: boolean;
+            /** @description The author let the programs read once: the erasing of the data names what stays in their settings. */
+            ever: boolean;
+            /** @description The door of the app listens on its local socket. */
+            open: boolean;
+            /** @description The reading is on and the door did not open. */
+            failed: boolean;
+            /**
+             * @description The system: the commands and the way of Claude Desktop follow it.
+             * @enum {string}
+             */
+            system: "windows" | "linux";
+            /** @description The commands of the program of the bridge of this installation; null when the shell named none. */
+            commands: components["schemas"]["ProgramCommands"] | null;
+            /** @description The file of the extension of Claude Desktop the operation getClaudeDesktopExtension saves (CanonKeeper-<version>.mcpb); null where there is none — not Windows, or no program of the bridge. */
+            extensionFile: string | null;
+            /** @description The programs that turned to the door since the start of the app, the newest first. */
+            programs: components["schemas"]["ProgramSeen"][];
+            /** @description The last reading of the journal; null when the journal has none. */
+            lastRead: components["schemas"]["ProgramLastRead"] | null;
+        };
+        ProgramAccessUpdate: {
+            /** @description Let the programs of the author read the sagas. */
+            enabled: boolean;
+        };
+        /** @description The commands for Claude Code and Codex — for bash on Linux, for PowerShell on Windows — and, on Linux, the entry of the file of the settings of Claude Desktop and the whole file (MC3.2, MC3.3). */
+        ProgramCommands: {
+            claudeAdd: string;
+            claudeRemove: string;
+            codexAdd: string;
+            codexRemove: string;
+            desktopEntry: string | null;
+            desktopFile: string | null;
+        };
+        /** @description A program that turned to the door: the name it gave itself, when, whether its bridge has the set of the door and whether it is the copy in the extension of Claude Desktop. */
+        ProgramSeen: {
+            name: string;
+            /** Format: date-time */
+            at: string;
+            matches: boolean;
+            extension: boolean;
+        };
+        ProgramLastRead: {
+            name: string;
+            /** Format: date-time */
+            at: string;
+        };
         DesktopState: {
             /** @description The version of the app the build names; null for a build that does not. */
             version: string | null;
@@ -6496,6 +7915,657 @@ export interface components {
                 /** @description What the app goes there for, in the words of the author. */
                 purpose: string;
             }[];
+            /** @description «Добро пожаловать» is still to be shown: the author has not closed it on this computer (specs/2026-11-13-desk-upgrade.md UG5.1). */
+            welcome: boolean;
+            /** @description The app checks for a new version once a day: the choice of the author in «Добро пожаловать»; true until the author chose. */
+            checkUpdates: boolean;
+            /** @description The programs of the author may read the sagas through the bridge (specs/2026-11-15-desk-mcp.md MC3.5): «О программе» says it apart from the addresses of the network. */
+            programsRead: boolean;
+            /** @description The host of the proxy the environment names, without a name and a password, while an address of the list goes through it — the server of the link or the provider of «Свой ИИ», by the rule of the proxy of the environment: the proxy of the scheme of the address, never for this computer, not for a host NO_PROXY names (specs/2026-11-14-desk-journal.md JR4.3); null otherwise. */
+            proxy: string | null;
+        };
+        /** @description specs/2026-11-13-desk-account-ai.md AI1.1: what the site told of its helper for the app — the author sets none of it. */
+        AiAccountHelper: {
+            /** @description The name of the model of the chat, for the page. */
+            chatModel: string;
+            /** @description The name of the model of the reading of the books, for the page. */
+            cardsModel: string;
+            /** @description The window of the context of the chat, tokens. */
+            contextWindow: number;
+            /** @description The threshold of compaction of the history of the chat, tokens. */
+            compactLimit: number;
+        };
+        /** @description What the window reads of «Свой ИИ» (specs/2026-11-13-desk-secrets.md SE2.4; specs/2026-11-13-desk-gateway.md GW2.3; specs/2026-11-13-desk-probes.md PB2.5); the key is never in it. */
+        AiSettingsState: {
+            settings: components["schemas"]["AiSettings"];
+            /** @description The backend holds the key the shell kept. */
+            keySaved: boolean;
+            /**
+             * @description Where the shell keeps the secrets of the app: the store of the system, or — without one — a file of the data directory readable by the author alone.
+             * @enum {string}
+             */
+            secretsStore: "system" | "file";
+            /** @description A new window of the chat waits for the answer of the turn that runs: the helper of the chat starts again with it once the turn ends (GW2.3). The models and the effort hold from the next request at once. */
+            appliesAfterAnswer: boolean;
+            /** @description The last «Проверить связь» kept in settings.json with its verdicts now and whether it is stale; null before the first. */
+            check: components["schemas"]["AiCheckReport"] | null;
+            /** @description specs/2026-11-13-desk-account-ai.md AI1.1, AI1.3: the helper of the account as the site told it last, for the page; Codex of the app runs with its window and threshold while the source is the account. None until the site told it. */
+            account: components["schemas"]["AiAccountHelper"] | null;
+            /** @description The sagas of the author read under a consent that acts with a stop sum in money of the currency the prices are in now (specs/2026-11-13-desk-consent-web.md RW3.1): a change of the currency or the removal of the prices pauses their reading until a sum is named again; the window asks before it. Counted by the service of the consent. */
+            moneyStopSagas: number;
+        };
+        /**
+         * @description Why the provider or the model failed the author (specs/2026-11-13-desk-probes.md PB2.4): the provider did not answer, refused the key, has no model of the name, asks to wait; the model does not call tools, sees only the start of a long text, cuts a long answer; anything else. A verdict adds what the settings lack: small_window — the window of the chat is under 64 000 tokens (under 128 000 the chat works with poorer answers on long sagas), small_limit — the limit of an answer is under 16 000 tokens. A check that ran out of its three minutes says slow — the provider answers slower than the check may last — of the probe the term stopped and of those after it. The page says the words and the advice; no text of the provider is ever here.
+         * @enum {string}
+         */
+        AiReason: "unreachable" | "key_refused" | "no_model" | "no_tools" | "start_only" | "cut_answer" | "rate_limited" | "other" | "small_window" | "small_limit" | "slow";
+        /** @description What the provider of «Свой ИИ» said of its models (specs/2026-11-13-desk-probes.md PB1.1); kept nowhere. */
+        AiModels: {
+            /**
+             * @description listed — the names are in models; unlisted — the provider gives no list, the author writes the name; failed — reason says why.
+             * @enum {string}
+             */
+            outcome: "listed" | "unlisted" | "failed";
+            /** @description The names of the models, each once, by the alphabet; empty unless listed. */
+            models: string[];
+            /** @description Why the provider could not be asked; null unless failed. */
+            reason: components["schemas"]["AiReason"] | null;
+        };
+        /** @description One probe of a check (specs/2026-11-13-desk-probes.md PB2.3): what was asked of which model and how it went — no text. */
+        AiProbe: {
+            /**
+             * @description short — a short answer: the connection, the key, the stream; tool — the call of a function by its schema; long_input — a long text read whole; long_output — a long answer of 4 000 tokens of text without a cut at its limit, read that far and closed; calibrate — the input tokens of Russian text.
+             * @enum {string}
+             */
+            probe: "short" | "tool" | "long_input" | "long_output" | "calibrate";
+            /**
+             * @description The role whose model was asked; one model in both roles is asked once.
+             * @enum {string}
+             */
+            role: "chat" | "books";
+            /** @description The model of the provider that was asked. */
+            model: string;
+            passed: boolean;
+            /** @description Why it did not pass; null when it did. */
+            reason: components["schemas"]["AiReason"] | null;
+        };
+        /** @description How a role fits (specs/2026-11-13-desk-probes.md PB2.4). */
+        AiVerdict: {
+            /**
+             * @description fit; thin — only the chat: it works, its answers are poorer on long sagas (a window under 128 000); unfit.
+             * @enum {string}
+             */
+            fit: "fit" | "thin" | "unfit";
+            /** @description Why it does not fit fully; null when it does. */
+            reason: components["schemas"]["AiReason"] | null;
+        };
+        /** @description The report of a check (specs/2026-11-13-desk-probes.md PB2.4, PB2.5) with what it says now: the chat fits when its short answer, its call of a tool and its long text passed and its window is at least 64 000 (thin under 128 000); the reading of the books fits when its short answer, its long text and its long answer passed and the limit of an answer is at least 16 000. The verdicts read the window and the limit as they are now; a probe the check did not reach fails for the reason that stopped it. */
+        AiCheckReport: {
+            at: components["schemas"]["DateTime"];
+            /** @description The model of the chat the check checked. */
+            chatModel: string;
+            /** @description The model of the reading of the books the check checked. */
+            cardsModel: string;
+            probes: components["schemas"]["AiProbe"][];
+            /** @description The input tokens the provider counts for 1 000 characters of Russian text, to a tenth; null when the provider reported no usage. */
+            calibration: number | null;
+            chat: components["schemas"]["AiVerdict"];
+            books: components["schemas"]["AiVerdict"];
+            /** @description The address, the protocol, the model of a role or the key changed after the check: «проверено до изменения». The helper is connected or not whatever the check says. */
+            stale: boolean;
+        };
+        /** @description The check of this run of the app (specs/2026-11-13-desk-probes.md PB2.1). */
+        AiCheck: {
+            /**
+             * @description idle — none since the app started; running; done — with its report; canceled — stopped by the author; timed_out — the three minutes ran out: its report says slow of the probe the term stopped and of those after it, the rest as they went, and is kept. A canceled check keeps no report.
+             * @enum {string}
+             */
+            state: "idle" | "running" | "done" | "canceled" | "timed_out";
+            startedAt: components["schemas"]["DateTime"] | null;
+            /** @description The probe that runs; null when none does. */
+            current: {
+                /** @enum {string} */
+                probe: "short" | "tool" | "long_input" | "long_output" | "calibrate";
+                /** @enum {string} */
+                role: "chat" | "books";
+                model: string;
+            } | null;
+            /** @description The probes that went, in their order. */
+            probes: components["schemas"]["AiProbe"][];
+            /** @description The report once done; null before. */
+            report: components["schemas"]["AiCheckReport"] | null;
+        };
+        /** @description The settings of the AI of the app: the source and the one profile of «Свой ИИ», which stays when the source goes back to none. */
+        AiSettings: {
+            /**
+             * @description The helper the author chose: none yet, «Свой ИИ», or the helper «Аккаунт CanonKeeper» of the account the app is linked with (specs/2026-11-13-desk-account-ai.md AI1.1).
+             * @enum {string}
+             */
+            source: "none" | "own" | "account";
+            own: components["schemas"]["OwnAi"] | null;
+        };
+        OwnAi: {
+            /**
+             * @description The ready variant; custom is «Другой, совместимый с OpenAI».
+             * @enum {string}
+             */
+            preset: "deepseek" | "openai" | "ollama" | "custom";
+            /** @description The address of the provider: the variant's, or the author's for custom — http or https, no name or password. */
+            baseUrl: string;
+            /**
+             * @description How the provider is spoken to: the variant's, or the author's choice for custom (auto finds it out).
+             * @enum {string}
+             */
+            protocol: "responses" | "chat" | "auto";
+            /** @description The model of the chat; empty — not chosen. */
+            chatModel: string;
+            /** @description The model that reads the books; empty — not chosen. */
+            cardsModel: string;
+            advanced: components["schemas"]["OwnAiAdvanced"];
+        };
+        /**
+         * @description What a sum of the reading is counted in (specs/2026-11-13-desk-consent.md CN1.2): the ISO 4217 code of the currency of the prices — the amounts are integer millionths of it — or tokens, in and out, when no prices are named. Rounding and signs are the page's.
+         * @enum {string}
+         */
+        ReadingUnit: "RUB" | "USD" | "CNY" | "EUR" | "tokens";
+        ReadingTokensAmount: {
+            inputTokens: number;
+            outputTokens: number;
+            /** @description Millionths of the currency; null without prices. */
+            amount: number | null;
+        };
+        /** @description What reading the rest of the saga by «Свой ИИ» will take (specs/2026-11-13-desk-consent.md CN1.3). */
+        ReadingEstimate: {
+            /** @description Chapters of the published text without a card for their current text. */
+            chapters: number;
+            inputTokens: number;
+            outputTokens: number;
+            seconds: number;
+            /** @description Millionths of the currency of the prices; null without both prices. */
+            amount: number | null;
+            unit: components["schemas"]["ReadingUnit"];
+            /** @description The share of the thread layer in the tokens of the estimate; the layer is counted by its structure and the measurement, coarser than the chapters. */
+            layerShare: number;
+            /** @description The host of the provider the text of the books goes to. */
+            host: string;
+            /** @description The model works on this computer (Ollama or an address on the loopback): the text of the books does not leave it. */
+            local: boolean;
+            /**
+             * @description rough by the formula; sample once a sample of this provider and model measured the tokens of a character and the output of a chapter.
+             * @enum {string}
+             */
+            kind: "rough" | "sample";
+            assumptions: ("calibration_checked" | "calibration_fallback" | "calibration_sample" | "reasoning" | "no_reasoning" | "names_by_cards" | "layer_by_structure" | "repeats_margin")[];
+            /** @description The stop the window offers, in the unit: above the estimate, rounded up. */
+            suggestedStop: number;
+            /** @description The chapters a sample would read: those without a card, three at most; 0 — no sample. */
+            sampleChapters: number;
+            chapterEdit: components["schemas"]["ReadingTokensAmount"];
+            /** @description Every chapter is read and the register of names waits for the model. */
+            namesWait: boolean;
+            /** @description Every chapter is read and the thread layer waits for the model. */
+            threadsWait: boolean;
+            account?: components["schemas"]["ReadingAccountEstimate"];
+        };
+        /** @description The estimate of the reading by the helper «Аккаунт CanonKeeper» (specs/2026-11-13-desk-account-ai.md AI3.4) instead of money — then amount is null, unit tokens, sampleChapters and suggestedStop 0, host the host of the site: the characters the reading of the chapters without a card takes — the characters of the inputs of their card steps, which the site counts: exact for new chapters, at most for chapters the site read before —, the work of the reading in tokens by the formula, both limits of the tier for 30 days as the site told them last, and which ends the reading first. Absent for «Свой ИИ». */
+        ReadingAccountEstimate: {
+            characters: number;
+            /** @description Tokens of the reading by the formula: in and out. */
+            work: number;
+            /** @description null — the site has not told the limits of the tier yet (a start without a connection). */
+            charactersLimit: components["schemas"]["ReadingLimit"] | null;
+            /** @description null — the site has not told the limits of the tier yet. */
+            workLimit: components["schemas"]["ReadingLimit"] | null;
+            /**
+             * @description The limit that ends the reading first — the one whose part of the reading it lets through is the smaller; null — both let it through, or the limits are not told (charactersLimit null).
+             * @enum {string|null}
+             */
+            endsFirst: "characters" | "work" | null;
+        };
+        /**
+         * @description Who reads the books of the saga (specs/2026-11-13-desk-account-ai.md, the table «Страницам B2»): own — «Свой ИИ», account — the helper «Аккаунт CanonKeeper»; the source of the consent that acts, or of the settings while none does; null without a helper. The page tells the reading of the account from «Свой ИИ» by it alone.
+         * @enum {string|null}
+         */
+        ReadingSource: "own" | "account" | null;
+        /** @description A limit of the tier of the account for the reading over 30 days (specs/2026-11-13-desk-account-ai.md AI3.4, AI3.7): used and the limit. */
+        ReadingLimit: {
+            used: number;
+            limit: number;
+        };
+        /**
+         * @description Why the reading stands (specs/2026-11-13-desk-consent.md CN3.4): the author asked; the next request would have gone over the sum; the provider refused for want of money, refused the key, has no such model; the provider could not be reached after the repeats of a request; no_answer — the provider did not answer a request through its repeats: a 5xx, a wait it asked for, a stream torn mid-answer (specs/2026-11-15-desk-reading-no-answer.md NA1.2; the author goes on); the currency or the prices changed under a sum in money. The helper «Аккаунт CanonKeeper» (specs/2026-11-13-desk-account-ai.md AI3.5, AI3.6) — by the code of the site: characters — the characters of the tier for 30 days are not enough (goes on by itself once the site tells room, checked at most once an hour and at the start); reading_fence — the work of the reading of the tier for 30 days is over (the same); unfit — the site does not take this version of the app (goes on only after the restart of a new version); unavailable — the reading of the site is unavailable (checked at most once in ten minutes and at the start); connection — no connection with the site (the same); author — the author asked. sum, funds, key, model and prices are «Свой ИИ» alone.
+         * @enum {string}
+         */
+        ReadingPause: "author" | "sum" | "funds" | "key" | "model" | "connection" | "no_answer" | "prices" | "characters" | "reading_fence" | "unfit" | "unavailable";
+        ReadingSpent: {
+            inputTokens: number;
+            cachedInputTokens: number;
+            outputTokens: number;
+            /** @description What was spent in the unit: millionths of the currency, or tokens in and out. */
+            amount: number;
+            /** @description Some requests are counted by an estimate: the provider sent no usage. */
+            approximate: boolean;
+        };
+        /** @description The consent of the reading of the books of a saga (specs/2026-11-13-desk-consent.md CN3.1). */
+        ReadingConsent: {
+            /**
+             * @description none — no consent acts.
+             * @enum {string}
+             */
+            state: "none" | "allowed" | "paused";
+            source: components["schemas"]["ReadingSource"];
+            /**
+             * @description Why no consent acts: the saga has one for another provider.
+             * @enum {string|null}
+             */
+            reason: "provider_changed" | null;
+            /** @description The host of the provider the consent let the text of the books go to. */
+            host: string | null;
+            pause: components["schemas"]["ReadingPause"] | null;
+            unit: components["schemas"]["ReadingUnit"];
+            /** @description The sum the reading stops at, in the unit; null — no sum. */
+            stopAt: number | null;
+            /** @description The sum the author named last: X of «Продолжить ещё на X». */
+            step: number | null;
+            /**
+             * Format: date-time
+             * @description The start of the count.
+             */
+            since: string | null;
+            spent: components["schemas"]["ReadingSpent"];
+        };
+        ReadingConsentChange: {
+            /** @enum {string} */
+            state: "allowed" | "paused";
+            /** @description A new stop sum in the unit of the settings now; null — no sum; left out — the sum stays. */
+            stopAt?: number | null;
+            /** @description «Продолжить ещё на X»: the sum becomes what was spent and X. */
+            continueBy?: number;
+            /** @description Read again the chapters that did not read. */
+            retryUnread?: boolean;
+        };
+        /**
+         * @description Why the names or the threads did not come together (specs/2026-11-15-desk-reading-rest.md RR1.1): cut_answer — the answer of the helper broke off; unreadable — it could not be read; refused — the request was not taken; no_answer — nobody answered; null — they came together or still wait.
+         * @enum {string|null}
+         */
+        ReadingUnreadReason: "cut_answer" | "unreadable" | "refused" | "no_answer" | null;
+        /** @description The state of the reading of the books of a saga by «Свой ИИ» (specs/2026-11-13-desk-consent.md CN3.8): the page says each word of it and counts nothing itself. */
+        IndexingReading: {
+            /**
+             * @description waiting_consent — no consent acts; reading — it goes; paused — it stands, pause says why; done — read but for the chapters that did not read.
+             * @enum {string}
+             */
+            state: "waiting_consent" | "reading" | "paused" | "done";
+            source: components["schemas"]["ReadingSource"];
+            /**
+             * @description Why no consent acts: the saga has one for another provider.
+             * @enum {string|null}
+             */
+            reason: "provider_changed" | null;
+            pause: components["schemas"]["ReadingPause"] | null;
+            chaptersRead: number;
+            chaptersTotal: number;
+            /** @description The chapters are read and the names of the heroes wait for the model; marked names do not wait (specs/2026-11-15-desk-reading-rest.md RR2.1). */
+            namesWait: boolean;
+            /** @description The chapters are read and the threads of the plot wait for the model; a marked build does not wait. */
+            threadsWait: boolean;
+            /** @description The chapters that did not read after the paid answers of the model; «Повторить» is setReadingConsent with retryUnread. */
+            unread: {
+                chapters: number;
+                /**
+                 * @description cut_answer — the answer of the helper broke off at its limit; unreadable — it could not be read; refused — the provider did not take the request, longer than the window of the model or too large (specs/2026-11-15-desk-reading-no-answer.md NA2.2).
+                 * @enum {string}
+                 */
+                reason: "cut_answer" | "unreadable" | "refused";
+            } | null;
+            /** @description Why the names of the heroes and why the threads of the plot did not come together once the chapters are read (specs/2026-11-15-desk-reading-rest.md RR2.1); null while chapters are left to read or nothing is marked. «Повторить» is setReadingConsent with retryUnread. */
+            unreadRest: {
+                names: components["schemas"]["ReadingUnreadReason"];
+                threads: components["schemas"]["ReadingUnreadReason"];
+            } | null;
+            /** @description What was spent since the start of the consent, in the unit. */
+            spent: number;
+            /** @description Some requests are counted by an estimate. */
+            approximate: boolean;
+            /** @description The sum the reading stops at, in the unit; null — no sum. */
+            stopAt: number | null;
+            /** @description X of «Продолжить ещё на X»: the sum the author named last. */
+            step: number | null;
+            unit: components["schemas"]["ReadingUnit"];
+            /** @description While it goes: the time the chapters left take by the pace since the last continuation, or by the estimate. */
+            remainingSeconds: number | null;
+            /** @description The reading goes to the helper «Аккаунт CanonKeeper» and the site told its tier (specs/2026-11-13-desk-account-ai.md AI3.7): the characters of the inputs of the card steps and the work of the reading in tokens over 30 days, used and the limit. Absent otherwise; the unit is then tokens and stopAt null. */
+            limits?: {
+                characters: components["schemas"]["ReadingLimit"];
+                work: components["schemas"]["ReadingLimit"];
+            };
+        };
+        /** @description The sample of three chapters (specs/2026-11-13-desk-consent.md CN2.4). */
+        ReadingSample: {
+            /** @enum {string} */
+            state: "none" | "queued" | "running" | "succeeded" | "canceled" | "failed";
+            /**
+             * @description Why a failed sample did not read.
+             * @enum {string|null}
+             */
+            failure: "funds" | "key" | "model" | "connection" | "paused" | "helper" | "other" | null;
+            /** @description Chapters of the sample that have their card. */
+            done: number;
+            total: number;
+            chapters: {
+                chapterId: components["schemas"]["Id"];
+                /** @description The chapter in words: «Книга 1, гл. 1 „…“». */
+                place: string;
+                summary: string;
+                events: string[];
+                people: string[];
+            }[];
+            /** @description The time of the requests of the sample, without the idle time between its runs. */
+            seconds: number;
+            spent: {
+                inputTokens: number;
+                outputTokens: number;
+                /** @description Millionths of the currency of the settings; null without prices. */
+                amount: number | null;
+                unit: components["schemas"]["ReadingUnit"];
+                approximate: boolean;
+            };
+        };
+        /** @description «Дополнительно» of «Свой ИИ». */
+        OwnAiAdvanced: {
+            /** @description The context window of the models, tokens; 128 000 by default. */
+            contextWindow: number;
+            /** @description The longest answer, tokens; 16 000 by default. */
+            maxOutput: number;
+            /**
+             * @description How much the models reason; medium by default.
+             * @enum {string}
+             */
+            reasoning: "none" | "low" | "medium" | "high";
+            /** @description Requests to the provider at a time; 4 by default. */
+            parallel: number;
+            /** @description The price of a million tokens in, in the currency of the prices, when the author named it; up to four digits after the point. */
+            priceInPerMillion: number | null;
+            /** @description The price of a million tokens out, in the currency of the prices, when the author named it; up to four digits after the point. */
+            priceOutPerMillion: number | null;
+            /**
+             * @description The currency of the prices (specs/2026-11-13-desk-consent.md CN1.1), the dollar by default.
+             * @enum {string}
+             */
+            currency?: "RUB" | "USD" | "CNY" | "EUR";
+            /** @description The price of a million cached tokens in, when the author named it; without it the cache goes at the price in. */
+            priceCachedInPerMillion?: number | null;
+        };
+        /** @description The settings of «Свой ИИ» to keep whole; a field left out takes what the variant or the defaults give. */
+        AiSettingsChange: {
+            /**
+             * @description The helper to choose; the helper of the account is chosen only by a linked app whose site answered with its helper (specs/2026-11-13-desk-account-ai.md AI1.1).
+             * @enum {string}
+             */
+            source: "none" | "own" | "account";
+            /** @description Required with the source own. */
+            own?: components["schemas"]["OwnAiChange"] | null;
+        };
+        OwnAiChange: {
+            /**
+             * @description The ready variant; custom is «Другой, совместимый с OpenAI».
+             * @enum {string}
+             */
+            preset: "deepseek" | "openai" | "ollama" | "custom";
+            /** @description The address of the provider: the variant's, or the author's for custom — http or https, no name or password. */
+            baseUrl?: string;
+            /**
+             * @description How the provider is spoken to: the variant's, or the author's choice for custom (auto finds it out).
+             * @enum {string}
+             */
+            protocol?: "responses" | "chat" | "auto";
+            /** @description The model of the chat; empty — not chosen. */
+            chatModel?: string;
+            /** @description The model that reads the books; empty — not chosen. */
+            cardsModel?: string;
+            advanced?: components["schemas"]["OwnAiAdvancedChange"];
+        };
+        /** @description «Дополнительно»; a field left out takes its default, but the currency and the price of the cache left out stay as they were. */
+        OwnAiAdvancedChange: {
+            /** @description The context window of the models, tokens; 128 000 by default. */
+            contextWindow?: number;
+            /** @description The longest answer, tokens; 16 000 by default. */
+            maxOutput?: number;
+            /**
+             * @description How much the models reason; medium by default.
+             * @enum {string}
+             */
+            reasoning?: "none" | "low" | "medium" | "high";
+            /** @description Requests to the provider at a time; 4 by default. */
+            parallel?: number;
+            /** @description The price of a million tokens in, in the currency of the prices, when the author named it; up to four digits after the point. */
+            priceInPerMillion?: number | null;
+            /** @description The price of a million tokens out, in the currency of the prices, when the author named it; up to four digits after the point. */
+            priceOutPerMillion?: number | null;
+            /**
+             * @description The currency of the prices (specs/2026-11-13-desk-consent.md CN1.1); left out, the currency the settings had stays.
+             * @enum {string}
+             */
+            currency?: "RUB" | "USD" | "CNY" | "EUR";
+            /** @description The price of a million cached tokens in; left out, the price the settings had stays, null removes it. */
+            priceCachedInPerMillion?: number | null;
+        };
+        AiKey: {
+            /** @description The key of the provider: up to 1280 bytes of UTF-8 without spaces or control characters. */
+            key: string;
+        };
+        /** @description specs/2026-11-13-desk-account.md AC2.1: the link of the app with an account of the site as the window sees it. */
+        DesktopAccount: {
+            /**
+             * @description none — not linked; waiting — a link waits for the confirmation in the browser; linked — the app holds a pass; broken — the site refused the pass; failed — the last link did not go through.
+             * @enum {string}
+             */
+            state: "none" | "waiting" | "linked" | "broken" | "failed";
+            /** @description While a link waits: the page /link of the site to open, the same while it lives, and until when it waits. */
+            link: {
+                /**
+                 * Format: uri
+                 * @description The page /link of the site with the challenge, the state, the port of the window and the system; nothing of the author.
+                 */
+                address: string;
+                /** Format: date-time */
+                expiresAt: string;
+            } | null;
+            /**
+             * @description Why the last link failed: the site did not change the code for a pass, the store of the system did not keep it, or the waiting ended by its term of 10 minutes without a return (specs/2026-11-15-desk-account-link-web.md AW1.6). It stays until a new link starts; a waiting the author canceled leaves none.
+             * @enum {string|null}
+             */
+            failure: "exchange" | "keyring" | "expired" | null;
+            /** @description What the site told of the account in this run; null before it told anything — after a restart without a connection too. */
+            account: {
+                /** @description The name of the author. */
+                name: string;
+                /** @description The address of the account hidden after its first letter. */
+                email: string;
+                tier: components["schemas"]["AppTier"];
+                /** @description The questions of the Moscow day: used and the limit; null until the site told them. */
+                questions: components["schemas"]["QuotaCounter"] | null;
+                /** @description The characters the helper read for the account in 30 days: used and the limit. */
+                reading: components["schemas"]["QuotaCounter"];
+                /**
+                 * Format: date-time
+                 * @description When the site told it.
+                 */
+                at: string;
+            } | null;
+            /** @description The site did not answer at the last try; what it told before stays. */
+            unreachable: boolean;
+            /** @description The name of the computer the site sees. */
+            computer: string;
+            /**
+             * @description Where the shell keeps the pass: the store of the system or the file of the data directory.
+             * @enum {string}
+             */
+            passStore: "system" | "file";
+            /** @description The pages of the site of the build the window opens. */
+            pages: {
+                /** Format: uri */
+                tariffs: string;
+                /**
+                 * Format: uri
+                 * @description «Приложения на компьютере» of «Аккаунт».
+                 */
+                apps: string;
+            };
+        };
+        /** @description specs/2026-11-15-desk-account-link-web.md AW3.2: what the author starts a link for. */
+        DesktopAccountLinkStart: {
+            /** @description The link was started to choose the helper «Аккаунт CanonKeeper» — from the window «Подключить помощника» or the choice of «Настройки → Помощник»: a link made switches the helper to the account whatever helper was chosen. */
+            chooseHelper: boolean;
+        };
+        /** @description specs/2026-11-13-desk-account.md AC2.4: what unlinking reached. */
+        DesktopUnlinked: {
+            /** @description The site heard the unlinking; otherwise the app may stay in «Приложения на компьютере» of the site. */
+            siteUnlinked: boolean;
+            /** @description The record of the pass went from the computer; otherwise the next start removes it. The app stops using the pass in any case. */
+            passRemoved: boolean;
+        };
+        DesktopErase: {
+            /** @description The word the author wrote: «стереть», whatever its case and the spaces at its ends. */
+            confirm: string;
+        };
+        DesktopWelcome: {
+            /** @description Check for a new version once a day: the switch of «Добро пожаловать». */
+            checkUpdates: boolean;
+        };
+        /**
+         * @description The kind of a row of the journal: a question of the chat, the reading of the books, the parsing of the author's materials, a check of the connection, the readings of a program of the author through the bridge (specs/2026-11-15-desk-mcp.md MC4.4).
+         * @enum {string}
+         */
+        SendLogKind: "question" | "reading" | "materials" | "check" | "program";
+        SendLogRow: {
+            /** @description The key of the row: its work and its day. */
+            key: string;
+            kind: components["schemas"]["SendLogKind"];
+            /**
+             * Format: date-time
+             * @description The first sending of the row of its day.
+             */
+            startedAt: string;
+            /**
+             * Format: date-time
+             * @description The last sending of the row of its day.
+             */
+            lastAt: string;
+            /** @description The saga of the row; null for a check of the connection. */
+            saga: null | {
+                title: string;
+                /** @description The saga is in «Недавно удалённые». */
+                deleted: boolean;
+            };
+            /** @description The chat of a question; null for any other kind. */
+            chat: null | {
+                title: string | null;
+                /** @description The chat of the question was deleted. */
+                deleted: boolean;
+            };
+            /** @description What went in the words of the author, by the places of now. */
+            whatWent: string;
+            /** @description To whom the sendings of the row went, in the words of the author. */
+            recipients: string[];
+            /** @description The sum of the bodies of the sendings of the row. */
+            bytes: number;
+            sendings: number;
+            /** @description The work of the row still goes on. */
+            running: boolean;
+            /** @description A sending of the row gave the whole conversation of the chat to a helper for the first time. */
+            firstTime: boolean;
+            /** @description The numbers of the requests of «Свой ИИ» of the row; null without them. */
+            own: null | {
+                requests: number;
+                tokens: number;
+                /** @description Some request had no usage of the provider: the tokens are an estimate. */
+                estimated: boolean;
+                costs: {
+                    /** @enum {string} */
+                    currency: "RUB" | "USD" | "CNY" | "EUR";
+                    micros: number;
+                }[];
+            };
+        };
+        SendLogPage: {
+            rows: components["schemas"]["SendLogRow"][];
+            /** @description The cursor of the next page; null on the last. */
+            next: string | null;
+            /**
+             * Format: date-time
+             * @description When the author cleared the journal last; null before he did.
+             */
+            clearedAt: string | null;
+            /** @description How many sagas the journal names. */
+            sagas: number;
+        };
+        SendLogSending: {
+            /** Format: date-time */
+            at: string;
+            recipient: string;
+            bytes: number;
+            whatWent: string;
+            firstTime: boolean;
+            /** @description The words of the outcome of the sending; null for an answer. */
+            outcome: string | null;
+            /** @description The sending repeats the one before it. */
+            repeat: boolean;
+        };
+        SendLogSendings: {
+            sendings: components["schemas"]["SendLogSending"][];
+            next: string | null;
+        };
+        SendLogFile: {
+            fileName: string;
+            text: string;
+        };
+        SendLogCleared: {
+            /** Format: date-time */
+            clearedAt: string;
+        };
+        AppUpdate: {
+            /** @description The version of the running program; null for a build that does not name it. */
+            version: string | null;
+            /** @description The app checks for a new version once a day. */
+            daily: boolean;
+            /**
+             * @description How this copy of the app was installed; none — it is updated by hand and checks nothing.
+             * @enum {string}
+             */
+            kind: "nsis" | "deb" | "rpm" | "appimage" | "none";
+            /** @enum {string} */
+            phase: "idle" | "checking" | "downloading" | "waiting_turn" | "installing" | "download_failed" | "verify_failed" | "install_refused" | "install_failed";
+            /**
+             * @description What the last check found; only in the phase idle.
+             * @enum {string|null}
+             */
+            found: "never" | "latest" | "available" | "offline" | null;
+            /** @description The later version the shell proved by its signature, until a new check finds another. */
+            available: null | components["schemas"]["AppRelease"];
+            /** @description How much of the file is downloaded; only in the phase downloading. */
+            percent: number | null;
+            /**
+             * @description Why the system did not install the package; only in the phase install_refused.
+             * @enum {string|null}
+             */
+            refusal: "declined" | "unavailable" | null;
+            /** @description Where the package of Linux is kept for the author; in the phases install_refused and install_failed. */
+            package: string | null;
+            /**
+             * Format: date-time
+             * @description When the app last asked for a new version.
+             */
+            checkedAt: string | null;
+        };
+        AppRelease: {
+            version: string;
+            /** @description The notes of the release: plain text, at most 8 KiB. */
+            notes: string;
+        };
+        AppUpdateSettings: {
+            /** @description Check for a new version once a day. */
+            daily: boolean;
         };
         LoginRequest: {
             /** Format: email */
@@ -6835,12 +8905,16 @@ export interface components {
         ChapterNavigationItem: {
             id: components["schemas"]["Id"];
             title: string;
-            /** @description Stable chapter ordinal used for ordering and references. */
+            /** @description The number of the chapter as the reader shows it: the number its title writes, or else its place among the living chapters of its book, from one and without gaps (specs/2026-11-15-reader-chapter-number.md RN1.2). */
             displayNumber: string;
+            /** @description The title without the number it writes, as the reader shows it beside displayNumber; empty when the title is only its number (RN1.3). */
+            displayTitle: string;
         };
         ChapterNavigation: {
-            /** @description Visible chapter number/label used by clients for chapter navigation. */
+            /** @description The number of the chapter as the reader shows it: the number its title writes, or else its place among the living chapters of its book, from one and without gaps (specs/2026-11-15-reader-chapter-number.md RN1.2). */
             displayNumber: string;
+            /** @description The title without the number it writes, as the reader shows it beside displayNumber; empty when the title is only its number (RN1.3). */
+            displayTitle: string;
             /** @description One-based chapter position in the current book. */
             position: number;
             /** @description Total chapters in the current book. */
@@ -6891,8 +8965,10 @@ export interface components {
             bookId: components["schemas"]["Id"];
             title: string;
             order: number;
-            /** @description Stable chapter ordinal used for ordering and references. */
+            /** @description The number of the chapter as the reader shows it: the number its title writes, or else its place among the living chapters of its book, from one and without gaps (specs/2026-11-15-reader-chapter-number.md RN1.2). */
             displayNumber: string;
+            /** @description The title without the number it writes, as the reader shows it beside displayNumber; empty when the title is only its number (RN1.3). */
+            displayTitle: string;
             status: components["schemas"]["ChapterStatus"];
             wordCount: number;
             hasDraft: boolean;
@@ -8167,10 +10243,10 @@ export interface components {
         /** @enum {string} */
         AuthorMaterialKind: "skill" | "place" | "character" | "item" | "faction" | "other";
         /**
-         * @description What a record came from: a workbook, a document, a table of a .csv, a pasted text or a .txt/.md, or the page by hand (manual).
+         * @description What a record came from: a workbook, a document, a table of a .csv, a pasted text or a .txt/.md, the page by hand (manual), or a note of a vault of Obsidian loaded by the desktop app (obsidian, its sourceName the path of the note; specs/2026-11-15-desk-obsidian-notes.md ON2.1).
          * @enum {string}
          */
-        AuthorMaterialSourceKind: "xlsx" | "docx" | "csv" | "text" | "manual";
+        AuthorMaterialSourceKind: "xlsx" | "docx" | "csv" | "text" | "manual" | "obsidian";
         AuthorMaterialProperty: {
             key: string;
             value: string;
@@ -8575,6 +10651,8 @@ export interface components {
             preparation?: components["schemas"]["IndexingPreparation"];
             /** @description Present for seven days after the saga became ready, while its published text is ready (FS4.1); omitted otherwise. */
             sagaReady?: components["schemas"]["IndexingSagaReady"];
+            /** @description Only in the desktop build (specs/2026-11-13-desk-consent.md CN3.8): the state of the reading of the books by «Свой ИИ» while the saga has chapters to read, names or threads that wait for the model, or a pause; omitted otherwise and always on the site. */
+            reading?: components["schemas"]["IndexingReading"];
         };
         /** @description How far the reading of the saga is (specs/2026-11-10-ux3-saga-state.md SS1.1; specs/2026-11-09-first-session.md FS5): the chapters and books of the published text the helper has read, by the same counters the wave «Сага готова» closes on, with the estimate and the promise of the letter of an open wave. The page says what the server counts and never counts or estimates on its own. */
         IndexingPreparation: {
@@ -8597,10 +10675,10 @@ export interface components {
             /** @description The reading of each book with chapters, in the order of the saga. */
             books: components["schemas"]["IndexingPreparationBook"][];
             /**
-             * @description What the reading waits for (specs/2026-11-12-desk-window.md WN3.1): helper — the helper of the build is not connected, nobody reads the books, and the counts are of what was read before; remainingSeconds is null and letterPromised false. Absent while the helper reads: the site never sends it.
+             * @description What the reading waits for (specs/2026-11-12-desk-window.md WN3.1; specs/2026-11-13-desk-gateway.md GW4.3): helper — the helper of the build is not connected; consent — the helper is connected and the author has not allowed it to read the books of the saga yet, while the chat takes questions. Either way nobody reads the books, and the counts are of what was read before; remainingSeconds is null and letterPromised false. Absent while the helper reads: the site never sends it. paused (specs/2026-11-13-desk-consent.md CN3.8) — the consent of the author is given and the reading stands paused; its reason is in reading.pause.
              * @enum {string}
              */
-            waiting?: "helper";
+            waiting?: "helper" | "consent" | "paused";
         };
         /** @description How far one book of the saga is read (specs/2026-11-10-ux3-saga-state.md SS2.6). */
         IndexingPreparationBook: {
@@ -8796,11 +10874,16 @@ export interface components {
             phase: components["schemas"]["ResearchChatPhase"] | null;
             subject: components["schemas"]["JobSubject"];
             result: components["schemas"]["JobResult"] | null;
-            /** @description Failure of a failed job; null otherwise. A research_chat_turn that the model did not complete names the model failure class in code: model.usage_limit_exceeded (the model usage limit is exhausted), model.server_overloaded (the model is overloaded or temporarily unavailable, including its rate limit), model.http_connection_failed (the connection to the model failed or broke), model.context_window_exceeded (the chat no longer fits the model context), model.turn_interrupted (the turn was interrupted), model.turn_failed (any other or unclassified model failure). */
+            /** @description Failure of a failed job; null otherwise. A research_chat_turn that the model did not complete names the model failure class in code: model.usage_limit_exceeded (the model usage limit is exhausted), model.server_overloaded (the model is overloaded or temporarily unavailable, including its rate limit), model.http_connection_failed (the connection to the model failed or broke), model.context_window_exceeded (the chat no longer fits the model context), model.turn_interrupted (the turn was interrupted), model.session_ended (the session of the author that started the turn ended before it began: signing out everywhere, a change of the password, a block; in the desktop app, a restart — specs/2026-11-15-desk-interrupted-turn.md IT1.3), model.turn_failed (any other or unclassified model failure). A turn of the desktop app with the helper «Аккаунт CanonKeeper» (specs/2026-11-13-desk-account-ai.md AI2.3, AI2.5) names the refusal of the site of the account its last request got: model.daily_fence (the tokens of the day of the work of the app are over until the Moscow midnight), model.account_unlinked (the link with the account broke), model.permit_ended (the permit of the turn ended), model.site_unavailable (the site has no models now), model.app_unfit (the site does not take this version of the app), model.thread_too_large (the chat is too large for the site), model.site_unreachable (no connection with the site after the repeats); a turn whose permit went by unused while it waited ends with the refusal of the tier of the next one: quota.chat_turns_daily, quota.active_turns. A turn of the desktop app whose request was not sent ends with journal.unavailable (its record did not lie in the journal of what went out — specs/2026-11-14-desk-journal.md JR1.6). */
             error: components["schemas"]["Problem"] | null;
             canCancel: boolean;
             /** @description getJob of a waiting chat turn: the number of waiting questions the fair queue takes before it (a writer's k-th waiting question counts with the writer's questions in work plus k - 1). Null for any other Job, state or operation. */
             queuePosition?: number | null;
+            /**
+             * @description getJob of a chat turn of the desktop app (specs/2026-11-13-desk-account-ai.md AI2.9): whether the unit of its question came back. yes — the site of the account returned it and nothing can take it back (only then a page may say «this question is not counted»); no — it stays counted; pending — the close did not reach the site or a request of the turn was dropped mid-stream, so a late answer may still take it back; none — no site counted it («Свой ИИ», no helper). Absent on the site and for any other Job.
+             * @enum {string}
+             */
+            questionReturned?: "yes" | "no" | "pending" | "none";
             /** Format: date-time */
             expiresAt?: string | null;
             /** Format: date-time */
@@ -8845,7 +10928,10 @@ export interface components {
             projectTitle: string;
             bookTitle: string;
             chapterTitle: string;
+            /** @description The number of the chapter as the reader shows it (specs/2026-11-15-reader-chapter-number.md RN1.2). */
             chapterNumber: string;
+            /** @description The title without the number it writes, as the reader shows it; empty when the title is only its number (RN1.3). */
+            chapterDisplayTitle: string;
             locator: components["schemas"]["ChapterNavigationLocator"];
         };
         SearchChaptersResponse: {
@@ -9204,6 +11290,496 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getSagaArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file of the saga, named by its title in Content-Disposition (RFC 6266). */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    openSagaArchive: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Multipart request body with the file. */
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["SagaArchiveOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description The new saga and what the file brought. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaArchiveOpened"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description No place on the disk for the file (saga_archive.no_space). */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getObsidianVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link of the saga. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianVault"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    unlinkObsidianVault: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The saga is not linked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    beginObsidianVaultChoice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The shell holds the number of the choice. */
+            202: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianVaultChoice"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    scanObsidianVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tree of the vault. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianTree"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    previewObsidianImport: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description What the load would give. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    importObsidianBooks: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianLoadRequest"];
+            };
+        };
+        responses: {
+            /** @description The outcome of each folder and the queue the load started, if any. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianLoad"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    importObsidianMaterials: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianMaterialsLoadRequest"];
+            };
+        };
+        responses: {
+            /** @description What the load did with the records of the notes, by groups. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianMaterialsLoad"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    linkBookToObsidianFolder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Book identifier. */
+                bookId: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianBookFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description The book is linked with the folder. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    unlinkBookFromObsidianFolder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Book identifier. */
+                bookId: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The book is linked with no folder. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    updateBookFromObsidian: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description Book identifier. */
+                bookId: components["parameters"]["BookId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianBookUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The import Job of the update accepted. */
+            202: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    Location?: string;
+                    /** @description Seconds before retrying this operation. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianBookUpdate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listSagaTranscripts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The chats from files, newest first. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaTranscriptList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSagaTranscript: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+                transcriptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The chat from a file. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaTranscript"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getContacts: {
         parameters: {
             query?: never;
@@ -10930,13 +13506,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The unit is given back. */
-            204: {
+            /** @description Whether the unit came back. */
+            200: {
                 headers: {
                     "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AppPermitUnitReturn"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
@@ -10974,6 +13552,128 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    streamAppResponses: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A live permit of a turn of this app from openModelPermit. */
+                "X-CanonKeeper-Permit": string;
+                /** @description gzip when the body is compressed. */
+                "Content-Encoding"?: "gzip" | "identity";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppResponsesRequest"];
+            };
+        };
+        responses: {
+            /** @description The events of the provider as they come. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The tokens of the turns of the Moscow day of the account reached their bound: a code Codex does not repeat; the permit stays live. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description The provider failed the request. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The provider is out of reach or refused the key of the site. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    runAppStep: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A live permit of this app of the kind of the step from openModelPermit. */
+                "X-CanonKeeper-Permit": string;
+                /** @description gzip when the body is compressed. */
+                "Content-Encoding"?: "gzip" | "identity";
+            };
+            path: {
+                /** @description The step of the core. */
+                step: "card" | "card_pass" | "names" | "layer_book" | "layer_reduce" | "layer_verify" | "layer_gap" | "scan" | "materials";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppStepCall"];
+            };
+        };
+        responses: {
+            /** @description The text of the model whole. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppStepAnswer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The tokens of the reading of the account or of the turns of its day reached their bound. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description The provider kept failing or is out of reach. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     listLinkedApps: {
@@ -13199,6 +15899,86 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    getProgramAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reading by the programs of the author. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramAccess"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    updateProgramAccess: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgramAccessUpdate"];
+            };
+        };
+        responses: {
+            /** @description The reading after the door opened or closed. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgramAccess"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getClaudeDesktopExtension: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file CanonKeeper-<version>.mcpb, named in Content-Disposition (RFC 6266). */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getDesktopState: {
         parameters: {
             query?: never;
@@ -13219,6 +15999,849 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings of «Свой ИИ», whether the key is kept and where the shell keeps the secrets; never the key. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSettingsState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    updateAiSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSettingsChange"];
+            };
+        };
+        responses: {
+            /** @description The settings of «Свой ИИ», whether the key is kept and where the shell keeps the secrets; never the key. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSettingsState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    setAiKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiKey"];
+            };
+        };
+        responses: {
+            /** @description The shell kept the key; the backend holds it in memory. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteAiKey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The shell removed the key. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listAiModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The models of the provider, that it gives none, or the reason it could not be asked. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModels"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAiCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Where the check of this run is. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCheck"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    startAiCheck: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The check started; it runs on its own. */
+            202: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCheck"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    cancelAiCheck: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No check runs. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    eraseDesktopData: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopErase"];
+            };
+        };
+        responses: {
+            /** @description The shell got the request: it stops the backend, erases the data and ends the app. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getReadingEstimate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The estimate. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingEstimate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getReadingConsent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The consent. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingConsent"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    setReadingConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingConsentChange"];
+            };
+        };
+        responses: {
+            /** @description The consent as it is kept. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingConsent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getReadingSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sample. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingSample"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    startReadingSample: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sample, queued or as it is. */
+            202: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingSample"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    cancelReadingSample: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No sample of the saga reads. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAccount: {
+        parameters: {
+            query?: {
+                /** @description true asks the site now. */
+                fresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The state of the link. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    unlinkAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What unlinking reached. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopUnlinked"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    startAccountLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DesktopAccountLinkStart"];
+            };
+        };
+        responses: {
+            /** @description The link waits; the window opens its address in the browser. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopAccount"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    cancelAccountLink: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No link waits. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    dismissWelcome: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopWelcome"];
+            };
+        };
+        responses: {
+            /** @description «Добро пожаловать» is closed; the choice is kept. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listSendLog: {
+        parameters: {
+            query: {
+                /** @description The IANA name of the zone of time of the computer of the author (Intl): the days of the rows are its days; a zone the database of the app does not know — the days go by UTC. */
+                zone: string;
+                /** @description Only the rows of this kind; none — all. */
+                kind?: components["schemas"]["SendLogKind"];
+                /** @description The cursor of the next page the previous page gave. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the rows of the journal. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendLogPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    clearSendLog: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The journal is cleared. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendLogCleared"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listSendLogSendings: {
+        parameters: {
+            query: {
+                /** @description The key of the row listSendLog gave. */
+                row: string;
+                /** @description The IANA name of the zone of time of the computer of the author (Intl): the days of the rows are its days; a zone the database of the app does not know — the days go by UTC. */
+                zone: string;
+                /** @description The cursor of the next page the previous page gave. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the sendings of the row. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendLogSendings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSendLogFile: {
+        parameters: {
+            query: {
+                /** @description The IANA name of the zone of time of the computer of the author (Intl): the days of the rows are its days; a zone the database of the app does not know — the days go by UTC. */
+                zone: string;
+                /** @description Only the rows of this kind; none — all. */
+                kind?: components["schemas"]["SendLogKind"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The text of the journal and the name of its file. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendLogFile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAppUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update of the app: the version of the program, the daily check, how the app was installed and the phase with what goes with it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppUpdate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    checkAppUpdate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update of the app: the version of the program, the daily check, how the app was installed and the phase with what goes with it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppUpdate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description The update is in another phase: a check while one goes on, an installation without a later version or while one goes on, a cancel of an installation the backend already asked for. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    installAppUpdate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update of the app: the version of the program, the daily check, how the app was installed and the phase with what goes with it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppUpdate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description The update is in another phase: a check while one goes on, an installation without a later version or while one goes on, a cancel of an installation the backend already asked for. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    cancelAppUpdate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The update of the app: the version of the program, the daily check, how the app was installed and the phase with what goes with it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppUpdate"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description The update is in another phase: a check while one goes on, an installation without a later version or while one goes on, a cancel of an installation the backend already asked for. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    updateAppUpdateSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppUpdateSettings"];
+            };
+        };
+        responses: {
+            /** @description The update of the app: the version of the program, the daily check, how the app was installed and the phase with what goes with it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppUpdate"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -15164,6 +18787,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getAuthorMaterialsImport: {
@@ -17207,6 +20831,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     steerChatTurn: {
@@ -17248,6 +20873,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createChatTurnWithChapter: {
@@ -17291,6 +20917,7 @@ export interface operations {
             413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["UnprocessableEntity"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getChatAttachment: {

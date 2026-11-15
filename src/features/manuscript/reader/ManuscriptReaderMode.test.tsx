@@ -292,6 +292,30 @@ describe('«Только текст»', () => {
   });
 });
 
+// specs/2026-11-15-reader-chapter-number.md RN1.3: the head of the chapter, the contents, the neighbours and the place of a
+// selection write the number and the title without it the server gives; the page reads no number from the title — a
+// chapter titled «12. Белый порт» is «Глава 12. Белый порт», not «Глава 12. 12. Белый порт».
+describe('the number of a chapter', () => {
+  it('is the number and the title of the server', async () => {
+    const titled = <T extends { id: string; title: string }>(item: T): T => (item.id === 'chapter-12' ? { ...item, title: '12. Белый порт' } : item);
+    renderReader(`${chapterQuery}&contents=chapters`, (api) => {
+      const { getChapter, listChapters } = api;
+      api.getChapter = async (...args: Parameters<typeof getChapter>) => titled(await getChapter(...args));
+      api.listChapters = (async (...args: Parameters<typeof listChapters>) => {
+        const page = await listChapters(...args);
+        return { ...page, data: page.data.map((item) => titled(item)) };
+      }) as typeof listChapters;
+    });
+    await heading();
+    const contents = await screen.findByRole('complementary', { name: 'Содержание' });
+    const current = await within(contents).findByRole('button', { current: 'page' });
+    expect(current.textContent).toMatch(/^12Белый порт/u);
+    expect(screen.queryByText(/12\. 12\.|^12\. Белый порт$/u)).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Предыдущая глава: глава 11' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Следующая глава: глава 13' }).length).toBeGreaterThan(0);
+  });
+});
+
 // specs/2026-11-10-ux7-reader.md RD1.7, RD1.8: «Содержание» and «⋯».
 describe('«Содержание» and «⋯»', () => {
   it('opens the panel with its tabs in the address and marks the chapter read', async () => {

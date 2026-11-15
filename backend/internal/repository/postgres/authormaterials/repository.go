@@ -291,11 +291,13 @@ func (repository *Repository) StartAuthorMaterialsImport(ctx context.Context, co
 				return err
 			}
 		}
-		if err := repository.quota.ReserveDailyInTx(ctx, tx, command.UserID, quota.KeyImportsPerDay, 1, command.At); err != nil {
-			return err
-		}
+		// The Job is named before the unit of the day: the counter of the site derives the ref of its permit from it
+		// (specs/2026-11-13-desk-account-ai.md AI3.8).
 		var jobID, importID string
 		if err := tx.QueryRow(ctx, `SELECT gen_random_uuid()::text, gen_random_uuid()::text`).Scan(&jobID, &importID); err != nil {
+			return err
+		}
+		if err := repository.quota.ReserveDailyInTx(ctx, tx, command.UserID, quota.KeyImportsPerDay, 1, command.At); err != nil {
 			return err
 		}
 		created, err := repository.jobs.CreateAuthorMaterialsImportJobInTx(ctx, tx, jobstore.AuthorMaterialsImportJobInput{
@@ -334,7 +336,11 @@ func (repository *Repository) StartAuthorMaterialsImport(ctx context.Context, co
 			return domain.ErrConflict
 		}
 		started = *found
-		return nil
+		// AI3.8: the counter of the site of the build opens the upload as the last step of the transaction, after every local
+		// write and check.
+		return repository.quota.OpenWorkInTx(ctx, tx, quota.Work{
+			Kind: quota.WorkMaterials, JobID: jobID, UserID: command.UserID, At: command.At,
+		})
 	})
 	return started, err
 }

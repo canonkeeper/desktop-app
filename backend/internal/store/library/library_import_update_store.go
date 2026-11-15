@@ -58,11 +58,17 @@ func lockImportedBookUpdate(
 	if err != nil {
 		return importedBookUpdate{}, err
 	}
+	return planImportedBookUpdate(update, chapters, input.Chapters)
+}
+
+// planImportedBookUpdate plans the update of a book of these chapters by the chapters of a file: the plan of the domain and
+// the rewrite of a chapter whose published text lags behind its draft. The update, its preview and UpdateChanges plan by it.
+func planImportedBookUpdate(update importedBookUpdate, chapters []importedBookChapter, fileChapters []library.FinalizeImportChapterInput) (importedBookUpdate, error) {
 	update.chapters = chapters
-	update.fileContents = make([][]importedParagraphContent, len(input.Chapters))
+	update.fileContents = make([][]importedParagraphContent, len(fileChapters))
 	book := make([]domainlibrary.BookChapterText, len(chapters))
-	file := make([]domainlibrary.BookChapterText, len(input.Chapters))
-	for index, chapter := range input.Chapters {
+	file := make([]domainlibrary.BookChapterText, len(fileChapters))
+	for index, chapter := range fileChapters {
 		if strings.TrimSpace(chapter.Title) == "" || len(chapter.Paragraphs) == 0 {
 			return importedBookUpdate{}, library.ErrValidation
 		}
@@ -95,7 +101,9 @@ func plainTexts(contents []importedParagraphContent) []string {
 // its revision and its card and takes the italic and bold of the file in its rows (specs/2026-11-08-italic-bold-in-text.md
 // TF3.3); one with other signs gets the next revision and keeps its card; one with other
 // words gets the next revision and a new card later; a new one is created, and a chapter the file no longer
-// has is deleted as by hand. The book keeps its id, place and title.
+// has is deleted as by hand. The book keeps its id, place and title. An update whose plan changes nothing — the same file
+// again — writes no snapshot and leaves the one of the update before (specs/2026-11-12-ux10-book-revert.md BR1.2): it has
+// nothing to give back, and «Вернуть» of the update before stays.
 func (s *Store) updateImportedBookInTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -109,6 +117,7 @@ func (s *Store) updateImportedBookInTx(
 		return importedBookWrite{}, err
 	}
 	bookGeneration, chapters, plan := update.bookGeneration, update.chapters, update.plan
+	changes := update.changes(input.Chapters)
 	write := importedBookWrite{bookID: bookID, counts: importedUpdateCounts(plan)}
 	jobID, err := storedb.ParseUUID(input.JobID)
 	if err != nil {
@@ -219,8 +228,10 @@ func (s *Store) updateImportedBookInTx(
 	if err := s.publishBookTextInTx(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, update.bookTitle); err != nil {
 		return importedBookWrite{}, err
 	}
-	if err := writeBookUpdateSnapshotInTx(ctx, tx, projectID, bookID, jobID, finalizedAt, snapshot); err != nil {
-		return importedBookWrite{}, err
+	if changes {
+		if err := writeBookUpdateSnapshotInTx(ctx, tx, projectID, bookID, jobID, finalizedAt, snapshot); err != nil {
+			return importedBookWrite{}, err
+		}
 	}
 	return write, s.hitImportFinalize("after_import_update_catalog_mutation")
 }
@@ -236,13 +247,9 @@ func restyleImportedChapter(ctx context.Context, tx pgx.Tx, chapter importedBook
 	restyled := false
 	for index, content := range contents {
 		stored := chapter.contents[index]
-		markdown := content.markdown
-		if content.plainText != stored.plainText {
-			runs, ok := textface.Onto(textface.FromMarkdown(content.markdown), stored.plainText)
-			if !ok {
-				return false, library.ErrConflict
-			}
-			markdown = textface.Markdown(runs)
+		markdown, ok := restyledMarkdown(stored, content)
+		if !ok {
+			return false, library.ErrConflict
 		}
 		if markdown == stored.markdown {
 			continue
@@ -253,6 +260,19 @@ func restyleImportedChapter(ctx context.Context, tx pgx.Tx, chapter importedBook
 		restyled = true
 	}
 	return restyled, nil
+}
+
+// restyledMarkdown is the italic and bold a row of a chapter takes from the file, on the spaces the book holds; not ok when
+// the faces of the file do not lie on the text of the book.
+func restyledMarkdown(stored, content importedParagraphContent) (string, bool) {
+	if content.plainText == stored.plainText {
+		return content.markdown, true
+	}
+	runs, ok := textface.Onto(textface.FromMarkdown(content.markdown), stored.plainText)
+	if !ok {
+		return "", false
+	}
+	return textface.Markdown(runs), true
 }
 
 // setParagraphMarkdown gives a row of a revision of a chapter, in both text versions, other italic and bold over the same
@@ -311,13 +331,17 @@ func carryChapterCard(ctx context.Context, tx pgx.Tx, projectID pgtype.UUID, bef
 
 // lockBookChapterRows locks the live chapters of a book in their order, without their text.
 func lockBookChapterRows(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID) ([]importedBookChapter, error) {
+	return bookChapterRows(ctx, tx, projectID, bookID, "FOR UPDATE")
+}
+
+// bookChapterRows reads the live chapters of a book in their order, without their text, under the lock it names ("" for none).
+func bookChapterRows(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, lock string) ([]importedBookChapter, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, title, "order", revision, COALESCE(published_revision, 0), lifecycle_generation
 		FROM chapters
 		WHERE project_id = $1 AND book_id = $2 AND deleted_at IS NULL
 		ORDER BY "order", id
-		FOR UPDATE
-	`, projectID, bookID)
+		`+lock, projectID, bookID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,6 +357,11 @@ func lockImportedBookChapters(ctx context.Context, tx pgx.Tx, projectID, bookID 
 	if err != nil {
 		return nil, err
 	}
+	return readBookChapterTexts(ctx, tx, projectID, bookID, chapters)
+}
+
+// readBookChapterTexts reads the text of the draft rows of the current revision of each chapter of a book.
+func readBookChapterTexts(ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, chapters []importedBookChapter) ([]importedBookChapter, error) {
 	byID := make(map[pgtype.UUID]*importedBookChapter, len(chapters))
 	for index := range chapters {
 		byID[chapters[index].id] = &chapters[index]

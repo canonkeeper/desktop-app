@@ -23,9 +23,6 @@ func (client *Client) cancelRoot(ctx context.Context, selector RootSelector) (st
 	if err != nil || rootThreadID == "" {
 		return rootThreadID, err
 	}
-	if err := client.clearGoal(ctx, rootThreadID); err != nil {
-		return "", err
-	}
 	stream, err := client.sdk.Notifications(ctx)
 	if err != nil {
 		return "", err
@@ -73,18 +70,6 @@ func (client *Client) cancelRoot(ctx context.Context, selector RootSelector) (st
 	}
 	client.dispatcher.detach(rootThreadID)
 	return rootThreadID, nil
-}
-
-func (client *Client) clearGoal(ctx context.Context, threadID string) error {
-	response, err := client.sdk.Threads.GetGoal(ctx, protocol.ThreadGoalGetParams{ThreadID: threadID})
-	if err != nil {
-		return err
-	}
-	if _, ok := response.Goal.Value(); !ok {
-		return nil
-	}
-	_, err = client.sdk.Threads.ClearGoal(ctx, protocol.ThreadGoalClearParams{ThreadID: threadID})
-	return err
 }
 
 func (client *Client) listTurnShells(ctx context.Context, threadID string) ([]protocol.Turn, error) {

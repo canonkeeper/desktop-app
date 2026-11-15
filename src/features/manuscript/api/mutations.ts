@@ -10,6 +10,7 @@ import {
   type CreateProjectInput,
   type ImportQueue,
   type ManuscriptApiClient,
+  type ProjectJob,
   type RestoredSource,
   type SearchScope,
   type SourceView,
@@ -196,6 +197,25 @@ export function useDeleteBookMutation(api: DeleteBookClient) {
 }
 
 /**
+ * The start of the Job of an update of a book, whatever gave its new text — a file or a folder of the app
+ * (specs/2026-11-15-desk-obsidian-book-web.md OU2.1): its Job is known at once, and every shelf the browser reads takes an update
+ * in work — the shell follows it to its end on any page (specs/2026-11-12-ux10-book-revert.md BR3.4), whatever saga its address
+ * names.
+ */
+export function bookUpdateStarted(queryClient: QueryClient, job: ProjectJob, { preview, projectId }: { preview: boolean; projectId: string }) {
+  queryClient.setQueryData(manuscriptQueryKeys.job(job.id), job);
+  return preview
+    ? queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.shelf({ projectId }), exact: true })
+    : queryClient.invalidateQueries({ queryKey: [...manuscriptQueryKeys.all, 'shelf'] });
+}
+
+/**
+ * An update from a file this browser started waits in the cache of the mutations under this key — its Job, not its file: the
+ * line of its result knows its source so (specs/2026-11-15-desk-obsidian-book-web.md OU3.2).
+ */
+export const fileUpdateKey = ['canonkeeper', 'book-update', 'file'] as const;
+
+/**
  * Rewrites an existing book from a new file of the same volume, or with `preview` only tells what that would change
  * (specs/2026-10-27-update-book-from-file.md, UC1, UC6).
  */
@@ -208,12 +228,11 @@ export function useUpdateBookFromFileMutation(api: ImportBookFileClient) {
       { idempotencyKey: createIdempotencyKey('importBookFile') },
     ),
     onSuccess: (response, input) => {
-      queryClient.setQueryData(manuscriptQueryKeys.job(response.job.id), response.job);
-      // Every shelf the browser reads takes the update in work: the shell follows it to its end on any page
-      // (specs/2026-11-12-ux10-book-revert.md BR3.4), whatever saga its address names.
-      return input.preview
-        ? queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.shelf({ projectId: input.projectId }), exact: true })
-        : queryClient.invalidateQueries({ queryKey: [...manuscriptQueryKeys.all, 'shelf'] });
+      if (!input.preview) {
+        void queryClient.getMutationCache().build(queryClient, { mutationKey: fileUpdateKey, gcTime: Infinity, mutationFn: async () => response })
+          .execute(undefined);
+      }
+      return bookUpdateStarted(queryClient, response.job, input);
     },
     onSettled: () => invalidateAccountQuota(queryClient),
   });

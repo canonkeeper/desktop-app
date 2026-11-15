@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../../api/mock';
 import { projectId } from '../../../api/mock/repository/fixtures';
 import type { AccountQuota } from '../../../entities/account-quota/api';
-import type { ImportQueue } from '../../../entities/manuscript/api';
+import type { ImportQueue, IndexingStatus } from '../../../entities/manuscript/api';
 import { manuscriptQueryKeys } from '../../../entities/manuscript/api';
 import { parseRoute } from '../../../shared/navigation/app-route';
 import { FakeWebSocket } from '../../../test/FakeWebSocket';
@@ -272,6 +272,62 @@ describe('the end of an upload', () => {
 
     await waitFor(() => expect(screen.getAllByRole('status').some((each) => /^Книга загружена: \d+ глав/u.test(each.textContent ?? ''))).toBe(true));
     expect(screen.queryByRole('region', { name: 'Загрузка книг' })).toBeNull();
+  });
+
+  /**
+   * specs/2026-11-13-desk-consent-web.md RW1.5: the end of an upload says the reading only by a status of the saga the page
+   * read after the end of the queue. The status the page holds is older — here it says the saga is read — and the toast waits
+   * for the status read again; the server answers that one by the state the test names.
+   */
+  async function endAfterStatus(after: (status: IndexingStatus) => IndexingStatus) {
+    let finished = false;
+    let ended = false;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { queryClient } = await renderShelf((client) => {
+      vi.spyOn(client, 'listImportQueues').mockImplementation(async () => ({ data: [queue(finished ? 'succeeded' : 'running')] }));
+      const read = client.getIndexingStatus.bind(client);
+      vi.spyOn(client, 'getIndexingStatus').mockImplementation(async (...input: Parameters<typeof client.getIndexingStatus>) => {
+        const status = await read(...input);
+        if (!ended) return { ...status, preparation: undefined, sagaReady: undefined };
+        await gate;
+        return after(status);
+      });
+    }, false);
+    await screen.findByRole('article', { name: 'Северный суд.fb2' });
+    ended = true;
+    finished = true;
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: manuscriptQueryKeys.importQueues(projectId), exact: true });
+    });
+    // The page knows the queue ended; its status is older than the end, and the toast is not said by it.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    expect(screen.queryAllByRole('status').some((each) => /^Книга загружена/u.test(each.textContent ?? ''))).toBe(false);
+    await act(async () => release());
+    const toast = await waitFor(() => screen.getAllByRole('status').find((each) => /^Книга загружена: \d+ глав/u.test(each.textContent ?? ''))!);
+    expect(screen.getAllByRole('status').filter((each) => /^Книга загружена/u.test(each.textContent ?? ''))).toHaveLength(1);
+    return toast;
+  }
+
+  const read: IndexingStatus['published'] = { exists: true, context: { state: 'ready', currentBook: null, retryableFailedBook: null } };
+  const counts = (status: IndexingStatus, waiting?: 'helper' | 'consent') => ({
+    ...status,
+    sagaReady: undefined,
+    preparation: {
+      remainingSeconds: null, letterPromised: false, chaptersRead: 0, chaptersTotal: 18, booksRead: 0, booksTotal: 1,
+      currentBookId: 'book-03', askable: true, books: [], ...(waiting ? { waiting } : {}),
+    },
+  }) as IndexingStatus;
+
+  it.each([
+    ['waits for the helper', (status: IndexingStatus) => counts(status, 'helper'), 'Помощник ещё не подключён. Читать книги и искать по ним можно уже сейчас'],
+    ['waits for the consent', (status: IndexingStatus) => counts(status, 'consent'), 'Помощник готов прочитать книги: 18 глав'],
+    ['is read', (status: IndexingStatus) => counts(status), 'Её уже можно читать и спрашивать. Карта саги будет через несколько минут'],
+    ['was read', (status: IndexingStatus) => ({ ...status, preparation: undefined, published: read, ...(status.draft ? { draft: read } : {}) }), 'Помощник прочитал её — можно спрашивать'],
+  ])('says the end by the status read after it, once: the saga %s', async (_state, after, words) => {
+    const toast = await endAfterStatus(after);
+    expect(toast.textContent).toContain(words);
+    if (!words.startsWith('Помощник прочитал')) expect(toast.textContent).not.toContain('Помощник прочитал');
   });
 
   // Found by the e2e: the queue of two volumes turned «succeeded» one read before the books of the shelf had its last

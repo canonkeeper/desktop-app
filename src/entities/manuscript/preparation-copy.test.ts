@@ -7,6 +7,7 @@ import {
   finishReadingWord,
   formatRemaining,
   mapReadingLine,
+  questionsWait,
   readyWords,
   remainingWords,
   shelfReadingLine,
@@ -168,5 +169,30 @@ describe('the reading that waits for the helper', () => {
       preparation: waiting,
     };
     expect(bookStateOf({ id: 'book-1', chapterCount: 48, status: 'ready' }, status)).toEqual({ kind: 'waiting', word: 'Ждёт чтения', finish: false });
+  });
+});
+
+// specs/2026-11-13-desk-gateway.md GW4.3: the helper is connected and the author has not allowed it to read the books yet
+// — one line, the first phrase of board 44·27, with the chapters the helper is to read and no button, time or letter; the
+// chat takes questions all the same. A reading of the site never says it.
+describe('the reading that waits for the consent of the author', () => {
+  const waiting = preparation({ chaptersRead: 12, chaptersTotal: 48, remainingSeconds: null, waiting: 'consent' });
+
+  it('is the first phrase of the board wherever the reading is said', () => {
+    const line = 'Помощник готов прочитать книги: 36 глав';
+    expect(waitingLine(waiting)).toBe(line);
+    expect(shelfReadingLine(waiting, {})).toBe(line);
+    expect(chatReadingLine(waiting)).toBe(line);
+    expect(mapReadingLine(waiting)).toBe(line);
+    expect(waitingLine({ ...waiting, chaptersRead: 0, chaptersTotal: 1 })).toBe('Помощник готов прочитать книги: 1 главу');
+    expect(waitingLine({ ...waiting, chaptersRead: 0, chaptersTotal: 3 })).toBe('Помощник готов прочитать книги: 3 главы');
+    expect(line).not.toMatch(/≈|почт|минут|ИИ|модел|лимит/u);
+  });
+
+  it('keeps the field of the chat open, unlike a helper not connected', () => {
+    expect(questionsWait(waiting)).toBe(false);
+    expect(questionsWait({ ...waiting, waiting: 'helper' })).toBe(true);
+    expect(questionsWait(preparation())).toBe(false);
+    expect(questionsWait(undefined)).toBe(false);
   });
 });

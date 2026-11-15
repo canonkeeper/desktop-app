@@ -37,7 +37,8 @@ export function ErrorBlock({ action, cause, children, className, code, kept = ke
       <CircleAlert aria-hidden="true" className={styles.errorIcon} size={16} />
       <div className={styles.errorBody}>
         <strong className={styles.errorTitle}>{title}</strong>
-        <p>{cause ? `${cause} ` : ''}{kept}</p>
+        {/* A turn of the chat of the app without a line of the count has no words under its title. */}
+        {cause || kept ? <p>{cause ? `${cause} ` : ''}{kept}</p> : null}
         {children}
         <div className={styles.errorActions}>
           {onRetry ? <Button loading={retrying} onClick={onRetry} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />Повторить</Button> : null}

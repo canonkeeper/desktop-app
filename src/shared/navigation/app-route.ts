@@ -192,7 +192,8 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   // The filters, the open note and the place the notes were opened from (specs/2026-11-11-ux7-notes.md NT2.1, NT3.2);
   // `projectId` of an older link names the saga they are opened in (notes-route.ts).
   notes: new Set(['source', 'projectId', 'bookId', 'sagas', 'note', 'returnTo']),
-  chat: new Set(['projectId', 'chatId', 'new', 'source', 'sourceMode', 'noteId', 'image', 'panel']),
+  // `fileChat` — a chat a saga file brought, open to read (specs/2026-11-13-desk-sagafile-web.md SW3.2).
+  chat: new Set(['projectId', 'chatId', 'new', 'source', 'sourceMode', 'noteId', 'image', 'panel', 'fileChat']),
   // «Разрешения на продвижение» and the page of a letter link (specs/2026-10-30-promo-permissions.md):
   // the value of a link lives in the URL fragment only.
   promo: new Set(),
@@ -206,8 +207,9 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   // The page /link of the site, opened by the app on the computer of the author (specs/2026-11-13-desk-link.md LK1.1): its
   // challenge, its state, the port of its return and its system.
   link: new Set(['challenge', 'state', 'port', 'platform']),
-  // «Настройки» of the desktop app: the open part (specs/2026-11-13-desk-settings.md ST1.2).
-  settings: new Set(['part']),
+  // «Настройки» of the desktop app: the open part (specs/2026-11-13-desk-settings.md ST1.2) and the kind of the rows of «Журнал»
+  // (specs/2026-11-14-desk-journal.md JR3.1).
+  settings: new Set(['part', 'kind']),
   // The saga map: the open node, the surroundings shown, the chapter of the scale, the hidden categories (saga map R6.2) and
   // «только новое» (specs/2026-11-11-ux8-map.md MP3.5).
   saga: new Set(['projectId', 'node', 'focus', 'to', 'hide', 'removed', 'only']),
@@ -249,6 +251,8 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
  */
 const allowedSearchKeysByPath: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['/manuscript/edit', new Set(['draftId'])],
+  // The step of the page of the bridge with Obsidian of the app (specs/2026-11-15-desk-obsidian-web.md OW1.1); the site has none.
+  ['/manuscript/obsidian', new Set(['step'])],
 ]);
 
 export function parseRoute(url: string | URL): AppRoute {

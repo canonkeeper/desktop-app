@@ -55,6 +55,10 @@ func TestTheWindowReadsTheStateOfItsApp(t *testing.T) {
 			{Made: time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)},
 		},
 		Network: []service.NetworkUse{{Host: "canonkeeper.ru", Purpose: "связь с аккаунтом"}},
+		// specs/2026-11-13-desk-upgrade.md UG5.1.
+		Welcome: true, CheckUpdates: true,
+		// specs/2026-11-14-desk-journal.md JR4.3: the host of the proxy of the environment.
+		Proxy: "proxy.example.test:3128",
 	}
 	response := askTheState(t, stateOf{state: state}, "cookie-of-the-window")
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
@@ -73,6 +77,9 @@ func TestTheWindowReadsTheStateOfItsApp(t *testing.T) {
 			map[string]any{"madeAt": "2026-11-02T08:00:00.000Z", "version": nil},
 		},
 		"network": []any{map[string]any{"host": "canonkeeper.ru", "purpose": "связь с аккаунтом"}},
+		"welcome": true, "checkUpdates": true, "proxy": "proxy.example.test:3128",
+		// specs/2026-11-15-desk-mcp.md MC3.5: the reading by the programs of the author is off.
+		"programsRead": false,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("the state = %v\nwant %v", got, want)
@@ -88,6 +95,7 @@ func TestTheWindowReadsTheStateOfItsApp(t *testing.T) {
 	want = map[string]any{
 		"version": nil, "dataDir": "/home/author/.local/share/canonkeeper",
 		"usage": map[string]any{"bytes": nil, "counting": true}, "backups": []any{}, "network": []any{},
+		"welcome": false, "checkUpdates": false, "proxy": nil, "programsRead": false,
 	}
 	if counting.Code != http.StatusOK || !reflect.DeepEqual(got, want) {
 		t.Fatalf("a state being counted = %d %v", counting.Code, got)

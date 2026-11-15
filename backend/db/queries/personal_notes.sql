@@ -39,7 +39,7 @@ WITH readable_projects AS (
   note.title,note.body AS search_body,note.quote AS search_quote,left(note.body,240) AS preview,left(note.quote,240) AS quote_preview,
   saga.id AS project_id,saga.name AS project_title,
   book.id AS book_id,book.title AS book_title,
-  place.title AS chapter_title,place."order" AS chapter_order,
+  place.title AS chapter_title,place.id AS chapter_id,
   chat.title AS chat_title
  FROM personal AS note
  LEFT JOIN readable_projects AS saga ON saga.id=note.saga_id
@@ -61,7 +61,7 @@ WITH readable_projects AS (
    WHERE view.project_id=saga.id AND view.source_view=chat.source_view
     AND view.project_lifecycle_generation=saga.lifecycle_generation)
 ), filtered AS (
- SELECT id,updated_at,source_kind,title,preview,quote_preview,project_id,project_title,book_id,book_title,chapter_title,chapter_order,chat_title
+ SELECT id,updated_at,source_kind,title,preview,quote_preview,project_id,project_title,book_id,book_title,chapter_title,chapter_id,chat_title
  FROM entries
  WHERE (sqlc.arg(search_query)::text='' OR strpos(lower(title),lower(sqlc.arg(search_query)))>0
   OR strpos(lower(search_body),lower(sqlc.arg(search_query)))>0
@@ -73,7 +73,7 @@ WITH readable_projects AS (
  SELECT id,updated_at,
   jsonb_build_object('id',id,'sourceKind',source_kind,'title',title,'preview',preview,'updatedAt',updated_at)
    ||jsonb_strip_nulls(jsonb_build_object('quote',nullif(quote_preview,''),'projectTitle',project_title,'bookTitle',book_title,
-     'projectId',project_id,'bookId',book_id,'chapterTitle',chapter_title,'chapterOrder',chapter_order,'chatTitle',chat_title)) AS payload
+     'projectId',project_id,'bookId',book_id,'chapterTitle',chapter_title,'chapterId',chapter_id,'chatTitle',chat_title)) AS payload
  FROM filtered
  WHERE NOT sqlc.arg(has_cursor)::boolean
   OR (updated_at,id)<(sqlc.arg(cursor_updated_at)::timestamptz,sqlc.arg(cursor_id)::uuid)

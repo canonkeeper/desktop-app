@@ -109,7 +109,7 @@ func (tools *ReadTools) Glossary(ctx context.Context, call ToolContext, input Gl
 			if err != nil {
 				return "", err
 			}
-			writeMaterialList(&out, materialMatches(records, input.Query), glossary)
+			writeMaterialList(&out, saga, materialMatches(records, input.Query), glossary)
 		}
 		return out.String(), nil
 	})

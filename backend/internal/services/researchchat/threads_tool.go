@@ -56,6 +56,8 @@ func (tools *ReadTools) Threads(ctx context.Context, call ToolContext, input Thr
 		if layer == nil {
 			return "Нитей и арок пока нет: слой саги ещё не собран. Ищите через chapters и search, полный просмотр — scan.", nil
 		}
+		// The threads of the saga go, not its chapters (specs/2026-11-14-desk-journal.md JR1.3).
+		saga.shownAs, saga.shown.Threads = "", true
 		view := threadsView{saga: saga, chapters: map[string]*sagamemory.Chapter{}}
 		for i := range saga.version().Chapters {
 			view.chapters[saga.version().Chapters[i].ID] = &saga.version().Chapters[i]

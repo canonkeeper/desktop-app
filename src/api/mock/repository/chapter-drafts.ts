@@ -11,7 +11,7 @@ import { placedBook } from './books';
 import { clone, createJob, rejectUnknownKeys } from './common';
 import type { MockRepositoryContext } from './context';
 import { momentTitle } from './moment-sections';
-import { chapterKey, chapterPlace, chapterRefOf } from './places';
+import { chapterKey, chapterPlace, chapterRefOf, placeInBook } from './places';
 import type { MockState } from './state';
 import { mockChargeNewChapter, mockDraftChapterCounts, mockSettleChapter } from './tiers';
 
@@ -573,7 +573,7 @@ export function createChapterDraftOperations(
       const first = chapterRefOf(context, projectId, chapterKey(1, 1))?.label ?? 'Книга 1, гл. 1';
       const after = context.state.chapters.find((chapter) => chapter.id === draft.place.afterChapterId);
       const afterBook = after ? context.state.books.find((item) => item.id === after.bookId) : undefined;
-      const where = after && afterBook ? `Новая глава встанет следом за главой: ${chapterPlace(placedBook(context.state.books, afterBook).place ?? 1, after.order, after.title)}.`
+      const where = after && afterBook ? `Новая глава встанет следом за главой: ${chapterPlace(placedBook(context.state.books, afterBook).place ?? 1, placeInBook(context, after), after.title)}.`
         : 'Новая глава встанет в конец саги.';
       return clone({
         inFrame: frame,

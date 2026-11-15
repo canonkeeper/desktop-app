@@ -66,3 +66,36 @@ func TestGetAccountQuota(t *testing.T) {
 		t.Fatalf("anonymous status = %d", rec.Code)
 	}
 }
+
+type accountFunc func() domain.Account
+
+func (answer accountFunc) Execute(context.Context, string) (domain.Account, error) {
+	return answer(), nil
+}
+
+// specs/2026-11-15-desk-turns-here.md TH2.1, TH2.4: «разом» carries who holds its places only when the build tells them — the
+// app with the helper of the account —; without them the counter is used and limit, as it was.
+func TestTheActiveTurnsNameTheirPlacesOnlyWhenTold(t *testing.T) {
+	read := func(account domain.Account) map[string]json.RawMessage {
+		t.Helper()
+		router := chi.NewRouter()
+		Handlers{AccountQuota: accountFunc(func() domain.Account { return account }), Auth: fakeUser{}}.Mount(router)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/account/quota", nil))
+		var body struct {
+			ActiveTurns map[string]json.RawMessage `json:"activeTurns"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+			t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+		}
+		return body.ActiveTurns
+	}
+	account := domain.Account{Limits: domain.Defaults(), ActiveTurns: 3}
+	if site := read(account); len(site) != 2 || string(site["used"]) != "3" || site["places"] != nil {
+		t.Fatalf("«разом» without places = %v", site)
+	}
+	account.Places = &domain.ActivePlaces{Answering: 1, Held: 1, Elsewhere: 1}
+	if app := read(account); len(app) != 3 || string(app["places"]) != `{"answering":1,"held":1,"elsewhere":1}` {
+		t.Fatalf("«разом» with places = %v", app)
+	}
+}

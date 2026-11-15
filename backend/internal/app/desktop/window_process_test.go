@@ -56,6 +56,12 @@ const northernBook = "# Глава 1. Сигнальные огни\n\nВера 
 // importFile sends a file of a book into the saga as the window does, multipart with its key of the request.
 func (browser *client) importFile(projectID, name, text string) {
 	browser.t.Helper()
+	browser.importFileAs(projectID, name, text, "import-of-the-northern-book")
+}
+
+// importFileAs is importFile under another key of the request: another book of the same saga.
+func (browser *client) importFileAs(projectID, name, text, key string) {
+	browser.t.Helper()
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
 	file, err := form.CreateFormFile("file", name)
@@ -68,7 +74,7 @@ func (browser *client) importFile(projectID, name, text string) {
 	request.Header.Set("Origin", browser.origin)
 	request.Header.Set("Content-Type", form.FormDataContentType())
 	request.Header.Set("X-CSRF-Token", browser.csrf())
-	request.Header.Set("Idempotency-Key", "import-of-the-northern-book")
+	request.Header.Set("Idempotency-Key", key)
 	request.AddCookie(&http.Cookie{Name: "ck_session", Value: browser.cookie})
 	response, err := browser.http.Do(request)
 	if err != nil {

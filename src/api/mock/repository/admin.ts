@@ -21,7 +21,9 @@ const quotaKeys = Object.keys(mockCodeDefaults) as AdminQuotaKey[];
  * AR7.1, specs/2026-11-11-tier-limits.md TL2.2, specs/2026-11-13-desk-permits.md PM2.4); every other key is the tier's and
  * has no platform default.
  */
-const defaultKeys: AdminQuotaDefaultKey[] = ['image_uploads_per_day', 'app_returns_per_day'];
+const defaultKeys: AdminQuotaDefaultKey[] = [
+  'image_uploads_per_day', 'app_returns_per_day', 'app_tokens_per_question', 'app_reading_tokens_per_character',
+];
 /** The largest value a limit keeps (backend domain/quota.Key.Max): bigint for the characters, integer otherwise. */
 const maxInteger = 2_147_483_647;
 

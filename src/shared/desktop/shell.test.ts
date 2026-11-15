@@ -37,8 +37,43 @@ describe('the commands of the shell of the app', () => {
     ]);
   });
 
+  // specs/2026-11-13-desk-obsidian.md OB1.2: the fifth command opens the system window for the number of a choice and gives
+  // the page only how the choice ended.
+  it('call pick_folder with the number of the choice and read only its outcome', async () => {
+    const invoke = shellOfTheWindow({ pick_folder: { outcome: 'refused', reason: 'data_dir', path: '/home/author' } });
+    const shell = desktopShell()!;
+    await expect(shell.pickFolder('Y2Fub25rZWVwZXItb2JzaWRpYW4tY2hvaWNlLTAwMDA')).resolves.toEqual({ outcome: 'refused', reason: 'data_dir' });
+    expect(invoke.mock.calls).toEqual([['pick_folder', { request: 'Y2Fub25rZWVwZXItb2JzaWRpYW4tY2hvaWNlLTAwMDA' }]]);
+    for (const [answer, choice] of [
+      [{ outcome: 'linked' }, { outcome: 'linked' }],
+      [{ outcome: 'canceled' }, { outcome: 'canceled' }],
+      [{ outcome: 'refused', reason: 'elsewhere' }, { outcome: 'expired' }],
+      [null, { outcome: 'expired' }],
+    ] as const) {
+      shellOfTheWindow({ pick_folder: answer });
+      await expect(desktopShell()!.pickFolder('n')).resolves.toEqual(choice);
+    }
+  });
+
   it('read nothing from an answer of launch_notes that is not its own', async () => {
-    shellOfTheWindow({ launch_notes: { portChanged: 'yes' } });
+    shellOfTheWindow({ launch_notes: { portChanged: 'yes', updatedFrom: 12, releaseNotes: '', updateUnfinished: { package: '/x.deb' } } });
     await expect(desktopShell()!.launchNotes()).resolves.toEqual({ portChanged: false, restartedAfterCrash: false });
+  });
+
+  // specs/2026-11-15-desk-updates-web.md UW3.3: the notes of an update the shell gives (crates/core/src/supervisor.rs, Notes)
+  // reach the page — the version before, the notes of the release, the package of Linux that did not finish.
+  it('give the notes of an update of the launch', async () => {
+    shellOfTheWindow({
+      launch_notes: {
+        portChanged: false, restartedAfterCrash: false, updatedFrom: '1.2.0', releaseNotes: '- Карта саги показывает дороги',
+        updateUnfinished: { version: '1.3.0', package: '/home/author/Загрузки/CanonKeeper_1.3.0_amd64.deb' },
+      },
+    });
+    await expect(desktopShell()!.launchNotes()).resolves.toEqual({
+      portChanged: false, restartedAfterCrash: false, updatedFrom: '1.2.0', releaseNotes: '- Карта саги показывает дороги',
+      updateUnfinished: { version: '1.3.0', package: '/home/author/Загрузки/CanonKeeper_1.3.0_amd64.deb' },
+    });
+    shellOfTheWindow({ launch_notes: { portChanged: false, restartedAfterCrash: false, updateUnfinished: { version: '1.3.0' } } });
+    await expect(desktopShell()!.launchNotes()).resolves.toEqual({ portChanged: false, restartedAfterCrash: false, updateUnfinished: { version: '1.3.0' } });
   });
 });

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { HardDrive, Info, SunMoon, type LucideIcon } from 'lucide-react';
+import { Bot, CircleUserRound, HardDrive, Info, RefreshCw, ScrollText, SunMoon, type LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
+import { AccountPart } from '../account/AccountPart';
 import { AboutPart } from './AboutPart';
 import { DataPart } from './DataPart';
+import { HelperPart } from './helper/HelperPart';
+import { LogPart } from './log/LogPart';
 import { LookPart } from './LookPart';
-import type { SettingsPartProps } from './part-props';
+import { UpdatesPart } from '../updates/UpdatesPart';
+import { accountPartKey, helperPartKey, logPartKey, updatesPartKey, type SettingsPartProps } from './part-props';
 
 export interface SettingsPart {
   /** The part in the address: `/settings?part=<key>`. */
@@ -21,8 +25,16 @@ export interface SettingsPart {
  * screen, and the page stays as it is.
  */
 export const settingsParts: readonly SettingsPart[] = [
+  // The link with an account (specs/2026-11-15-desk-account-link-web.md AW2.1, board 44·6, 44·7).
+  { key: accountPartKey, label: 'Аккаунт', Icon: CircleUserRound, Part: AccountPart },
+  // «Свой ИИ» (specs/2026-11-13-desk-helper-web.md HW1.1).
+  { key: helperPartKey, label: 'Помощник', Icon: Bot, Part: HelperPart },
+  // The journal of what went out (specs/2026-11-14-desk-journal.md JR3.1, board 44·10).
+  { key: logPartKey, label: 'Журнал', Icon: ScrollText, Part: LogPart },
   { key: 'data', label: 'Данные', Icon: HardDrive, Part: DataPart },
   { key: 'look', label: 'Вид', Icon: SunMoon, Part: LookPart },
+  // specs/2026-11-15-desk-updates-web.md UW2.1 (board 44·14).
+  { key: updatesPartKey, label: 'Обновления', Icon: RefreshCw, Part: UpdatesPart },
   { key: 'about', label: 'О программе', Icon: Info, Part: AboutPart },
 ];
 

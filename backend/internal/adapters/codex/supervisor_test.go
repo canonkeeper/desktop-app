@@ -74,3 +74,78 @@ func TestNewClientRejectsInvalidConfiguration(t *testing.T) {
 		t.Fatalf("NewClient(relative CWD) error = %v, want ErrInvalid", err)
 	}
 }
+
+// specs/2026-11-13-desk-gateway.md GW2.3: new settings of the app-server — a new window of the chat — start a new
+// app-server at once when no turn runs; while a turn runs they wait, the client says so, and the app-server is replaced
+// once the turn ends. The next start takes the new settings.
+func TestNewSettingsRestartTheAppServerWhenNoTurnRuns(t *testing.T) {
+	var started [][]string
+	var transports []*fakeTransport
+	var client *Client
+	client, err := NewClient(t.Context(), ClientConfig{
+		CWD: "/tmp", ConfigOverrides: []string{"model_context_window=128000"},
+		transportFactory: func(context.Context) (Transport, error) {
+			transport := newFakeTransport()
+			transport.autoComplete = true
+			transports = append(transports, transport)
+			if client != nil {
+				// The factory runs under the lock of the supervisor: the settings it starts with are these.
+				started = append(started, client.supervisor.overrides)
+			}
+			return transport, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if now, err := client.Configure(t.Context(), []string{"model_context_window=128000"}); !now || err != nil || len(transports) != 1 {
+		t.Fatalf("the same settings = %v, %v, %d app-servers", now, err, len(transports))
+	}
+	if now, err := client.Configure(t.Context(), []string{"model_context_window=32000"}); !now || err != nil || len(transports) != 2 ||
+		!transports[0].closedForTest() || client.Pending() {
+		t.Fatalf("new settings without a turn = %v, %v, %d app-servers", now, err, len(transports))
+	}
+
+	turnStarted, turnGoesOn := make(chan struct{}), make(chan struct{})
+	var turn string
+	request := testRunRequest("chat-a", "turn-a", "", false, &turn)
+	bind := request.BindRoot
+	request.BindRoot = func(ctx context.Context, root string) error {
+		close(turnStarted)
+		<-turnGoesOn
+		return bind(ctx, root)
+	}
+	ran := make(chan error, 1)
+	go func() {
+		_, err := client.Run(t.Context(), request)
+		ran <- err
+	}()
+	<-turnStarted
+	if now, err := client.Configure(t.Context(), []string{"model_context_window=64000"}); now || err != nil || !client.Pending() || len(transports) != 2 {
+		t.Fatalf("new settings while a turn runs = %v, %v, pending %v, %d app-servers", now, err, client.Pending(), len(transports))
+	}
+	close(turnGoesOn)
+	if err := <-ran; err != nil {
+		t.Fatalf("the turn = %v", err)
+	}
+	if len(transports) != 3 || !transports[1].closedForTest() || client.Pending() {
+		t.Fatalf("after the turn: %d app-servers, pending %v", len(transports), client.Pending())
+	}
+	if want := [][]string{{"model_context_window=32000"}, {"model_context_window=64000"}}; len(started) != 2 ||
+		started[0][0] != want[0][0] || started[1][0] != want[1][0] {
+		t.Fatalf("the app-servers started with %v", started)
+	}
+	if _, err := client.Configure(t.Context(), []string{"model=\"x\"\nsandbox_mode=\"danger\""}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("settings with a new line = %v", err)
+	}
+}
+
+func (transport *fakeTransport) closedForTest() bool {
+	select {
+	case <-transport.done:
+		return true
+	default:
+		return false
+	}
+}

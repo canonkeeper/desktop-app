@@ -1,5 +1,5 @@
 {
-  "about": "What the installers bring from outside, pinned by sha256 (specs/2026-11-12-desk-shell.md SH4.2): the package of codex-app-server of the Codex fork for each target — of the version backend/go.mod pins, nothing else is taken — and the source archive of PostgreSQL the set is built from (desktop/postgres). A mismatch is a refusal.",
+  "about": "What the installers bring from outside, pinned by sha256 (specs/2026-11-12-desk-shell.md SH4.2; specs/2026-11-13-desk-updates.md UB3.5): the package of codex-app-server of the Codex fork for each target — of the version backend/go.mod pins, nothing else is taken — the source archive of PostgreSQL the set is built from (desktop/postgres), and the files the bundler of the Tauri CLI of desktop/package-lock.json takes into an installer. A mismatch is a refusal.",
   "codex": {
     "repository": "Dirard/codex",
     "targets": {
@@ -19,5 +19,62 @@
     "version": "18.6",
     "source": "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2",
     "sha256": "555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f"
+  },
+  "bundler": {
+    "about": "The files the bundler of @tauri-apps/cli 2.12.4 takes from outside into an installer, each from a release that does not move, laid into its cache before tauri build by desktop/ci/bundler-tools.mjs (place — the path under the cache: ~/.cache/tauri on Linux, %LOCALAPPDATA%/tauri on Windows; unpack — the archive is unpacked there) and checked again after the build: a file the bundler took anew fails the job. The bundler zeroes three bytes of linuxdeploy in its place (patched), checks the files of NSIS by its own sums and carries the scripts of the GTK and GStreamer plugins inside itself. The installer of Windows embeds the bootstrapper of WebView2 (webviewInstallMode embedBootstrapper), which the bundler takes from its cache when it is there: it is no asset of a release, so its pin is the address of that one file (url) the link of Microsoft resolved to on 13.11.2026, where a redirect is a refusal; a new bootstrapper is a new pin.",
+    "linux": [
+      {
+        "repository": "tauri-apps/binary-releases",
+        "tag": "apprun-old",
+        "asset": "AppRun-x86_64",
+        "place": "AppRun-x86_64",
+        "sha256": "f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f"
+      },
+      {
+        "repository": "tauri-apps/binary-releases",
+        "tag": "linuxdeploy-07333c6",
+        "asset": "linuxdeploy-x86_64.AppImage",
+        "place": "linuxdeploy-07333c6-x86_64.AppImage",
+        "sha256": "36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62",
+        "patched": true
+      },
+      {
+        "repository": "linuxdeploy/linuxdeploy-plugin-appimage",
+        "tag": "1-alpha-20250213-1",
+        "asset": "linuxdeploy-plugin-appimage-x86_64.AppImage",
+        "place": "linuxdeploy-plugin-appimage.AppImage",
+        "sha256": "992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3"
+      },
+      {
+        "repository": "AppImage/type2-runtime",
+        "tag": "20251108",
+        "asset": "runtime-x86_64",
+        "place": "runtime-x86_64",
+        "sha256": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+      }
+    ],
+    "windows": [
+      {
+        "repository": "tauri-apps/binary-releases",
+        "tag": "nsis-3.13",
+        "asset": "nsis-3.13.zip",
+        "place": "NSIS",
+        "unpack": "nsis-3.13",
+        "sha256": "ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8"
+      },
+      {
+        "repository": "tauri-apps/nsis-tauri-utils",
+        "tag": "nsis_tauri_utils-v0.5.3",
+        "asset": "nsis_tauri_utils.dll",
+        "place": "NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll",
+        "sha256": "5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709"
+      },
+      {
+        "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/068be74d-a831-494f-8f57-c173756d5a33/MicrosoftEdgeWebview2Setup.exe",
+        "asset": "MicrosoftEdgeWebview2Setup.exe",
+        "place": "MicrosoftEdgeWebview2Setup.exe",
+        "sha256": "cf2f2445fef0c5c14e372045f84998771eeb8bb01d59be4afd00692fa160082e"
+      }
+    ]
   }
 }

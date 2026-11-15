@@ -4,7 +4,7 @@ import { Button } from '../controls/Button';
 import { IconButton } from '../controls/IconButton';
 import { Badge } from '../feedback/Badge';
 import { AccountActingMark, useAccountButtonLabel } from '../navigation/AccountSession';
-import { TopBarTalk } from '../navigation/TopBarStrip';
+import { TopBarTalk, TopBarTier } from '../navigation/TopBarStrip';
 import { ShellAccount, type ShellAccountProps } from './ShellAccount';
 import styles from './Shell.module.css';
 
@@ -118,8 +118,9 @@ export function ShellTopBar({ account, menuMark = false, onNote, onOpenMenu, onO
         {onNote ? (compact
           ? <CaptionButton Icon={StickyNote} label="Заметка" onClick={onNote} />
           : <Button className={styles.noteButton} onClick={onNote} size="touch" variant="ghost"><StickyNote aria-hidden="true" size={16} />Заметка</Button>) : null}
-        {/* «Настройки» are the icon and the word in a row on 1440 and on 900 alike (board 44·11). */}
-        {account ? <ShellAccount {...account} /> : settings ? <SettingsButton caption={false} settings={settings} /> : null}
+        {/* «Настройки» are the icon and the word in a row on 1440 and on 900 alike (board 44·11); the tier of the edition stands
+            before them (board 44·7), not on a phone. */}
+        {account ? <ShellAccount {...account} /> : settings ? <><TopBarTier /><SettingsButton caption={false} settings={settings} /></> : null}
       </div>
     </header>
   );

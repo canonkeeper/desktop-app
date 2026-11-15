@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { backendBuildArgs, placeWeb, shellVersion } from './desktop-backend.mjs';
+import { backendBuildArgs, bridgeBuildArgs, placeWeb, shellVersion } from './desktop-backend.mjs';
 import { desktopWebBuild } from './desktop-web.mjs';
 
 // specs/2026-11-07-desktop-app.md DA3.6: the backend embeds the new build of the web and nothing an earlier build left.
@@ -53,4 +53,23 @@ test('the backend is built with the version of the shell', () => {
     'build', '-trimpath', '-ldflags=-s -w -X main.version=1.2.0', '-o', 'out/canonkeeper-backend', './cmd/desktop',
   ]);
   assert.match(shellVersion(readFileSync(path.join(import.meta.dirname, '..', 'desktop', 'src-tauri', 'Cargo.toml'), 'utf8')), /^\d+\.\d+\.\d+$/u);
+});
+
+// specs/2026-11-15-desk-mcp.md MC1.1: the program of the bridge is built with the flags and the version of the backend.
+test('the program of the bridge is built as the backend is', () => {
+  assert.deepEqual(bridgeBuildArgs('1.2.0', 'out/canonkeeper-mcp'), [
+    'build', '-trimpath', '-ldflags=-s -w -X main.version=1.2.0', '-o', 'out/canonkeeper-mcp', './cmd/desktop-mcp',
+  ]);
+});
+
+// specs/2026-11-13-desk-updates.md UB3.7: only the smoke run of an update builds the backend with the tag smokeupdate,
+// which presses «Обновить и перезапустить» itself; every other build is without it.
+test('only the smoke build of an update carries its tag', () => {
+  assert.deepEqual(backendBuildArgs('1.3.0', 'b', { smoke: true }), [
+    'build', '-trimpath', '-tags=smokeupdate', '-ldflags=-s -w -X main.version=1.3.0', '-o', 'b', './cmd/desktop',
+  ]);
+  assert.ok(!backendBuildArgs('1.3.0', 'b').some((arg) => arg.includes('smokeupdate')));
+  const smoke = readFileSync(path.join(import.meta.dirname, '..', 'backend', 'internal', 'app', 'desktop', 'updates_smoke.go'), 'utf8');
+  assert.match(smoke, /^\/\/go:build smokeupdate$/mu);
+  assert.match(smoke, /CANONKEEPER_SMOKE_BUILD_OF_UPDATES/u);
 });

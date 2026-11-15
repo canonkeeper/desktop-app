@@ -398,9 +398,10 @@ func TestRuntimeRunsResumesAndDeletesChatAgainstStubModel(t *testing.T) {
 	// metadata as on 0.153.4: direct saga tools called in parallel, no Responses Lite and no code
 	// mode, no shell, images, web, agents, patches, sleep or questions to the user (UC2).
 	for index, recorded := range requests {
-		wantTools := []string{"create_goal", "get_goal", "saga.search", "update_goal"}
+		// No goal tools: the profile turns the goals of a thread off (specs/2026-11-13-desk-gateway.md GW2.5).
+		wantTools := []string{"saga.search"}
 		if index >= 2 {
-			wantTools = slices.Insert(wantTools, 2, "saga.read")
+			wantTools = []string{"saga.read", "saga.search"}
 		}
 		if !slices.Equal(recorded.Tools, wantTools) || !recorded.Parallel || recorded.Lite ||
 			recorded.Model != "gpt-6.1-sol" || recorded.Effort != "high" {

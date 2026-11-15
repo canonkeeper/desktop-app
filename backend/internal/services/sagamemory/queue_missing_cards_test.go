@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	domain "canonkeeper/backend/internal/domain/sagamemory"
 )
 
 // Text indexed before cards existed gets its cards without a reindex: the backend queues the cards Job of every version that still lacks some.
@@ -64,6 +66,35 @@ func TestQueueMissingCardsQueuesVersionsWithoutACurrentMap(t *testing.T) {
 	}
 }
 
+// specs/2026-11-13-desk-consent.md CN3.2, CN3.8: the reading stopped on the register of names of a saga that had one (a new
+// book was read, its cards are there, the map was prepared from them with the old register). «Продолжить» queues the cards
+// Job, so the names are built; the start of the site keeps its rule.
+func TestTheContinuationOfTheReadingQueuesTheNamesThatWait(t *testing.T) {
+	text := cardsTextSource{chapters: []SelectedChapter{
+		{ID: "c1", ContentHash: "h1", BookOrder: 1, Order: 1, Title: "Глава 1. Старт"},
+		{ID: "c2", ContentHash: "h2", BookOrder: 2, Order: 1, Title: "Глава 1. Застава"},
+	}}
+	versions := indexedVersions{{ProjectID: "saga", View: "published"}}
+	cards := versionCards{"saga": {{ChapterID: "c1", ContentHash: "h1"}: true, {ChapterID: "c2", ContentHash: "h2"}: true}}
+	named := namedVersions{versionCards: cards, digests: map[string]string{"saga": "the register of the first book"}, text: text}
+	queue := &cardsQueue{}
+	useCase := NewQueueMissingCards(versions, text, named, queue)
+	if queued, err := useCase.ExecuteFor(context.Background(), "saga"); err != nil || queued != 1 {
+		t.Fatalf("ExecuteFor() = %d, %v; want the cards Job queued for the names", queued, err)
+	}
+	if queued, err := useCase.Execute(context.Background()); err != nil || queued != 0 {
+		t.Fatalf("the start of the site queued %d, %v; want its rule unchanged", queued, err)
+	}
+
+	// The names of the register are those of the cards: «Продолжить» queues nothing.
+	_, digest := domain.BuildNameList(map[int]*domain.Card{0: named.card(), 1: named.card()})
+	named.digests["saga"] = digest
+	queue = &cardsQueue{}
+	if queued, err := NewQueueMissingCards(versions, text, named, queue).ExecuteFor(context.Background(), "saga"); err != nil || queued != 0 {
+		t.Fatalf("ExecuteFor() with its names = %d, %v; want nothing", queued, err)
+	}
+}
+
 type namedVersions struct {
 	versionCards
 	digests map[string]string
@@ -74,6 +105,21 @@ type namedVersions struct {
 
 func (versions namedVersions) NamesDigest(_ context.Context, projectID string) (string, error) {
 	return versions.digests[projectID], nil
+}
+
+// card is the card of every chapter of the fake: one name.
+func (namedVersions) card() *domain.Card {
+	return &domain.Card{Summary: "Пересказ", Characters: []domain.Mention{{Name: "Ирина"}}}
+}
+
+func (versions namedVersions) Cards(_ context.Context, projectID string, keys []CardKey, _ domain.CardParts) (map[CardKey]domain.Card, error) {
+	found := map[CardKey]domain.Card{}
+	for _, key := range keys {
+		if versions.versionCards[projectID][key] {
+			found[key] = *versions.card()
+		}
+	}
+	return found, nil
 }
 
 func (versions namedVersions) CardsStamp(context.Context, string, []CardKey) (CardsStamp, error) {

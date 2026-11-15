@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { createMockApiClient } from '../../api/mock/repository';
 import { mockPromoAnswerLink, mockPromoRevokeLink } from '../../api/mock/repository/promo-permissions';
 import { mockWordChapter } from '../../api/mock/repository/chapter-draft-proofread';
+import { previewMaterials } from '../../api/mock/repository/obsidian-materials';
 import { mockReadingTestSlug } from '../../api/mock/repository/reading-test';
 import { mockAccountToken } from '../../api/mock/repository/session';
 import { getOperationManifestEntries, type OperationId } from '../../shared/api';
+import { bytesOf, zipFiles } from '../../shared/files/zip';
 import { createApiHandlers, createAuthHandlers, mswApiBaseUrl } from './handlers';
 import { mswServer } from './server';
+
+/** The fingerprint and the records of the folder «Места» of the example vault the mock previews. */
+const mockPlaces = previewMaterials(false, { books: [], materials: [{ path: 'Места', kind: 'place' }], exclude: [] });
 
 const pathParams: Record<string, string> = {
   artifactId: 'artifact-reader-references-1',
@@ -821,6 +826,30 @@ describe('MSW API handlers', () => {
     expect(changedImport.status).toBe(409);
   });
 
+  // specs/2026-11-15-desk-account-words-web.md AW4.2, AW4.6: the counter of the helper of the account refuses a correction as it
+  // refuses a question — 503 with mayReturn — through the handlers of the tests of the pages too.
+  it('answers a correction refused by the counter of the account with 503 and mayReturn', async () => {
+    const repository = createMockApiClient();
+    repository.setScenario({ preset: 'normal', actorRole: 'owner', accountLinked: true });
+    await repository.updateAiSettings({ source: 'account' });
+    mswServer.use(...createApiHandlers({ repository }));
+    const chat = await repository.createChatSession('project-white-port', { scope: 'project', sourceView: 'published', title: 'Застава' },
+      { idempotencyKey: 'idem-msw-account-chat' });
+    const turn = await repository.createChatTurn(chat.id, { body: 'Где стоит застава?' }, { idempotencyKey: 'idem-msw-account-turn' });
+    const turnId = turn.job.subject.type === 'research_chat_turn' ? turn.job.subject.turnId : '';
+    repository.setScenario({ ...repository.getScenario(), accountTurnRefusal: { code: 'ai.account_unreachable', mayReturn: true } });
+    const refused = await fetch(`${mswApiBaseUrl}/chats/${chat.id}/turns/${turnId}/steer`, {
+      method: 'POST',
+      headers: {
+        cookie: 'ck_session=mock-session', origin: 'http://localhost:3000', 'x-csrf-token': 'ck_msw_csrf_token_000000',
+        'content-type': 'application/json', 'idempotency-key': 'idem-msw-account-steer',
+      },
+      body: JSON.stringify({ body: 'Только про вторую книгу' }),
+    });
+    expect(refused.status).toBe(503);
+    await expect(refused.json()).resolves.toMatchObject({ code: 'ai.account_unreachable', mayReturn: true });
+  });
+
   it('keeps MSW job list, get and cancel behavior aligned with the repository', async () => {
     const repository = createMockApiClient();
     mswServer.use(...createApiHandlers({ repository }));
@@ -946,6 +975,11 @@ function routePathForOperation(operationId: OperationId, path: string, operation
   }
   if (operationId === 'getProjectImageFile') return `${applyPathParams(path, operationPathParams)}?size=thumb&v=0`;
   if (operationId === 'getBookExport') return `${applyPathParams(path, operationPathParams)}?format=docx`;
+  // specs/2026-11-14-desk-journal.md JR2.2: the journal is read in the zone of the computer, the sendings of one row of it.
+  if (operationId === 'listSendLog' || operationId === 'getSendLogFile') return `${path}?zone=${encodeURIComponent('Europe/Moscow')}`;
+  if (operationId === 'listSendLogSendings') {
+    return `${path}?row=${encodeURIComponent('0b6a7c8e-1f2a-4b3c-8d9e-0a1b2c3d4e5f|today')}&zone=${encodeURIComponent('Europe/Moscow')}`;
+  }
   return applyPathParams(path, operationPathParams);
 }
 
@@ -1106,6 +1140,21 @@ function requestInit(operationId: OperationId, method: string): RequestInit {
     };
   }
 
+  if (operationId === 'openSagaArchive') {
+    // A saga file of the format: its manifest is what the mock reads (specs/2026-11-13-desk-sagafile.md SF1.1).
+    const boundary = 'ck-msw-saga-file';
+    headers.set('content-type', `multipart/form-data; boundary=${boundary}`);
+    const encoder = new TextEncoder();
+    const zip = zipFiles([{ name: 'manifest.json', bytes: encoder.encode(JSON.stringify({ format: 'canonkeeper-saga', version: 1, saga: { name: 'Северный предел' } })) }]);
+    const head = encoder.encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="saga.cksaga"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+    const tail = encoder.encode(`\r\n--${boundary}--\r\n`);
+    const body = new Uint8Array(head.length + zip.length + tail.length);
+    body.set(head, 0);
+    body.set(zip, head.length);
+    body.set(tail, head.length + zip.length);
+    return { method, headers, body };
+  }
+
   if (operationId === 'uploadBookCover') {
     const boundary = 'ck-msw-book-cover';
     headers.set('content-type', `multipart/form-data; boundary=${boundary}`);
@@ -1182,6 +1231,34 @@ function bodyFor(operationId: OperationId): unknown {
       return { token: mockAccountToken('password_reset', 'user-mira') };
     case 'changeUnverifiedEmail':
       return { email: 'fixed-author@example.test' };
+    case 'updateAiSettings':
+      return { source: 'own', own: { preset: 'deepseek' } };
+    case 'setAiKey':
+      return { key: 'key-example-0000000000000000' };
+    case 'eraseDesktopData':
+      return { confirm: 'стереть' };
+    case 'previewObsidianImport':
+      return { books: ['Книга 1'], materials: [{ path: 'Персонажи', kind: 'character' }] };
+    case 'importObsidianBooks':
+      return { books: [{ folder: 'Книга 1', fingerprint: '6f1c2b0e9a8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b' }] };
+    case 'importObsidianMaterials':
+      // The fingerprint of the folder «Места» of the example the preview of the mock gives and what it says of each record.
+      return {
+        materials: [{ path: 'Места', kind: 'place', fingerprint: mockPlaces.folders[0]!.fingerprint }],
+        records: mockPlaces.records.map((record) => ({ path: record.path, seen: record.seen })),
+      };
+    case 'updateBookFromObsidian':
+      return { mode: 'preview' };
+    case 'linkBookToObsidianFolder':
+      return { folder: 'Книга 1' };
+    case 'updateProgramAccess':
+      return { enabled: true };
+    case 'dismissWelcome':
+      return { checkUpdates: false };
+    case 'startAccountLink':
+      return { chooseHelper: true };
+    case 'updateAppUpdateSettings':
+      return { daily: false };
     case 'setAccountName':
       return { displayName: 'Мира Волкова' };
     case 'startImpersonation':
@@ -1366,10 +1443,41 @@ async function prepareRepositoryForOperation(
       preparedKey = (await file.blob.text()).trim();
       return {};
     }
+    // An installation needs a version found, a cancel a download (specs/2026-11-13-desk-updates.md UB1.7).
+    case 'installAppUpdate':
+      await repository.checkAppUpdate();
+      return {};
+    case 'cancelAppUpdate':
+      await repository.checkAppUpdate();
+      await repository.installAppUpdate();
+      return {};
     case 'revokeLinkedApp': {
       // The mock links the app at the confirmation of the page /link (specs/2026-11-13-desk-link.md LK1, LK4.2).
       await repository.startAppLink({ challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'linux' });
       return { appId: (await repository.listLinkedApps()).apps[0]!.id };
+    }
+    case 'getSagaTranscript': {
+      // A chat a saga file brought: the mock opens its own file of the saga (specs/2026-11-13-desk-sagafile.md SF3.8).
+      const archive = await repository.getSagaArchive('project-white-port');
+      const opened = await repository.openSagaArchive(new File([(await bytesOf(archive.blob)).slice()], archive.fileName), { idempotencyKey: 'idem-prepare-saga-file' });
+      return { projectId: opened.projectId, transcriptId: (await repository.listSagaTranscripts(opened.projectId)).data[0]!.id };
+    }
+    case 'listAiModels': {
+      // The models are asked of the provider of the saved settings (specs/2026-11-13-desk-probes.md PB1.1).
+      await repository.updateAiSettings({ source: 'own', own: { preset: 'ollama' } });
+      return {};
+    }
+    case 'getReadingEstimate':
+    case 'getReadingConsent':
+    case 'setReadingConsent':
+    case 'getReadingSample':
+    case 'startReadingSample':
+    case 'cancelReadingSample':
+    case 'startAiCheck': {
+      // A check and the reading of the books need the connected helper (specs/2026-11-13-desk-probes.md PB2.1,
+      // specs/2026-11-13-desk-consent.md CN1.3).
+      await repository.updateAiSettings({ source: 'own', own: { preset: 'ollama', chatModel: 'gemma4', cardsModel: 'gemma4' } });
+      return {};
     }
     case 'revokeAdminKeyBatch': {
       await repository.createAdminKeyBatch({ tier: 'writer', count: 1 });
@@ -1593,6 +1701,20 @@ async function prepareRepositoryForOperation(
     case 'restoreChapter':
       await repository.deleteChapter(pathParams.chapterId!);
       return {};
+    case 'scanObsidianVault':
+    case 'previewObsidianImport':
+    case 'importObsidianBooks':
+    case 'importObsidianMaterials':
+    case 'linkBookToObsidianFolder':
+    case 'unlinkBookFromObsidianFolder':
+      // The saga is linked with the example vault the shell of the mock picks (specs/2026-11-13-desk-obsidian.md OB1.1).
+      await repository.beginObsidianVaultChoice(pathParams.projectId!);
+      return {};
+    case 'updateBookFromObsidian':
+      // A book of the saga is linked with a folder of the example vault (specs/2026-11-14-desk-obsidian-books.md OK2.3).
+      await repository.beginObsidianVaultChoice(pathParams.projectId!);
+      await repository.linkBookToObsidianFolder(pathParams.projectId!, pathParams.bookId!, { folder: 'Книга 1' });
+      return {};
     default:
       return {};
   }
@@ -1623,6 +1745,7 @@ async function createChatFixture(repository: ReturnType<typeof createMockApiClie
 }
 
 const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
+  openSagaArchive: 201,
   grantAdminWriterTier: 201,
   createAdminKeyBatch: 201,
   uploadFeedbackImage: 201,
@@ -1641,6 +1764,20 @@ const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
   createChapterDraft: 201,
   deleteChapterDraft: 204,
   revokeLinkedApp: 204,
+  setAiKey: 204,
+  deleteAiKey: 204,
+  startAiCheck: 202,
+  cancelAiCheck: 204,
+  startReadingSample: 202,
+  cancelReadingSample: 204,
+  eraseDesktopData: 202,
+  dismissWelcome: 204,
+  cancelAccountLink: 204,
+  beginObsidianVaultChoice: 202,
+  unlinkObsidianVault: 204,
+  updateBookFromObsidian: 202,
+  linkBookToObsidianFolder: 204,
+  unlinkBookFromObsidianFolder: 204,
   startChapterDraftJob: 201,
   createPersonalNote: 201,
   deletePersonalNote: 204,
@@ -1699,7 +1836,7 @@ async function expectGeneratedOperationResponse(operationId: OperationId, respon
     return;
   }
   expect(response.headers.get('cache-control'), operationId).toBe(operationId === 'getFeedbackImage' ? 'private, max-age=3600' : 'no-store');
-  if (operationId === 'getBookExport' || operationId === 'getChapterDraftExport') {
+  if (operationId === 'getBookExport' || operationId === 'getChapterDraftExport' || operationId === 'getSagaArchive' || operationId === 'getClaudeDesktopExtension') {
     expect(response.headers.get('content-disposition'), operationId).toContain("attachment; filename*=utf-8''");
     expect((await response.arrayBuffer()).byteLength, operationId).toBeGreaterThan(0);
     return;
@@ -1720,7 +1857,8 @@ async function expectGeneratedOperationResponse(operationId: OperationId, respon
     expect((await response.arrayBuffer()).byteLength, operationId).toBeGreaterThan(0);
     return;
   }
-  if (expectedStatus === 204) {
+  // eraseDesktopData answers 202 without a body: the shell got the request (specs/2026-11-13-desk-erase.md ER1.2).
+  if (expectedStatus === 204 || operationId === 'eraseDesktopData') {
     await expect(response.text(), operationId).resolves.toBe('');
     return;
   }

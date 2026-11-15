@@ -193,3 +193,58 @@ func TestTheAppServerOfTheBundleTakesNoSubcommand(t *testing.T) {
 		}
 	}
 }
+
+// specs/2026-11-13-desk-gateway.md GW2.2: a value the backend holds in memory — the token of the gateway — goes into the
+// environment of the app-server by value; the backend never has it in its own environment, and a value with a new line
+// or a name of the fixed environment is refused.
+func TestStartTransportPassesExplicitValuesOnlyToTheAppServer(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"cwd", "codex-home", "sqlite", "home", "tmp"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := filepath.Join(root, "codex")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nenv\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := transportConfig{
+		CodexPath: script, CWD: filepath.Join(root, "cwd"), CodexHome: filepath.Join(root, "codex-home"),
+		CodexSQLiteHome: filepath.Join(root, "sqlite"), PrivateHome: filepath.Join(root, "home"), TempDir: filepath.Join(root, "tmp"),
+		Environment: []string{"GATEWAY_TEST_TOKEN=token-of-the-run"},
+	}
+	transport, err := startTransport(t.Context(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transport.Close()
+	var lines []string
+	for {
+		ctx, cancel := context.WithCancel(t.Context())
+		frame, receiveErr := transport.Receive(ctx)
+		cancel()
+		if receiveErr != nil {
+			break
+		}
+		lines = append(lines, string(frame))
+	}
+	if output := strings.Join(lines, "\n"); !strings.Contains(output, "GATEWAY_TEST_TOKEN=token-of-the-run") {
+		t.Fatalf("the explicit value did not reach the app-server: %s", output)
+	}
+	if _, inBackend := os.LookupEnv("GATEWAY_TEST_TOKEN"); inBackend {
+		t.Fatal("the value went into the environment of the backend")
+	}
+	for name, environment := range map[string][]string{
+		"a new line":          {"GATEWAY_TEST_TOKEN=a\nb"},
+		"the fixed PATH":      {"PATH=/tmp"},
+		"no name":             {"=value"},
+		"no value":            {"GATEWAY_TEST_TOKEN"},
+		"a name in lowercase": {"gateway_token=x"},
+	} {
+		config := base
+		config.Environment = environment
+		if _, err := startTransport(t.Context(), config); err == nil {
+			t.Errorf("%s: startTransport accepted the environment", name)
+		}
+	}
+}

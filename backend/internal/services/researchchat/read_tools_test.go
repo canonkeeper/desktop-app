@@ -13,6 +13,7 @@ import (
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
+	"canonkeeper/backend/internal/jobs"
 	sagamemoryservice "canonkeeper/backend/internal/services/sagamemory"
 	"canonkeeper/backend/internal/services/sagamemory/sagamemorytest"
 )
@@ -55,6 +56,7 @@ type scanModelStub struct {
 	mu     sync.Mutex
 	delay  time.Duration
 	inputs []string
+	jobs   []string
 }
 
 func (stub *scanModelStub) Complete(ctx context.Context, instructions, input string) (string, quota.ModelUsage, error) {
@@ -69,6 +71,7 @@ func (stub *scanModelStub) Complete(ctx context.Context, instructions, input str
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.inputs = append(stub.inputs, input)
+	stub.jobs = append(stub.jobs, jobs.JobIDOf(ctx))
 	if strings.Contains(input, "Вьюжница снова появилась") {
 		return `{"found":[{"item":"Вьюжница","chapter":"3","p":1,"quote":"Вьюжница снова появилась.","note":"раса"}]}`, scanCallUsage, nil
 	}
@@ -362,6 +365,12 @@ func TestScanRecordsUsageForTheTurn(t *testing.T) {
 			record.Model != "scan-model" || record.Usage != scanCallUsage {
 			t.Fatalf("usage record = %+v", record)
 		}
+	}
+	// specs/2026-11-13-desk-gateway.md GW3.2: a call of the scan names the Job of its turn to the client of the model —
+	// the tool runs in the context of Codex, not of the turn.
+	model := tools.scanModel.(*scanModelStub)
+	if len(model.jobs) != 3 || model.jobs[0] != "job-1" || model.jobs[1] != "job-1" || model.jobs[2] != "job-1" {
+		t.Fatalf("the calls of the scan named the Jobs %v", model.jobs)
 	}
 }
 

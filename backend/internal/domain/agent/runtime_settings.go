@@ -36,3 +36,15 @@ func ValidPassEnv(names []string) bool {
 	}
 	return true
 }
+
+// ValidEnvironment accepts NAME=value pairs the backend gives the app-server by value: a name as ValidPassEnv takes it
+// and a value of one line without NUL.
+func ValidEnvironment(pairs []string) bool {
+	for _, pair := range pairs {
+		name, value, found := strings.Cut(pair, "=")
+		if !found || value == "" || !ValidPassEnv([]string{name}) || strings.ContainsAny(value, "\r\n\x00") {
+			return false
+		}
+	}
+	return true
+}

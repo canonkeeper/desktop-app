@@ -406,3 +406,26 @@ func TestCardsDoneHearsOnlyASuccess(t *testing.T) {
 		t.Fatalf("heard %+v", heard)
 	}
 }
+
+// cardsEnds hears the ends of the cards Jobs.
+type cardsEnds struct{ ends []jobs.Status }
+
+func (ends *cardsEnds) Ended(_ context.Context, _ string, outcome jobs.Status) {
+	ends.ends = append(ends.ends, outcome)
+}
+
+// specs/2026-11-13-desk-account-ai.md AI3.2: the end of a cards Job the builder committed is told — succeeded, canceled,
+// failed — so a build that counts the reading on a site closes its permit.
+func TestTheEndOfACardsJobIsTold(t *testing.T) {
+	text := cardsTextSource{chapters: []SelectedChapter{{ID: "c1", ContentHash: "h1", BookOrder: 1, Order: 1, Title: "Глава 1. Старт"}}}
+	ends := &cardsEnds{}
+	build := NewBuildCards(text, &cardsStore{}, &cardsModel{}, nil, "test-model", 4, nil, nil).WithEnd(ends)
+	if status, err := build.RunForClaim(context.Background(), cardsClaim, cardsSubject, false); err != nil || status != jobs.StatusSucceeded {
+		t.Fatal(status, err)
+	}
+	_ = build.CancelForClaim(context.Background(), cardsClaim, cardsSubject)
+	_ = build.FailForClaim(context.Background(), cardsClaim, cardsSubject, jobs.Error{Code: "x"})
+	if len(ends.ends) != 3 || ends.ends[0] != jobs.StatusSucceeded || ends.ends[1] != jobs.StatusCanceled || ends.ends[2] != jobs.StatusFailed {
+		t.Fatalf("ends = %v", ends.ends)
+	}
+}

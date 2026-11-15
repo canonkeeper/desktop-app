@@ -14,7 +14,7 @@ import type {
 } from '../../../shared/api';
 import { MockApiError } from '../scenarios';
 import type { MockRepositoryContext } from './context';
-import { chapterKey, chapterPlace } from './places';
+import { chapterKey, chapterPlace, placeInBook } from './places';
 
 type ChapterRef = Schema<'SagaChapterRef'>;
 type Mention = { name: string; aliases?: string[]; type?: string; note?: string; p: number };
@@ -169,7 +169,7 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
       .filter((chapter) => chapter.bookId === book.id && indexed.has(chapter.id))
       .sort((left, right) => left.order - right.order)
       .map((chapter): ChapterRef => ({
-        key: chapterKey(book.order, chapter.order), label: chapterPlace(shelf + 1, chapter.order, chapter.title),
+        key: chapterKey(book.order, chapter.order), label: chapterPlace(shelf + 1, placeInBook(context, chapter), chapter.title),
         chapterId: chapter.id, bookId: book.id, bookOrder: shelf + 1, bookTitle: book.title, title: chapter.title,
       })));
     const chapterCards = chapters.map((chapter) => (carded.has(chapter.chapterId) ? cards[chapter.chapterId] : undefined));

@@ -113,6 +113,75 @@ describe('useActiveChatTurnQuery', () => {
   });
 });
 
+// specs/2026-11-15-desk-account-words-web.md AW4.4: while the server decides whether the question of a failed turn is counted
+// (`questionReturned: pending`), the page reads the Job again every 5 seconds, no longer than 10 minutes, and stops once the sign
+// is said. The site has no sign: nothing changes there.
+describe('the count of a failed turn being decided', () => {
+  async function failedTurn(returned: Array<'pending' | 'yes' | 'no' | undefined>) {
+    const api = createMockApiClient();
+    const chat = await api.createChatSession(projectId, { scope: 'project', sourceView: 'published', title: 'Застава' },
+      { idempotencyKey: 'idem-count-decided-chat' });
+    const turn = await api.createChatTurn(chat.id, { body: 'Где стоит застава?' }, { idempotencyKey: 'idem-count-decided-turn' });
+    const failed = (sign: 'pending' | 'yes' | 'no' | undefined) => ({
+      ...turn.job, status: 'failed' as const, canCancel: false,
+      error: { type: 'about:blank', title: 'Turn failed', status: 503, code: 'model.site_unreachable', requestId: 'req-count' },
+      ...(sign ? { questionReturned: sign } : {}),
+    });
+    const getJob = vi.spyOn(api, 'getJob');
+    returned.forEach((sign, index) => {
+      if (index === returned.length - 1) getJob.mockResolvedValue(failed(sign));
+      else getJob.mockResolvedValueOnce(failed(sign));
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: PropsWithChildren) => createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result } = renderHook(() => useActiveChatTurnQuery(api, { projectId, sourceView: 'published' }, chat.id), { wrapper });
+    await waitFor(() => expect(result.current.data?.status).toBe('failed'));
+    return { getJob, result };
+  }
+
+  it('reads the Job again every 5 seconds while the count is decided, and stops once the server says it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { getJob, result } = await failedTurn(['pending', 'pending', 'yes']);
+      expect(result.current.data?.questionReturned).toBe('pending');
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(getJob).toHaveBeenCalledTimes(2);
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      await waitFor(() => expect(result.current.data?.questionReturned).toBe('yes'));
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(getJob).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads it no longer than 10 minutes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { getJob } = await failedTurn(['pending']);
+      await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+      const read = getJob.mock.calls.length;
+      expect(read).toBeGreaterThanOrEqual(100);
+      expect(read).toBeLessThanOrEqual(122);
+      await act(() => vi.advanceTimersByTimeAsync(5 * 60_000));
+      expect(getJob).toHaveBeenCalledTimes(read);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([['no'], ['yes'], [undefined]] as const)('a failed turn whose sign is %s is not read again', async (sign) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { getJob } = await failedTurn([sign]);
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(getJob).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('useRenameChatSessionMutation', () => {
   it('updates only the exact session and list keys after a successful response', async () => {
     const api = createMockApiClient();

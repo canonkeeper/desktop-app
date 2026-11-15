@@ -1,0 +1,16 @@
+{
+  "about": "The numbers of «Свой ИИ» of a row of the journal (specs/2026-11-14-desk-journal.md JR3.2, Data «подробности: числа «Своего ИИ»»): the details of the page (src/editions/desktop/settings/log/log-words.ts ownWords) and the file of the journal (ownWords of domain/modeljournal) say them by this one table.",
+  "cases": [
+    {"own": {"requests": 2, "tokens": 48000, "estimated": false, "costs": [{"currency": "RUB", "micros": 3000000}]}, "want": "2 запроса · 48 тыс. токенов · ≈\u00a03\u00a0₽"},
+    {"own": {"requests": 6, "tokens": 48000, "estimated": true, "costs": []}, "want": "6 запросов · ≈\u00a048 тыс. токенов"},
+    {"own": {"requests": 1, "tokens": 396, "estimated": false, "costs": []}, "want": "1 запрос · 396 токенов"},
+    {"own": {"requests": 3, "tokens": 0, "estimated": false, "costs": []}, "want": "3 запроса · 0 токенов"},
+    {"own": {"requests": 5, "tokens": 999, "estimated": false, "costs": []}, "want": "5 запросов · 999 токенов"},
+    {"own": {"requests": 5, "tokens": 1000, "estimated": false, "costs": []}, "want": "5 запросов · 1 тыс. токенов"},
+    {"own": {"requests": 5, "tokens": 999499, "estimated": false, "costs": []}, "want": "5 запросов · 999 тыс. токенов"},
+    {"own": {"requests": 21, "tokens": 999600, "estimated": false, "costs": []}, "want": "21 запрос · 1\u00a0млн\u00a0токенов"},
+    {"own": {"requests": 3, "tokens": 1250000, "estimated": false, "costs": [{"currency": "USD", "micros": 4100000}, {"currency": "EUR", "micros": 120500000}]}, "want": "3 запроса · 1,3\u00a0млн\u00a0токенов · ≈\u00a0$4,10 · ≈\u00a0121\u00a0€"},
+    {"own": {"requests": 1000, "tokens": 150000000, "estimated": true, "costs": [{"currency": "CNY", "micros": 5000}]}, "want": "1\u00a0000 запросов · ≈\u00a0150\u00a0млн\u00a0токенов · ≈\u00a00,01\u00a0¥"},
+    {"own": {"requests": 12, "tokens": 12345678, "estimated": false, "costs": [{"currency": "RUB", "micros": 1234567890}]}, "want": "12 запросов · 12,3\u00a0млн\u00a0токенов · ≈\u00a01\u00a0235\u00a0₽"}
+  ]
+}

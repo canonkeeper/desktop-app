@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/domain/deletion"
+	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/projectaccess"
 	"canonkeeper/backend/internal/projects"
@@ -212,10 +213,17 @@ type ChapterNavigation struct {
 	Next     *ChapterNavigationItem
 }
 
+// ChapterNavigationItem is the chapter of the contents of the reader before or after the one read, with its place in
+// those contents (specs/2026-11-15-reader-chapter-number.md RN1.2).
 type ChapterNavigationItem struct {
-	ID            string
-	Title         string
-	DisplayNumber string
+	ID    string
+	Title string
+	Place int
+}
+
+// Numbered is the number and the title without it of the chapter before or after, by the rule of Chapter.Numbered.
+func (item ChapterNavigationItem) Numbered() (number, title string) {
+	return sagamemory.NumberedTitle(item.Title, item.Place)
 }
 
 type ListChapterParagraphsStoreInput struct {

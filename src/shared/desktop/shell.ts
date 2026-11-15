@@ -6,7 +6,34 @@ export interface LaunchNotes {
   portChanged: boolean;
   /** The backend fell and the shell started it again. */
   restartedAfterCrash: boolean;
+  /**
+   * The version the data were opened with before this one: the app was updated (specs/2026-11-13-desk-upgrade.md UG2.5;
+   * specs/2026-11-15-desk-updates-web.md UW3.3).
+   */
+  updatedFrom?: string;
+  /** The notes of the release now running, when the app installed it (specs/2026-11-13-desk-updates.md UB2.8). */
+  releaseNotes?: string;
+  /** A package of Linux the system did not finish installing: its version and where it is kept, when it could be (UB2.6). */
+  updateUnfinished?: { version: string; package?: string };
+  /**
+   * The installer stopped the bridges of the programs of the author for this update (specs/2026-11-15-desk-mcp.md MC1.8): the
+   * line «обновлён» says how they read the sagas again — once, and only in the launch updated to that version.
+   */
+  bridgesStopped?: true;
 }
+
+/** The reasons the shell or the backend refuses a folder chosen as the vault of a saga (specs/2026-11-13-desk-obsidian.md OB1.3). */
+export type FolderRefusal = 'data_dir' | 'too_wide' | 'not_found' | 'not_folder' | 'unreadable';
+
+/**
+ * How a choice of the folder of an Obsidian vault ended (OB1.2): the folder is the vault of the saga, it was refused with its
+ * reason, the author canceled, or the choice went by. The path never comes to the page.
+ */
+export type FolderChoice =
+  | { outcome: 'linked' }
+  | { outcome: 'refused'; reason: FolderRefusal }
+  | { outcome: 'canceled' }
+  | { outcome: 'expired' };
 
 /**
  * The commands of the shell of the desktop app the page may call (specs/2026-11-12-desk-shell.md SH3.2; Tauri allows them
@@ -21,6 +48,11 @@ export interface DesktopShell {
   launchNotes(): Promise<LaunchNotes>;
   /** Closes the app as the button of the window does. */
   closeWindow(): Promise<void>;
+  /**
+   * Opens the system window that chooses the folder of the Obsidian vault of a saga for the number beginObsidianVaultChoice
+   * answered, and says how the choice ended once the backend checked the folder (OB1.2).
+   */
+  pickFolder(request: string): Promise<FolderChoice>;
 }
 
 type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -49,10 +81,44 @@ export function desktopShell(win: Window = window): DesktopShell | null {
     closeWindow: async () => {
       await call('close_window');
     },
+    pickFolder: async (request) => folderChoiceOf(await call('pick_folder', { request })),
   };
+}
+
+const refusals: readonly FolderRefusal[] = ['data_dir', 'too_wide', 'not_found', 'not_folder', 'unreadable'];
+
+/** The outcome the shell answered; anything else is a choice that went by. */
+function folderChoiceOf(answer: unknown): FolderChoice {
+  const said = typeof answer === 'object' && answer !== null ? answer as Record<string, unknown> : {};
+  switch (said.outcome) {
+    case 'linked':
+    case 'canceled':
+      return { outcome: said.outcome };
+    case 'refused':
+      return refusals.includes(said.reason as FolderRefusal)
+        ? { outcome: 'refused', reason: said.reason as FolderRefusal }
+        : { outcome: 'expired' };
+    default:
+      return { outcome: 'expired' };
+  }
 }
 
 function notesOf(answer: unknown): LaunchNotes {
   const notes = typeof answer === 'object' && answer !== null ? answer as Record<string, unknown> : {};
-  return { portChanged: notes.portChanged === true, restartedAfterCrash: notes.restartedAfterCrash === true };
+  const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : undefined);
+  const unfinished = typeof notes.updateUnfinished === 'object' && notes.updateUnfinished !== null
+    ? notes.updateUnfinished as Record<string, unknown>
+    : null;
+  const version = text(unfinished?.version);
+  const kept = text(unfinished?.package);
+  const updatedFrom = text(notes.updatedFrom);
+  const releaseNotes = text(notes.releaseNotes);
+  return {
+    portChanged: notes.portChanged === true,
+    restartedAfterCrash: notes.restartedAfterCrash === true,
+    ...(updatedFrom ? { updatedFrom } : {}),
+    ...(releaseNotes ? { releaseNotes } : {}),
+    ...(version ? { updateUnfinished: { version, ...(kept ? { package: kept } : {}) } } : {}),
+    ...(notes.bridgesStopped === true ? { bridgesStopped: true as const } : {}),
+  };
 }

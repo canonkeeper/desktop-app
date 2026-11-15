@@ -18,9 +18,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderBooks(address: string) {
+function renderBooks(address: string, preset: 'normal' | 'empty-lists' = 'normal') {
   const api = createMockApiClient();
-  api.setScenario({ actorRole: 'editor', preset: 'normal' });
+  api.setScenario({ actorRole: 'editor', preset });
   const navigate = vi.fn();
   const user = { id: 'user-local' } as Parameters<NonNullable<typeof edition.pages.manuscript>['render']>[0]['user'];
   render(
@@ -42,6 +42,20 @@ describe('«Книги» of the desktop app', () => {
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)[1]).toBe('Новая глава');
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Новая глава' }));
     expect(navigate).toHaveBeenCalledWith('/manuscript/edit', { projectId, bookId });
+  });
+
+  // specs/2026-11-13-desk-sagafile-web.md SW2.1 (board 44·2): the first screen of the app opens a saga file — by its button
+  // and by a file dropped on the card.
+  it('has «Перенести сагу с сайта или другого компьютера» on the first screen, which opens a saga file', async () => {
+    const { api } = renderBooks('/manuscript/books', 'empty-lists');
+    const card = await screen.findByRole('region', { name: 'Перенести сагу с сайта или другого компьютера' }, { timeout: 10_000 });
+    expect(within(card).getByText('Сохраните сагу в файл там и откройте его здесь — книги и всё, что помощник знает о саге, переедут целиком')).toBeTruthy();
+    const opened = vi.spyOn(api, 'openSagaArchive').mockImplementation(() => new Promise(() => undefined));
+    const file = new File(['PK'], 'Хроники Белого порта.cksaga');
+    fireEvent.drop(card, { dataTransfer: { files: [file] } });
+    expect(await within(card).findByRole('region', { name: 'Открываю файл саги: Хроники Белого порта.cksaga' })).toBeTruthy();
+    expect(within(card).getByRole('button', { name: 'Открыть файл саги…' }).getAttribute('aria-disabled')).toBe('true');
+    expect(opened).toHaveBeenCalledWith(file, { idempotencyKey: expect.stringMatching(/^openSagaArchive:/u) });
   });
 
   it('opens the editor at /manuscript/edit', async () => {

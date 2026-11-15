@@ -182,6 +182,8 @@ export type GetSagaFirstQuestionsOptions = SagaReadOptions<'getSagaFirstQuestion
 export type ListSagaMapHiddenOptions = SagaReadOptions<'listSagaMapHidden'>;
 export type GetSagaContentsOptions = SagaReadOptions<'getSagaContents'>;
 export type ListAuthorMemoryOptions = CursorListOptions<'listAuthorMemory'>;
+/** The query of an operation of the journal of what went out (specs/2026-11-14-desk-journal.md JR2). */
+export type SendLogQuery<TOperation extends 'listSendLog' | 'listSendLogSendings' | 'getSendLogFile'> = OperationQueryParameters<TOperation>;
 export type ListAuthorMaterialsOptions = CursorListOptions<'listAuthorMaterials'>;
 /** An import of the author's materials: a file or a pasted text (specs/2026-11-04-saga-map.md, R9.2). */
 export type AuthorMaterialsImportInput = { file: File; text?: undefined } | { file?: undefined; text: string };
@@ -295,6 +297,49 @@ export interface CanonKeeperApiClient {
   stopImpersonation(): Promise<OperationResponse<'stopImpersonation', '200'>>;
   getCurrentUser(options?: ApiRequestOptions): Promise<OperationResponse<'getCurrentUser', '200'>>;
   getDesktopState(options?: ApiRequestOptions): Promise<OperationResponse<'getDesktopState', '200'>>;
+  eraseDesktopData(body: OperationRequest<'eraseDesktopData'>): Promise<void>;
+  dismissWelcome(body: OperationRequest<'dismissWelcome'>): Promise<void>;
+  listSendLog(query: SendLogQuery<'listSendLog'>, options?: ApiRequestOptions): Promise<OperationResponse<'listSendLog', '200'>>;
+  listSendLogSendings(query: SendLogQuery<'listSendLogSendings'>, options?: ApiRequestOptions): Promise<OperationResponse<'listSendLogSendings', '200'>>;
+  getSendLogFile(query: SendLogQuery<'getSendLogFile'>): Promise<OperationResponse<'getSendLogFile', '200'>>;
+  clearSendLog(): Promise<OperationResponse<'clearSendLog', '200'>>;
+  /** The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3). */
+  getProgramAccess(options?: ApiRequestOptions): Promise<OperationResponse<'getProgramAccess', '200'>>;
+  updateProgramAccess(body: OperationRequest<'updateProgramAccess'>): Promise<OperationResponse<'updateProgramAccess', '200'>>;
+  getClaudeDesktopExtension(options?: Pick<ApiRequestOptions, 'signal'>): Promise<DownloadedFile>;
+  getAppUpdate(options?: ApiRequestOptions): Promise<OperationResponse<'getAppUpdate', '200'>>;
+  checkAppUpdate(): Promise<OperationResponse<'checkAppUpdate', '200'>>;
+  installAppUpdate(): Promise<OperationResponse<'installAppUpdate', '200'>>;
+  cancelAppUpdate(): Promise<OperationResponse<'cancelAppUpdate', '200'>>;
+  updateAppUpdateSettings(body: OperationRequest<'updateAppUpdateSettings'>): Promise<OperationResponse<'updateAppUpdateSettings', '200'>>;
+  getAccount(options?: ApiRequestOptions & { fresh?: boolean }): Promise<OperationResponse<'getAccount', '200'>>;
+  startAccountLink(body: OperationRequest<'startAccountLink'>): Promise<OperationResponse<'startAccountLink', '200'>>;
+  cancelAccountLink(): Promise<void>;
+  unlinkAccount(): Promise<OperationResponse<'unlinkAccount', '200'>>;
+  getAiSettings(options?: ApiRequestOptions): Promise<OperationResponse<'getAiSettings', '200'>>;
+  updateAiSettings(body: OperationRequest<'updateAiSettings'>): Promise<OperationResponse<'updateAiSettings', '200'>>;
+  setAiKey(body: OperationRequest<'setAiKey'>): Promise<void>;
+  deleteAiKey(): Promise<void>;
+  listAiModels(options?: ApiRequestOptions): Promise<OperationResponse<'listAiModels', '200'>>;
+  startAiCheck(): Promise<OperationResponse<'startAiCheck', '202'>>;
+  getAiCheck(options?: ApiRequestOptions): Promise<OperationResponse<'getAiCheck', '200'>>;
+  cancelAiCheck(): Promise<void>;
+  getReadingEstimate(projectId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getReadingEstimate', '200'>>;
+  startReadingSample(projectId: string, options: RequiredIdempotencyOptions): Promise<OperationResponse<'startReadingSample', '202'>>;
+  getReadingSample(projectId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getReadingSample', '200'>>;
+  cancelReadingSample(projectId: string): Promise<void>;
+  getReadingConsent(projectId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getReadingConsent', '200'>>;
+  setReadingConsent(projectId: string, body: OperationRequest<'setReadingConsent'>): Promise<OperationResponse<'setReadingConsent', '200'>>;
+  getObsidianVault(projectId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getObsidianVault', '200'>>;
+  beginObsidianVaultChoice(projectId: string): Promise<OperationResponse<'beginObsidianVaultChoice', '202'>>;
+  unlinkObsidianVault(projectId: string): Promise<void>;
+  scanObsidianVault(projectId: string): Promise<OperationResponse<'scanObsidianVault', '200'>>;
+  previewObsidianImport(projectId: string, body: OperationRequest<'previewObsidianImport'>): Promise<OperationResponse<'previewObsidianImport', '200'>>;
+  importObsidianMaterials(projectId: string, body: OperationRequest<'importObsidianMaterials'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'importObsidianMaterials', '200'>>;
+  importObsidianBooks(projectId: string, body: OperationRequest<'importObsidianBooks'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'importObsidianBooks', '200'>>;
+  linkBookToObsidianFolder(projectId: string, bookId: string, body: OperationRequest<'linkBookToObsidianFolder'>): Promise<void>;
+  unlinkBookFromObsidianFolder(projectId: string, bookId: string): Promise<void>;
+  updateBookFromObsidian(projectId: string, bookId: string, body: OperationRequest<'updateBookFromObsidian'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'updateBookFromObsidian', '202'>>;
   listNotes(options?: NotesListOptions): Promise<OperationResponse<'listNotes', '200'>>;
   createPersonalNote(body: OperationRequest<'createPersonalNote'>, options: RequiredIdempotencyOptions): Promise<PersonalNote>;
   getPersonalNote(noteId: string, options?: ApiRequestOptions): Promise<PersonalNote>;
@@ -332,6 +377,11 @@ export interface CanonKeeperApiClient {
   deleteBookCover(bookId: string): Promise<OperationResponse<'deleteBookCover', '200'>>;
   getBookExport(bookId: string, format: BookExportFormat, options?: BookExportOptions): Promise<DownloadedFile>;
   getBookDrawingCounts(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getBookDrawingCounts', '200'>>;
+  /** The saga file (specs/2026-11-13-desk-sagafile.md SF2, SF3, SF3.8): save, open in the app, the chats it brought. */
+  getSagaArchive(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<DownloadedFile>;
+  openSagaArchive(file: File, options: RequiredIdempotencyOptions): Promise<OperationResponse<'openSagaArchive', '201'>>;
+  listSagaTranscripts(projectId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'listSagaTranscripts', '200'>>;
+  getSagaTranscript(projectId: string, transcriptId: string, options?: Pick<ApiRequestOptions, 'signal'>): Promise<OperationResponse<'getSagaTranscript', '200'>>;
   setBookCoverFromImage(bookId: string, imageNumber: number): Promise<OperationResponse<'setBookCoverFromImage', '200'>>;
   getImportConstraints(projectId: string): Promise<OperationResponse<'getImportConstraints', '200'>>;
   createImportQueue(projectId: string, body: OperationRequest<'createImportQueue'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'createImportQueue', '201'>>;

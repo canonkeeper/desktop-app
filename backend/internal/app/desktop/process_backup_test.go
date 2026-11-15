@@ -4,8 +4,8 @@ package desktop
 
 import (
 	"bytes"
+	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,9 +16,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -34,8 +35,23 @@ type programVariant struct {
 	ahead  int  // the migrations after the last of the tree the program knows; they change nothing
 	broken bool // the program knows one migration more, which fails
 	edited bool // the last migration of the tree is changed after it was applied
+	// later is the SQL of the migrations after the last of the tree, when they do something.
+	later string
 	// version is the version of the app the program is built with, as scripts/desktop-backend.mjs builds it.
 	version string
+	// retryPause shortens the pauses of the repeats of a call of the model (specs/2026-11-13-desk-consent.md CN3.4).
+	retryPause string
+	// fastUpdates builds the program with the times of the updates of a test: a day of seconds
+	// (specs/2026-11-13-desk-updates.md UB1.2; update_times.go).
+	fastUpdates string
+	// site is the address of the site the program links with (-X main.siteURL): a stub of the site of a test.
+	site string
+	// resumeEvery is how often the reading of the helper of the account checks its pauses (-X main.resumeEvery,
+	// specs/2026-11-13-desk-account-ai.md AI3.6).
+	resumeEvery string
+	// obsidianPoints is the file of the points a load of the bridge stops at (obsidian_points.go,
+	// specs/2026-11-14-desk-obsidian-books.md OK1.4).
+	obsidianPoints string
 }
 
 var programOfTheTree = programVariant{name: "tree"}
@@ -48,17 +64,17 @@ var programWithABrokenMigration = programVariant{name: "broken", broken: true}
 
 var programWithAnEditedMigration = programVariant{name: "edited", edited: true}
 
-var programs = struct {
-	sync.Mutex
-	directory string
-	built     map[string]string
-}{built: map[string]string{}}
+// programs are the programs of this test binary, built by the open support of the process tests (desktoptest).
+var programs = desktoptest.NewPrograms()
+
+// versionOfProgram is the version a built program carries; the program of the tree carries none.
+func versionOfProgram(binary string) string {
+	return programs.Version(binary)
+}
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	if programs.directory != "" {
-		_ = os.RemoveAll(programs.directory)
-	}
+	programs.Remove()
 	os.Exit(code)
 }
 
@@ -90,32 +106,35 @@ func lastVersion(t *testing.T) int64 {
 
 func program(t *testing.T, variant programVariant) string {
 	t.Helper()
-	programs.Lock()
-	defer programs.Unlock()
-	if binary, ok := programs.built[variant.name]; ok {
-		return binary
-	}
-	if programs.directory == "" {
-		directory, err := os.MkdirTemp("", "canonkeeper-desktop-programs-")
+	replace := map[string]string{}
+	if variant.fastUpdates != "" {
+		times, err := filepath.Abs("update_times.go")
 		if err != nil {
 			t.Fatal(err)
 		}
-		programs.directory = directory
+		fast := filepath.Join(programs.Directory(t), variant.name+".update_times.go")
+		if err := os.WriteFile(fast, []byte(variant.fastUpdates), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		replace[times] = fast
 	}
-	binary := filepath.Join(programs.directory, "desktop-"+variant.name)
-	if runtime.GOOS == "windows" {
-		binary += ".exe"
-	}
-	args := []string{"build", "-o", binary}
-	if variant.version != "" {
-		args = append(args, "-ldflags=-X main.version="+variant.version)
+	if variant.obsidianPoints != "" {
+		points, err := filepath.Abs("obsidian_points.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		stops := filepath.Join(programs.Directory(t), variant.name+".obsidian_points.go")
+		if err := os.WriteFile(stops, []byte(variant.obsidianPoints), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		replace[points] = stops
 	}
 	if variant.ahead > 0 || variant.broken || variant.edited {
-		replace := map[string]string{}
+		directory := programs.Directory(t)
 		files := treeMigrations(t)
 		if variant.ahead > 0 {
-			later := filepath.Join(programs.directory, "later.sql")
-			if err := os.WriteFile(later, []byte("SELECT 1;\n"), 0o600); err != nil {
+			later := filepath.Join(directory, variant.name+".later.sql")
+			if err := os.WriteFile(later, []byte(cmp.Or(variant.later, "SELECT 1;\n")), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			for step := int64(1); step <= int64(variant.ahead); step++ {
@@ -127,34 +146,24 @@ func program(t *testing.T, variant programVariant) string {
 			if err != nil {
 				t.Fatal(err)
 			}
-			edited := filepath.Join(programs.directory, "edited.sql")
+			edited := filepath.Join(directory, "edited.sql")
 			if err := os.WriteFile(edited, append(original, "\n-- edited after it was applied\n"...), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			replace[files[len(files)-1]] = edited
 		}
 		if variant.broken {
-			broken := filepath.Join(programs.directory, "broken.sql")
+			broken := filepath.Join(directory, "broken.sql")
 			if err := os.WriteFile(broken, []byte("SELECT 1 / 0;\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			replace[filepath.Join(filepath.Dir(files[0]), fmt.Sprintf("%04d_desktop_test_broken.sql", lastVersion(t)+1))] = broken
 		}
-		overlay, _ := json.Marshal(map[string]any{"Replace": replace})
-		path := filepath.Join(programs.directory, variant.name+".overlay.json")
-		if err := os.WriteFile(path, overlay, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		args = append(args, "-overlay", path)
 	}
-	build := exec.Command("go", append(args, "./cmd/desktop")...)
-	build.Dir = filepath.Join("..", "..", "..")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build ./cmd/desktop (%s): %v\n%s", variant.name, err, output)
-	}
-	programs.built[variant.name] = binary
-	return binary
+	return programs.Build(t, desktoptest.Program{
+		Name: variant.name, Version: variant.version, Site: variant.site, RetryPause: variant.retryPause, ResumeEvery: variant.resumeEvery,
+		Overlay: replace,
+	})
 }
 
 // bundleWithDump is the bundle of the test with its own pg_dump: none when dump is empty, else the script dump. The other

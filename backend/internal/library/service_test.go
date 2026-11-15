@@ -740,6 +740,11 @@ func (s *memoryStoreForTest) ListChapters(ctx context.Context, input ListChapter
 	if !exists || book.ProjectID != input.ProjectID {
 		return nil, ErrNotFound
 	}
+	// A living chapter carries its place among the living chapters of its book, as the store gives it (RN1.2).
+	places := map[string]int{}
+	for index, chapter := range s.ChaptersForBook(input.BookID) {
+		places[chapter.ID] = index + 1
+	}
 	chapters := make([]Chapter, 0)
 	for _, chapter := range s.chapters {
 		_, deleted := s.deletedChapters[chapter.ID]
@@ -753,6 +758,8 @@ func (s *memoryStoreForTest) ListChapters(ctx context.Context, input ListChapter
 			restoreUntil := deletedAt.Add(7 * 24 * time.Hour)
 			chapter.DeletedAt = &deletedAt
 			chapter.RestoreUntil = &restoreUntil
+		} else {
+			chapter.Place = places[chapter.ID]
 		}
 		chapters = append(chapters, chapter)
 	}
@@ -783,17 +790,14 @@ func (s *memoryStoreForTest) GetChapter(ctx context.Context, projectID, bookID, 
 			continue
 		}
 		navigation.Position = index + 1
+		chapter.Place = index + 1
 		if index > 0 {
 			previous := chapters[index-1]
-			navigation.Previous = &ChapterNavigationItem{
-				ID: previous.ID, Title: previous.Title, DisplayNumber: ChapterDisplayNumber(previous.Order, previous.Title),
-			}
+			navigation.Previous = &ChapterNavigationItem{ID: previous.ID, Title: previous.Title, Place: index}
 		}
 		if index+1 < len(chapters) {
 			next := chapters[index+1]
-			navigation.Next = &ChapterNavigationItem{
-				ID: next.ID, Title: next.Title, DisplayNumber: ChapterDisplayNumber(next.Order, next.Title),
-			}
+			navigation.Next = &ChapterNavigationItem{ID: next.ID, Title: next.Title, Place: index + 2}
 		}
 		break
 	}

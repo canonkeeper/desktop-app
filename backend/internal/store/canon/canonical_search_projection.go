@@ -3,8 +3,8 @@ package canonstore
 import (
 	"math"
 
+	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/governance"
-	"canonkeeper/backend/internal/library"
 	"canonkeeper/backend/internal/search"
 	storedb "canonkeeper/backend/internal/store/db"
 	"canonkeeper/backend/internal/store/sqlc"
@@ -25,11 +25,13 @@ func lexicalSearchRow(input search.LexicalSearchInput, row sqlc.SearchCanonicalL
 	if generation == (governance.Digest{}) || contentHash == (governance.Digest{}) {
 		return search.LexicalSearchRow{}, search.ErrCorrupt
 	}
+	// The number of the chapter of a found paragraph is the number the reader shows (specs/2026-11-15-reader-chapter-number.md RN1.2).
+	number, _ := sagamemory.NumberedTitle(row.ChapterTitle, int(row.ChapterPosition))
 	result := search.LexicalSearchRow{
 		ID: storedb.UUIDString(row.ID), ProjectID: storedb.UUIDString(row.ProjectID),
 		BookID: storedb.UUIDString(row.BookID), ChapterID: storedb.UUIDString(row.ChapterID),
 		Content: row.Content, BookTitle: row.BookTitle, ChapterTitle: row.ChapterTitle, Rank: row.Rank,
-		ChapterNumber: library.ChapterDisplayNumber(int(row.ChapterPosition), row.ChapterTitle),
+		ChapterNumber: number,
 		ChapterSource: &search.ChapterSourceIdentity{
 			SourceView: input.SourceView, SourceRevision: uint64(row.SourceRevision),
 			SourceGeneration: generation, ContentHash: contentHash,

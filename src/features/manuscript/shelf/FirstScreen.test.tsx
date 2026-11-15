@@ -68,6 +68,21 @@ describe('the first screen (FS1.1, FS1.2)', () => {
     expect(within(first).queryByRole('region', { name: 'Посмотреть на примере' })).toBeNull();
   });
 
+  // specs/2026-11-13-desk-sagafile-web.md SW2.1 (board 44·2): the card of the saga file stands right after the name in a build
+  // that opens a saga file — the app; the site has none.
+  it('puts the card of a saga file right after the name, where the build gives one', async () => {
+    renderFirst({ ...siteSlot, useSagaFileOffer: () => <section aria-label="Перенести сагу с сайта или другого компьютера" /> });
+    const first = await screen.findByRole('region', { name: 'С чего начнём?' });
+    const cards = [...first.querySelectorAll(':scope section > section, :scope div > section')].map((card) => card.getAttribute('aria-label') ?? card.querySelector('h2')?.textContent);
+    expect(cards.slice(0, 3)).toEqual(['Назовите сагу', 'Перенести сагу с сайта или другого компьютера', 'Посмотреть на примере']);
+  });
+
+  it('has no card of a saga file on the site', async () => {
+    renderFirst(siteSlot);
+    const first = await screen.findByRole('region', { name: 'С чего начнём?' });
+    expect(within(first).queryByRole('region', { name: 'Перенести сагу с сайта или другого компьютера' })).toBeNull();
+  });
+
   it('names the saga for an unverified address too: the line of the address stands once', async () => {
     renderFirst(siteSlot, { busy: false, emailVerification: { email: 'new-author@example.test', status: 'idle', canSend: true, onSend: vi.fn() } });
     const first = await screen.findByRole('region', { name: 'С чего начнём?' });

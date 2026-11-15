@@ -75,6 +75,13 @@ const idempotentOperations = new Set<OperationId>([
   'startImportQueue',
   ...imageDrawingOperationIds,
   'createAdminPromoPermission',
+  // «Открыть файл саги» of the app (specs/2026-11-13-desk-sagafile.md SF3.12).
+  'openSagaArchive',
+  // The books of the folders of an Obsidian vault (specs/2026-11-14-desk-obsidian-books.md OK1.6, OK2.5) and the records of
+  // its notes (specs/2026-11-15-desk-obsidian-notes.md ON1.8).
+  'importObsidianBooks',
+  'updateBookFromObsidian',
+  'importObsidianMaterials',
 ]);
 const repositoryManagedIdempotencyOperations = new Set<OperationId>([
   'createAuthorMemory',
@@ -88,6 +95,10 @@ const repositoryManagedIdempotencyOperations = new Set<OperationId>([
   'uploadImportQueueItem',
   'startImportQueue',
   'createAdminPromoPermission',
+  'openSagaArchive',
+  'importObsidianBooks',
+  'updateBookFromObsidian',
+  'importObsidianMaterials',
 ]);
 const operationManifestById = new Map<OperationId, OperationManifestRoute>(getOperationManifestEntries());
 
@@ -482,6 +493,9 @@ function problemResponse(error: unknown) {
         status: error.status,
         title,
         type: 'about:blank',
+        // The fields of the problem the repository names, as the mock server sends them: mayReturn of a refusal of the counter of
+        // the account (specs/2026-11-15-desk-account-words-web.md AW4.2), the reason of a vault, the attempts left.
+        ...error.extras.fields,
       },
       { status: error.status, headers },
     );

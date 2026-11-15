@@ -25,6 +25,8 @@ const chatSearchSchema = z
     // The lightbox of a drawing and its panel (illustrations R8.5).
     image: imageNumberSearch,
     panel: z.enum(['info', 'layers']).optional(),
+    // A chat a saga file brought, open to read (specs/2026-11-13-desk-sagafile-web.md SW3.2).
+    fileChat: searchValue,
   })
   .catch({});
 const sagaSearchSchema = z

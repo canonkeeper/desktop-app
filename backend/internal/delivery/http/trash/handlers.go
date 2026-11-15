@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"canonkeeper/backend/internal/auth"
+	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/domain/trash"
 	"canonkeeper/backend/internal/httpapi"
 
@@ -62,7 +63,8 @@ type chapter struct {
 	BookTitle         string `json:"bookTitle"`
 	BookDisplayNumber string `json:"bookDisplayNumber"`
 	Title             string `json:"title"`
-	Order             int    `json:"order"`
+	DisplayNumber     string `json:"displayNumber"`
+	DisplayTitle      string `json:"displayTitle"`
 	DeletedAt         string `json:"deletedAt"`
 	RestoreUntil      string `json:"restoreUntil"`
 }
@@ -122,8 +124,11 @@ func present(list trash.List) response {
 		Books: each(list.Books, func(item trash.Book) book {
 			return book{item.ID, item.ProjectID, item.SagaTitle, item.Title, at(item.DeletedAt), at(item.RestoreUntil)}
 		}),
+		// A deleted chapter has no place among the living chapters of its book: only the number its title writes
+		// (specs/2026-11-15-reader-chapter-number.md RN1.4).
 		Chapters: each(list.Chapters, func(item trash.Chapter) chapter {
-			return chapter{item.ID, item.ProjectID, item.SagaTitle, item.BookID, item.BookTitle, item.BookDisplayNumber, item.Title, item.Order, at(item.DeletedAt), at(item.RestoreUntil)}
+			number, title := sagamemory.TitledNumber(item.Title)
+			return chapter{item.ID, item.ProjectID, item.SagaTitle, item.BookID, item.BookTitle, item.BookDisplayNumber, item.Title, number, title, at(item.DeletedAt), at(item.RestoreUntil)}
 		}),
 		BookUpdates: each(list.BookUpdates, func(item trash.BookUpdate) bookUpdate {
 			return bookUpdate{item.BookID, item.ProjectID, item.SagaTitle, item.Title, at(item.UpdatedAt), at(item.RevertUntil)}

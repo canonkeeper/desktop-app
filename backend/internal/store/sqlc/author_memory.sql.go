@@ -55,6 +55,44 @@ func (q *Queries) CreateAuthorMemory(ctx context.Context, arg CreateAuthorMemory
 	return id, err
 }
 
+const createCarriedAuthorMemory = `-- name: CreateCarriedAuthorMemory :one
+INSERT INTO author_memory (project_id, kind, body, chapter_id, name, carried_origin, created_by, updated_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+        $7, $7, $8, $9)
+RETURNING id
+`
+
+type CreateCarriedAuthorMemoryParams struct {
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Kind          string             `json:"kind"`
+	Body          string             `json:"body"`
+	ChapterID     pgtype.UUID        `json:"chapter_id"`
+	Name          pgtype.Text        `json:"name"`
+	CarriedOrigin pgtype.Text        `json:"carried_origin"`
+	Actor         pgtype.UUID        `json:"actor"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// A record a saga file brought (specs/2026-11-13-desk-sagafile.md SF4.2): no Job of this saga, where it came from kept as
+// it was, its dates as the file has them.
+func (q *Queries) CreateCarriedAuthorMemory(ctx context.Context, arg CreateCarriedAuthorMemoryParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createCarriedAuthorMemory,
+		arg.ProjectID,
+		arg.Kind,
+		arg.Body,
+		arg.ChapterID,
+		arg.Name,
+		arg.CarriedOrigin,
+		arg.Actor,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const deleteAuthorMemory = `-- name: DeleteAuthorMemory :execrows
 DELETE FROM author_memory
 WHERE project_id = $1 AND id = $2 AND revision = $3
@@ -76,7 +114,7 @@ func (q *Queries) DeleteAuthorMemory(ctx context.Context, arg DeleteAuthorMemory
 
 const getAuthorMemory = `-- name: GetAuthorMemory :one
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name
+       record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin, author.display_name AS author_name
 FROM author_memory AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE record.project_id = $1 AND record.id = $2
@@ -88,18 +126,19 @@ type GetAuthorMemoryParams struct {
 }
 
 type GetAuthorMemoryRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ProjectID  pgtype.UUID        `json:"project_id"`
-	Kind       string             `json:"kind"`
-	Body       string             `json:"body"`
-	ChapterID  pgtype.UUID        `json:"chapter_id"`
-	Name       pgtype.Text        `json:"name"`
-	Revision   int64              `json:"revision"`
-	CreatedBy  pgtype.UUID        `json:"created_by"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-	JobID      pgtype.UUID        `json:"job_id"`
-	AuthorName string             `json:"author_name"`
+	ID            pgtype.UUID        `json:"id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Kind          string             `json:"kind"`
+	Body          string             `json:"body"`
+	ChapterID     pgtype.UUID        `json:"chapter_id"`
+	Name          pgtype.Text        `json:"name"`
+	Revision      int64              `json:"revision"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	JobID         pgtype.UUID        `json:"job_id"`
+	CarriedOrigin pgtype.Text        `json:"carried_origin"`
+	AuthorName    string             `json:"author_name"`
 }
 
 func (q *Queries) GetAuthorMemory(ctx context.Context, arg GetAuthorMemoryParams) (GetAuthorMemoryRow, error) {
@@ -117,6 +156,7 @@ func (q *Queries) GetAuthorMemory(ctx context.Context, arg GetAuthorMemoryParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.JobID,
+		&i.CarriedOrigin,
 		&i.AuthorName,
 	)
 	return i, err
@@ -125,7 +165,7 @@ func (q *Queries) GetAuthorMemory(ctx context.Context, arg GetAuthorMemoryParams
 const listAuthorMemory = `-- name: ListAuthorMemory :many
 WITH filtered AS (
   SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-         record.created_by, record.created_at, record.updated_at, record.job_id
+         record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin
   FROM author_memory AS record
   WHERE record.project_id = $5
     AND ($6::text[] = '{}' OR record.kind = ANY($6::text[]))
@@ -135,8 +175,8 @@ WITH filtered AS (
       OR strpos(lower(coalesce(record.name, '')), lower($8)) > 0)
 )
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name,
-       (SELECT count(*) FROM filtered) AS total_count
+       record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin,
+       author.display_name AS author_name, (SELECT count(*) FROM filtered) AS total_count
 FROM filtered AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE NOT $1::boolean
@@ -157,19 +197,20 @@ type ListAuthorMemoryParams struct {
 }
 
 type ListAuthorMemoryRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ProjectID  pgtype.UUID        `json:"project_id"`
-	Kind       string             `json:"kind"`
-	Body       string             `json:"body"`
-	ChapterID  pgtype.UUID        `json:"chapter_id"`
-	Name       pgtype.Text        `json:"name"`
-	Revision   int64              `json:"revision"`
-	CreatedBy  pgtype.UUID        `json:"created_by"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-	JobID      pgtype.UUID        `json:"job_id"`
-	AuthorName string             `json:"author_name"`
-	TotalCount int64              `json:"total_count"`
+	ID            pgtype.UUID        `json:"id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Kind          string             `json:"kind"`
+	Body          string             `json:"body"`
+	ChapterID     pgtype.UUID        `json:"chapter_id"`
+	Name          pgtype.Text        `json:"name"`
+	Revision      int64              `json:"revision"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	JobID         pgtype.UUID        `json:"job_id"`
+	CarriedOrigin pgtype.Text        `json:"carried_origin"`
+	AuthorName    string             `json:"author_name"`
+	TotalCount    int64              `json:"total_count"`
 }
 
 func (q *Queries) ListAuthorMemory(ctx context.Context, arg ListAuthorMemoryParams) ([]ListAuthorMemoryRow, error) {
@@ -202,6 +243,7 @@ func (q *Queries) ListAuthorMemory(ctx context.Context, arg ListAuthorMemoryPara
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.JobID,
+			&i.CarriedOrigin,
 			&i.AuthorName,
 			&i.TotalCount,
 		); err != nil {

@@ -71,9 +71,9 @@ func (a *HTTPAdapter) execute(ctx context.Context, target Target, request Reques
 		return Result{}, &Error{Code: ErrorCodeInvalidRequest, Message: "streaming requests must use OpenStream"}
 	}
 	if prepared.Capabilities.Protocol == ProtocolResponses {
-		return a.executeResponses(ctx, prepared, req)
+		return a.executeResponses(ctx, prepared, req, request)
 	}
-	return a.executeChat(ctx, prepared, req, items, catalog)
+	return a.executeChat(ctx, prepared, req, items, catalog, request)
 }
 
 func (a *HTTPAdapter) openStream(ctx context.Context, target Target, request Request, emit func(Event) error) (Result, error) {
@@ -89,9 +89,9 @@ func (a *HTTPAdapter) openStream(ctx context.Context, target Target, request Req
 		return Result{}, &Error{Code: ErrorCodeInvalidRequest, Message: "OpenStream requires stream=true"}
 	}
 	if prepared.Capabilities.Protocol == ProtocolResponses {
-		return a.streamResponses(ctx, prepared, req, emit)
+		return a.streamResponses(ctx, prepared, req, request, emit)
 	}
-	return a.streamChat(ctx, prepared, req, items, catalog, emit)
+	return a.streamChat(ctx, prepared, req, items, catalog, request, emit)
 }
 
 func prepareTarget(target Target) (Target, error) {
@@ -140,9 +140,12 @@ func prepareRequest(request Request, target Target) (responsesWireRequest, []res
 	return req, items, catalog, nil
 }
 
-func (a *HTTPAdapter) executeResponses(ctx context.Context, target Target, req responsesWireRequest) (Result, error) {
+func (a *HTTPAdapter) executeResponses(ctx context.Context, target Target, req responsesWireRequest, request Request) (Result, error) {
 	body, err := passthroughBody(req, target)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := request.sent(body); err != nil {
 		return Result{}, err
 	}
 	responseBody, status, header, err := a.do(ctx, target, http.MethodPost, endpoint(target.BaseURL, "responses"), body, "application/json")
@@ -177,13 +180,16 @@ func (a *HTTPAdapter) executeResponses(ctx context.Context, target Target, req r
 	return result, nil
 }
 
-func (a *HTTPAdapter) executeChat(ctx context.Context, target Target, req responsesWireRequest, items []responsesItem, catalog toolCatalog) (Result, error) {
+func (a *HTTPAdapter) executeChat(ctx context.Context, target Target, req responsesWireRequest, items []responsesItem, catalog toolCatalog, request Request) (Result, error) {
 	chat, err := translateToChat(req, items, catalog, target, false)
 	if err != nil {
 		return Result{}, err
 	}
 	body, err := mapRequestBody(chat, target.Capabilities)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := request.sent(body); err != nil {
 		return Result{}, err
 	}
 	responseBody, status, header, err := a.do(ctx, target, http.MethodPost, endpoint(target.BaseURL, "chat/completions"), body, "application/json")

@@ -6,9 +6,10 @@ import type { CanonKeeperApiClient, OperationResponse } from '../../../shared/ap
 export type DesktopState = OperationResponse<'getDesktopState', '200'>;
 type DesktopStateClient = Pick<CanonKeeperApiClient, 'getDesktopState'>;
 
-const desktopStateQueryKey = [...canonKeeperQueryKeys.all, 'desktop-state'] as const;
+/** The one query of the state of the app: «Данные», «О программе» and «Добро пожаловать» read it. */
+export const desktopStateQueryKey = [...canonKeeperQueryKeys.all, 'desktop-state'] as const;
 
-function stateApi(meta: unknown) {
+export function stateApi(meta: unknown) {
   const api = (meta as { canonKeeperApi?: DesktopStateClient } | undefined)?.canonKeeperApi;
   if (!api) throw new Error('The state of the app is missing the CanonKeeper API client metadata.');
   return api;

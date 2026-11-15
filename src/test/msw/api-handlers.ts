@@ -5,6 +5,7 @@ import { createContactHandlers } from './contact-handlers';
 import { createTierHandlers } from './tier-handlers';
 import { createMockApiClient, type MockRepository } from '../../api/mock/repository';
 import { drawingListQuery } from '../../api/mock/repository/drawings';
+import { bytesOf } from '../../shared/files/zip';
 import type { ProjectImageFileQuery } from '../../api/mock/repository/images';
 import { MockApiError, type MockScenarioControl, type MockScenarioPreset } from '../../api/mock/scenarios';
 import type {
@@ -33,10 +34,12 @@ import {
   listProjectsForState,
   projectJobsQuery,
   readBookCoverForm,
+  readSagaFileForm,
   readChapterForm, readImageUploadForm, readMaterialsImportForm,
   readImportForm,
   readImportQueueItemForm,
   readJson,
+  readOptionalJson,
 } from './handler-input';
 import {
   binaryResponse,
@@ -192,6 +195,167 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     // «Настройки» of the desktop app (specs/2026-11-13-desk-settings.md ST2.1).
     http.get(mswPath('getDesktopState'), ({ request }) =>
       jsonResponse(() => repository.getDesktopState(), undefined, { csrfState, operationId: 'getDesktopState', request, repository })),
+    // The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3).
+    http.get(mswPath('getProgramAccess'), ({ request }) =>
+      jsonResponse(() => repository.getProgramAccess(), undefined, { csrfState, operationId: 'getProgramAccess', request, repository })),
+    http.put(mswPath('updateProgramAccess'), ({ request }) => jsonResponse(
+      async () => repository.updateProgramAccess((await readJson(request)) as { enabled?: unknown }),
+      undefined, { csrfState, operationId: 'updateProgramAccess', request, repository },
+    )),
+    http.get(mswPath('getClaudeDesktopExtension'), ({ request }) => binaryResponse(async () => {
+      const file = await repository.getClaudeDesktopExtension();
+      return {
+        body: (await bytesOf(file.blob)).slice(),
+        contentType: 'application/zip',
+        headers: { 'Content-Disposition': `attachment; filename*=utf-8''${encodeURIComponent(file.fileName)}` },
+      };
+    }, { operationId: 'getClaudeDesktopExtension', request, repository })),
+    // «Свой ИИ» of the desktop app and its key (specs/2026-11-13-desk-secrets.md SE2).
+    http.get(mswPath('getAiSettings'), ({ request }) =>
+      jsonResponse(() => repository.getAiSettings(), undefined, { csrfState, operationId: 'getAiSettings', request, repository })),
+    http.put(mswPath('updateAiSettings'), async ({ request }) => jsonResponse(
+      async () => repository.updateAiSettings((await readJson(request)) as OperationRequest<'updateAiSettings'>), undefined,
+      { csrfState, operationId: 'updateAiSettings', request, repository },
+    )),
+    http.put(mswPath('setAiKey'), async ({ request }) => emptyResponse(
+      async () => repository.setAiKey((await readJson(request)) as OperationRequest<'setAiKey'>), { csrfState, operationId: 'setAiKey', request, repository },
+    )),
+    http.delete(mswPath('deleteAiKey'), ({ request }) => emptyResponse(
+      () => repository.deleteAiKey(), { csrfState, operationId: 'deleteAiKey', request, repository },
+    )),
+    // The models of the provider of «Свой ИИ» (specs/2026-11-13-desk-probes.md PB1).
+    http.get(mswPath('listAiModels'), ({ request }) =>
+      jsonResponse(() => repository.listAiModels(), undefined, { csrfState, operationId: 'listAiModels', request, repository })),
+    // «Проверить связь» (specs/2026-11-13-desk-probes.md PB2).
+    http.post(mswPath('startAiCheck'), ({ request }) =>
+      jsonResponse(() => repository.startAiCheck(), { status: 202 }, { csrfState, operationId: 'startAiCheck', request, repository })),
+    // The journal of what went out of the desktop app (specs/2026-11-14-desk-journal.md JR2).
+    http.get(mswPath('listSendLog'), ({ request }) => jsonResponse(() => {
+      const query = new URL(request.url).searchParams;
+      return repository.listSendLog({ kind: query.get('kind') ?? undefined, zone: query.get('zone') ?? undefined, cursor: query.get('cursor') ?? undefined });
+    }, undefined, { csrfState, operationId: 'listSendLog', request, repository })),
+    http.get(mswPath('listSendLogSendings'), ({ request }) => jsonResponse(() => {
+      const query = new URL(request.url).searchParams;
+      return repository.listSendLogSendings({ row: query.get('row') ?? undefined, zone: query.get('zone') ?? undefined, cursor: query.get('cursor') ?? undefined });
+    }, undefined, { csrfState, operationId: 'listSendLogSendings', request, repository })),
+    http.get(mswPath('getSendLogFile'), ({ request }) => jsonResponse(() => {
+      const query = new URL(request.url).searchParams;
+      return repository.getSendLogFile({ kind: query.get('kind') ?? undefined, zone: query.get('zone') ?? undefined });
+    }, undefined, { csrfState, operationId: 'getSendLogFile', request, repository })),
+    http.delete(mswPath('clearSendLog'), ({ request }) =>
+      jsonResponse(() => repository.clearSendLog(), undefined, { csrfState, operationId: 'clearSendLog', request, repository })),
+    http.get(mswPath('getAiCheck'), ({ request }) =>
+      jsonResponse(() => repository.getAiCheck(), undefined, { csrfState, operationId: 'getAiCheck', request, repository })),
+    http.delete(mswPath('cancelAiCheck'), ({ request }) => emptyResponse(
+      () => repository.cancelAiCheck(), { csrfState, operationId: 'cancelAiCheck', request, repository },
+    )),
+    // The reading of the books by «Свой ИИ» (specs/2026-11-13-desk-consent.md).
+    http.get(mswPath('getReadingEstimate'), ({ params, request }) => jsonResponse(
+      () => repository.getReadingEstimate(oneParam(params.projectId)), undefined,
+      { csrfState, operationId: 'getReadingEstimate', request, repository },
+    )),
+    http.get(mswPath('getReadingConsent'), ({ params, request }) => jsonResponse(
+      () => repository.getReadingConsent(oneParam(params.projectId)), undefined,
+      { csrfState, operationId: 'getReadingConsent', request, repository },
+    )),
+    http.put(mswPath('setReadingConsent'), async ({ params, request }) => jsonResponse(
+      async () => repository.setReadingConsent(oneParam(params.projectId), (await readJson(request)) as OperationRequest<'setReadingConsent'>),
+      undefined, { csrfState, operationId: 'setReadingConsent', request, repository },
+    )),
+    http.get(mswPath('getReadingSample'), ({ params, request }) => jsonResponse(
+      () => repository.getReadingSample(oneParam(params.projectId)), undefined,
+      { csrfState, operationId: 'getReadingSample', request, repository },
+    )),
+    http.post(mswPath('startReadingSample'), ({ params, request }) => jsonResponse(
+      () => repository.startReadingSample(oneParam(params.projectId)), { status: 202 },
+      { csrfState, operationId: 'startReadingSample', request, repository },
+    )),
+    http.delete(mswPath('cancelReadingSample'), ({ params, request }) => emptyResponse(
+      () => repository.cancelReadingSample(oneParam(params.projectId)), { csrfState, operationId: 'cancelReadingSample', request, repository },
+    )),
+    // «Стереть все данные» of the desktop app (specs/2026-11-13-desk-erase.md ER1.2).
+    http.post(mswPath('eraseDesktopData'), async ({ request }) => emptyResponse(
+      async () => repository.eraseDesktopData((await readJson(request)) as OperationRequest<'eraseDesktopData'>),
+      { csrfState, operationId: 'eraseDesktopData', request, repository }, { status: 202 },
+    )),
+    // «Добро пожаловать» of the desktop app (specs/2026-11-13-desk-upgrade.md UG5.1).
+    http.post(mswPath('dismissWelcome'), async ({ request }) => emptyResponse(
+      async () => repository.dismissWelcome((await readJson(request)) as OperationRequest<'dismissWelcome'>),
+      { csrfState, operationId: 'dismissWelcome', request, repository },
+    )),
+    // The updates of the desktop app (specs/2026-11-13-desk-updates.md UB1.7).
+    http.get(mswPath('getAppUpdate'), ({ request }) =>
+      jsonResponse(() => repository.getAppUpdate(), undefined, { csrfState, operationId: 'getAppUpdate', request, repository })),
+    http.post(mswPath('checkAppUpdate'), ({ request }) =>
+      jsonResponse(() => repository.checkAppUpdate(), undefined, { csrfState, operationId: 'checkAppUpdate', request, repository })),
+    http.post(mswPath('installAppUpdate'), ({ request }) =>
+      jsonResponse(() => repository.installAppUpdate(), undefined, { csrfState, operationId: 'installAppUpdate', request, repository })),
+    http.post(mswPath('cancelAppUpdate'), ({ request }) =>
+      jsonResponse(() => repository.cancelAppUpdate(), undefined, { csrfState, operationId: 'cancelAppUpdate', request, repository })),
+    http.put(mswPath('updateAppUpdateSettings'), async ({ request }) => jsonResponse(
+      async () => repository.updateAppUpdateSettings((await readJson(request)) as OperationRequest<'updateAppUpdateSettings'>), undefined,
+      { csrfState, operationId: 'updateAppUpdateSettings', request, repository },
+    )),
+    // The link of the desktop app with an account of the site (specs/2026-11-13-desk-account.md).
+    http.get(mswPath('getAccount'), ({ request }) =>
+      jsonResponse(() => repository.getAccount(), undefined, { csrfState, operationId: 'getAccount', request, repository })),
+    http.post(mswPath('startAccountLink'), async ({ request }) => jsonResponse(
+      async () => repository.startAccountLink((await readOptionalJson(request)) as OperationRequest<'startAccountLink'> | undefined), undefined,
+      { csrfState, operationId: 'startAccountLink', request, repository },
+    )),
+    http.delete(mswPath('cancelAccountLink'), ({ request }) => emptyResponse(
+      () => repository.cancelAccountLink(), { csrfState, operationId: 'cancelAccountLink', request, repository },
+    )),
+    http.delete(mswPath('unlinkAccount'), ({ request }) =>
+      jsonResponse(() => repository.unlinkAccount(), undefined, { csrfState, operationId: 'unlinkAccount', request, repository })),
+    // The bridge of the desktop app with an Obsidian vault (specs/2026-11-13-desk-obsidian.md).
+    http.get(mswPath('getObsidianVault'), ({ params, request }) => jsonResponse(
+      () => repository.getObsidianVault(oneParam(params.projectId)), undefined, { csrfState, operationId: 'getObsidianVault', request, repository },
+    )),
+    http.post(mswPath('beginObsidianVaultChoice'), ({ params, request }) => jsonResponse(
+      () => repository.beginObsidianVaultChoice(oneParam(params.projectId)), { status: 202 },
+      { csrfState, operationId: 'beginObsidianVaultChoice', request, repository },
+    )),
+    http.delete(mswPath('unlinkObsidianVault'), ({ params, request }) => emptyResponse(
+      () => repository.unlinkObsidianVault(oneParam(params.projectId)), { csrfState, operationId: 'unlinkObsidianVault', request, repository },
+    )),
+    http.get(mswPath('scanObsidianVault'), ({ params, request }) => jsonResponse(
+      () => repository.scanObsidianVault(oneParam(params.projectId)), undefined, { csrfState, operationId: 'scanObsidianVault', request, repository },
+    )),
+    http.post(mswPath('previewObsidianImport'), async ({ params, request }) => {
+      const body = (await readJson(request)) as OperationRequest<'previewObsidianImport'>;
+      return jsonResponse(
+        () => repository.previewObsidianImport(oneParam(params.projectId), body), undefined,
+        { csrfState, operationId: 'previewObsidianImport', request, repository },
+      );
+    }),
+    // The records of its notes (specs/2026-11-15-desk-obsidian-notes.md).
+    http.post(mswPath('importObsidianMaterials'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.importObsidianMaterials(oneParam(params.projectId), body as OperationRequest<'importObsidianMaterials'>, options),
+      { status: 200 }, { csrfState, operationId: 'importObsidianMaterials', request, repository }, () => readJson(request), idempotencyStore,
+    )),
+    // Its books (specs/2026-11-14-desk-obsidian-books.md).
+    http.post(mswPath('importObsidianBooks'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.importObsidianBooks(oneParam(params.projectId), body as OperationRequest<'importObsidianBooks'>, options),
+      { status: 200 }, { csrfState, operationId: 'importObsidianBooks', request, repository }, () => readJson(request), idempotencyStore,
+    )),
+    http.post(mswPath('updateBookFromObsidian'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.updateBookFromObsidian(
+        oneParam(params.projectId), oneParam(params.bookId), body as OperationRequest<'updateBookFromObsidian'>, options,
+      ),
+      { status: 202 }, { csrfState, operationId: 'updateBookFromObsidian', request, repository }, () => readJson(request), idempotencyStore,
+    )),
+    http.put(mswPath('linkBookToObsidianFolder'), async ({ params, request }) => {
+      const body = (await readJson(request)) as OperationRequest<'linkBookToObsidianFolder'>;
+      return emptyResponse(
+        () => repository.linkBookToObsidianFolder(oneParam(params.projectId), oneParam(params.bookId), body),
+        { csrfState, operationId: 'linkBookToObsidianFolder', request, repository },
+      );
+    }),
+    http.delete(mswPath('unlinkBookFromObsidianFolder'), ({ params, request }) => emptyResponse(
+      () => repository.unlinkBookFromObsidianFolder(oneParam(params.projectId), oneParam(params.bookId)),
+      { csrfState, operationId: 'unlinkBookFromObsidianFolder', request, repository },
+    )),
     http.get(mswPath('listRecentlyDeleted'), ({ request }) =>
       jsonResponse(() => repository.listRecentlyDeleted(), undefined, { csrfState, operationId: 'listRecentlyDeleted', request, repository })),
     http.get(mswPath('getAccountQuota'), ({ request }) =>
@@ -742,6 +906,30 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       () => repository.getBookDrawingCounts(oneParam(params.projectId)),
       undefined,
       { operationId: 'getBookDrawingCounts', request, repository },
+    )),
+    // The saga file (specs/2026-11-13-desk-sagafile.md SF2, SF3, SF3.8): the repository of the mock keeps it, as for the
+    // mock server.
+    http.get(mswPath('getSagaArchive'), ({ params, request }) => binaryResponse(async () => {
+      const file = await repository.getSagaArchive(oneParam(params.projectId));
+      return {
+        body: (await bytesOf(file.blob)).slice(),
+        contentType: 'application/zip',
+        headers: { 'Content-Disposition': `attachment; filename*=utf-8''${encodeURIComponent(file.fileName)}` },
+      };
+    }, { operationId: 'getSagaArchive', request, repository })),
+    http.post(mswPath('openSagaArchive'), ({ request }) => idempotentJsonResponse(
+      (options, file) => repository.openSagaArchive(file as File, options),
+      { status: 201 }, { operationId: 'openSagaArchive', request, repository }, () => readSagaFileForm(request), idempotencyStore,
+    )),
+    http.get(mswPath('listSagaTranscripts'), ({ params, request }) => jsonResponse(
+      () => repository.listSagaTranscripts(oneParam(params.projectId)),
+      undefined,
+      { operationId: 'listSagaTranscripts', request, repository },
+    )),
+    http.get(mswPath('getSagaTranscript'), ({ params, request }) => jsonResponse(
+      () => repository.getSagaTranscript(oneParam(params.projectId), oneParam(params.transcriptId)),
+      undefined,
+      { operationId: 'getSagaTranscript', request, repository },
     )),
     http.get(mswPath('getBookExport'), ({ params, request }) => binaryResponse(async () => {
       const query = new URL(request.url).searchParams;

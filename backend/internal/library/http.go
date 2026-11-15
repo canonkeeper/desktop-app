@@ -158,7 +158,27 @@ type jobStartLinks struct {
 	Job string `json:"job"`
 }
 
+// JobStart is the answer of a started import Job as the import of a book gives it — its id, its public view, its link —, for
+// a host that starts an import Job of its own (specs/2026-11-14-desk-obsidian-books.md OK2.1).
+type JobStart = jobStartResponse
+
+// WriteJobStart writes the answer of a started import Job as the import of a book writes it: its headers, and its body —
+// the JobStart, or what body makes of it for a host that answers its own fields beside it. Nothing of the answer of the
+// import changes.
+func WriteJobStart(w http.ResponseWriter, ctx context.Context, status int, job jobs.Job, body func(JobStart) any) error {
+	return writeJobStart(w, ctx, status, job, body)
+}
+
+// WriteImportError writes a refusal of the import as the import of a book writes it, for a host that calls its use case.
+func WriteImportError(w http.ResponseWriter, r *http.Request, err error) {
+	writeImportServiceError(w, r, err)
+}
+
 func writeJobStartResponse(w http.ResponseWriter, ctx context.Context, status int, job jobs.Job) error {
+	return writeJobStart(w, ctx, status, job, nil)
+}
+
+func writeJobStart(w http.ResponseWriter, ctx context.Context, status int, job jobs.Job, body func(JobStart) any) error {
 	requestID, _ := observability.RequestIDFromContext(ctx)
 	projected, err := jobs.PublicJobResponseFromJob(job, string(requestID))
 	if err != nil {
@@ -168,13 +188,18 @@ func writeJobStartResponse(w http.ResponseWriter, ctx context.Context, status in
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", jobPath)
 	w.Header().Set("Retry-After", "1")
-	writeImportJSON(w, status, jobStartResponse{
+	start := jobStartResponse{
 		JobID: job.ID,
 		Job:   projected,
 		Links: jobStartLinks{
 			Job: jobPath,
 		},
-	})
+	}
+	if body == nil {
+		writeImportJSON(w, status, start)
+		return nil
+	}
+	writeImportJSON(w, status, body(start))
 	return nil
 }
 

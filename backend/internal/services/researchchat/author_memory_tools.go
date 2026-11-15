@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"canonkeeper/backend/internal/domain/authormemory"
+	"canonkeeper/backend/internal/domain/disclosure"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
 )
@@ -40,6 +41,8 @@ type ChapterVersions interface {
 type AuthorMemoryTools struct {
 	repository AuthorMemoryRepository
 	chapters   ChapterVersions
+	// naming hears the records memory shows (specs/2026-11-14-desk-journal.md JR1.4); nil at the site.
+	naming Naming
 }
 
 func NewAuthorMemoryTools(repository AuthorMemoryRepository, chapters ChapterVersions) *AuthorMemoryTools {
@@ -150,7 +153,22 @@ func (tools *AuthorMemoryTools) Memory(ctx context.Context, call ToolContext, in
 	if err != nil {
 		return "", err
 	}
-	return renderMemory(page, keys), nil
+	rendered, shown := renderMemory(page, keys)
+	// The records shown are named before the answer goes (specs/2026-11-14-desk-journal.md JR1.3, JR1.4).
+	named := disclosure.Named{}
+	for _, record := range page.Records[:shown] {
+		named.Memory = append(named.Memory, record.ID)
+	}
+	if err := name(ctx, tools.naming, authority, named); err != nil {
+		return "", err
+	}
+	return rendered, nil
+}
+
+// WithNaming makes the tool name the records it shows.
+func (tools *AuthorMemoryTools) WithNaming(naming Naming) *AuthorMemoryTools {
+	tools.naming = naming
+	return tools
 }
 
 // chapterKeys names the chapters of the records in the text version of the turn.
@@ -173,7 +191,7 @@ func (tools *AuthorMemoryTools) chapterKeys(ctx context.Context, authority resea
 	return keys, nil
 }
 
-func renderMemory(page authormemory.Page, keys map[string]string) string {
+func renderMemory(page authormemory.Page, keys map[string]string) (string, int) {
 	var out strings.Builder
 	shown := 0
 	var lines strings.Builder
@@ -192,5 +210,5 @@ func renderMemory(page authormemory.Page, keys map[string]string) string {
 	}
 	out.WriteString(". Это слова автора, а не текст книги: план ещё не случился в книге; поправка важнее карточек, но не текста, при расхождении назовите оба.\n\n")
 	out.WriteString(lines.String())
-	return out.String()
+	return out.String(), shown
 }

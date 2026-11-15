@@ -121,6 +121,9 @@ type Record struct {
 	JobID     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// Carried is where a record a saga file brought came from in its saga (specs/2026-11-13-desk-sagafile.md SF4.1), empty
+	// for the others.
+	Carried OriginKind
 	// Origin is where the record came from, as the page says it (specs/2026-11-10-ux8-memory-records.md MR1.5).
 	Origin Origin
 }
@@ -154,11 +157,27 @@ type Conversation struct {
 	Visible     bool
 }
 
+// ParseCarried reads where a record a saga file brought came from (SF4.2): a chat, the helper of a chapter or of a drawing;
+// a record written on the page carries nothing.
+func ParseCarried(value string) (OriginKind, bool) {
+	switch kind := OriginKind(value); kind {
+	case OriginChat, OriginDraft, OriginDrawing:
+		return kind, true
+	case OriginManual:
+		return "", true
+	default:
+		return "", false
+	}
+}
+
 // OriginOf says where a record came from by the Job it keeps and what is left of its session. A record without a Job was
 // written on the page; a session purged after its deletion leaves nothing to tell a chat from a helper, and the record is
-// said to come from a chat, as most do.
-func OriginOf(jobID string, conversation *Conversation) Origin {
+// said to come from a chat, as most do. A record a saga file brought has no Job of this saga: it says where it came from
+// in its saga, without a chat, a draft or a drawing to open (specs/2026-11-13-desk-sagafile.md SF4.1).
+func OriginOf(jobID string, conversation *Conversation, carried OriginKind) Origin {
 	switch {
+	case conversation == nil && carried != "":
+		return Origin{Kind: carried}
 	case jobID == "":
 		return Origin{Kind: OriginManual}
 	case conversation == nil:

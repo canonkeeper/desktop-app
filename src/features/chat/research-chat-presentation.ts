@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { quotaFailureCode } from '../../entities/account-quota/api';
+import { useEffect, useState, type ReactNode } from 'react';
+import { quotaFailureCode, type AccountQuota } from '../../entities/account-quota/api';
 import { isApiStatusFailure, publicApiErrorMessage } from '../../entities/api-errors';
 import type { ChatJob } from '../../entities/chat/api';
 import type { CanonicalAgentTimelineEvent } from './feed/types';
@@ -12,7 +12,17 @@ import { formatRetryAfterSeconds, retryAfterSeconds } from './research-chat-life
  */
 export interface ChatFailure {
   title?: string;
+  /**
+   * The name of a block without a visible title for the reader of the screen: what became of the message
+   * (specs/2026-11-15-desk-account-words-web.md AW4.2 — «Вопрос не отправлен», «Уточнение не отправлено»).
+   */
+  label?: string;
   text: string;
+  /**
+   * What the edition says in place of `text` when its words follow the answers it reads again after the refusal — the one
+   * reason «помощник не подключён» of the app (specs/2026-11-15-desk-account-words-web.md AW4.2).
+   */
+  reason?: ReactNode;
   action?: 'ask_again' | 'retry' | 'new_chat' | 'books';
   supportCode?: string;
   /** A `quota.*` refusal of a message: the panel names the limit from the account quota in the block above the field. */
@@ -20,15 +30,50 @@ export interface ChatFailure {
   /**
    * The failure of the Job of the turn: what became of the question by the rules of the quota, one line
    * (specs/2026-11-10-ux1-chat.md CH3.6). Such a failure is the block under the question of its turn
-   * (specs/2026-11-10-ux4-chat-waiting.md CW2.8).
+   * (specs/2026-11-10-ux4-chat-waiting.md CW2.8); '' — the same block without a line of the count, which the edition says only
+   * by the sign of its server (specs/2026-11-15-desk-account-words-web.md AW4.4).
    */
   count?: string;
+  /**
+   * The way out the edition gives a refusal or a failed turn of its helper (specs/2026-11-15-desk-account-words-web.md AW4.2,
+   * AW4.3): «Связать снова», «Открыть обновления», «Тарифы».
+   */
+  way?: ReactNode;
+}
+
+/**
+ * The words of the edition for the refusals and the failed turns of its helper (specs/2026-11-15-desk-account-words-web.md AW4):
+ * each with its way out, the line of the count only by the sign of its server.
+ */
+export interface ChatFailureWords {
+  /** A refused question or correction in the words of the edition (AW4.2); null — the words of the core. */
+  refused: (error: unknown, operation: 'start' | 'steer') => ChatFailure | null;
+  /**
+   * The block under a failed turn over the words of the core given (AW4.3, AW4.4): the words and the way out of the edition by
+   * the code, its line of the count by `questionReturned` — '' without one; the counters for the words of the tier.
+   */
+  turn: (job: Pick<ChatJob, 'error' | 'questionReturned'>, core: ChatFailure, quota: AccountQuota | undefined) => ChatFailure;
+  /** The ways out of the block of a refusal by the tier above the field: «Тарифы», «Подключить свой ИИ» (AW4.1). */
+  tariffWays: ReactNode;
+  /**
+   * What the edition says of who holds the places of «разом» (AW4.1; specs/2026-11-15-desk-turns-here.md TH3.1): the lines over
+   * the quota, given how many chats of this saga the block named with their buttons and how many turns the window awaits; the
+   * block draws the lines as they come and compares no number itself.
+   */
+  elsewhere: (quota: AccountQuota | undefined, seen: { named: number; watched: number }) => readonly string[];
 }
 
 /** A chat of a previous assistant version keeps its history but takes no new questions. */
 export function outdatedChatMessage() {
   return 'Этот чат вёл прежний помощник: история сохранена, но продолжить его нельзя. Задайте вопрос в новом чате.';
 }
+
+/**
+ * The app installs an update (specs/2026-11-13-desk-updates.md UB2.1; the board 44·41): the words of a question refused
+ * with `desktop.updating`, and the reason of «Спросить» the edition of the app closes while it installs
+ * (specs/2026-11-15-desk-updates-web.md UW3.4) — one owner of the words.
+ */
+export const installingUpdateWords = 'Ставлю обновление — спросите после перезапуска';
 
 // Data «Отказы хода»: the codes of a failed turn Job and of a refused question. The author knows the helper, not the
 // models behind it (specs/2026-11-10-ux4-chat-waiting.md CW2.8; Ч-31).
@@ -55,6 +100,10 @@ const failuresByCode: Readonly<Record<string, ChatFailure>> = {
   },
   start_indexing: { title: 'Помощник ещё не прочитал книгу', text: 'Откройте «Книги» и нажмите «Дочитать» у книги.', action: 'books' },
   'chat.outdated_agent': { text: outdatedChatMessage() },
+  // The server of the app refuses a question while the helper is not connected (specs/2026-11-13-desk-gateway.md GW4.4).
+  'helper.not_connected': { text: 'Помощник ещё не подключён. Вопрос остался в поле.' },
+  // The app installs an update: the question stays in the field.
+  'desktop.updating': { text: installingUpdateWords },
   // A correction (specs/2026-10-30-chat-steering.md R4.3): the text stays in the field.
   'chat.turn_ended': { title: 'Помощник уже ответил', text: 'Текст остался в поле — отправьте его новым вопросом.', action: 'ask_again' },
   'chat.steer_retry': { text: 'Сейчас уточнение не принимается. Текст остался в поле — повторите через несколько секунд.' },
@@ -68,12 +117,17 @@ const unansweredTurn: ChatFailure = {
 };
 
 /**
- * UC4.2: the block under a turn whose Job failed, by the code of the Job (R4.2.3, R4.2.4). The server gave the unit of
- * a failed turn back (specs/2026-11-09-quota-accounting.md Q2.4), and the block says so (specs/2026-11-10-ux1-chat.md CH3.6).
+ * UC4.2: the block under a turn whose Job failed, by the code of the Job (R4.2.3, R4.2.4). The server gave the unit of a failed
+ * turn back (specs/2026-11-09-quota-accounting.md Q2.4), and the block says so (specs/2026-11-10-ux1-chat.md CH3.6). The
+ * edition says the block over the words of the core — its words, its way out and its line of the count by the sign of its
+ * server (specs/2026-11-15-desk-account-words-web.md AW4.3, AW4.4).
  */
-export function turnFailure(error: ChatJob['error']): ChatFailure {
+export function turnFailure(
+  job: Pick<ChatJob, 'error' | 'questionReturned'>, edition?: ChatFailureWords['turn'], quota?: AccountQuota,
+): ChatFailure {
+  const error = job.error;
   const known = (error?.code && failuresByCode[error.code]) || unansweredTurn;
-  const failure = { ...known, count: known.count ?? 'Этот вопрос не засчитан.' };
+  const failure = edition ? edition(job, known, quota) : { ...known, count: known.count ?? 'Этот вопрос не засчитан.' };
   return error?.requestId ? { ...failure, supportCode: error.requestId } : failure;
 }
 
@@ -133,8 +187,11 @@ function rateLimitText(seconds: number | null) {
     : 'Можно спросить снова. Вопрос сохранён.';
 }
 
-/** A question that was not sent or a stop that failed; the 429 window counts down here. */
-export function useResearchChatFailure(onAuthorityLost: () => void) {
+/**
+ * A question that was not sent or a stop that failed; the 429 window counts down here. A refusal of the helper of the edition
+ * is said in its words before the block «Слишком много вопросов подряд» (specs/2026-11-15-desk-account-words-web.md AW4.2).
+ */
+export function useResearchChatFailure(onAuthorityLost: () => void, edition?: ChatFailureWords) {
   const [state, setState] = useState<{ failure: ChatFailure | null; retryDelaySeconds?: number | null }>({ failure: null });
 
   function clearPanelFailure() {
@@ -146,11 +203,14 @@ export function useResearchChatFailure(onAuthorityLost: () => void) {
     if (statusFailure?.status === 403) onAuthorityLost();
     const supportCode = statusFailure?.problem.requestId || undefined;
     const quotaCode = quotaFailureCode(error);
+    const refused = operation === 'stop' || quotaCode ? null : edition?.refused(error, operation) ?? null;
     if (operation === 'stop') {
       setState({ failure: { text: 'Не удалось остановить ответ. Попробуйте ещё раз.', action: statusFailure?.status === 403 ? undefined : 'retry', supportCode } });
     } else if (quotaCode) {
       // A quota refusal is named from the account quota, with neither a countdown nor a retry (quota spec R5.4).
       setState({ failure: { text: publicApiErrorMessage(error, 'Вопрос не отправлен.'), quotaCode } });
+    } else if (refused) {
+      setState({ failure: supportCode ? { ...refused, supportCode } : refused });
     } else if (statusFailure?.status === 429) {
       setState({ failure: { title: operation === 'steer' ? 'Слишком много уточнений подряд' : 'Слишком много вопросов подряд', text: '', action: 'ask_again', supportCode }, retryDelaySeconds: retryAfterSeconds(error) });
     } else {
@@ -191,7 +251,10 @@ interface ConversationFailureInput {
   selectedChatMissing: boolean;
   sessionError: unknown;
   sessionErrorRequestId: string;
-  recoveredJob?: Pick<ChatJob, 'status' | 'error'> | null;
+  recoveredJob?: Pick<ChatJob, 'status' | 'error' | 'questionReturned'> | null;
+  /** The words of the edition for a failed turn (specs/2026-11-15-desk-account-words-web.md AW4.3), and the counters they name. */
+  turnWords?: ChatFailureWords['turn'] | undefined;
+  quota?: AccountQuota | undefined;
   jobIsActive: boolean;
   connection: string;
 }
@@ -201,6 +264,10 @@ interface ConversationFailureInput {
  * Job or the stream, in that order. A refusal by the questions of the day or by the answers being
  * prepared is not here: it is the block above the field (specs/2026-11-10-ux1-chat.md CH3.3); any
  * other quota refusal keeps its block without a retry (quota spec R5.4).
+ *
+ * With the words of an edition the block under its failed turn is `turnEnd`, apart from that one: it stands while that turn is
+ * the last failed one of the feed, its words and its line of the count by the sign of its server, and a refused new question
+ * is its own block (specs/2026-11-15-desk-account-words-web.md AW4.4). Without them it is the one block, as it was.
  */
 export function conversationFailure(input: ConversationFailureInput) {
   const loadFailure: ChatFailure | null = input.selectedChatMissing
@@ -209,7 +276,9 @@ export function conversationFailure(input: ConversationFailureInput) {
       ? { text: publicApiErrorMessage(input.sessionError, 'Чат не найден.'), action: 'retry', supportCode: input.sessionErrorRequestId || undefined }
       : null;
   const sendFailure = input.panelFailure?.quotaCode && input.limitNamed ? null : input.panelFailure;
-  const failure = sendFailure ?? loadFailure ?? (input.recoveredJob?.status === 'failed' ? turnFailure(input.recoveredJob.error) : null)
+  const failedTurn = input.recoveredJob?.status === 'failed' ? turnFailure(input.recoveredJob, input.turnWords, input.quota) : null;
+  const failure = sendFailure ?? loadFailure ?? failedTurn
     ?? (input.jobIsActive && (input.connection === 'reconnecting' || input.connection === 'closed') ? streamFailure(input.connection === 'closed') : null);
-  return { failure, loadFailure, sendFailure };
+  const turnEnd = input.turnWords && !loadFailure ? failedTurn : null;
+  return { failure, loadFailure, sendFailure, turnEnd };
 }

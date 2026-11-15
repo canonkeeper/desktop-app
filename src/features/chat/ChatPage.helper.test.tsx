@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useCallback, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../api/mock';
@@ -54,5 +54,27 @@ describe('ChatPage without the helper', () => {
     expect(field.value).toBe('Кто остановил лампу маяка?');
     expect(createChat).not.toHaveBeenCalled();
     expect(createTurn).not.toHaveBeenCalled();
+  });
+});
+
+// specs/2026-11-13-desk-gateway.md GW4.3: the helper is connected and the author has not allowed it to read the books yet —
+// the chat says so in the first phrase of board 44·27 and takes the question all the same.
+describe('ChatPage while the reading waits for the consent', () => {
+  it('says the helper is ready to read and sends the question', async () => {
+    const api = createMockApiClient();
+    api.setScenario({ actorRole: 'owner', preset: 'normal', consentMissing: true });
+    const createTurn = vi.spyOn(api, 'createChatTurn');
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ChatWithAddress api={api} /></QueryClientProvider>);
+
+    const chat = await screen.findByRole('region', { name: 'Исследовательский чат' }, { timeout: 5000 });
+    const note = await within(chat).findByRole('note', { name: 'Помощник готов прочитать книги' });
+    expect(note.textContent).toMatch(/^Помощник готов прочитать книги: \d+ глав[уы]?$/u);
+    const field = within(chat).getByRole('textbox', { name: 'Вопрос' }) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: 'Кто остановил лампу маяка?' } });
+    const ask = within(chat).getByRole('button', { name: 'Спросить' });
+    expect(ask.getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.click(ask);
+    await waitFor(() => expect(createTurn).toHaveBeenCalledTimes(1));
   });
 });

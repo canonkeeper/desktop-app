@@ -120,6 +120,8 @@ type layerModel struct {
 	verify func(input string) (string, error)
 	books  func(input string) (string, error)
 	gap    string
+	// reduce is the answer of the reduce when set.
+	reduce string
 }
 
 func newLayerModel() *layerModel {
@@ -155,6 +157,9 @@ func (model *layerModel) Complete(_ context.Context, instructions, input string)
 		}
 		return bookAnswer(input), usage, nil
 	case "reduce":
+		if model.reduce != "" {
+			return model.reduce, usage, nil
+		}
 		return `{"open":[{"thread":"Кто убил старика","kind":"тайна","first":"1 ¶1","last":"3 ¶2","weight":"major"},
 			{"thread":"Лишняя запись","kind":"план","first":"1","last":"1","weight":"minor"},
 			{"thread":"Неточная запись","kind":"долг","first":"3","last":"3","weight":"minor"}]}`, usage, nil
@@ -571,5 +576,60 @@ func TestAMoveOfTheVolumesGathersTheThreadsAgainWithoutAskingTheVolumes(t *testi
 	}
 	if books := store.stored.Layer.Books; len(books) != 2 || books[0].ID != "b2" || books[0].Order != 1 || books[1].Order != 2 {
 		t.Fatalf("the volumes of the build after the move = %+v", books)
+	}
+}
+
+// readingPolicy says whether the model may read the books of the saga now.
+type readingPolicy struct{ allowed bool }
+
+func (policy readingPolicy) ReadingAllowed(context.Context, string, bool) (bool, error) {
+	return policy.allowed, nil
+}
+
+func (readingPolicy) ThreadsUnread(context.Context, string, []domain.Stamp) (string, error) {
+	return "", nil
+}
+
+func (readingPolicy) MarkThreadsUnread(context.Context, string, string, []domain.Stamp, string) error {
+	return nil
+}
+
+// specs/2026-11-13-desk-gateway.md GW4.3: a build that asks — the app — reads the books with the model only while the
+// helper is connected and the author allowed it; otherwise its layer Job calls no model and waits for him. A layer of the
+// current cards needs no model and succeeds as before.
+func TestTheLayerReadsNoBookWithoutTheAuthorsConsent(t *testing.T) {
+	model, usage := newLayerModel(), &layerUsage{}
+	store, build := layerFixture(model, usage)
+	build = build.WithPolicy(readingPolicy{allowed: false})
+	status, err := build.RunForClaim(context.Background(), layerClaim, layerSubject)
+	if err != nil || status != jobs.StatusFailed || len(model.calls) != 0 || store.outcome == nil ||
+		store.outcome.Error == nil || store.outcome.Error.Code != ConsentLayerCode || store.stored != nil {
+		t.Fatalf("without consent = %q, %v, calls %v, outcome %+v", status, err, model.calls, store.outcome)
+	}
+
+	build = build.WithPolicy(readingPolicy{allowed: true})
+	if status, err := build.RunForClaim(context.Background(), layerClaim, layerSubject); err != nil || status != jobs.StatusSucceeded || model.count("map") != 2 {
+		t.Fatalf("with consent = %q, %v, calls %v", status, err, model.calls)
+	}
+	build = build.WithPolicy(readingPolicy{allowed: false})
+	if status, err := build.RunForClaim(context.Background(), layerClaim, layerSubject); err != nil || status != jobs.StatusSucceeded || model.count("map") != 2 {
+		t.Fatalf("a current layer without consent = %q, %v", status, err)
+	}
+}
+
+// specs/2026-11-13-desk-consent.md CN3.4: a stop of the reading on the check of a thread is not swallowed as a failed
+// verdict: no call of the model is repeated or follows it, and the Job ends with the code of the stop instead of another
+// attempt; the checkpoint keeps what was built.
+func TestAStopOfTheReadingEndsTheLayerJob(t *testing.T) {
+	model, usage := newLayerModel(), &layerUsage{}
+	model.verify = func(string) (string, error) { return "", &sagamemory.Stopped{Stop: sagamemory.StopFunds} }
+	store, build := layerFixture(model, usage)
+	build.parallel = 1
+	status, err := build.RunForClaim(context.Background(), layerClaim, layerSubject)
+	if err != nil || status != jobs.StatusFailed || store.outcome == nil || store.outcome.Error == nil || store.outcome.Error.Code != "reading.funds" {
+		t.Fatalf("RunForClaim() = %q, %v, outcome %+v", status, err, store.outcome)
+	}
+	if model.count("verify") != 1 || model.count("gap") != 0 {
+		t.Fatalf("calls after the stop = %v", model.calls)
 	}
 }

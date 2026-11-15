@@ -9,6 +9,7 @@ import type { Toasts } from '../../../ui/feedback/useToastQueue';
 import { Confirm } from '../../../ui/overlays/Confirm';
 import { useRevertBookUpdateMutation } from '../api';
 import { revertAction, revertQuestion } from './book-revert-words';
+import { useBookUpdateWords, type BookUpdateWords } from './book-update-words';
 
 /** The book whose return the author asked for. */
 export interface RevertTarget {
@@ -16,14 +17,14 @@ export interface RevertTarget {
   title: string;
 }
 
-/** Why a return or its preview did not happen, by the code of the server. */
-function refusedWords(error: unknown): { gone: boolean; words: string } {
+/** Why a return or its preview did not happen, by the code of the server; a book being updated in the words of the edition. */
+function refusedWords(error: unknown, updating: BookUpdateWords['updating']): { gone: boolean; words: string } {
   const code = isApiStatusFailure(error) ? error.problem.code ?? '' : '';
   switch (code) {
     case 'book.update_gone':
       return { gone: true, words: 'Вернуть прежнюю версию уже нельзя: прошло 7 дней или книгу уже вернули.' };
     case 'book.busy':
-      return { gone: false, words: 'Книга сейчас обновляется из файла — вернуть прежнюю версию можно будет после этого.' };
+      return { gone: false, words: updating.noRevert };
     case 'book.update_changed':
       return { gone: false, words: 'Книга изменилась, пока вы читали, — посмотрите, что вернётся теперь.' };
     case 'demo_saga.read_only':
@@ -50,6 +51,7 @@ export function useBookRevert({ api, onReturned, toasts }: {
   const [error, setError] = useState('');
   const [refused, setRefused] = useState('');
   const revert = useRevertBookUpdateMutation(api);
+  const updateWords = useBookUpdateWords();
   // Once the return is asked for, the preview has had its say: the books are read anew before the question closes, and
   // the preview of an update already returned answers «gone».
   const returning = revert.isPending || revert.isSuccess;
@@ -68,9 +70,9 @@ export function useBookRevert({ api, onReturned, toasts }: {
   const previewError = target && preview.isError && !returning ? preview.error : null;
   useEffect(() => {
     if (!previewError || !target) return;
-    toasts.push({ message: refusedWords(previewError).words, tone: 'neutral' });
+    toasts.push({ message: refusedWords(previewError, updateWords.updating).words, tone: 'neutral' });
     setTarget(null);
-  }, [previewError, target, toasts]);
+  }, [previewError, target, toasts, updateWords.updating]);
 
   function close() {
     if (revert.isPending) return;
@@ -102,7 +104,7 @@ export function useBookRevert({ api, onReturned, toasts }: {
           setRefused(code);
           return;
         }
-        const refusal = refusedWords(failure);
+        const refusal = refusedWords(failure, updateWords.updating);
         if (refusal.gone) {
           toasts.push({ message: refusal.words, tone: 'neutral' });
           setTarget(null);
@@ -115,7 +117,7 @@ export function useBookRevert({ api, onReturned, toasts }: {
     });
   }
 
-  const question = shown ? revertQuestion(shown) : null;
+  const question = shown ? revertQuestion(shown, updateWords) : null;
   const words = refused ? refusalWords(refused, quota) : null;
   return {
     /** The book whose question is being read, for the press that opened it to show its wait. */

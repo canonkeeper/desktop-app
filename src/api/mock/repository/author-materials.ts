@@ -144,6 +144,9 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
       const found = materialOf(projectId, materialId, 'deleteAuthorMaterial');
       if (found.revision !== expectedRevision) throw new MockApiError(409, 'The record changed.', 'deleteAuthorMaterial', 'conflict');
       records.set(projectId, ofProject(projectId).filter((item) => item.id !== materialId));
+      // The record of a note goes with its link (specs/2026-11-15-desk-obsidian-web.md OW7.2): the note is new again.
+      const links = context.state.obsidianNotes[projectId];
+      if (links) context.state.obsidianNotes[projectId] = links.filter((link) => link.materialId !== materialId);
     },
     async startAuthorMaterialsImport(projectId, input: AuthorMaterialsImportInput, options) {
       context.requireProjectAccess('startAuthorMaterialsImport', projectId, [...writers]);
@@ -211,5 +214,23 @@ export function createAuthorMaterialOperations(context: MockRepositoryContext) {
       imports.delete(projectId);
     },
   };
-  return { ...operations, materialsOf: ofProject };
+  /**
+   * The records of the notes of an Obsidian vault (specs/2026-11-15-desk-obsidian-web.md OW7.2): the record a name keeps, and
+   * a record written from a note — a new one, or the one it replaces or updates — with the note as its source.
+   */
+  const obsidianRecords = {
+    named: (projectId: string, name: string) => ofProject(projectId).find((item) => keyOf(item.name) === keyOf(name)) ?? null,
+    byId: (projectId: string, id: string) => ofProject(projectId).find((item) => item.id === id) ?? null,
+    write(projectId: string, note: { name: string; kind: Material['kind']; section: string; path: string }, into: Material | null): Material {
+      const at = new Date().toISOString();
+      const record: Material = {
+        id: into?.id ?? `00000000-0000-4000-a000-${String(nextId++).padStart(12, '0')}`, name: note.name, kind: note.kind,
+        description: into?.description ?? '', properties: into?.properties ?? [], section: note.section, sourceName: note.path,
+        sourceKind: 'obsidian', revision: (into?.revision ?? 0) + 1, createdAt: into?.createdAt ?? at, updatedAt: at,
+      };
+      records.set(projectId, into ? ofProject(projectId).map((other) => (other.id === into.id ? record : other)) : [...ofProject(projectId), record]);
+      return record;
+    },
+  };
+  return { ...operations, materialsOf: ofProject, obsidianRecords };
 }

@@ -160,6 +160,15 @@ func ChapterEvidenceText(title string, paragraphs []string) string {
 	return fmt.Sprintf("=== %s ===\n%s", title, string(text[:min(len(text), evidenceChapterRunes)]))
 }
 
+// EvidenceCut says the check of a thread reads only the beginning of a chapter of these paragraphs: it is longer than the
+// check takes (specs/2026-11-14-desk-journal.md JR1.3).
+func EvidenceCut(paragraphs []string) bool {
+	return len([]rune(strings.Join(paragraphs, "\n"))) > evidenceChapterRunes
+}
+
+// Later are the positions of the later chapters whose cards the check of a thread reads (JR1.3).
+func (index *EvidenceIndex) Later(thread Thread) []int { return index.later(thread) }
+
 // later are the positions after the last named chapter sharing the most words of the record, the
 // latest first on a tie, in reading order.
 func (index *EvidenceIndex) later(thread Thread) []int {

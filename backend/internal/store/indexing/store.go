@@ -52,8 +52,9 @@ func New(db *storedb.DB, options ...Option) *Store {
 	return store
 }
 
-// WithHelper makes the store queue the cards Job of a version only while the helper of the build is connected; a store
-// without it — the site's — always queues it.
+// WithHelper makes the store queue the cards Job of a version without the helper of the build only for a saga with cards
+// (specs/2026-11-13-desk-gateway.md GW4.5): the Job builds the map without the model. A store without it — the site's —
+// always queues it.
 func WithHelper(helper Helper) Option {
 	return func(store *Store) { store.helper = helper }
 }

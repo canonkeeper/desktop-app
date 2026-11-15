@@ -242,48 +242,44 @@ func dynamicToolNames(specs []protocol.DynamicToolSpec) []string {
 }
 
 type fakeTransport struct {
-	mu                         sync.Mutex
-	recv                       chan json.RawMessage
-	done                       chan struct{}
-	closeOnce                  sync.Once
-	methods                    []string
-	projects                   map[string]string
-	threads                    map[string]protocol.Thread
-	turns                      map[string][]protocol.Turn
-	goals                      map[string]protocol.ThreadGoal
-	starts                     []protocol.ThreadStartParams
-	resumes                    []protocol.ThreadResumeParams
-	turnStarts                 []protocol.TurnStartParams
-	turnLists                  []protocol.ThreadTurnsListParams
-	deleted                    []string
-	completeOnList             map[string]string
-	interruptErr               error
-	steerRPCError              json.RawMessage
-	steers                     []protocol.TurnSteerParams
-	interruptDeadline          bool
-	projectCreateErr           error
-	threadListErr              error
-	threadStartErr             error
-	threadResumeErr            error
-	configModelProvider        string
-	threadReadErr              error
-	timelineListErr            error
-	turnListErr                error
-	turnStartErr               error
-	autoComplete               bool
-	completeGoalOnContinuation bool
-	completedItems             []protocol.ThreadItem
-	turnStarted                chan struct{}
-	receiveErr                 error
-	nextThread                 int
-	nextTurn                   int
+	mu                  sync.Mutex
+	recv                chan json.RawMessage
+	done                chan struct{}
+	closeOnce           sync.Once
+	methods             []string
+	projects            map[string]string
+	threads             map[string]protocol.Thread
+	turns               map[string][]protocol.Turn
+	starts              []protocol.ThreadStartParams
+	resumes             []protocol.ThreadResumeParams
+	turnStarts          []protocol.TurnStartParams
+	turnLists           []protocol.ThreadTurnsListParams
+	deleted             []string
+	completeOnList      map[string]string
+	interruptErr        error
+	steerRPCError       json.RawMessage
+	steers              []protocol.TurnSteerParams
+	interruptDeadline   bool
+	projectCreateErr    error
+	threadListErr       error
+	threadStartErr      error
+	threadResumeErr     error
+	configModelProvider string
+	threadReadErr       error
+	timelineListErr     error
+	turnListErr         error
+	turnStartErr        error
+	autoComplete        bool
+	turnStarted         chan struct{}
+	receiveErr          error
+	nextThread          int
+	nextTurn            int
 }
 
 func newFakeTransport() *fakeTransport {
 	return &fakeTransport{
 		recv: make(chan json.RawMessage, 128), done: make(chan struct{}),
 		projects: map[string]string{}, threads: map[string]protocol.Thread{}, turns: map[string][]protocol.Turn{},
-		goals:          map[string]protocol.ThreadGoal{},
 		completeOnList: map[string]string{},
 		// A real app-server always reports the provider it runs with.
 		configModelProvider: "test",
@@ -477,68 +473,6 @@ func (transport *fakeTransport) handleLocked(method string, raw json.RawMessage)
 			thread.Turns = append([]protocol.Turn(nil), transport.turns[thread.ID]...)
 		}
 		return marshal(protocol.ThreadReadResponse{Thread: thread})
-	case "thread/goal/set":
-		var params protocol.ThreadGoalSetParams
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, nil, err
-		}
-		goal := transport.goals[params.ThreadID]
-		goal.ThreadID = params.ThreadID
-		goal.CreatedAt, goal.UpdatedAt = 1, 1
-		if objective, ok := params.Objective.Value(); ok {
-			goal.Objective = objective
-		}
-		if status, ok := params.Status.Value(); ok {
-			goal.Status = status
-		}
-		transport.goals[params.ThreadID] = goal
-		notification, err := fakeNotification("thread/goal/updated", protocol.ThreadGoalUpdatedNotification{
-			ThreadID: params.ThreadID, Goal: goal,
-		})
-		body, _, marshalErr := marshal(protocol.ThreadGoalSetResponse{Goal: goal})
-		if marshalErr != nil || err != nil {
-			return nil, nil, errors.Join(marshalErr, err)
-		}
-		notifications := []json.RawMessage{notification}
-		if transport.completeGoalOnContinuation && goal.Status == protocol.ThreadGoalStatusActive {
-			transport.nextTurn++
-			turnID := fmt.Sprintf("turn-%d", transport.nextTurn)
-			turn := protocol.Turn{ID: turnID, Status: protocol.TurnStatusInProgress, Items: []protocol.ThreadItem{}}
-			transport.turns[params.ThreadID] = append(transport.turns[params.ThreadID], turn)
-			started, startErr := fakeNotification("turn/started", protocol.TurnStartedNotification{ThreadID: params.ThreadID, Turn: turn})
-			finalItem := protocol.ThreadItem{TypeValue: "agentMessage", ID: protocol.SomeNonNull("agent-" + turnID), Text: protocol.SomeNonNull("goal done")}
-			turn.Status, turn.Items = protocol.TurnStatusCompleted, []protocol.ThreadItem{finalItem}
-			transport.replaceTurnLocked(params.ThreadID, turn)
-			completedItem, itemErr := fakeNotification("item/completed", protocol.ItemCompletedNotification{ThreadID: params.ThreadID, TurnID: turnID, Item: finalItem})
-			goal.Status = protocol.ThreadGoalStatusComplete
-			transport.goals[params.ThreadID] = goal
-			goalCompleted, goalErr := fakeNotification("thread/goal/updated", protocol.ThreadGoalUpdatedNotification{ThreadID: params.ThreadID, TurnID: protocol.Some(turnID), Goal: goal})
-			turnCompleted, turnErr := fakeNotification("turn/completed", protocol.TurnCompletedNotification{ThreadID: params.ThreadID, Turn: turn})
-			if joined := errors.Join(startErr, itemErr, goalErr, turnErr); joined != nil {
-				return nil, nil, joined
-			}
-			notifications = append(notifications, started, completedItem, goalCompleted, turnCompleted)
-		}
-		return body, notifications, nil
-	case "thread/goal/get":
-		var params protocol.ThreadGoalGetParams
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, nil, err
-		}
-		goal, ok := transport.goals[params.ThreadID]
-		response := protocol.ThreadGoalGetResponse{}
-		if ok {
-			response.Goal = protocol.Some(goal)
-		}
-		return marshal(response)
-	case "thread/goal/clear":
-		var params protocol.ThreadGoalClearParams
-		if err := json.Unmarshal(raw, &params); err != nil {
-			return nil, nil, err
-		}
-		_, cleared := transport.goals[params.ThreadID]
-		delete(transport.goals, params.ThreadID)
-		return marshal(protocol.ThreadGoalClearResponse{Cleared: cleared})
 	case "thread/turns/list":
 		if transport.turnListErr != nil {
 			return nil, nil, transport.turnListErr
@@ -703,22 +637,12 @@ func (transport *fakeTransport) handleLocked(method string, raw json.RawMessage)
 			return body, nil, err
 		}
 		turn.Status = protocol.TurnStatusCompleted
-		notifications := make([]json.RawMessage, 0, len(transport.completedItems)+1)
-		for _, item := range transport.completedItems {
-			turn.Items = append(turn.Items, item)
-			completed, itemErr := fakeNotification("item/completed", protocol.ItemCompletedNotification{ThreadID: params.ThreadID, TurnID: turnID, Item: item})
-			if itemErr != nil {
-				return nil, nil, itemErr
-			}
-			notifications = append(notifications, completed)
-		}
 		turn.Items = append(turn.Items, protocol.ThreadItem{
 			TypeValue: "agentMessage", ID: protocol.SomeNonNull("agent-" + turnID), Text: protocol.SomeNonNull("done"),
 		})
 		transport.replaceTurnLocked(params.ThreadID, turn)
 		notification, err := fakeNotification("turn/completed", protocol.TurnCompletedNotification{ThreadID: params.ThreadID, Turn: turn})
-		notifications = append(notifications, notification)
-		return body, notifications, err
+		return body, []json.RawMessage{notification}, err
 	case "turn/interrupt":
 		var params protocol.TurnInterruptParams
 		if err := json.Unmarshal(raw, &params); err != nil {

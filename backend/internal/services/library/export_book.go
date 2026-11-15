@@ -127,10 +127,15 @@ func (export *ExportBook) Execute(ctx context.Context, input ExportBookInput) (B
 	}
 	if head.CoverVersion > 0 {
 		content, err := export.covers.Execute(ctx, domainlibrary.CoverLookup{Actor: input.Actor, BookID: input.BookID, Version: head.CoverVersion})
-		if err != nil {
+		switch {
+		case errors.Is(err, domainlibrary.ErrUnavailable):
+			// The bytes are not there — the file of a row a return brought back is gone (desk-upgrade UG4.5): the page
+			// shows the book without a cover, and the file goes without it too.
+		case err != nil:
 			return BookFile{}, err
+		default:
+			book.Cover = readableImage(content.MIMEType, content.Content)
 		}
-		book.Cover = readableImage(content.MIMEType, content.Content)
 	}
 	if input.Drawings && export.pictures != nil {
 		// The list is known before the first byte: Word and EPUB name their parts before the chapters (BP2.2).

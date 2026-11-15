@@ -1,0 +1,14 @@
+{
+  "about": "Every step of the core names what it gives before its call goes (specs/2026-11-14-desk-journal.md JR1.3, JR1.4): the test of each builder that holds it. The gateway of the app refuses a call that named nothing (journal.unnamed), and TestEveryStepOfTheCoreHasItsNaming holds this list to coresteps.All() and to the tests it names.",
+  "steps": {
+    "card": "services/sagamemory/naming_test.go TestTheCardThePassAndTheNamesNameWhatTheyGive",
+    "card_pass": "services/sagamemory/naming_test.go TestTheCardThePassAndTheNamesNameWhatTheyGive",
+    "names": "services/sagamemory/naming_test.go TestTheCardThePassAndTheNamesNameWhatTheyGive",
+    "layer_book": "services/sagalayer/naming_test.go TestEveryStepOfTheLayerNamesWhatItGives",
+    "layer_reduce": "services/sagalayer/naming_test.go TestEveryStepOfTheLayerNamesWhatItGives",
+    "layer_verify": "services/sagalayer/naming_test.go TestEveryStepOfTheLayerNamesWhatItGives",
+    "layer_gap": "services/sagalayer/naming_test.go TestEveryStepOfTheLayerNamesWhatItGives",
+    "scan": "services/researchchat/naming_test.go TestEveryChunkOfAScanNamesItsChaptersWhole",
+    "materials": "services/authormaterials/naming_test.go TestTheParsingNamesItsSection"
+  }
+}

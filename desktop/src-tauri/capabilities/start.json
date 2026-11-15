@@ -1,8 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "start",
-  "description": "The page the shell carries — «CanonKeeper запускается…» and the failure window — opens the data folder, the contact page of the site in the browser of the system and closes the app. The page of the backend gets its own capability for its exact origin when the backend is ready.",
+  "description": "The page the shell carries — «CanonKeeper запускается…», the steps of a long start and the failure window (specs/2026-11-13-desk-upgrade.md UG3) — reads its state and does the acts of the failure it shows: the data folder, the contact page of the site, the release of a version, the folder of the copy, the return of the data from the copy, closing the app. None of its commands takes a name, a path or an address. The page of the backend gets its own capability for its exact origin when the backend is ready.",
   "local": true,
   "windows": ["main"],
-  "permissions": ["allow-reveal-data-dir", "allow-open-external", "allow-close-window"]
+  "permissions": [
+    "allow-launch-state",
+    "allow-reveal-data-dir",
+    "allow-write-to-us",
+    "allow-download-version",
+    "allow-open-copy",
+    "allow-restore-question",
+    "allow-restore-copy",
+    "allow-close-window"
+  ]
 }

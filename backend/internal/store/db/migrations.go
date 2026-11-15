@@ -17,7 +17,12 @@ var (
 	ErrUnknownMigrationState  = errors.New("unknown database migration state")
 	ErrMigrationChecksumDrift = errors.New("migration checksum drift")
 	ErrMigrationNotQuiescent  = errors.New("database has running or canceling jobs")
+	ErrNotOneProcess          = errors.New("the database is not the one of the cluster this start runs")
 )
+
+// StartMarkSetting is the setting of the cluster the desktop app writes for every start of its cluster
+// (specs/2026-11-13-desk-upgrade.md UG1.2): the proof that the database is one process's.
+const StartMarkSetting = "canonkeeper.start"
 
 type migrationTx interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
@@ -50,12 +55,49 @@ func ApplyMigrations(ctx context.Context, db *DB) error {
 }
 
 func applyMigrationsWithBegin(ctx context.Context, begin func(context.Context) (pgx.Tx, error), inventory []dbmigrations.Migration) error {
+	return inMigrationTransaction(ctx, begin, func(tx migrationTx) error {
+		return applyMigrationsWithTx(ctx, tx, inventory)
+	})
+}
+
+// ApplyMigrationsOfOneProcess applies the inventory to the database of one process — the desktop app's
+// (specs/2026-11-13-desk-upgrade.md UG1): no other process works with it, and the process that worked with it before is
+// dead, so a Job it left running or canceling is data. The guard of quiescence of the cutovers of the site is not asked;
+// the workers of the new program take such Jobs back once it runs. That the database is one process's is checked, not
+// assumed: the cluster carries the setting canonkeeper.start the caller wrote for the start of the cluster in this
+// start, and a cluster without that mark is refused before anything changes (ErrNotOneProcess).
+func ApplyMigrationsOfOneProcess(ctx context.Context, db *DB, mark string) error {
+	if db == nil || db.Pool == nil {
+		return errors.New("migration database is nil")
+	}
+	inventory, err := dbmigrations.Read()
+	if err != nil {
+		return err
+	}
+	return applyOneProcessMigrationsWithBegin(ctx, db.Pool.Begin, inventory, mark)
+}
+
+func applyOneProcessMigrationsWithBegin(ctx context.Context, begin func(context.Context) (pgx.Tx, error), inventory []dbmigrations.Migration, mark string) error {
+	return inMigrationTransaction(ctx, begin, func(tx migrationTx) error {
+		var started string
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(current_setting('`+StartMarkSetting+`', true), '')`).Scan(&started); err != nil {
+			return fmt.Errorf("read the mark of the start: %w", err)
+		}
+		if mark == "" || started != mark {
+			return ErrNotOneProcess
+		}
+		return applyGuardedMigrationsWithTx(ctx, tx, inventory, func(context.Context, migrationTx) error { return nil })
+	})
+}
+
+// inMigrationTransaction runs apply in one transaction and commits it; an error rolls everything back.
+func inMigrationTransaction(ctx context.Context, begin func(context.Context) (pgx.Tx, error), apply func(migrationTx) error) error {
 	tx, err := begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin migrations: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := applyMigrationsWithTx(ctx, tx, inventory); err != nil {
+	if err := apply(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -69,6 +111,12 @@ func (db *DB) ApplyMigrations(ctx context.Context) error {
 }
 
 func applyMigrationsWithTx(ctx context.Context, tx migrationTx, inventory []dbmigrations.Migration) error {
+	return applyGuardedMigrationsWithTx(ctx, tx, inventory, requireMigrationQuiescence)
+}
+
+// applyGuardedMigrationsWithTx applies the inventory after guard said the database may change: the guard of quiescence
+// for the site, none for the database of one process.
+func applyGuardedMigrationsWithTx(ctx context.Context, tx migrationTx, inventory []dbmigrations.Migration, guard func(context.Context, migrationTx) error) error {
 	if len(inventory) < 2 || inventory[0].Version != 0 || inventory[1].Version != 1 {
 		return fmt.Errorf("%w: migration 0000 and 0001 are required", ErrUnknownMigrationState)
 	}
@@ -77,7 +125,7 @@ func applyMigrationsWithTx(ctx context.Context, tx migrationTx, inventory []dbmi
 		return err
 	}
 	if state.hasLedger {
-		if err := requireMigrationQuiescence(ctx, tx); err != nil {
+		if err := guard(ctx, tx); err != nil {
 			return err
 		}
 		return applyManagedMigrations(ctx, tx, inventory)
@@ -86,7 +134,7 @@ func applyMigrationsWithTx(ctx context.Context, tx migrationTx, inventory []dbmi
 		return applyMigrationsFrom(ctx, tx, inventory, 0)
 	}
 	if state.legacy {
-		if err := requireMigrationQuiescence(ctx, tx); err != nil {
+		if err := guard(ctx, tx); err != nil {
 			return err
 		}
 		if err := applyMigration(ctx, tx, inventory[0]); err != nil {

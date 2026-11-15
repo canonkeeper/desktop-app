@@ -10,16 +10,29 @@ export type Preparation = NonNullable<IndexingStatus['preparation']>;
 export type SagaReady = NonNullable<IndexingStatus['sagaReady']>;
 
 /**
- * What a reading waits for, in the one line of the author (specs/2026-11-12-desk-window.md WN3.2): no count, no time, no
- * letter and no button — nobody reads the books, and the books are read and searched all the same.
+ * What a reading waits for, in the one line of the author: the helper not connected (specs/2026-11-12-desk-window.md WN3.2)
+ * — no count, no time, no letter and no button, the books are read and searched all the same; the consent of the author
+ * (specs/2026-11-13-desk-gateway.md GW4.3, board 44·27) — the chapters the helper is ready to read, no button yet.
  */
-const waitingWords: Record<NonNullable<Preparation['waiting']>, string> = {
-  helper: 'Помощник ещё не подключён. Читать книги и искать по ним можно уже сейчас',
+const waitingWords: Record<NonNullable<Preparation['waiting']>, (preparation: Preparation) => string> = {
+  helper: () => 'Помощник ещё не подключён. Читать книги и искать по ним можно уже сейчас',
+  consent: (preparation) => `Помощник готов прочитать книги: ${formatCount(
+    Math.max(preparation.chaptersTotal - preparation.chaptersRead, 0), 'главу', 'главы', 'глав',
+  )}`,
+  // The reading stands paused (specs/2026-11-13-desk-consent.md CN3.8, board 44·28): the words of its reason and its buttons
+  // come with the pages of the consent, from reading of the status.
+  paused: (preparation) => `Чтение на паузе: прочитано ${preparation.chaptersRead} из ${formatCount(preparation.chaptersTotal, 'главы', 'глав', 'глав')}`,
 };
 
 /** The line of a reading that waits — the same on the shelf, in the chat, on the map, at the end of an upload; null while it reads. */
 export function waitingLine(preparation: Preparation | null | undefined) {
-  return preparation?.waiting ? waitingWords[preparation.waiting] : null;
+  return preparation?.waiting ? waitingWords[preparation.waiting](preparation) : null;
+}
+
+/** Whether the field of the chat sends no question: only while the helper is not connected (WN3.3); a reading that waits for
+ * the consent of the author takes questions (GW4.3). */
+export function questionsWait(preparation: Preparation | null | undefined) {
+  return preparation?.waiting === 'helper';
 }
 
 /** «≈ 8 мин», «меньше минуты», «≈ 1 ч 20 мин»: the estimate of the server, minutes up to an hour, then hours and tens of minutes. */
@@ -144,10 +157,13 @@ const stateOf = (kind: BookStateKind, word: string = bookStateWords[kind], finis
  * The table of SF2.1, its rows from top to bottom: the book a new file rewrites (`updating` — an active import of its
  * update); a book without chapters; while the helper reads — the current book with its counts, the books after it and
  * those read; a stopped reading — the book the server names (with «Дочитать»), the others by the state of their text;
- * else «Готова». Null only while the status of the saga is not here yet: that is loading, not a state.
+ * else «Готова». Null only while the status of the saga is not here yet: that is loading, not a state. The word of a book being
+ * updated is the edition's: the app does not name the file (specs/2026-11-15-desk-obsidian-book-web.md OU3.2).
  */
-export function bookStateOf(book: Pick<Book, 'id' | 'chapterCount' | 'status'>, status: IndexingStatus | undefined, updating = false): BookState | null {
-  if (updating) return stateOf('updating');
+export function bookStateOf(
+  book: Pick<Book, 'id' | 'chapterCount' | 'status'>, status: IndexingStatus | undefined, updating = false, updatingWord: string = bookStateWords.updating,
+): BookState | null {
+  if (updating) return stateOf('updating', updatingWord);
   if (book.chapterCount === 0) return stateOf('empty');
   if (!status) return null;
   const preparation = status.preparation;

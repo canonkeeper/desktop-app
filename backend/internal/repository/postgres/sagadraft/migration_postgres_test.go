@@ -26,16 +26,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// todaysProjects gives a schema older than 0124 the sign of the demo saga (specs/2026-11-09-demo-saga.md DS3.1), and
-// one older than 0144 the limit of the returns on the word of an app (specs/2026-11-13-desk-permits.md PM2.4): today's
+// todaysProjects gives a schema older than 0124 the sign of the demo saga (specs/2026-11-09-demo-saga.md DS3.1), one older
+// than 0144 the limit of the returns on the word of an app (specs/2026-11-13-desk-permits.md PM2.4) and one older than 0145
+// the fences of the work of apps (specs/2026-11-13-desk-proxy.md PX3.2, PX3.3): today's
 // project, library and quota code, which makes the rows of these tests, reads and writes them. None of the migrations
 // applied here touches them, so they stay to the end of a test.
 func todaysProjects(t *testing.T, db *storedb.DB) {
 	t.Helper()
 	if _, err := db.Pool.Exec(context.Background(), `
 		ALTER TABLE projects ADD COLUMN demo boolean NOT NULL DEFAULT false;
-		ALTER TABLE writer_quota_overrides ADD COLUMN app_returns_per_day integer;
-		ALTER TABLE platform_quota_defaults ADD COLUMN app_returns_per_day integer`); err != nil {
+		ALTER TABLE writer_quota_overrides ADD COLUMN app_returns_per_day integer, ADD COLUMN app_tokens_per_question integer,
+		  ADD COLUMN app_reading_tokens_per_character integer;
+		ALTER TABLE platform_quota_defaults ADD COLUMN app_returns_per_day integer, ADD COLUMN app_tokens_per_question integer,
+		  ADD COLUMN app_reading_tokens_per_character integer`); err != nil {
 		t.Fatal(err)
 	}
 }

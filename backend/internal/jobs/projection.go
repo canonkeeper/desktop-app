@@ -17,11 +17,14 @@ type jobResponse struct {
 	Error     any                `json:"error"`
 	CanCancel bool               `json:"canCancel"`
 	// QueuePosition is set only for a waiting chat turn read by getJob (quota spec R10.3).
-	QueuePosition *int64           `json:"queuePosition"`
-	ExpiresAt     *string          `json:"expiresAt"`
-	CreatedAt     string           `json:"createdAt"`
-	UpdatedAt     string           `json:"updatedAt"`
-	Links         jobLinksResponse `json:"links"`
+	QueuePosition *int64 `json:"queuePosition"`
+	// QuestionReturned is whether the unit of the question of a chat turn came back — yes, no, pending, none — read by getJob
+	// of a build that counts its turns on a site (specs/2026-11-13-desk-account-ai.md AI2.9); absent otherwise.
+	QuestionReturned *string          `json:"questionReturned,omitempty"`
+	ExpiresAt        *string          `json:"expiresAt"`
+	CreatedAt        string           `json:"createdAt"`
+	UpdatedAt        string           `json:"updatedAt"`
+	Links            jobLinksResponse `json:"links"`
 }
 
 // PublicJobResponse — каноническая HTTP-проекция уже авторизованного задания.
@@ -107,19 +110,20 @@ func jobResponseForViewer(job Job, supportCode, viewerUserID string) (jobRespons
 		jobError = jobProblemFromError(*job.Error, supportCode)
 	}
 	return jobResponse{
-		ID:            job.ID,
-		Kind:          job.Kind,
-		Status:        status,
-		Progress:      job.Progress,
-		Phase:         phase,
-		Subject:       publicJobSubject(job.Subject),
-		Result:        result,
-		Error:         jobError,
-		CanCancel:     job.CanCancel,
-		QueuePosition: queuePosition(job),
-		ExpiresAt:     expiresAt,
-		CreatedAt:     formatJobTime(job.CreatedAt),
-		UpdatedAt:     formatJobTime(job.UpdatedAt),
+		ID:               job.ID,
+		Kind:             job.Kind,
+		Status:           status,
+		Progress:         job.Progress,
+		Phase:            phase,
+		Subject:          publicJobSubject(job.Subject),
+		Result:           result,
+		Error:            jobError,
+		CanCancel:        job.CanCancel,
+		QueuePosition:    queuePosition(job),
+		QuestionReturned: questionReturned(job),
+		ExpiresAt:        expiresAt,
+		CreatedAt:        formatJobTime(job.CreatedAt),
+		UpdatedAt:        formatJobTime(job.UpdatedAt),
 		Links: jobLinksResponse{
 			Self: jobPath, Cancel: cancel,
 			Timeline: httpapi.AgentTimelineLink(job.ProjectID, job.ID),
@@ -147,12 +151,18 @@ func jobSupportCode(job Job) string {
 	return job.ID
 }
 
-// publicJobSubject leaves the author's text of a chapter_draft Job out of the job API.
+// publicJobSubject leaves the author's text of a chapter_draft Job out of the job API, and the chapters of the sample of the
+// desktop app (specs/2026-11-13-desk-consent.md CN2): getReadingSample says them.
 func publicJobSubject(subject Subject) Subject {
-	if draft, ok := subject.(ChapterDraftSubject); ok {
-		return draft.Public()
+	switch value := subject.(type) {
+	case ChapterDraftSubject:
+		return value.Public()
+	case ChapterCardsSubject:
+		value.Sample = nil
+		return value
+	default:
+		return subject
 	}
-	return subject
 }
 
 func publicJobResult(kind Kind, result Result, creator bool) (Result, error) {
@@ -197,4 +207,13 @@ func queuePosition(job Job) *int64 {
 	}
 	position := *job.QueuePosition
 	return &position
+}
+
+// questionReturned is the word of whether the unit of the question of a chat turn came back, when the build said it.
+func questionReturned(job Job) *string {
+	if job.Kind != KindResearchChatTurn || job.QuestionReturned == "" {
+		return nil
+	}
+	returned := job.QuestionReturned
+	return &returned
 }

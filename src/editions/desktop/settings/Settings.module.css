@@ -179,3 +179,17 @@
     flex-wrap: wrap;
   }
 }
+
+/* «Стереть все данные»: what stays in the settings of the programs of the author (specs/2026-11-15-desk-mcp.md MC3.4). */
+.eraseLine {
+  display: block;
+  margin-top: 8px;
+}
+
+.eraseCommand {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--ck-font-mono, monospace);
+  font-size: 12px;
+  word-break: break-all;
+}

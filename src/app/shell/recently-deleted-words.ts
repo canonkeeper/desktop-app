@@ -1,5 +1,6 @@
 import type { RecentlyDeleted } from '../../entities/manuscript/api';
 import { revertUntilWords, updatedWhen } from '../../features/manuscript/shelf/book-revert-words';
+import { siteBookUpdateWords, type BookUpdateWords } from '../../features/manuscript/shelf/book-update-words';
 import { formatCount, pluralize } from '../../ui/copy';
 
 /**
@@ -26,7 +27,7 @@ const day = 86_400_000;
 const time = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
 const date = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
 
-/** «Глава 12 «Белый порт»», «Рисунок без названия». */
+/** «Глава 12 «Белый порт»», «Глава «Сигнальные огни»», «Рисунок без названия». */
 export function trashTitle(row: TrashRow) {
   switch (row.kind) {
     case 'saga':
@@ -35,7 +36,9 @@ export function trashTitle(row: TrashRow) {
       // A deleted book has no number of the shelf: «Книга N» is a place among the living books (specs/2026-11-11-ux7-reorder.md RK1.6).
       return `Книга «${row.item.title}»`;
     case 'chapter':
-      return `Глава ${row.item.order} «${row.item.title}»`;
+      // A deleted chapter has no place among the living chapters of its book: only the number its title writes
+      // (specs/2026-11-15-reader-chapter-number.md RN1.4).
+      return ['Глава', row.item.displayNumber, row.item.displayTitle && `«${row.item.displayTitle}»`].filter(Boolean).join(' ');
     case 'drawing':
       return row.item.title.trim() ? `Рисунок «${row.item.title}»` : 'Рисунок без названия';
   }
@@ -88,7 +91,7 @@ export function returnedWords(row: TrashRow): { message: string; detail?: string
     case 'book':
       return { message: `Книга «${row.item.title}» возвращена`, detail: `Сага «${row.item.sagaTitle}»` };
     case 'chapter':
-      return { message: `Глава «${row.item.title}» возвращена`, detail: `Книга ${row.item.bookDisplayNumber} «${row.item.bookTitle}»` };
+      return { message: `${trashTitle(row)} возвращена`, detail: `Книга ${row.item.bookDisplayNumber} «${row.item.bookTitle}»` };
     case 'drawing':
       return { message: `${trashTitle(row)} возвращён`, detail: `Сага «${row.item.sagaTitle}»` };
   }
@@ -121,9 +124,9 @@ export function returnedPlace(row: TrashRow): { path: string; query: Record<stri
 /** A book updated from a file whose version before the update can still be returned (specs/2026-11-12-ux10-book-revert.md BR3.3). */
 export type BookUpdateRow = RecentlyDeleted['bookUpdates']['items'][number];
 
-/** «Книга «Туманный берег» обновлена из файла». */
-export function bookUpdateTitle(item: BookUpdateRow) {
-  return `Книга «${item.title}» обновлена из файла`;
+/** «Книга «Туманный берег» обновлена из файла»; the app — «Книга «Туманный берег» обновлена» (specs/2026-11-15-desk-obsidian-book-web.md OU3.2). */
+export function bookUpdateTitle(item: BookUpdateRow, words: Pick<BookUpdateWords, 'trashTitle'> = siteBookUpdateWords) {
+  return words.trashTitle(item.title);
 }
 
 /** «Сага «…» · сегодня в 14:20 · можно вернуть прежнюю версию до 19 ноября». */

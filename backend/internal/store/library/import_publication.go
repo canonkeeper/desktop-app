@@ -67,6 +67,30 @@ func (s *Store) publishImportedBookInTx(
 	if err := createLibraryParagraphs(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, published...); err != nil {
 		return err
 	}
+	if err := markChaptersPublished(ctx, tx, projectID, bookID, projectGeneration, bookGeneration, ids, generations, revisions, publishedAt); err != nil {
+		return err
+	}
+	if err := upsertChapterSourceMembers(ctx, tx, members); err != nil {
+		return err
+	}
+	if err := normalizePublishedChapterOrder(ctx, tx, projectID, projectGeneration, bookID, bookGeneration); err != nil {
+		return err
+	}
+	revision, err := createOrBumpPublishedSourceView(ctx, tx, projectID, projectGeneration)
+	if err != nil {
+		return err
+	}
+	if err := s.upsertCanonTextIndexIntent(ctx, tx, revision, ensureTextIndexIntent); err != nil {
+		return err
+	}
+	return s.hitImportFinalize("after_import_published_catalog_mutation")
+}
+
+// markChaptersPublished publishes the revisions of chapters of one live book whose published paragraphs are written.
+func markChaptersPublished(
+	ctx context.Context, tx pgx.Tx, projectID, bookID pgtype.UUID, projectGeneration, bookGeneration int64,
+	ids []pgtype.UUID, generations, revisions []int64, publishedAt pgtype.Timestamptz,
+) error {
 	command, err := tx.Exec(ctx, `
 		UPDATE chapters AS chapter
 		SET status = 'published',
@@ -94,21 +118,8 @@ func (s *Store) publishImportedBookInTx(
 	if err != nil {
 		return err
 	}
-	if command.RowsAffected() != int64(len(chapters)) {
+	if command.RowsAffected() != int64(len(ids)) {
 		return library.ErrConflict
 	}
-	if err := upsertChapterSourceMembers(ctx, tx, members); err != nil {
-		return err
-	}
-	if err := normalizePublishedChapterOrder(ctx, tx, projectID, projectGeneration, bookID, bookGeneration); err != nil {
-		return err
-	}
-	revision, err := createOrBumpPublishedSourceView(ctx, tx, projectID, projectGeneration)
-	if err != nil {
-		return err
-	}
-	if err := s.upsertCanonTextIndexIntent(ctx, tx, revision, ensureTextIndexIntent); err != nil {
-		return err
-	}
-	return s.hitImportFinalize("after_import_published_catalog_mutation")
+	return nil
 }

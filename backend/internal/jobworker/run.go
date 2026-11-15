@@ -185,7 +185,8 @@ type heartbeatObservation struct {
 }
 
 func (w *Worker) handleWithHeartbeat(ctx context.Context, job jobs.Job, handler Handler) (HandlerResult, error, heartbeatObservation) {
-	handlerCtx, cancelHandler := context.WithCancel(ctx)
+	// The handler works under its Job: a call of the model it makes names it (specs/2026-11-13-desk-gateway.md GW3.2).
+	handlerCtx, cancelHandler := context.WithCancel(jobs.WithJobID(ctx, job.ID))
 	heartbeatCtx, cancelHeartbeat := context.WithCancel(ctx)
 	heartbeatDone := make(chan heartbeatObservation, 1)
 	go w.heartbeatLoop(heartbeatCtx, ctx, cancelHandler, job, heartbeatDone)

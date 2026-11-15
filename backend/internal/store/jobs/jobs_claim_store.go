@@ -181,17 +181,51 @@ func lockExactModelClaimSession(ctx context.Context, tx pgx.Tx, binding jobs.Mod
 		JOIN users AS actor ON actor.id = session.user_id
 		WHERE session.id = $1
 		  AND session.user_id = $2
-		  AND session.revoked_at IS NULL
-		  AND session.rotated_at IS NULL
-		  -- Enrichment is durable; natural expiry is not revocation or rotation.
-		  AND (session.expires_at > clock_timestamp() OR $3::text = 'canon_book_enrichment')
-		  AND actor.disabled_at IS NULL
+		  AND `+liveModelSession(`$3::text`)+`
 		FOR SHARE OF session, actor
 	`, sessionID, actorID, string(binding.Kind)).Scan(&lockedSessionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.ErrUnauthenticated
 	}
 	return err
+}
+
+// liveModelSession is the one rule of the session a model Job of a user goes under: not revoked, not rotated, not expired,
+// its actor not disabled. kind is the SQL of the kind of the Job.
+func liveModelSession(kind string) string {
+	return `session.revoked_at IS NULL
+		  AND session.rotated_at IS NULL
+		  -- Enrichment is durable; natural expiry is not revocation or rotation.
+		  AND (session.expires_at > clock_timestamp() OR ` + kind + ` = 'canon_book_enrichment')
+		  AND actor.disabled_at IS NULL`
+}
+
+// ModelClaimSessionLive reads whether the session that started a model Job of a user still is the one every late effect of
+// the Job locks (lockExactModelClaimSession): the same rule, read once before the turn asks anything, so a turn whose session
+// ended ends at once with its own code (specs/2026-11-15-desk-interrupted-turn.md IT1.1). It locks nothing and replaces no
+// check — each late effect still locks the session in its own transaction. A Job without its binding is a conflict.
+func (s *Store) ModelClaimSessionLive(ctx context.Context, claim jobs.WorkerClaim) (bool, error) {
+	projectID, jobID, _, err := WorkerClaimSQLValues(claim)
+	if err != nil {
+		return false, err
+	}
+	var live bool
+	err = s.Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM sessions AS session
+			JOIN users AS actor ON actor.id = session.user_id
+			WHERE session.id = binding.initiating_auth_session_id
+			  AND session.user_id = binding.actor_user_id
+			  AND `+liveModelSession(`binding.job_kind`)+`
+		)
+		FROM job_model_bindings AS binding
+		WHERE binding.project_id = $1 AND binding.job_id = $2 AND binding.origin = 'user'
+	`, projectID, jobID).Scan(&live)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, jobs.ErrConflict
+	}
+	return live, err
 }
 
 func lockExactModelClaim(

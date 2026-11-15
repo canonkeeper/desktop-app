@@ -279,6 +279,46 @@ describe('manuscript indexing API', () => {
     }
   });
 
+  // specs/2026-11-13-desk-consent-web.md RW1.1 (the live run of step 7): the answers in flight when the reading paused are
+  // counted after the pause (specs/2026-11-13-desk-consent.md CN3.3), so a paused reading by «Свой ИИ» is followed — its
+  // «потрачено» is the server's now, not of the moment of the pause; a reading that waits for the consent changes by nothing
+  // but the author and is not.
+  it.each([
+    ['stands paused', 'paused' as const, 'paused' as const, true],
+    ['waits for the consent', 'consent' as const, 'waiting_consent' as const, false],
+  ])('follows a reading by «Свой ИИ» that %s only while its count may change', async (_what, waiting, state, follows) => {
+    vi.useFakeTimers();
+    try {
+      const getIndexingStatus = vi.fn(async () => ({
+        published: { exists: true, context: { state: 'ready', currentBook: null, retryableFailedBook: null } },
+        steps: [],
+        preparation: {
+          remainingSeconds: null, letterPromised: false, chaptersRead: 3, chaptersTotal: 6, booksRead: 0, booksTotal: 1,
+          currentBookId: 'book-1', askable: true, books: [{ bookId: 'book-1', chaptersRead: 3, chaptersTotal: 6 }], waiting,
+        },
+        reading: {
+          state, reason: null, pause: state === 'paused' ? 'sum' : null, chaptersRead: 3, chaptersTotal: 6, namesWait: false, threadsWait: false,
+          unread: null, unreadRest: null, spent: 0, approximate: false, stopAt: 2_000_000, step: 2_000_000, unit: 'RUB', remainingSeconds: null,
+        },
+      }) as never);
+      const api = { getIndexingStatus } as unknown as ManuscriptApiClient;
+      const queryClient = new QueryClient();
+      const wrapper = ({ children }: PropsWithChildren) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      renderHook(() => useIndexingStatusQuery(api, 'project-paused', { follow: true }), { wrapper });
+
+      await act(async () => { await Promise.resolve(); });
+      expect(getIndexingStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+      if (follows) expect(getIndexingStatus.mock.calls.length).toBeGreaterThan(1);
+      else expect(getIndexingStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('binds indexing status cache entries to project, book and source view', () => {
     expect(manuscriptQueryKeys.indexingStatus('project-1')).toEqual([
       'canonkeeper',

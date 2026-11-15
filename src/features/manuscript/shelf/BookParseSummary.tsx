@@ -8,6 +8,7 @@ import { Button } from '../../../ui/controls/Button';
 import { formatCount } from '../../../ui/copy';
 import { Dialog } from '../../../ui/overlays/Dialog';
 import type { Toasts } from '../../../ui/feedback/useToastQueue';
+import { useBookUpdateWords } from './book-update-words';
 import { looksLikeNoChapter, namedByFile } from './parse-summary';
 import styles from './BookParseSummary.module.css';
 
@@ -26,7 +27,8 @@ export interface BookParseSummaryProps {
 
 /**
  * «Как разобралась книга» (specs/2026-11-11-ux7-upload.md UP4.2; board 35·27): how many chapters the file gave and their
- * titles, what looks like no chapter with «Убрать из книги», a book named by its file with «Переименовать». Several books —
+ * titles, what looks like no chapter with «Убрать из книги», a book named by its file with «Переименовать» — not a book a folder
+ * of Obsidian holds (specs/2026-11-15-desk-obsidian-book-web.md OU3.4). Several books —
  * first their list. The data is what the server knows of the books and their chapters; the actions are the operations the
  * shelf already has: a chapter goes to «Недавно удалённые» and comes back by «Вернуть».
  */
@@ -80,6 +82,8 @@ function OneBook({ api, book, onRename, sourceName, toasts }: {
 }) {
   const queryClient = useQueryClient();
   const chapters = useBookChaptersQuery(api, book.id);
+  // A book whose text a folder of the build holds is named by the title of its book, not by a file (OU3.4).
+  const ofFolder = useBookUpdateWords().useFolderBooks(book.projectId).has(book.id);
   const refresh = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: bookChaptersQueryKey(book.id), exact: true }),
     queryClient.invalidateQueries({ queryKey: manuscriptQueryKeys.shelf({ projectId: book.projectId }), exact: true }),
@@ -114,7 +118,7 @@ function OneBook({ api, book, onRename, sourceName, toasts }: {
           </Button>
         </div>
       ))}
-      {namedByFile(book.title, sourceName) ? (
+      {!ofFolder && namedByFile(book.title, sourceName) ? (
         <div className={styles.fileName}>
           <p>Книга названа по имени файла: «{book.title}».</p>
           <Button onClick={onRename} size="sm" variant="ghost"><Pencil aria-hidden="true" size={14} />Переименовать</Button>

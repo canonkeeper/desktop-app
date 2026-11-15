@@ -33,18 +33,23 @@ var productRuntimeTableContract = roleTableContract{
 				"import_queue_items", "import_queues", "import_uploads", "job_model_bindings", "jobs",
 				"personal_notes", "project_invitations", "project_memberships", "project_source_views", "projects",
 				"model_limit_samples", "model_usage_days", "writer_quota_overrides", "writer_usage_days",
-				"project_illustration_settings", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
+				"project_illustration_settings", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_transcripts", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
 				"chapter_draft_packs", "chapter_draft_plans", "chapter_draft_versions", "chapter_draft_originals",
 				"illustration_access", "platform_quota_defaults", "image_upload_consents",
 				"promo_permissions", "reading_tests", "reading_test_votes",
 				"platform_contacts", "feedback_threads", "feedback_images",
-				// The consent to cards and the Obsidian vault of a saga in the desktop build (0114).
-				"card_build_permissions", "obsidian_vaults",
+				// The consent to cards and the Obsidian vault of a saga in the desktop build (0114), the links of its books with
+				// the folders of the vault (0150, specs/2026-11-14-desk-obsidian-books.md OK0.2) and of its records with the notes
+				// (0152, specs/2026-11-15-desk-obsidian-notes.md ON1.9).
+				"card_build_permissions", "obsidian_vaults", "obsidian_books", "obsidian_notes",
 				// The periods of a writer's tier (0117) and the counters of the tiers of an account — refused keys (0118) and
 				// what he used of the trials of his tiers (0119), specs/2026-11-08-subscription-tiers.md TR10.3.
 				"subscription_periods", "subscription_usage",
 				// The new chapters charged against a writer's tier (0120, TR7.2, TR10.3).
 				"subscription_chapter_charges",
+				// The chapters of a saga that did not read by the author's own AI (0148, specs/2026-11-13-desk-consent.md CN3.6),
+				// its names and threads that did not come together (0153, specs/2026-11-15-desk-reading-rest.md RR1.2, RR1.3).
+				"reading_unread_chapters", "reading_unread_rest",
 				// The codes of the link of the app and the linked apps of an account (0143, specs/2026-11-13-desk-link.md):
 				// they go with the account.
 				"app_link_codes", "app_devices",
@@ -52,6 +57,13 @@ var productRuntimeTableContract = roleTableContract{
 				// specs/2026-11-13-desk-permits.md): they go with the account. 0144 also adds the returns on the word of an app
 				// to the writer's limits, the platform's and the writer's day: columns of the same rows, the same privileges.
 				"model_permits", "model_permit_units",
+				// What the helper of a linked app read through the models of the site (0145, specs/2026-11-13-desk-proxy.md
+				// PX3.6): prints and lengths that go with the account. 0145 also adds the two fences of the work of apps to the
+				// writer's limits and the platform's: columns of the same rows, the same privileges.
+				"app_text_prints",
+				// The work of the desktop app a site counts: its source, the number of its permit and whether the unit of a
+				// question came back (0151, specs/2026-11-13-desk-account-ai.md); it goes with its Job.
+				"app_work",
 				// 0121 adds the trial calls of the voice co-author to the counters of the tiers of an account and the seconds
 				// of its calls to the writer's day (writer_usage_days): columns of the same rows, the same privileges.
 			},
@@ -79,7 +91,12 @@ var productRuntimeTableContract = roleTableContract{
 			// The memory of the voice co-author about a draft (0093): written whole, never updated. A message of
 			// feedback (0113) and a row of the journal of what went to the AI (0114) are written once too.
 			privileges: []string{"DELETE", "INSERT", "SELECT"},
-			tables:     []string{"chapter_draft_scenes", "chapter_draft_talks", "feedback_messages", "model_disclosures", "model_requests"},
+			// The records of the sendings, what a thread named and has not sent, the helpers a thread went to and the requests
+			// of the sample of the consent (0155, specs/2026-11-14-desk-journal.md JR1.8) — written once too.
+			tables: []string{
+				"chapter_draft_scenes", "chapter_draft_talks", "feedback_messages", "model_disclosures", "model_requests",
+				"model_disclosures_pending", "model_thread_recipients", "reading_sample_requests",
+			},
 		},
 	},
 }
@@ -111,11 +128,13 @@ var governanceOwnerTableContract = roleTableContract{
 				"chapter_cards", "chapter_search_texts", "chapter_search_words", "chapter_source_members",
 				"chapter_text_index_state", "chapter_text_search_rows", "deletion_completion_receipts",
 				"deletion_hard_purge_predecessors", "import_job_requests", "import_queue_items", "import_queues",
-				"project_illustration_settings", "project_memberships", "promo_permissions", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
+				"project_illustration_settings", "project_memberships", "promo_permissions", "saga_image_layers", "saga_image_references", "saga_images", "saga_drawings", "saga_names", "saga_ready_waves", "book_update_snapshots", "book_update_snapshot_chapters", "saga_transcripts", "saga_map_graphs", "saga_map_nodes", "saga_map_node_parts", "saga_map_names", "saga_map_hidden", "saga_threads", "author_memory", "chapter_drafts", "chapter_draft_notes", "author_materials", "author_material_imports",
 				"chapter_draft_scenes", "chapter_draft_talks", "reading_tests", "reading_test_votes",
 				"chapter_draft_packs", "chapter_draft_plans", "chapter_draft_versions", "chapter_draft_originals",
 				"chat_turn_attachments",
-				"card_build_permissions", "model_requests", "model_disclosures", "obsidian_vaults",
+				"card_build_permissions", "model_requests", "model_disclosures", "obsidian_vaults", "obsidian_books", "obsidian_notes", "reading_unread_chapters",
+				"reading_unread_rest", "app_work",
+				"model_disclosures_pending", "model_thread_recipients", "reading_sample_requests",
 			},
 		},
 	},

@@ -1,0 +1,11 @@
+{
+  "about": "The fields of manifest.json of an MCPB of the manifest version 0.3 (specs/2026-11-15-desk-mcp.md MC3.3): the fields the schema allows at the top and in server, and the fields it requires. Source: https://github.com/modelcontextprotocol/mcpb/blob/main/src/schemas/0.3.ts and MANIFEST.md («Current version: 0.3», «Last updated: 2025-12-02»), read through the facts of the clients of 14.11 (briefs/facts-mcp-clients.md, bundle-1, П-1). Commit: not pinned — this machine has no network; the slice names it as an open question, and the live run of the pilot checks the package in Claude Desktop.",
+  "source": "https://github.com/modelcontextprotocol/mcpb/blob/main/src/schemas/0.3.ts",
+  "commit": "unpinned",
+  "allowed": ["manifest_version", "dxt_version", "name", "display_name", "version", "description", "long_description", "author", "repository", "homepage", "documentation", "support", "icon", "icons", "screenshots", "server", "tools", "tools_generated", "prompts", "prompts_generated", "keywords", "license", "privacy_policies", "compatibility", "user_config", "localization", "_meta"],
+  "required": ["manifest_version", "name", "version", "description", "author", "server"],
+  "author": {"required": ["name"], "allowed": ["name", "email", "url"]},
+  "server": {"required": ["type", "entry_point", "mcp_config"], "allowed": ["type", "entry_point", "mcp_config"], "types": ["python", "node", "binary"]},
+  "mcp_config": {"required": ["command"], "allowed": ["command", "args", "env", "platform_overrides"]},
+  "compatibility": {"allowed": ["claude_desktop", "platforms", "runtimes"], "platforms": ["darwin", "win32", "linux"]}
+}

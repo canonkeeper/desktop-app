@@ -172,8 +172,9 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 		assertTablePublicPrivilege(t, db.Pool, readyWaves, privilege, false)
 	}
 	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", readyWaves, "SELECT", true)
-	// The snapshot of the last update of a book from a file (0142, specs/2026-11-12-ux10-book-revert.md BR1).
-	for _, table := range []string{"book_update_snapshots", "book_update_snapshot_chapters"} {
+	// The snapshot of the last update of a book from a file (0142, specs/2026-11-12-ux10-book-revert.md BR1) and the chats a
+	// saga file brought (the migration of the saga file, specs/2026-11-13-desk-sagafile.md SF3.8): records of the saga.
+	for _, table := range []string{"book_update_snapshots", "book_update_snapshot_chapters", "saga_transcripts"} {
 		snapshot := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
 			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", snapshot, privilege, true)
@@ -186,7 +187,9 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 	// alone; nobody else reads a hash of a code or of a pass.
 	// The permits of a linked app and the corrections under them (0144, specs/2026-11-13-desk-permits.md): the runtime of
 	// the site alone, as the apps they belong to.
-	for _, table := range []string{"app_link_codes", "app_devices", "model_permits", "model_permit_units"} {
+	// What the helper of a linked app read through the models of the site (0145, specs/2026-11-13-desk-proxy.md PX3): the
+	// runtime of the site alone.
+	for _, table := range []string{"app_link_codes", "app_devices", "model_permits", "model_permit_units", "app_text_prints"} {
 		linked := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
 			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", linked, privilege, true)
@@ -269,9 +272,16 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", attachments, "SELECT", true)
 	// The desktop build (0114): the consent to cards and the Obsidian vault of a saga change; a row of the journal of
 	// what went to the AI is written once and goes when the author clears the journal or the saga is purged.
-	for _, table := range []string{"card_build_permissions", "obsidian_vaults", "model_requests", "model_disclosures"} {
+	// The links of the books with the folders of a vault (0150, specs/2026-11-14-desk-obsidian-books.md OK0.2) and of the records
+	// with its notes (0152, specs/2026-11-15-desk-obsidian-notes.md ON1.9), and the names and the threads that did not come
+	// together (0153, specs/2026-11-15-desk-reading-rest.md RR1.6) change the same way.
+	// The journal of what went out (0155, specs/2026-11-14-desk-journal.md JR1.8): the records of the sendings, what a
+	// thread named and has not sent, the helpers a thread went to and the requests of the sample are written once too; the
+	// readings of the programs of the author (0156, specs/2026-11-15-desk-mcp.md MC4.4) are records of the same table.
+	journals := []string{"model_requests", "model_disclosures", "model_disclosures_pending", "model_thread_recipients", "reading_sample_requests"}
+	for _, table := range append([]string{"card_build_permissions", "obsidian_vaults", "obsidian_books", "obsidian_notes", "reading_unread_rest"}, journals...) {
 		desktop := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
-		journal := table == "model_requests" || table == "model_disclosures"
+		journal := slices.Contains(journals, table)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
 			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", desktop, privilege, !journal || privilege != "UPDATE")
 			assertTablePrivilege(t, db.Pool, "canonkeeper_worker_discovery", desktop, privilege, false)

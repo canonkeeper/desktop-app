@@ -29,11 +29,22 @@ export function authorMaterialKindLabel(kind: AuthorMaterialKind) {
 }
 
 /**
+ * Where a record from a note of Obsidian came from, the same words in «Ваши материалы» and in the card of a node of the map
+ * (specs/2026-11-15-desk-obsidian-notes.md ON2.1): «из Obsidian: Персонажи/Мирон Сватов.md» — the path of the note from the
+ * root of the vault. Any other source is null: each place says it in its own words.
+ */
+export function obsidianOrigin(material: Pick<AuthorMaterial, 'sourceKind' | 'sourceName'>) {
+  return material.sourceKind === 'obsidian' && material.sourceName ? `из Obsidian: ${material.sourceName}` : null;
+}
+
+/**
  * The line under a record (specs/2026-11-10-ux8-memory-records.md MR3.5): what it is and where it came from — «Герой · из
- * „Навыки и места.xlsx“, лист „Персонажи“», «Герой · добавлено вручную».
+ * „Навыки и места.xlsx“, лист „Персонажи“», «Герой · добавлено вручную», «Герой · из Obsidian: Персонажи/Мирон Сватов.md».
  */
 export function materialOriginLine(material: Pick<AuthorMaterial, 'kind' | 'section' | 'sourceKind' | 'sourceName'>) {
   const kind = authorMaterialKindLabel(material.kind);
+  const vault = obsidianOrigin(material);
+  if (vault) return `${kind} · ${vault}`;
   if (material.sourceKind === 'manual') return `${kind} · добавлено вручную`;
   const source = material.sourceName ? `из „${material.sourceName}“` : 'из вставленного текста';
   const part = material.sourceKind === 'xlsx' || material.sourceKind === 'csv' ? 'лист' : 'раздел';

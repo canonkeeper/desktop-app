@@ -1,19 +1,34 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# The installers of the CanonKeeper desktop app (specs/2026-11-12-desk-shell.md SH4.3), for the public repository
-# canonkeeper/desktop-app: the monorepo keeps it in desktop/ci and never runs it; the export puts it into
-# .github/workflows (open-source/manifest.json export.place). Windows: NSIS for the current user; Linux (built on
-# ubuntu-24.04): .deb, .rpm and AppImage. Every third-party action is pinned by its commit; the workflow needs no secret
-# (the token of the run reads the releases).
+# The installers of the CanonKeeper desktop app (specs/2026-11-12-desk-shell.md SH4.3) and its releases
+# (specs/2026-11-13-desk-updates.md UB3), for the public repository canonkeeper/desktop-app: the monorepo keeps it in
+# desktop/ci and never runs it; the export puts it into .github/workflows (open-source/manifest.json export.place).
+# Windows: NSIS for the current user; Linux (built on ubuntu-24.04): .deb, .rpm and AppImage. Every third-party action is
+# pinned by its commit, every file the bundler takes from outside by its sum (desktop/release.json).
 #
 # It runs on a push to main, to a branch of an export (export/<date>) and on a tag v*, and by hand. Not on a pull
 # request: the merge commit GitHub makes for one carries the identity of the account that opened it, and the public
 # repository takes no such commit (specs/2026-11-13-desk-export.md EX2.2).
 #
-#   postgres — the PostgreSQL 18 set built from the source pinned in desktop/release.json (desktop/postgres), cached;
-#   app      — the core of the shell (cargo test, clippy), on Windows the copy of the Codex homes on a real Windows
-#              (backend/internal/adapters/codex), the set (scripts/desktop-app.mjs: the backend with the web,
-#              PostgreSQL, codex-app-server by its pinned sha256), tauri build, a smoke run of the installed app — start,
-#              the window gets the page of the backend, stop with no process left — and the installers as artifacts.
+#   postgres       — the PostgreSQL 18 set built from the source pinned in desktop/release.json (desktop/postgres), cached;
+#   app            — the core of the shell (cargo test, clippy), on Windows the copy of the Codex homes on a real Windows
+#                    (backend/internal/adapters/codex), the set (scripts/desktop-app.mjs: the backend with the web,
+#                    PostgreSQL, codex-app-server by its pinned sha256), the files of the bundler by their sums, tauri
+#                    build, the mark of its kind in the program of each package, a smoke run of the installed app —
+#                    start, the window gets the page of the backend, stop with no process left — and the installers as
+#                    artifacts; read only, no secret;
+#   smoke-update   — the smoke run of an update in a directory of its own: N and N+1 of the smoke build (a key of one run,
+#                    the source on the loopback; N+1 with a later migration), N+1 signed and checked by the one signer of
+#                    a release, then N installed, a saga with a book made, N updated to N+1 by itself — NSIS on
+#                    windows-2025, AppImage and .deb on ubuntu-24.04 — and the saga read on N+1; its artifacts are named
+#                    smoke-*, which no job of a release takes; smoke-update-fedora — the same for .rpm in Fedora;
+#   on a tag v* only, a release:
+#   release-tool   — canonkeeper-release built from the tag without a cache, its sum an output of the job;
+#   sign           — the environment release (its reviewer is the owner, its tags v* only): the tool checked by its sum,
+#                    the secret of the main key only in the step that signs, nothing installed, no cache; then the check
+#                    of the release before its draft: tag = version of the shell = version of latest.json and of every
+#                    signature, every signature by the main key of the tree, one file for each kind;
+#   attest         — the provenance of the build of the installers (GitHub attestations);
+#   release-draft  — a draft of the release with every file; the owner publishes it.
 name: Desktop installers
 
 on:
@@ -115,21 +130,28 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm >/dev/null
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm fuse3 libarchive-tools >/dev/null
       - name: npm packages of the web and of the shell
         run: |
           npm ci --no-audit --no-fund
           npm ci --no-audit --no-fund --prefix desktop
       - name: The shell without its window (cargo test) and with it (clippy)
         working-directory: desktop/src-tauri
+        # --no-fail-fast: one run names the failures of every test program, not only of the first that failed.
         run: |
           cargo fmt --check
-          cargo test --locked -p canonkeeper-desktop-core
+          cargo test --locked -p canonkeeper-desktop-core --no-fail-fast
           cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: The copy of the Codex homes on a real Windows — a file of a home a scanner holds (specs/2026-11-13-desk-home.md)
         if: runner.os == 'Windows'
         working-directory: backend
         run: go test ./internal/adapters/codex -run 'Copy|Hold' -count=1
+      - name: The Credential Manager keeps, reads and deletes a record of the shell (SE1.1 of the spec desk-secrets)
+        if: runner.os == 'Windows'
+        working-directory: desktop/src-tauri
+        env:
+          CANONKEEPER_SYSTEM_STORE: works
+        run: cargo test --locked -p canonkeeper-desktop-core --test system_store -- --nocapture
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: pg-${{ matrix.os }}
@@ -150,36 +172,17 @@ jobs:
           echo "CODEX_ARCHIVE=codex-download/$asset" >> "$GITHUB_ENV"
       - name: The set — the backend with the web, PostgreSQL, codex-app-server — checked against the pins
         run: node scripts/desktop-app.mjs --target ${{ matrix.target }} --postgres pg-set.tar --codex "$CODEX_ARCHIVE"
-      - name: Tools of the Tauri bundler through the API of the release assets
-        # The bundler downloads them from release pages that answered 5xx (DA1.9); it takes cached ones as they are
-        # (the names and the cache directory of tauri-bundler 2.12.4, which checks the NSIS hashes itself).
+      - name: Files of the Tauri bundler by their sums (desktop/release.json bundler), through the API of the release assets
+        if: runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          fetch() {
-            for attempt in 1 2 3 4 5; do
-              gh release download "$2" -R "$1" -p "$3" -O "$4" --clobber && return 0
-              echo "attempt $attempt failed"; sleep 20
-            done
-            return 1
-          }
-          if [ "$RUNNER_OS" = Linux ]; then
-            tools="$HOME/.cache/tauri"; mkdir -p "$tools"
-            fetch tauri-apps/binary-releases apprun-old AppRun-x86_64 "$tools/AppRun-x86_64"
-            fetch tauri-apps/binary-releases linuxdeploy-07333c6 linuxdeploy-x86_64.AppImage "$tools/linuxdeploy-07333c6-x86_64.AppImage"
-            fetch linuxdeploy/linuxdeploy-plugin-appimage continuous linuxdeploy-plugin-appimage-x86_64.AppImage \
-              "$tools/linuxdeploy-plugin-appimage.AppImage" || rm -f "$tools/linuxdeploy-plugin-appimage.AppImage"
-            fetch AppImage/type2-runtime continuous runtime-x86_64 "$tools/runtime-x86_64"
-            chmod +x "$tools"/*
-          else
-            tools="$(cygpath -u "$LOCALAPPDATA")/tauri"; mkdir -p "$tools"
-            fetch tauri-apps/binary-releases nsis-3.13 nsis-3.13.zip "$RUNNER_TEMP/nsis.zip"
-            python -I -m zipfile -e "$RUNNER_TEMP/nsis.zip" "$tools"
-            mv "$tools/nsis-3.13" "$tools/NSIS"
-            mkdir -p "$tools/NSIS/Plugins/x86-unicode/additional"
-            fetch tauri-apps/nsis-tauri-utils nsis_tauri_utils-v0.5.3 nsis_tauri_utils.dll \
-              "$tools/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
-          fi
+        run: node desktop/ci/bundler-tools.mjs fetch --os linux --tools "$HOME/.cache/tauri"
+      - name: Files of the Tauri bundler by their sums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/ci/bundler-tools.mjs fetch --os windows --tools "$env:LOCALAPPDATA\tauri"
       - name: Build the installers
         working-directory: desktop
         run: npx tauri build --ci --config src-tauri/tauri.bundle.json --bundles ${{ matrix.bundles }}
@@ -187,13 +190,49 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: desktop
         run: LDAI_RUNTIME_FILE="$HOME/.cache/tauri/runtime-x86_64" npx tauri build --ci --config src-tauri/tauri.bundle.json --bundles appimage
+      - name: The bundler built with the pinned files
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            node desktop/ci/bundler-tools.mjs verify --os linux --tools "$HOME/.cache/tauri"
+          else
+            node desktop/ci/bundler-tools.mjs verify --os windows --tools "$LOCALAPPDATA/tauri"
+          fi
+      - name: The program of each package carries the mark of its kind and no mark of a smoke build
+        run: |
+          cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml -p canonkeeper-desktop-core --bin canonkeeper-release
+          tool="$PWD/desktop/src-tauri/target/debug/canonkeeper-release"
+          bundle="$PWD/desktop/src-tauri/target/release/bundle"
+          work="$RUNNER_TEMP/marks"; rm -rf "$work"; mkdir -p "$work"
+          # Each package unpacked whole, then the tool finds its three programs — the shell, the backend, the bridge — and
+          # checks them; a refusal names the package, and the tool names the program (specs/2026-11-15-desk-ci-shell.md CS2).
+          unpack() { local kind=$1; shift; "$@" || { echo "the $kind package did not unpack" >&2; exit 1; }; }
+          if [ "$RUNNER_OS" = Linux ]; then
+            unpack deb dpkg-deb -x "$(ls "$bundle"/deb/*.deb)" "$work/deb"
+            "$tool" marks --kind deb "$work/deb"
+            # bsdtar reads the .rpm whole: rpm2cpio of the runner ended with 1 and no word on the package of the bundler.
+            mkdir -p "$work/rpm"
+            unpack rpm bsdtar -xf "$(ls "$bundle"/rpm/*.rpm)" -C "$work/rpm"
+            "$tool" marks --kind rpm "$work/rpm"
+            appimage="$(ls "$bundle"/appimage/*.AppImage)"
+            (cd "$work" && unpack appimage "$appimage" --appimage-extract >/dev/null)
+            "$tool" marks --kind appimage "$work/squashfs-root"
+          else
+            unpack nsis 7z x -y -o"$work/nsis" "$(ls "$bundle"/nsis/*-setup.exe)" >/dev/null
+            "$tool.exe" marks --kind nsis "$work/nsis"
+          fi
       - name: Install (Linux · apt from the .deb)
         if: runner.os == 'Linux'
         run: |
           deb=$(ls "$PWD"/desktop/src-tauri/target/release/bundle/deb/*.deb)
           sudo apt-get install -y -qq "$deb" >/dev/null
-          echo "APP_EXE=/usr/bin/canonkeeper" >> "$GITHUB_ENV"
-          echo "APP_DATA=$HOME/.local/share/canonkeeper" >> "$GITHUB_ENV"
+          # specs/2026-11-15-desk-mcp.md MC1.1: the program of the bridge of the package, and the AppImage of the same build.
+          {
+            echo "APP_EXE=/usr/bin/canonkeeper"
+            echo "APP_DATA=$HOME/.local/share/canonkeeper"
+            echo "APP_BRIDGE=/usr/bin/canonkeeper-mcp"
+            echo "APP_IMAGE=$(ls "$PWD"/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)"
+          } >> "$GITHUB_ENV"
       - name: Install (Windows · NSIS for the current user, apart from the data)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -207,22 +246,60 @@ jobs:
           "APP_EXE=$dir\canonkeeper.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "APP_DIR=$dir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           "APP_DATA=$data" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          if (-not (Test-Path "$dir\canonkeeper-mcp.exe")) { throw "the installer put no canonkeeper-mcp.exe into $dir" }
+          "APP_BRIDGE=$dir\canonkeeper-mcp.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - name: Smoke run — start, the window gets the page of the backend, stop with no process left
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
             # A desktop session has a session bus; the single instance of the app lives on it.
-            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA"
+            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA" \
+              --bridge "$APP_BRIDGE" --appimage "$APP_IMAGE"
           else
-            node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA"
+            node desktop/ci/smoke.mjs --exe "$APP_EXE" --data "$APP_DATA" --bridge "$APP_BRIDGE"
           fi
-      - name: Uninstall without the box «Удалить данные приложения» keeps the data (Windows)
+      - name: An installation over the app and its removal while a bridge runs (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # specs/2026-11-15-desk-mcp.md MC1.8: Claude Code, Claude Desktop or Codex never stop a bridge; the installer ends it.
+          function Start-Bridge {
+            $info = [Diagnostics.ProcessStartInfo]::new($env:APP_BRIDGE, "`"$env:APP_DATA`"")
+            $info.RedirectStandardInput = $true; $info.UseShellExecute = $false
+            $bridge = [Diagnostics.Process]::Start($info)
+            $bridge.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"ping"}')
+            return $bridge
+          }
+          # specs/2026-11-15-desk-ci-shell.md CS5.3: a failure names what still runs from the directory of the installation.
+          function Get-Held {
+            $held = @(Get-CimInstance -ClassName Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$env:APP_DIR\", [StringComparison]::OrdinalIgnoreCase) })
+            if ($held.Count -eq 0) { return 'nothing runs from the directory of the installation' }
+            return 'running from the directory of the installation: ' + (($held | ForEach-Object { "$($_.Name) pid $($_.ProcessId) $($_.ExecutablePath)" }) -join '; ')
+          }
+          $setup = Get-ChildItem "desktop\src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          $bridge = Start-Bridge
+          $installer = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if (-not $bridge.HasExited) { throw "the installer (exit $($installer.ExitCode)) left the bridge running; $(Get-Held)" }
+          if (-not (Test-Path "$env:APP_DIR\canonkeeper-mcp.exe")) { throw "the installation over the app (exit $($installer.ExitCode)) has no bridge; $(Get-Held)" }
+      - name: Uninstall without the box «Удалить данные приложения» keeps the data, a running bridge goes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # specs/2026-11-15-desk-ci-shell.md CS5.3: a failure names what still runs from the directory of the installation.
+          function Get-Held {
+            $held = @(Get-CimInstance -ClassName Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$env:APP_DIR\", [StringComparison]::OrdinalIgnoreCase) })
+            if ($held.Count -eq 0) { return 'nothing runs from the directory of the installation' }
+            return 'running from the directory of the installation: ' + (($held | ForEach-Object { "$($_.Name) pid $($_.ProcessId) $($_.ExecutablePath)" }) -join '; ')
+          }
+          $info = [Diagnostics.ProcessStartInfo]::new($env:APP_BRIDGE, "`"$env:APP_DATA`"")
+          $info.RedirectStandardInput = $true; $info.UseShellExecute = $false
+          $bridge = [Diagnostics.Process]::Start($info)
+          $bridge.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"ping"}')
           Start-Process -FilePath "$env:APP_DIR\uninstall.exe" -ArgumentList '/S' -Wait
           for ($i = 0; $i -lt 30 -and (Test-Path "$env:APP_DIR\canonkeeper.exe"); $i++) { Start-Sleep -Seconds 2 }
-          if (Test-Path "$env:APP_DIR\canonkeeper.exe") { throw "the program stayed after the uninstaller" }
+          if (Test-Path "$env:APP_DIR\canonkeeper.exe") { throw "the program stayed after the uninstaller; $(Get-Held)" }
+          if (Test-Path "$env:APP_DIR\canonkeeper-mcp.exe") { throw "the program of the bridge stayed after the uninstaller; $(Get-Held)" }
+          if (Get-Process canonkeeper-mcp -ErrorAction SilentlyContinue) { throw "a bridge runs after the uninstaller; $(Get-Held)" }
           if (-not (Test-Path "$env:APP_DATA\logs")) { throw "the uninstaller removed the data" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -241,3 +318,302 @@ jobs:
           path: ${{ env.APP_DATA }}/logs
           if-no-files-found: ignore
           retention-days: 14
+
+  # The smoke run of an update (specs/2026-11-13-desk-updates.md UB3.7), in a target directory of its own and with
+  # artifacts named smoke-*, which no job of a release takes. The smoke build is a feature of compilation of the shell
+  # (smoke: the source on the loopback and the key of one run, given when it is built) and the tag smokeupdate of the
+  # backend (it presses «Обновить и перезапустить» itself), with a configuration over tauri.conf.json; nothing of the
+  # environment of a run changes an address or a key.
+  smoke-update:
+    name: Smoke run of an update · ${{ matrix.os }}
+    needs: [postgres]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, kinds: "deb,rpm,appimage" }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, kinds: nsis }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, toolchain pinned below
+        with:
+          toolchain: 1.96.1
+      - name: Linux packages for WebKitGTK 4.1 and the bundles
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm fuse3 >/dev/null
+      - name: npm packages of the web and of the shell
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix desktop
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pg-${{ matrix.os }}
+      - name: The Codex package pinned for the target, through the API of the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          read -r repo tag asset < <(node -e '
+            const release = require("./desktop/release.json");
+            const pin = release.codex.targets[process.argv[1]];
+            if (!pin) { console.error("desktop/release.json pins no Codex package for " + process.argv[1]); process.exit(1); }
+            console.log(release.codex.repository, pin.tag, pin.asset);' ${{ matrix.target }} | tr -d '\r')
+          for attempt in 1 2 3 4 5; do
+            gh release download "$tag" -R "$repo" -p "$asset" -D codex-download --clobber && break
+            echo "attempt $attempt failed"; sleep 20
+          done
+          echo "CODEX_ARCHIVE=codex-download/$asset" >> "$GITHUB_ENV"
+      - name: Files of the Tauri bundler by their sums (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/ci/bundler-tools.mjs fetch --os linux --tools "$HOME/.cache/tauri"
+      - name: Files of the Tauri bundler by their sums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/ci/bundler-tools.mjs fetch --os windows --tools "$env:LOCALAPPDATA\tauri"
+      - name: The key of one run and the configuration of the smoke build
+        run: |
+          target="$RUNNER_TEMP/smoke-target"
+          echo "CARGO_TARGET_DIR=$target" >> "$GITHUB_ENV"
+          CARGO_TARGET_DIR="$target" cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml -p canonkeeper-desktop-core --bin canonkeeper-release
+          "$target/debug/canonkeeper-release" keygen "$RUNNER_TEMP/smoke-key.secret" > "$RUNNER_TEMP/smoke-key.public"
+          key="$(tr -d '\r\n' < "$RUNNER_TEMP/smoke-key.public")"
+          echo "CANONKEEPER_SMOKE_UPDATE_KEY=$key" >> "$GITHUB_ENV"
+          echo "CANONKEEPER_SMOKE_UPDATE_SOURCE=http://127.0.0.1:47613/latest.json" >> "$GITHUB_ENV"
+          node desktop/ci/smoke-update.mjs config --port 47613 --key "$key" --out "$RUNNER_TEMP/smoke.conf.json"
+          echo "SMOKE_FROM=$(node desktop/ci/smoke-update.mjs version)" >> "$GITHUB_ENV"
+      - name: N and N+1 of the smoke build — N+1 with a later migration
+        run: |
+          build() {
+            node scripts/desktop-app.mjs --target ${{ matrix.target }} --postgres pg-set.tar --codex "$CODEX_ARCHIVE" --smoke
+            (
+              cd desktop
+              config=(--ci --features smoke --config src-tauri/tauri.bundle.json --config "$RUNNER_TEMP/smoke.conf.json")
+              if [ "$RUNNER_OS" = Linux ]; then
+                npx tauri build "${config[@]}" --bundles deb,rpm
+                LDAI_RUNTIME_FILE="$HOME/.cache/tauri/runtime-x86_64" npx tauri build "${config[@]}" --bundles appimage
+              else
+                npx tauri build "${config[@]}" --bundles nsis
+              fi
+            )
+            mkdir -p "$1"
+            find "$CARGO_TARGET_DIR/release/bundle" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*-setup.exe' \) \
+              -exec mv -t "$1" {} +
+          }
+          build "$RUNNER_TEMP/smoke-n"
+          echo "SMOKE_TO=$(node desktop/ci/smoke-update.mjs bump)" >> "$GITHUB_ENV"
+          node desktop/ci/smoke-update.mjs later-migration
+          build "$RUNNER_TEMP/smoke-release"
+      - name: N+1 signed and checked by the one signer of a release, with the key of the run
+        run: |
+          cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml -p canonkeeper-desktop-core --bin canonkeeper-release --features smoke
+          tool="$CARGO_TARGET_DIR/debug/canonkeeper-release"
+          SMOKE_RUN_KEY="$(tr -d '\r\n' < "$RUNNER_TEMP/smoke-key.secret")" "$tool" sign --version "$SMOKE_TO" \
+            --base-url "http://127.0.0.1:47613/" --notes desktop/release-notes.txt --key-env SMOKE_RUN_KEY "$RUNNER_TEMP/smoke-release"
+          "$tool" check --tag "v$SMOKE_TO" --conf "$RUNNER_TEMP/smoke.conf.json" --cargo desktop/src-tauri/Cargo.toml \
+            --kinds ${{ matrix.kinds }} "$RUNNER_TEMP/smoke-release"
+          printf 'SMOKE_FROM=%s\nSMOKE_TO=%s\n' "$SMOKE_FROM" "$SMOKE_TO" > "$RUNNER_TEMP/smoke-versions.env"
+      - name: Update N to N+1 · AppImage and .deb, the pkexec of the runner (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo install -m 0755 desktop/ci/pkexec.sh /usr/bin/pkexec
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          for kind in appimage deb; do
+            case "$kind" in
+              appimage) from="$(ls "$RUNNER_TEMP"/smoke-n/*.AppImage)" ;;
+              deb) from="$(ls "$RUNNER_TEMP"/smoke-n/*.deb)" ;;
+            esac
+            rm -rf "$HOME/.local/share/canonkeeper"
+            xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- node desktop/ci/smoke-update.mjs run --kind "$kind" \
+              --from "$from" --release "$RUNNER_TEMP/smoke-release" --port 47613 --from-version "$SMOKE_FROM" --to-version "$SMOKE_TO" \
+              --data "$HOME/.local/share/canonkeeper" --work "$RUNNER_TEMP/smoke-$kind"
+          done
+      - name: Update N to N+1 · NSIS (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          node desktop/ci/smoke-update.mjs run --kind nsis --from "$(ls "$RUNNER_TEMP"/smoke-n/*-setup.exe)" \
+            --release "$RUNNER_TEMP/smoke-release" --port 47613 --from-version "$SMOKE_FROM" --to-version "$SMOKE_TO" \
+            --data "$LOCALAPPDATA/ru.canonkeeper.desktop/data" --work "$RUNNER_TEMP/smoke-nsis"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: runner.os == 'Linux'
+        with:
+          name: smoke-update-rpm
+          path: |
+            ${{ runner.temp }}/smoke-n/*.rpm
+            ${{ runner.temp }}/smoke-release
+            ${{ runner.temp }}/smoke-versions.env
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke-update-fedora:
+    name: Smoke run of an update · .rpm in Fedora
+    needs: [smoke-update]
+    runs-on: ubuntu-24.04
+    container: fedora:42
+    permissions:
+      contents: read
+    steps:
+      - name: Tools of the container
+        run: |
+          # polkit (its pkexec) before the stand-in: the package of N needs it and would put the real pkexec over the stand-in.
+          dnf install -y -q nodejs sudo xorg-x11-server-Xvfb dbus-daemon findutils procps-ng polkit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: smoke-update-rpm
+          path: smoke
+      - name: Update N to N+1 · .rpm by dnf, the pkexec of the runner, as a user (PostgreSQL does not run as root)
+        run: |
+          useradd -m runner
+          echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner
+          install -m 0755 desktop/ci/pkexec.sh /usr/bin/pkexec
+          chmod -R a+rX smoke
+          . smoke/smoke-versions.env
+          Xvfb :99 -screen 0 1280x800x24 &
+          runuser -u runner -- env DISPLAY=:99 HOME=/home/runner WEBKIT_DISABLE_DMABUF_RENDERER=1 dbus-run-session -- \
+            node desktop/ci/smoke-update.mjs run --kind rpm --from "$(ls "$PWD"/smoke/smoke-n/*.rpm)" \
+            --release "$PWD/smoke/smoke-release" --port 47613 --from-version "$SMOKE_FROM" --to-version "$SMOKE_TO" \
+            --data /home/runner/.local/share/canonkeeper --work /tmp/smoke-rpm
+
+  # A release, on a tag v* only (specs/2026-11-13-desk-updates.md UB3.1–UB3.6).
+  release-tool:
+    name: The tool of a release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.tool.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, toolchain pinned below
+        with:
+          toolchain: 1.96.1
+      - name: canonkeeper-release from the tag, without a cache
+        id: tool
+        run: |
+          cargo build --locked --release --manifest-path desktop/src-tauri/Cargo.toml -p canonkeeper-desktop-core --bin canonkeeper-release
+          mkdir -p "$RUNNER_TEMP/tool"
+          cp desktop/src-tauri/target/release/canonkeeper-release "$RUNNER_TEMP/tool/"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/tool/canonkeeper-release" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-tool
+          path: ${{ runner.temp }}/tool/canonkeeper-release
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    name: Signature and check of the release
+    needs: [app, release-tool]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-tool
+          path: ${{ runner.temp }}/tool
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: installers-ubuntu-24.04
+          path: installers
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: installers-windows-2025
+          path: installers
+      - name: The tool is the one its job built
+        env:
+          TOOL_SHA256: ${{ needs.release-tool.outputs.sha256 }}
+        run: |
+          echo "$TOOL_SHA256  $RUNNER_TEMP/tool/canonkeeper-release" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/tool/canonkeeper-release"
+          mkdir -p release
+          find installers -type f -exec mv -t release {} +
+      - name: Sign by the main key of the environment release
+        env:
+          CANONKEEPER_UPDATE_KEY: ${{ secrets.CANONKEEPER_UPDATE_KEY }}
+        run: |
+          "$RUNNER_TEMP/tool/canonkeeper-release" sign --version "${GITHUB_REF_NAME#v}" \
+            --base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            --notes desktop/release-notes.txt --key-env CANONKEEPER_UPDATE_KEY release
+      - name: The release holds before its draft — the tag, the versions, the main key of the tree, one file for each kind
+        run: |
+          "$RUNNER_TEMP/tool/canonkeeper-release" check --tag "$GITHUB_REF_NAME" --conf desktop/src-tauri/tauri.conf.json \
+            --cargo desktop/src-tauri/Cargo.toml release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: release
+          if-no-files-found: error
+          retention-days: 30
+
+  attest:
+    name: Provenance of the installers
+    needs: [sign]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+      - uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            release/*-setup.exe
+            release/*.deb
+            release/*.rpm
+            release/*.AppImage
+
+  release-draft:
+    name: Draft of the release
+    needs: [sign, attest]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+      - name: A draft with every file — the owner publishes it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node desktop/ci/release-body.mjs desktop/release-notes.txt desktop/README.md > "$RUNNER_TEMP/body.md"
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "CanonKeeper ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/body.md" release/*

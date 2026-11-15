@@ -89,6 +89,10 @@ func applyStatusWave(response *canon.IndexingStatusResponse, snapshot statusSnap
 		return
 	}
 	reading := readingOf(snapshot.views[governance.SourceViewPublished].books)
+	// The port of the reading of a build reads the counts whether or not the preparation is said (CN3.8); they are not
+	// answered.
+	counts := reading
+	response.Counts = &counts
 	if wave != nil && wave.readyAt != nil && context.State == canon.IndexingStateReady && reading.ChaptersTotal > 0 &&
 		!wave.now.After(wave.readyAt.Add(indexingdomain.ReadyShownFor)) {
 		response.SagaReady = &canon.IndexingSagaReady{At: wave.readyAt.UTC(), Books: reading.BooksTotal, Chapters: reading.ChaptersTotal}

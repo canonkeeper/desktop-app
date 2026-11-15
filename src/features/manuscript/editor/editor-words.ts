@@ -52,9 +52,9 @@ export function discardQuestion(kind: 'edit' | 'new', name: string) {
   return name ? `Отказаться ${what} «${name}»?` : `Отказаться ${what}?`;
 }
 
-/** «После главы 12 «Белый порт»» — a place in the book (board 44·21). */
-export function afterChapterWords(chapter: { displayNumber: string; title: string }, chapterTitle: string) {
-  return chapterTitle ? `После главы ${chapter.displayNumber} «${chapterTitle}»` : `После главы ${chapter.displayNumber}`;
+/** «После главы 12 «Белый порт»» — a place in the book (board 44·21), by the number and the title without it the server gives (RN1.3). */
+export function afterChapterWords(chapter: { displayNumber: string; displayTitle: string }) {
+  return chapter.displayTitle ? `После главы ${chapter.displayNumber} «${chapter.displayTitle}»` : `После главы ${chapter.displayNumber}`;
 }
 
 function startOfDay(at: Date) {

@@ -40,6 +40,11 @@
   margin: 0 0 6px;
 }
 
+/* The word the author writes before an action with no way back (board 44·12, `Pattern/Desktop/Erase Dialog`). */
+.field {
+  margin-top: 4px;
+}
+
 /* «Отмена» on the left, the action on the right. */
 .actions {
   display: flex;

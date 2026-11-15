@@ -43,6 +43,7 @@ import type {
   Schema,
   SearchProjectOptions,
   SearchScope,
+  SendLogQuery,
   SourceView,
 } from './contracts';
 import {
@@ -382,6 +383,216 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'getDesktopState', '200'>('getDesktopState', options);
   }
 
+  /** «Добро пожаловать» answered with the choice of the daily check (specs/2026-11-13-desk-upgrade.md UG5.1). */
+  async dismissWelcome(body: OperationRequest<'dismissWelcome'>) {
+    await this.request<'dismissWelcome', '204'>('dismissWelcome', { body });
+  }
+
+  /** The rows of the journal of what went out by the days of the zone of the author (specs/2026-11-14-desk-journal.md JR2.2). */
+  listSendLog(query: SendLogQuery<'listSendLog'>, options: ApiRequestOptions = {}) {
+    return this.request<'listSendLog', '200'>('listSendLog', { params: { query }, ...options });
+  }
+
+  /** The sendings of a row of the journal (JR2.4). */
+  listSendLogSendings(query: SendLogQuery<'listSendLogSendings'>, options: ApiRequestOptions = {}) {
+    return this.request<'listSendLogSendings', '200'>('listSendLogSendings', { params: { query }, ...options });
+  }
+
+  /** The journal of a choice as the text of a file (JR2.5). */
+  getSendLogFile(query: SendLogQuery<'getSendLogFile'>) {
+    return this.request<'getSendLogFile', '200'>('getSendLogFile', { params: { query } });
+  }
+
+  /** The clearing of the journal (JR2.6). */
+  clearSendLog() {
+    return this.request<'clearSendLog', '200'>('clearSendLog');
+  }
+
+  /** The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3.1). */
+  getProgramAccess(options: ApiRequestOptions = {}) {
+    return this.request<'getProgramAccess', '200'>('getProgramAccess', options);
+  }
+
+  /** The reading by the programs turned on or off; the answer is the state after the door opened or closed. */
+  updateProgramAccess(body: OperationRequest<'updateProgramAccess'>) {
+    return this.request<'updateProgramAccess', '200'>('updateProgramAccess', { body });
+  }
+
+  /** The file of the extension of Claude Desktop for Windows (MC3.3), saved as the file of a saga is. */
+  getClaudeDesktopExtension(options: Pick<ApiRequestOptions, 'signal'> = {}) {
+    return this.requestFile('getClaudeDesktopExtension', undefined, 'CanonKeeper.mcpb', undefined, options.signal);
+  }
+
+  /** An update of the app as the backend holds it (specs/2026-11-13-desk-updates.md UB1.7; specs/2026-11-15-desk-updates-web.md UW2). */
+  getAppUpdate(options: ApiRequestOptions = {}) {
+    return this.request<'getAppUpdate', '200'>('getAppUpdate', options);
+  }
+
+  checkAppUpdate() {
+    return this.request<'checkAppUpdate', '200'>('checkAppUpdate');
+  }
+
+  installAppUpdate() {
+    return this.request<'installAppUpdate', '200'>('installAppUpdate');
+  }
+
+  cancelAppUpdate() {
+    return this.request<'cancelAppUpdate', '200'>('cancelAppUpdate');
+  }
+
+  updateAppUpdateSettings(body: OperationRequest<'updateAppUpdateSettings'>) {
+    return this.request<'updateAppUpdateSettings', '200'>('updateAppUpdateSettings', { body });
+  }
+
+  /** «Стереть все данные»: the backend asks its shell to erase all the data of the app (specs/2026-11-13-desk-erase.md ER1.2). */
+  async eraseDesktopData(body: OperationRequest<'eraseDesktopData'>) {
+    await this.request<'eraseDesktopData', '202'>('eraseDesktopData', { body });
+  }
+
+  /**
+   * The link of the desktop app with an account of the site (specs/2026-11-13-desk-account.md AC2.1); `fresh` asks the site
+   * now (specs/2026-11-15-desk-account-link-web.md AW2.2 «Обновить сведения»).
+   */
+  getAccount(options: ApiRequestOptions & { fresh?: boolean } = {}) {
+    return this.request<'getAccount', '200'>('getAccount', {
+      ...(options.fresh ? { params: { query: { fresh: true } } } : {}), signal: options.signal,
+    });
+  }
+
+  /** A link with the intent to choose the helper of the account or without it (specs/2026-11-15-desk-account-link-web.md AW3.2). */
+  startAccountLink(body: OperationRequest<'startAccountLink'>) {
+    return this.request<'startAccountLink', '200'>('startAccountLink', { body });
+  }
+
+  async cancelAccountLink() {
+    await this.request<'cancelAccountLink', '204'>('cancelAccountLink');
+  }
+
+  unlinkAccount() {
+    return this.request<'unlinkAccount', '200'>('unlinkAccount');
+  }
+
+  /** «Свой ИИ» of the desktop app: its settings, whether and where the key is kept, the last check (specs/2026-11-13-desk-secrets.md SE2.4). */
+  getAiSettings(options: ApiRequestOptions = {}) {
+    return this.request<'getAiSettings', '200'>('getAiSettings', options);
+  }
+
+  updateAiSettings(body: OperationRequest<'updateAiSettings'>) {
+    return this.request<'updateAiSettings', '200'>('updateAiSettings', { body });
+  }
+
+  /** The key goes to the shell only for writing: no answer ever carries it back (SE2.5). */
+  async setAiKey(body: OperationRequest<'setAiKey'>) {
+    await this.request<'setAiKey', '204'>('setAiKey', { body });
+  }
+
+  async deleteAiKey() {
+    await this.request<'deleteAiKey', '204'>('deleteAiKey');
+  }
+
+  /** The models of the provider of the saved settings (specs/2026-11-13-desk-probes.md PB1). */
+  listAiModels(options: ApiRequestOptions = {}) {
+    return this.request<'listAiModels', '200'>('listAiModels', options);
+  }
+
+  /** «Проверить связь» (PB2.1): it starts and runs on its own; getAiCheck says how far it went. */
+  startAiCheck() {
+    return this.request<'startAiCheck', '202'>('startAiCheck');
+  }
+
+  getAiCheck(options: ApiRequestOptions = {}) {
+    return this.request<'getAiCheck', '200'>('getAiCheck', options);
+  }
+
+  async cancelAiCheck() {
+    await this.request<'cancelAiCheck', '204'>('cancelAiCheck');
+  }
+
+  /** What reading the rest of a saga by «Свой ИИ» will take (specs/2026-11-13-desk-consent.md CN1.3). */
+  getReadingEstimate(projectId: string, options: ApiRequestOptions = {}) {
+    return this.request<'getReadingEstimate', '200'>('getReadingEstimate', { params: { path: { projectId } }, signal: options.signal });
+  }
+
+  /** The sample of three chapters (CN2): one live a saga, the same key answers the same sample. */
+  startReadingSample(projectId: string, options: RequiredIdempotencyOptions) {
+    return this.request<'startReadingSample', '202'>('startReadingSample', {
+      params: { path: { projectId } }, headers: idempotencyHeaders(options, 'startReadingSample'), signal: options.signal,
+    });
+  }
+
+  getReadingSample(projectId: string, options: ApiRequestOptions = {}) {
+    return this.request<'getReadingSample', '200'>('getReadingSample', { params: { path: { projectId } }, signal: options.signal });
+  }
+
+  async cancelReadingSample(projectId: string) {
+    await this.request<'cancelReadingSample', '204'>('cancelReadingSample', { params: { path: { projectId } } });
+  }
+
+  /** The consent of the reading of the books of a saga (CN3.1, CN3.2): the pause and the continuation are its writes. */
+  getReadingConsent(projectId: string, options: ApiRequestOptions = {}) {
+    return this.request<'getReadingConsent', '200'>('getReadingConsent', { params: { path: { projectId } }, signal: options.signal });
+  }
+
+  setReadingConsent(projectId: string, body: OperationRequest<'setReadingConsent'>) {
+    return this.request<'setReadingConsent', '200'>('setReadingConsent', { params: { path: { projectId } }, body });
+  }
+
+  /**
+   * The bridge of the app with an Obsidian vault (specs/2026-11-15-desk-obsidian-web.md OW7.1): the folder of the saga,
+   * its choice, the look over it, the preview and the two writes, the link of a book with a folder. The client keeps no terms
+   * of its own — the server holds them —, and the reads under the fence of the saga take no signal: a request broken off
+   * would not stop the reading on the server.
+   */
+  getObsidianVault(projectId: string, options: ApiRequestOptions = {}) {
+    return this.request<'getObsidianVault', '200'>('getObsidianVault', { params: { path: { projectId } }, signal: options.signal });
+  }
+
+  beginObsidianVaultChoice(projectId: string) {
+    return this.request<'beginObsidianVaultChoice', '202'>('beginObsidianVaultChoice', { params: { path: { projectId } } });
+  }
+
+  async unlinkObsidianVault(projectId: string) {
+    await this.request<'unlinkObsidianVault', '204'>('unlinkObsidianVault', { params: { path: { projectId } } });
+  }
+
+  scanObsidianVault(projectId: string) {
+    return this.request<'scanObsidianVault', '200'>('scanObsidianVault', { params: { path: { projectId } } });
+  }
+
+  previewObsidianImport(projectId: string, body: OperationRequest<'previewObsidianImport'>) {
+    return this.request<'previewObsidianImport', '200'>('previewObsidianImport', { params: { path: { projectId } }, body });
+  }
+
+  importObsidianMaterials(projectId: string, body: OperationRequest<'importObsidianMaterials'>, options: RequiredIdempotencyOptions) {
+    return this.request<'importObsidianMaterials', '200'>('importObsidianMaterials', {
+      params: { path: { projectId } }, body, headers: idempotencyHeaders(options, 'importObsidianMaterials'),
+    });
+  }
+
+  importObsidianBooks(projectId: string, body: OperationRequest<'importObsidianBooks'>, options: RequiredIdempotencyOptions) {
+    return this.request<'importObsidianBooks', '200'>('importObsidianBooks', {
+      params: { path: { projectId } }, body, headers: idempotencyHeaders(options, 'importObsidianBooks'),
+    });
+  }
+
+  async linkBookToObsidianFolder(projectId: string, bookId: string, body: OperationRequest<'linkBookToObsidianFolder'>) {
+    await this.request<'linkBookToObsidianFolder', '204'>('linkBookToObsidianFolder', { params: { path: { projectId, bookId } }, body });
+  }
+
+  async unlinkBookFromObsidianFolder(projectId: string, bookId: string) {
+    await this.request<'unlinkBookFromObsidianFolder', '204'>('unlinkBookFromObsidianFolder', { params: { path: { projectId, bookId } } });
+  }
+
+  /**
+   * «Обновить из Obsidian» of a book (specs/2026-11-15-desk-obsidian-book-web.md OU2): its preview or its update — the start of
+   * the import Job of the update; the server reads the folder first, under the fence of the saga, and takes no signal for it.
+   */
+  updateBookFromObsidian(projectId: string, bookId: string, body: OperationRequest<'updateBookFromObsidian'>, options: RequiredIdempotencyOptions) {
+    return this.request<'updateBookFromObsidian', '202'>('updateBookFromObsidian', {
+      params: { path: { projectId, bookId } }, body, headers: idempotencyHeaders(options, 'updateBookFromObsidian'),
+    });
+  }
+
   listNotes(options: NotesListOptions = {}) {
     const { signal, ...body } = options;
     return this.request<'listNotes', '200'>('listNotes', { body, signal });
@@ -546,6 +757,28 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     // Without the drawings nothing is sent: the file is the one it was before them (BP2.1).
     const query = options.drawings ? { format, drawings: true } : { format };
     return this.requestFile('getBookExport', { path: { bookId }, query }, `Книга.${format}`);
+  }
+
+  /** «Сохранить сагу в файл» (specs/2026-11-13-desk-sagafile.md SF2): the file .cksaga under the name the server gave it. */
+  getSagaArchive(projectId: string, options: Pick<ApiRequestOptions, 'signal'> = {}) {
+    return this.requestFile('getSagaArchive', { path: { projectId } }, 'Сага.cksaga', undefined, options.signal);
+  }
+
+  /** «Открыть файл саги» of the app (SF3): a new saga of the file, one key of a repeat for one file. */
+  async openSagaArchive(file: File, options: RequiredIdempotencyOptions) {
+    idempotencyHeaders(options, 'openSagaArchive');
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return this.postMultipart<'openSagaArchive', OperationResponse<'openSagaArchive', '201'>>('openSagaArchive', {}, form, options);
+  }
+
+  /** The chats a saga file brought, to read (SF3.8). */
+  listSagaTranscripts(projectId: string, options: Pick<ApiRequestOptions, 'signal'> = {}) {
+    return this.request<'listSagaTranscripts', '200'>('listSagaTranscripts', { params: { path: { projectId } }, signal: options.signal });
+  }
+
+  getSagaTranscript(projectId: string, transcriptId: string, options: Pick<ApiRequestOptions, 'signal'> = {}) {
+    return this.request<'getSagaTranscript', '200'>('getSagaTranscript', { params: { path: { projectId, transcriptId } }, signal: options.signal });
   }
 
   getBookDrawingCounts(projectId: string, options: Pick<ApiRequestOptions, 'signal'> = {}) {

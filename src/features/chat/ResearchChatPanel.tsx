@@ -16,9 +16,8 @@ import { useAccountSession } from '../../shared/session/account-session';
 import { Button } from '../../ui/controls/Button';
 import { Alert } from '../../ui/feedback/Alert';
 import { useToasts } from '../../ui/feedback/useToastQueue';
-import { Confirm } from '../../ui/overlays/Confirm';
 import { refusalLine } from '../../entities/account-quota/refusal-words';
-import { type AnswerAsk } from './AnswerActions';
+import { useAnswerQuestions } from './answer-questions';
 import { askWhereQuestion, phraseAt } from './source-phrase';
 import { ChatExamples } from './ChatExamples';
 import { ResearchChatComposer } from './ResearchChatComposer';
@@ -119,6 +118,13 @@ interface ResearchChatPanelProps {
    * the actions of the open chat stand in it. Without it the panel keeps its own row of «Чаты».
    */
   row?: HTMLElement | null;
+  /**
+   * «Из файла саги» under the chats of the list (specs/2026-11-13-desk-sagafile-web.md SW3.1); none without such chats.
+   * `onNavigate` closes the list folded into «Чаты», as a pick of a chat of the saga does (SW3.2).
+   */
+  fromFile?: (onNavigate: () => void) => ReactNode;
+  /** A chat of a saga file the address opened: it stands instead of the feed and the field (SW3.2). */
+  fileChat?: ReactNode;
 }
 
 type CreatedTurnState = CreatedChatTurn & Pick<ChatJob, 'canCancel' | 'id'> & { task: string };
@@ -142,6 +148,8 @@ export function ResearchChatPanel({
   row,
   unavailable = null,
   whatNext,
+  fromFile,
+  fileChat,
 }: ResearchChatPanelProps) {
   // What the author typed is kept in the browser by chat until the server takes it (specs/2026-11-10-ux1-chat.md CH1).
   const field = useQuestionField({ projectId, authorId }, selectedChatId, initialQuestion);
@@ -149,19 +157,17 @@ export function ResearchChatPanel({
   const [mutationAuthorityLost, setMutationAuthorityLost] = useState(false);
   // «Переименовать» of the actions over the feed: the chat list takes it (CH2.2).
   const [renameRequest, setRenameRequest] = useState('');
-  // A question of a button under an answer that waits for «Заменить набранное?» (AA1.3).
-  const [replacing, setReplacing] = useState<string | null>(null);
   const questionField = useRef<HTMLTextAreaElement>(null);
   // The chapter at the field is kept by chat with the question, until the question goes (AA2.4, CA7).
   const chapter = useChatChapter(questionSlot(projectId, selectedChatId, authorId));
-  const { clearPanelFailure, failure: panelFailure, retryDelaySeconds, showPanelFailure } = useResearchChatFailure(() => setMutationAuthorityLost(true));
+  const chatSlot = useChatSlot();
+  const { clearPanelFailure, failure: panelFailure, retryDelaySeconds, showPanelFailure } = useResearchChatFailure(() => setMutationAuthorityLost(true), chatSlot?.failures);
   const pendingTask = useRef<PendingTask | null>(null);
   const activeAction = useRef(0);
   const expectedSelectedChatId = useRef<string | null>(null);
   const mounted = useRef(false);
   const observedSelectedChatId = useRef(selectedChatId);
   const queryClient = useQueryClient();
-  const chatSlot = useChatSlot();
   const chatScope = { projectId, sourceView };
   const restoreQuestion = field.restore;
   const stopFlow = useResearchChatStop({
@@ -330,6 +336,8 @@ export function ResearchChatPanel({
     deleteFlow.dismiss();
     stopFlow.reset();
     if (selectedChatId) selectChat('');
+    // From a chat of a saga file the new chat is a step of the address too (SW3.2).
+    else if (fileChat) onSelectChatId('');
   }
 
   function selectChat(chatId: string) {
@@ -409,29 +417,6 @@ export function ResearchChatPanel({
     questionField.current?.focus();
   }
 
-  /** A question put into the field by a button: the focus stands at its end, nothing is sent (AA1.3, AA1.5). */
-  function putQuestion(text: string) {
-    changeTask(text, []);
-    window.requestAnimationFrame(() => {
-      const node = questionField.current;
-      if (!node) return;
-      node.focus();
-      node.setSelectionRange(node.value.length, node.value.length);
-    });
-  }
-
-  /** What the author typed is not lost: another question asks first (AA1.3). */
-  function askFromAnswer(text: string) {
-    const typed = taskText.trim();
-    if (typed && typed !== text.trim()) {
-      setReplacing(text);
-      return;
-    }
-    putQuestion(text);
-  }
-  const askFromAnswerRef = useRef(askFromAnswer);
-  askFromAnswerRef.current = askFromAnswer;
-
   /** What the author typed, or what a button put into the field with the blanks of its example (none for a whole question). */
   function changeTask(nextTask: string, blanks?: readonly Blank[]) {
     if (nextTask !== taskText && panelFailure) clearPanelFailure();
@@ -449,10 +434,11 @@ export function ResearchChatPanel({
   const answerAskUnavailable = jobIsActive ? 'Дождитесь ответа на идущий вопрос.'
     : accountQuota?.chatTurns && accountQuota.chatTurns.limit > 0 && accountQuota.chatTurns.used >= accountQuota.chatTurns.limit
       ? refusalLine('quota.chat_turns_daily', accountQuota) ?? null : null;
-  // The page keeps one function for the buttons of every answer: typing in the field draws no answer anew.
-  const answerAsk = useMemo<AnswerAsk | undefined>(() => canMutate && !chatOutdated
-    ? { put: (text) => askFromAnswerRef.current(text), unavailable: answerAskUnavailable }
-    : undefined, [answerAskUnavailable, canMutate, chatOutdated]);
+  // A question a button under an answer puts into the field (AA1.3).
+  const answers = useAnswerQuestions({
+    changeTask, enabled: canMutate && !chatOutdated, field: questionField, taskText, unavailable: answerAskUnavailable,
+  });
+  const answerAsk = answers.answerAsk;
   const memoryHost = useMemo<ChatMemoryHost>(() => ({ api, projectId, canEdit: canMutate, memoryLink }), [api, canMutate, memoryLink, projectId]);
   const attachmentHost = useMemo<ChatAttachmentHost>(() => ({
     api, projectId, chatId: readableChatId, canEdit: canMutate, openSource: onOpenSource, openDraft: onOpenDraft,
@@ -469,7 +455,7 @@ export function ResearchChatPanel({
   const fieldNotes = useChatFieldNotes({
     quota: accountQuota, refusedCode: panelFailure?.quotaCode ?? '', turnActive: jobIsActive, text: taskText,
     running: sessions.filter(chatIsWorking).map((session) => ({ id: session.id, title: session.title })),
-    onOpenChat: (chatId) => selectChat(chatId),
+    onOpenChat: (chatId) => selectChat(chatId), edition: chatSlot?.failures,
     mode: steerWaits ? 'waiting' : steerOpen ? 'correction' : 'question',
   });
   const limitNotice = fieldNotes.limit;
@@ -502,8 +488,9 @@ export function ResearchChatPanel({
   const emailUnverified = Boolean(useAccountSession()?.emailVerification);
   // A short break of the stream is a quiet line of the feed; a block only once it did not mend in a minute (AA2.6).
   const streamLostLong = useStreamLostLong(timeline.connection);
-  const { failure, loadFailure, sendFailure } = conversationFailure({
+  const { failure, loadFailure, sendFailure, turnEnd } = conversationFailure({
     panelFailure, limitNamed: Boolean(limitNotice?.refused), selectedChatMissing, jobIsActive, connection: streamLostLong ? timeline.connection : 'connected', recoveredJob: recoveredTurnJob,
+    turnWords: chatSlot?.failures?.turn, quota: accountQuota,
     sessionError: selectedSessionQuery.error, sessionErrorRequestId: chatErrorRequestId(selectedSessionQuery.error),
   });
   const retryFailure = failure?.action !== 'retry' ? undefined
@@ -516,7 +503,7 @@ export function ResearchChatPanel({
     : emptyChatMessage(selectedChatId, canCreate, sessions.length);
   // The questions with the names of the book (specs/2026-11-10-first-questions.md FQ1.5); the demo saga has its own.
   const drop = useChatDrop({
-    enabled: canMutate && !chatOutdated && !selectedChatMissing && !jobIsActive && !busy && !retryWaiting && !savedStartUnavailable && !emailUnverified,
+    enabled: canMutate && !chatOutdated && !selectedChatMissing && !jobIsActive && !busy && !retryWaiting && !savedStartUnavailable && !emailUnverified && !fileChat,
     onFile: chapter.attachFile,
   });
   const firstQuestions = useSagaFirstQuestionsQuery(api, projectId, sourceView, !selectedChatId && canMutate && Boolean(emptyMessage) && !demo).data?.questions;
@@ -537,6 +524,8 @@ export function ResearchChatPanel({
           canCreate={canMutate}
           error={sessionsQuery.error}
           errorRequestId={chatErrorRequestId(sessionsQuery.error)}
+          fileChatOpen={Boolean(fileChat)}
+          fromFile={fromFile?.(onNavigate)}
           loading={sessionsQuery.isPending}
           newChatIn={newChatIn}
           onAuthorityLost={() => setMutationAuthorityLost(true)}
@@ -558,7 +547,7 @@ export function ResearchChatPanel({
           sessions={sessions}
           startBusy={startBusy}
         />}>
-        <ChatMemoryProvider value={memoryHost}>{illustrations.provide(<ChatAttachmentHostProvider value={attachmentHost}><ResearchChatConversation
+        {fileChat ?? <ChatMemoryProvider value={memoryHost}>{illustrations.provide(<ChatAttachmentHostProvider value={attachmentHost}><ResearchChatConversation
           answerAsk={answerAsk}
           chatId={readableChatId}
           connection={timeline.connection}
@@ -568,6 +557,7 @@ export function ResearchChatPanel({
               ?? <ChatExamples field={questionField} message={emptyMessage} onPick={changeTask} questions={firstQuestions} typed={Boolean(taskText)} />
             : undefined}
           failure={failure}
+          turnFailure={turnEnd}
           firstAnswerNext={sessions.length === 1 && sessions[0]?.id === readableChatId ? whatNext : undefined}
           events={timeline.events as readonly CanonicalAgentTimelineEvent[]}
           selectedSource={sourceNavigation?.target}
@@ -577,7 +567,7 @@ export function ResearchChatPanel({
               const link = document.querySelector<HTMLElement>('[data-chat-source][aria-expanded="true"]');
               const question = askWhereQuestion(link ? phraseAt(link) : '');
               sourceNavigation.close();
-              askFromAnswer(question);
+              answers.ask(question);
             } : undefined} /> : undefined}
           onOpenSource={onOpenSource}
           jobStatus={jobStatus as AgentJobStatus | null}
@@ -630,15 +620,10 @@ export function ResearchChatPanel({
           onRetry={retryFailure}
           onReturnToChats={selectedChatMissing ? () => selectChat('') : undefined}
           onStartIndexing={onStartIndexing}
-        /></ChatAttachmentHostProvider>)}</ChatMemoryProvider>
+        /></ChatAttachmentHostProvider>)}</ChatMemoryProvider>}
       </ResearchChatLayout>
       <ChatDeleteDialog flow={deleteFlow} />
-      {replacing !== null ? (
-        <Confirm action="Заменить" consent="no" onCancel={() => setReplacing(null)} title="Заменить набранное?"
-          onConfirm={() => { putQuestion(replacing); setReplacing(null); }}>
-          {`В поле уже есть ваш текст. Вместо него встанет: «${replacing.trim()}»`}
-        </Confirm>
-      ) : null}
+      {answers.question}
       {illustrations.overlays}
     </section>
   );

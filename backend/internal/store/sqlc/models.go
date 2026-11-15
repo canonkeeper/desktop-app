@@ -60,6 +60,24 @@ type AppLinkCode struct {
 	UsedAt    pgtype.Timestamptz `json:"used_at"`
 }
 
+type AppTextPrint struct {
+	UserID  pgtype.UUID        `json:"user_id"`
+	Print   []byte             `json:"print"`
+	Chars   int32              `json:"chars"`
+	FirstAt pgtype.Timestamptz `json:"first_at"`
+	LastAt  pgtype.Timestamptz `json:"last_at"`
+}
+
+type AppWork struct {
+	JobID        pgtype.UUID        `json:"job_id"`
+	Kind         string             `json:"kind"`
+	Source       string             `json:"source"`
+	LinkMark     pgtype.Text        `json:"link_mark"`
+	PermitNumber int32              `json:"permit_number"`
+	Returned     pgtype.Text        `json:"returned"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type ArtifactSourceOwner struct {
 	ID                  pgtype.UUID        `json:"id"`
 	ProjectID           pgtype.UUID        `json:"project_id"`
@@ -129,18 +147,19 @@ type AuthorMaterialImport struct {
 }
 
 type AuthorMemory struct {
-	ID        pgtype.UUID        `json:"id"`
-	ProjectID pgtype.UUID        `json:"project_id"`
-	Kind      string             `json:"kind"`
-	Body      string             `json:"body"`
-	ChapterID pgtype.UUID        `json:"chapter_id"`
-	Name      pgtype.Text        `json:"name"`
-	Revision  int64              `json:"revision"`
-	CreatedBy pgtype.UUID        `json:"created_by"`
-	UpdatedBy pgtype.UUID        `json:"updated_by"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	JobID     pgtype.UUID        `json:"job_id"`
+	ID            pgtype.UUID        `json:"id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Kind          string             `json:"kind"`
+	Body          string             `json:"body"`
+	ChapterID     pgtype.UUID        `json:"chapter_id"`
+	Name          pgtype.Text        `json:"name"`
+	Revision      int64              `json:"revision"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	UpdatedBy     pgtype.UUID        `json:"updated_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	JobID         pgtype.UUID        `json:"job_id"`
+	CarriedOrigin pgtype.Text        `json:"carried_origin"`
 }
 
 type Book struct {
@@ -214,12 +233,22 @@ type BookUpdateSnapshotChapter struct {
 }
 
 type CardBuildPermission struct {
-	ProjectID       pgtype.UUID        `json:"project_id"`
-	State           string             `json:"state"`
-	BudgetUsdMicros pgtype.Int8        `json:"budget_usd_micros"`
-	BudgetTokens    pgtype.Int8        `json:"budget_tokens"`
-	Since           pgtype.Timestamptz `json:"since"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	State             string             `json:"state"`
+	Since             pgtype.Timestamptz `json:"since"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	Source            pgtype.Text        `json:"source"`
+	ProviderHost      pgtype.Text        `json:"provider_host"`
+	Pause             pgtype.Text        `json:"pause"`
+	StopUnit          string             `json:"stop_unit"`
+	StopAmount        pgtype.Int8        `json:"stop_amount"`
+	StepAmount        pgtype.Int8        `json:"step_amount"`
+	SpentInputTokens  int64              `json:"spent_input_tokens"`
+	SpentCachedTokens int64              `json:"spent_cached_tokens"`
+	SpentOutputTokens int64              `json:"spent_output_tokens"`
+	SpentMicros       int64              `json:"spent_micros"`
+	SpentEstimated    bool               `json:"spent_estimated"`
+	ResumedAt         pgtype.Timestamptz `json:"resumed_at"`
 }
 
 type Chapter struct {
@@ -824,18 +853,29 @@ type JobModelBinding struct {
 }
 
 type ModelDisclosure struct {
-	ID               pgtype.UUID                 `json:"id"`
-	At               pgtype.Timestamptz          `json:"at"`
-	ProjectID        pgtype.UUID                 `json:"project_id"`
-	JobID            pgtype.UUID                 `json:"job_id"`
-	Purpose          string                      `json:"purpose"`
-	Client           pgtype.Text                 `json:"client"`
-	ChapterID        pgtype.UUID                 `json:"chapter_id"`
-	ChapterKey       pgtype.Text                 `json:"chapter_key"`
-	AttachmentNumber pgtype.Int4                 `json:"attachment_number"`
-	Paragraphs       []pgtype.Range[pgtype.Int4] `json:"paragraphs"`
-	What             string                      `json:"what"`
-	Items            pgtype.Int4                 `json:"items"`
+	ID           pgtype.UUID        `json:"id"`
+	At           pgtype.Timestamptz `json:"at"`
+	ProjectID    pgtype.UUID        `json:"project_id"`
+	JobID        pgtype.UUID        `json:"job_id"`
+	Purpose      string             `json:"purpose"`
+	ThreadID     pgtype.Text        `json:"thread_id"`
+	CheckID      pgtype.UUID        `json:"check_id"`
+	ProfileName  pgtype.Text        `json:"profile_name"`
+	ProviderHost pgtype.Text        `json:"provider_host"`
+	RequestBytes int64              `json:"request_bytes"`
+	Named        []byte             `json:"named"`
+	FirstTime    bool               `json:"first_time"`
+	Client       pgtype.Text        `json:"client"`
+	Page         pgtype.Int4        `json:"page"`
+	Pages        pgtype.Int4        `json:"pages"`
+}
+
+type ModelDisclosuresPending struct {
+	ID        pgtype.UUID        `json:"id"`
+	At        pgtype.Timestamptz `json:"at"`
+	ThreadID  string             `json:"thread_id"`
+	ProjectID pgtype.UUID        `json:"project_id"`
+	Named     []byte             `json:"named"`
 }
 
 type ModelLimitSample struct {
@@ -877,18 +917,34 @@ type ModelPermitUnit struct {
 }
 
 type ModelRequest struct {
-	ID           pgtype.UUID        `json:"id"`
-	At           pgtype.Timestamptz `json:"at"`
-	ProjectID    pgtype.UUID        `json:"project_id"`
-	JobID        pgtype.UUID        `json:"job_id"`
-	Purpose      string             `json:"purpose"`
+	ID                pgtype.UUID        `json:"id"`
+	At                pgtype.Timestamptz `json:"at"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	JobID             pgtype.UUID        `json:"job_id"`
+	Purpose           string             `json:"purpose"`
+	ProfileName       string             `json:"profile_name"`
+	ProviderHost      string             `json:"provider_host"`
+	Model             string             `json:"model"`
+	InputTokens       pgtype.Int8        `json:"input_tokens"`
+	OutputTokens      pgtype.Int8        `json:"output_tokens"`
+	Outcome           string             `json:"outcome"`
+	DurationMs        int32              `json:"duration_ms"`
+	CachedInputTokens pgtype.Int8        `json:"cached_input_tokens"`
+	RequestBytes      int64              `json:"request_bytes"`
+	CostMicros        pgtype.Int8        `json:"cost_micros"`
+	Currency          pgtype.Text        `json:"currency"`
+	Estimated         bool               `json:"estimated"`
+	RefusalCode       pgtype.Text        `json:"refusal_code"`
+	CheckID           pgtype.UUID        `json:"check_id"`
+	Failure           pgtype.Text        `json:"failure"`
+}
+
+type ModelThreadRecipient struct {
+	ThreadID     string             `json:"thread_id"`
 	ProfileName  string             `json:"profile_name"`
 	ProviderHost string             `json:"provider_host"`
-	Model        string             `json:"model"`
-	InputTokens  pgtype.Int8        `json:"input_tokens"`
-	OutputTokens pgtype.Int8        `json:"output_tokens"`
-	Outcome      string             `json:"outcome"`
-	DurationMs   int32              `json:"duration_ms"`
+	ProjectID    pgtype.UUID        `json:"project_id"`
+	At           pgtype.Timestamptz `json:"at"`
 }
 
 type ModelUsageDay struct {
@@ -904,10 +960,30 @@ type ModelUsageDay struct {
 	ReasoningOutputTokens int64       `json:"reasoning_output_tokens"`
 }
 
+type ObsidianBook struct {
+	ID          pgtype.UUID        `json:"id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Folder      string             `json:"folder"`
+	ItemID      pgtype.UUID        `json:"item_id"`
+	BookID      pgtype.UUID        `json:"book_id"`
+	Fingerprint pgtype.Text        `json:"fingerprint"`
+	Excluded    []string           `json:"excluded"`
+	Nested      []string           `json:"nested"`
+	LinkedAt    pgtype.Timestamptz `json:"linked_at"`
+}
+
+type ObsidianNote struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	NotePath    string      `json:"note_path"`
+	RecordID    pgtype.UUID `json:"record_id"`
+	Revision    int64       `json:"revision"`
+	Fingerprint string      `json:"fingerprint"`
+}
+
 type ObsidianVault struct {
 	ProjectID    pgtype.UUID        `json:"project_id"`
 	VaultPath    string             `json:"vault_path"`
-	ExportDir    string             `json:"export_dir"`
+	ExportDir    pgtype.Text        `json:"export_dir"`
 	AutoExport   bool               `json:"auto_export"`
 	LastImportAt pgtype.Timestamptz `json:"last_import_at"`
 	LastExportAt pgtype.Timestamptz `json:"last_export_at"`
@@ -934,26 +1010,28 @@ type PlatformContact struct {
 }
 
 type PlatformQuotaDefault struct {
-	Singleton           bool               `json:"singleton"`
-	ChatTurnsPerDay     pgtype.Int4        `json:"chat_turns_per_day"`
-	ActiveTurns         pgtype.Int4        `json:"active_turns"`
-	ImportsPerDay       pgtype.Int4        `json:"imports_per_day"`
-	Projects            pgtype.Int4        `json:"projects"`
-	ProjectBooks        pgtype.Int4        `json:"project_books"`
-	ProjectChapters     pgtype.Int4        `json:"project_chapters"`
-	ProjectCharacters   pgtype.Int8        `json:"project_characters"`
-	AccountBooks        pgtype.Int4        `json:"account_books"`
-	AccountChapters     pgtype.Int4        `json:"account_chapters"`
-	AccountCharacters   pgtype.Int8        `json:"account_characters"`
-	ImagesPerDay        pgtype.Int4        `json:"images_per_day"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	UpdatedBy           pgtype.UUID        `json:"updated_by"`
-	ImageUploadsPerDay  pgtype.Int4        `json:"image_uploads_per_day"`
-	ChapterDraftsPerDay pgtype.Int4        `json:"chapter_drafts_per_day"`
-	DrawingTurnsPerDay  pgtype.Int4        `json:"drawing_turns_per_day"`
-	DraftTurnsPerDay    pgtype.Int4        `json:"draft_turns_per_day"`
-	DraftRewritesPerDay pgtype.Int4        `json:"draft_rewrites_per_day"`
-	AppReturnsPerDay    pgtype.Int4        `json:"app_returns_per_day"`
+	Singleton                    bool               `json:"singleton"`
+	ChatTurnsPerDay              pgtype.Int4        `json:"chat_turns_per_day"`
+	ActiveTurns                  pgtype.Int4        `json:"active_turns"`
+	ImportsPerDay                pgtype.Int4        `json:"imports_per_day"`
+	Projects                     pgtype.Int4        `json:"projects"`
+	ProjectBooks                 pgtype.Int4        `json:"project_books"`
+	ProjectChapters              pgtype.Int4        `json:"project_chapters"`
+	ProjectCharacters            pgtype.Int8        `json:"project_characters"`
+	AccountBooks                 pgtype.Int4        `json:"account_books"`
+	AccountChapters              pgtype.Int4        `json:"account_chapters"`
+	AccountCharacters            pgtype.Int8        `json:"account_characters"`
+	ImagesPerDay                 pgtype.Int4        `json:"images_per_day"`
+	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy                    pgtype.UUID        `json:"updated_by"`
+	ImageUploadsPerDay           pgtype.Int4        `json:"image_uploads_per_day"`
+	ChapterDraftsPerDay          pgtype.Int4        `json:"chapter_drafts_per_day"`
+	DrawingTurnsPerDay           pgtype.Int4        `json:"drawing_turns_per_day"`
+	DraftTurnsPerDay             pgtype.Int4        `json:"draft_turns_per_day"`
+	DraftRewritesPerDay          pgtype.Int4        `json:"draft_rewrites_per_day"`
+	AppReturnsPerDay             pgtype.Int4        `json:"app_returns_per_day"`
+	AppTokensPerQuestion         pgtype.Int4        `json:"app_tokens_per_question"`
+	AppReadingTokensPerCharacter pgtype.Int4        `json:"app_reading_tokens_per_character"`
 }
 
 type Project struct {
@@ -1038,6 +1116,22 @@ type PromoPermission struct {
 	RevokeTokenHash     pgtype.Text        `json:"revoke_token_hash"`
 }
 
+type ReadingSampleRequest struct {
+	ID                pgtype.UUID        `json:"id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	JobID             pgtype.UUID        `json:"job_id"`
+	At                pgtype.Timestamptz `json:"at"`
+	DurationMs        int32              `json:"duration_ms"`
+	ProviderHost      string             `json:"provider_host"`
+	Model             string             `json:"model"`
+	InputTokens       pgtype.Int8        `json:"input_tokens"`
+	CachedInputTokens pgtype.Int8        `json:"cached_input_tokens"`
+	OutputTokens      pgtype.Int8        `json:"output_tokens"`
+	CostMicros        pgtype.Int8        `json:"cost_micros"`
+	Currency          pgtype.Text        `json:"currency"`
+	Estimated         bool               `json:"estimated"`
+}
+
 type ReadingTest struct {
 	ID        pgtype.UUID        `json:"id"`
 	Slug      string             `json:"slug"`
@@ -1053,6 +1147,28 @@ type ReadingTestVote struct {
 	Chosen     string             `json:"chosen"`
 	Note       string             `json:"note"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ReadingUnreadChapter struct {
+	ProjectID           pgtype.UUID        `json:"project_id"`
+	ChapterID           pgtype.UUID        `json:"chapter_id"`
+	ContentHash         string             `json:"content_hash"`
+	InstructionsVersion int32              `json:"instructions_version"`
+	Reason              string             `json:"reason"`
+	MarkedAt            pgtype.Timestamptz `json:"marked_at"`
+	Helper              pgtype.Text        `json:"helper"`
+}
+
+type ReadingUnreadRest struct {
+	ProjectID    pgtype.UUID        `json:"project_id"`
+	Kind         string             `json:"kind"`
+	SourceView   string             `json:"source_view"`
+	NamesDigest  pgtype.Text        `json:"names_digest"`
+	LayerStamps  []byte             `json:"layer_stamps"`
+	LayerVersion pgtype.Int4        `json:"layer_version"`
+	Reason       string             `json:"reason"`
+	Helper       string             `json:"helper"`
+	MarkedAt     pgtype.Timestamptz `json:"marked_at"`
 }
 
 type SagaDrawing struct {
@@ -1249,6 +1365,16 @@ type SagaThread struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
+type SagaTranscript struct {
+	ID          pgtype.UUID        `json:"id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Title       string             `json:"title"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	LastTurnAt  pgtype.Timestamptz `json:"last_turn_at"`
+	OthersTurns int32              `json:"others_turns"`
+	Turns       []byte             `json:"turns"`
+}
+
 type SchemaMigration struct {
 	Version   int64              `json:"version"`
 	Checksum  string             `json:"checksum"`
@@ -1374,25 +1500,27 @@ type User struct {
 }
 
 type WriterQuotaOverride struct {
-	UserID              pgtype.UUID        `json:"user_id"`
-	ChatTurnsPerDay     pgtype.Int4        `json:"chat_turns_per_day"`
-	ActiveTurns         pgtype.Int4        `json:"active_turns"`
-	ImportsPerDay       pgtype.Int4        `json:"imports_per_day"`
-	Projects            pgtype.Int4        `json:"projects"`
-	ProjectBooks        pgtype.Int4        `json:"project_books"`
-	ProjectChapters     pgtype.Int4        `json:"project_chapters"`
-	ProjectCharacters   pgtype.Int8        `json:"project_characters"`
-	AccountBooks        pgtype.Int4        `json:"account_books"`
-	AccountChapters     pgtype.Int4        `json:"account_chapters"`
-	AccountCharacters   pgtype.Int8        `json:"account_characters"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	ImagesPerDay        pgtype.Int4        `json:"images_per_day"`
-	ImageUploadsPerDay  pgtype.Int4        `json:"image_uploads_per_day"`
-	ChapterDraftsPerDay pgtype.Int4        `json:"chapter_drafts_per_day"`
-	DrawingTurnsPerDay  pgtype.Int4        `json:"drawing_turns_per_day"`
-	DraftTurnsPerDay    pgtype.Int4        `json:"draft_turns_per_day"`
-	DraftRewritesPerDay pgtype.Int4        `json:"draft_rewrites_per_day"`
-	AppReturnsPerDay    pgtype.Int4        `json:"app_returns_per_day"`
+	UserID                       pgtype.UUID        `json:"user_id"`
+	ChatTurnsPerDay              pgtype.Int4        `json:"chat_turns_per_day"`
+	ActiveTurns                  pgtype.Int4        `json:"active_turns"`
+	ImportsPerDay                pgtype.Int4        `json:"imports_per_day"`
+	Projects                     pgtype.Int4        `json:"projects"`
+	ProjectBooks                 pgtype.Int4        `json:"project_books"`
+	ProjectChapters              pgtype.Int4        `json:"project_chapters"`
+	ProjectCharacters            pgtype.Int8        `json:"project_characters"`
+	AccountBooks                 pgtype.Int4        `json:"account_books"`
+	AccountChapters              pgtype.Int4        `json:"account_chapters"`
+	AccountCharacters            pgtype.Int8        `json:"account_characters"`
+	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+	ImagesPerDay                 pgtype.Int4        `json:"images_per_day"`
+	ImageUploadsPerDay           pgtype.Int4        `json:"image_uploads_per_day"`
+	ChapterDraftsPerDay          pgtype.Int4        `json:"chapter_drafts_per_day"`
+	DrawingTurnsPerDay           pgtype.Int4        `json:"drawing_turns_per_day"`
+	DraftTurnsPerDay             pgtype.Int4        `json:"draft_turns_per_day"`
+	DraftRewritesPerDay          pgtype.Int4        `json:"draft_rewrites_per_day"`
+	AppReturnsPerDay             pgtype.Int4        `json:"app_returns_per_day"`
+	AppTokensPerQuestion         pgtype.Int4        `json:"app_tokens_per_question"`
+	AppReadingTokensPerCharacter pgtype.Int4        `json:"app_reading_tokens_per_character"`
 }
 
 type WriterUsageDay struct {

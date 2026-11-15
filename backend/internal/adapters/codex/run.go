@@ -26,20 +26,21 @@ func (failure runStageError) Unwrap() error         { return failure.err }
 func (failure runStageError) SafeErrorCode() string { return failure.code }
 
 type RunRequest struct {
-	CorrelationID            string
-	TurnCorrelationID        string
-	ExistingRootThreadID     string
-	ExistingTurnID           string
-	ContinueFailedTurn       bool
-	ResumeUsageLimitedGoal   bool
-	BundleID                 string
-	GoalObjective            string
-	SkillName                string
-	DeveloperInstructions    string
-	InitialInput             string
-	Tools                    []agent.ToolSpec
-	BindRoot                 func(context.Context, string) error
-	BindTurn                 func(context.Context, string, string) error
+	CorrelationID         string
+	TurnCorrelationID     string
+	ExistingRootThreadID  string
+	ExistingTurnID        string
+	ContinueFailedTurn    bool
+	BundleID              string
+	SkillName             string
+	DeveloperInstructions string
+	InitialInput          string
+	Tools                 []agent.ToolSpec
+	BindRoot              func(context.Context, string) error
+	BindTurn              func(context.Context, string, string) error
+	// BeforeTurn is called with the root thread right before turn/start of the initial input — a turn taken up is not
+	// started and calls nothing (specs/2026-11-14-desk-journal.md JR1.3); its error starts no turn.
+	BeforeTurn               func(context.Context, string) error
 	OnContextCompaction      func(context.Context, string, string, string) error
 	ContextCompactionBarrier func(agent.ToolCall) bool
 	Handler                  func(context.Context, agent.ToolCall) (agent.ToolResult, error)
@@ -53,6 +54,11 @@ type RootSelector struct {
 }
 
 func (client *Client) Run(ctx context.Context, request RunRequest) (RunResult, error) {
+	if client != nil && client.supervisor != nil {
+		// New settings wait for the end of the turn (specs/2026-11-13-desk-gateway.md GW2.3).
+		client.supervisor.begin()
+		defer client.supervisor.end()
+	}
 	runtime, err := client.runtime(ctx)
 	if err != nil {
 		return RunResult{}, runStageError{code: "runtime.client_start_failed", err: err}
@@ -234,9 +240,6 @@ func (client *Client) resumeOptions(threadID, provider string, request RunReques
 }
 
 func (client *Client) runTurn(ctx context.Context, thread *sdk.Thread, request RunRequest) (RunResult, error) {
-	if request.GoalObjective != "" {
-		return client.resumeGoal(ctx, thread, request)
-	}
 	notifications, err := client.sdk.Notifications(ctx)
 	if err != nil {
 		client.dispatcher.denyTurn(thread.ID(), err)
@@ -348,9 +351,6 @@ func (client *Client) startTurn(
 	clientMessageID string,
 	input string,
 ) (RunResult, error) {
-	if request.GoalObjective != "" {
-		return client.startGoal(ctx, thread, request, clientMessageID, input)
-	}
 	handle, err := client.beginTurn(ctx, thread, request, clientMessageID, input)
 	if err != nil {
 		return RunResult{}, err
@@ -378,6 +378,12 @@ func (client *Client) beginTurn(
 	clientMessageID string,
 	input string,
 ) (*sdk.TurnHandle, error) {
+	if request.BeforeTurn != nil && clientMessageID == request.TurnCorrelationID {
+		if err := request.BeforeTurn(ctx, thread.ID()); err != nil {
+			client.dispatcher.denyTurn(thread.ID(), err)
+			return nil, runStageError{code: "runtime.turn_name_failed", err: err}
+		}
+	}
 	handle, err := thread.Turn(ctx, sdk.Text(input), sdk.TurnOptions{ClientUserMessageID: clientMessageID})
 	if err != nil {
 		client.dispatcher.denyTurn(thread.ID(), err)

@@ -77,6 +77,29 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	// Added by forward migration 0144: the permits of a linked app to work on the models and the corrections under them,
 	// account data.
 	want = append(want, "model_permits", "model_permit_units")
+	// Added by forward migration 0145: what the helper of a linked app read through the models of the site, account data.
+	want = append(want, "app_text_prints")
+	// Added by the forward migration of the saga file (specs/2026-11-13-desk-sagafile.md SF3.8): the chats a saga file
+	// brought, records of the saga, removed with the project.
+	want = append(want, "saga_transcripts")
+	// Added by forward migration 0148: the chapters of a saga that did not read by the author's own AI
+	// (specs/2026-11-13-desk-consent.md CN3.6), removed with the project.
+	want = append(want, "reading_unread_chapters")
+	// Added by forward migration 0150: the links of the books of a saga with the folders of its vault of Obsidian
+	// (specs/2026-11-14-desk-obsidian-books.md OK0.2), removed with the link of the saga and with the project.
+	want = append(want, "obsidian_books")
+	// Added by forward migration 0151: the work of the desktop app a site counts (specs/2026-11-13-desk-account-ai.md), a
+	// fact of its Job.
+	want = append(want, "app_work")
+	// Added by forward migration 0152: the links of the records of a saga with the notes of its vault of Obsidian
+	// (specs/2026-11-15-desk-obsidian-notes.md ON1.9), removed with the link of the saga, with the project and with the record.
+	want = append(want, "obsidian_notes")
+	// Added by forward migration 0153: the names and the threads of a saga that did not come together
+	// (specs/2026-11-15-desk-reading-rest.md RR1.6), removed with the project.
+	want = append(want, "reading_unread_rest")
+	// Added by forward migration 0155: what a thread named and has not sent, the helpers a thread went to and the requests
+	// of the sample of the consent (specs/2026-11-14-desk-journal.md JR1.8), removed with the project.
+	want = append(want, "model_disclosures_pending", "model_thread_recipients", "reading_sample_requests")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},
@@ -196,6 +219,9 @@ func TestTableInventoryIncludesCanonicalSourceTablesWithoutPersistedSteps(t *tes
 		"card_build_permissions":        {"card_build_permissions", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		"model_requests":                {"model_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		"model_disclosures":             {"model_disclosures", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"model_disclosures_pending":     {"model_disclosures_pending", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"model_thread_recipients":       {"model_thread_recipients", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		"reading_sample_requests":       {"reading_sample_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		"obsidian_vaults":               {"obsidian_vaults", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		"saga_ready_waves":              {"saga_ready_waves", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		"book_update_snapshots":         {"book_update_snapshots", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},

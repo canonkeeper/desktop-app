@@ -30,19 +30,20 @@ type savedSource struct {
 	Chat    *service.ChatBinding                        `json:"chat,omitempty"`
 }
 
-// listedNote is a row of the catalog as the query gives it: the place of the book on the shelf and the order of the
-// chapter make its place.
+// listedNote is a row of the catalog as the query gives it: the place of the book on the shelf and the place of the
+// chapter in its book make its place.
 type listedNote struct {
 	domain.Entry
-	ProjectID    *string `json:"projectId"`
-	BookID       *string `json:"bookId"`
-	ChapterOrder *int    `json:"chapterOrder"`
+	ProjectID *string `json:"projectId"`
+	BookID    *string `json:"bookId"`
+	ChapterID *string `json:"chapterId"`
 }
 
 // chapterPlace is the place of a chapter as the author reads it everywhere (specs/2026-11-10-ux1-names.md N1.1); the
-// book is named by its place on the shelf (specs/2026-11-11-ux7-reorder.md RK1.6).
-func chapterPlace(bookPlace, chapterOrder int, title string) string {
-	return (&sagamemory.Chapter{BookOrder: bookPlace, Order: chapterOrder, Title: title}).Place()
+// book is named by its place on the shelf (specs/2026-11-11-ux7-reorder.md RK1.6), the chapter by its place in the book
+// (chapterPlaces; specs/2026-11-14-chapter-place-number.md CP1.1).
+func chapterPlace(bookPlace, inBook int, title string) string {
+	return (&sagamemory.Chapter{BookOrder: bookPlace, InBook: inBook, Title: title}).Place()
 }
 
 func mapError(err error) error {
@@ -114,21 +115,25 @@ func (repository *Repository) List(ctx context.Context, query service.ListQuery)
 	if err := json.Unmarshal(row.Entries, &rows); err != nil {
 		return service.ListResult{}, err
 	}
-	var projects []string
+	var projects, books []string
 	for _, listed := range rows {
-		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterOrder != nil {
-			projects = append(projects, *listed.ProjectID)
+		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterID != nil {
+			projects, books = append(projects, *listed.ProjectID), append(books, *listed.BookID)
 		}
 	}
 	places, err := shelfPlaces(ctx, repository.db.Pool, projects)
 	if err != nil {
 		return service.ListResult{}, err
 	}
+	inBooks, err := chapterPlaces(ctx, repository.db.Pool, books)
+	if err != nil {
+		return service.ListResult{}, err
+	}
 	result := service.ListResult{TotalCount: row.TotalCount, Entries: make([]domain.Entry, len(rows))}
 	for index, listed := range rows {
 		result.Entries[index] = listed.Entry
-		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterOrder != nil {
-			result.Entries[index].Place = chapterPlace(places[*listed.ProjectID][*listed.BookID], *listed.ChapterOrder, listed.ChapterTitle)
+		if listed.ChapterTitle != "" && listed.ProjectID != nil && listed.BookID != nil && listed.ChapterID != nil {
+			result.Entries[index].Place = chapterPlace(places[*listed.ProjectID][*listed.BookID], inBooks[*listed.ChapterID], listed.ChapterTitle)
 		}
 	}
 	return result, nil

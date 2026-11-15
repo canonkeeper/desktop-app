@@ -12,8 +12,9 @@ import (
 )
 
 // mapRulesVersion names the rules of the prepared map in its revision: a new rule makes every map stale, and the catch-up at
-// start builds them again (specs/2026-11-04-saga-map.md, UC10).
-const mapRulesVersion = "saga-map/8"
+// start builds them again (specs/2026-11-04-saga-map.md, UC10). saga-map/9: the places of the chapters the map names count
+// from one in their books (specs/2026-11-14-chapter-place-number.md CP1.1).
+const mapRulesVersion = "saga-map/9"
 
 // StoredMapPart is a part of an entry along the scale, gzip of JSON, for the chapters from First up to the next part.
 type StoredMapPart struct {

@@ -342,6 +342,10 @@ function statusInWork(status: IndexingStatus | undefined) {
   if (!status) return false;
   return status.draft?.context?.state === 'processing' || status.published?.context?.state === 'processing'
     || Boolean(status.preparation && !status.preparation.waiting)
+    // The reading of the books by «Свой ИИ» of the app goes — its names and threads too (specs/2026-11-13-desk-consent-web.md
+    // RW1.1) —, or stands paused: the answers in flight at the pause are counted after it (specs/2026-11-13-desk-consent.md
+    // CN3.3), and the line says what was spent now. The site never has it.
+    || status.reading?.state === 'reading' || status.reading?.state === 'paused'
     || status.steps.some((step) => step.status === 'queued' || step.status === 'running' || step.status === 'canceling');
 }
 

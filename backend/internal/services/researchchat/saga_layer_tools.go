@@ -64,6 +64,10 @@ func (tools *ReadTools) Entity(ctx context.Context, call ToolContext, input Enti
 			return "", err
 		}
 		record, hasRecord := materialByName(records, name)
+		if hasRecord {
+			// The record goes whole (specs/2026-11-14-desk-journal.md JR1.3).
+			saga.showMaterial(record.ID)
+		}
 		entry, ok := glossary.Lookup(name)
 		if !ok && hasRecord {
 			return renderMaterial(record, materialPlan), nil

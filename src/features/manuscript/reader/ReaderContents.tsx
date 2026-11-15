@@ -3,7 +3,7 @@ import type { ReactNode, RefObject } from 'react';
 import type { ChapterListItem } from '../../../entities/manuscript/api';
 import { Button } from '../../../ui/controls/Button';
 import { IconButton } from '../../../ui/controls/IconButton';
-import { formatCount, formatReaderChapterTitle } from '../../../ui/copy';
+import { formatCount } from '../../../ui/copy';
 import { EmptyState } from '../../../ui/feedback/EmptyState';
 import { SkeletonArea } from '../../../ui/feedback/Skeleton';
 import { Tab, Tabs } from '../../../ui/navigation/Tabs';
@@ -19,10 +19,12 @@ export function readingMinutes(words: number) {
   return words > 0 ? Math.ceil(words / 220) : 0;
 }
 
-/** «гл. 12 „Белый порт“» — a chapter of the open book in words (specs/2026-11-10-ux1-names.md N1). */
-export function chapterWords(chapter: Pick<ChapterListItem, 'displayNumber' | 'title'>) {
-  const title = formatReaderChapterTitle(chapter.displayNumber, chapter.title);
-  return title ? `гл. ${chapter.displayNumber} «${title}»` : `гл. ${chapter.displayNumber}`;
+/**
+ * «гл. 12 „Белый порт“» — a chapter of the open book in words (specs/2026-11-10-ux1-names.md N1), by the number and the
+ * title without it the server gives (specs/2026-11-15-reader-chapter-number.md RN1.3).
+ */
+export function chapterWords(chapter: Pick<ChapterListItem, 'displayNumber' | 'displayTitle'>) {
+  return chapter.displayTitle ? `гл. ${chapter.displayNumber} «${chapter.displayTitle}»` : `гл. ${chapter.displayNumber}`;
 }
 
 export interface ContentsNote {
@@ -107,7 +109,7 @@ function ContentsBody({ chapters, currentChapterId, currentMinutes, drawings, fo
                   <button aria-current={current ? 'page' : undefined} className={styles.chapter} onClick={() => onOpenChapter(chapter.id)} type="button">
                     <span className={styles.number}>{chapter.displayNumber}</span>
                     <span className={styles.words}>
-                      <strong>{formatReaderChapterTitle(chapter.displayNumber, chapter.title) || `Глава ${chapter.displayNumber}`}</strong>
+                      <strong>{chapter.displayTitle || `Глава ${chapter.displayNumber}`}</strong>
                       <span>{formatCount(chapter.wordCount, 'слово', 'слова', 'слов')}{minutes ? ` · ${minutes} мин` : ''}</span>
                     </span>
                   </button>

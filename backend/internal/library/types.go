@@ -1,9 +1,9 @@
 package library
 
 import (
-	"strconv"
-	"strings"
 	"time"
+
+	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
 type BookStatus string
@@ -82,10 +82,16 @@ type BookUpdate struct {
 }
 
 type Chapter struct {
-	ID                string
-	BookID            string
-	Title             string
-	Order             int
+	ID     string
+	BookID string
+	Title  string
+	Order  int
+	// Place is the rank of a living chapter in the contents of the reader — the living chapters of its book with a
+	// published text — in the order of the book (Order, then ID), 1…n without gaps: its number in the reader when its
+	// title writes none (specs/2026-11-15-reader-chapter-number.md RN1.2). A chapter without a published text has the
+	// place it would take. The list of a book, a chapter read with its neighbours and a chapter returned from «Недавно
+	// удалённые» carry it; a deleted chapter has none. Order keeps the stored order.
+	Place             int
 	Status            ChapterStatus
 	Revision          int64
 	PublishedRevision *int64
@@ -97,23 +103,11 @@ type Chapter struct {
 	RestoreUntil      *time.Time
 }
 
-// ChapterDisplayNumber prefers an exact source ordinal preserved in the chapter title.
-func ChapterDisplayNumber(order int, title string) string {
-	fallback := strconv.Itoa(order)
-	remainder, ok := strings.CutPrefix(title, "Глава ")
-	if !ok {
-		return fallback
-	}
-	number, suffix, ok := strings.Cut(remainder, ".")
-	if !ok || number == "" || (suffix != "" && !strings.HasPrefix(suffix, " ")) {
-		return fallback
-	}
-	for _, digit := range number {
-		if digit < '0' || digit > '9' {
-			return fallback
-		}
-	}
-	return number
+// Numbered is the number of a living chapter and its title without that number, as the reader shows them: by the one rule
+// of the number of a chapter, its place in its book when its title writes none (specs/2026-11-15-reader-chapter-number.md
+// RN1.1, RN1.2).
+func (chapter Chapter) Numbered() (number, title string) {
+	return sagamemory.NumberedTitle(chapter.Title, chapter.Place)
 }
 
 type ChapterSummary struct {

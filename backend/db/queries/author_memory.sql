@@ -1,7 +1,7 @@
 -- name: ListAuthorMemory :many
 WITH filtered AS (
   SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-         record.created_by, record.created_at, record.updated_at, record.job_id
+         record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin
   FROM author_memory AS record
   WHERE record.project_id = sqlc.arg(project_id)
     AND (sqlc.arg(kinds)::text[] = '{}' OR record.kind = ANY(sqlc.arg(kinds)::text[]))
@@ -11,8 +11,8 @@ WITH filtered AS (
       OR strpos(lower(coalesce(record.name, '')), lower(sqlc.arg(search_query))) > 0)
 )
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name,
-       (SELECT count(*) FROM filtered) AS total_count
+       record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin,
+       author.display_name AS author_name, (SELECT count(*) FROM filtered) AS total_count
 FROM filtered AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE NOT sqlc.arg(has_cursor)::boolean
@@ -25,9 +25,17 @@ INSERT INTO author_memory (project_id, kind, body, chapter_id, name, job_id, cre
 VALUES (sqlc.arg(project_id), sqlc.arg(kind), sqlc.arg(body), sqlc.narg(chapter_id), sqlc.narg(name), sqlc.narg(job_id), sqlc.arg(actor), sqlc.arg(actor))
 RETURNING id;
 
+-- name: CreateCarriedAuthorMemory :one
+-- A record a saga file brought (specs/2026-11-13-desk-sagafile.md SF4.2): no Job of this saga, where it came from kept as
+-- it was, its dates as the file has them.
+INSERT INTO author_memory (project_id, kind, body, chapter_id, name, carried_origin, created_by, updated_by, created_at, updated_at)
+VALUES (sqlc.arg(project_id), sqlc.arg(kind), sqlc.arg(body), sqlc.narg(chapter_id), sqlc.narg(name), sqlc.narg(carried_origin),
+        sqlc.arg(actor), sqlc.arg(actor), sqlc.arg(created_at), sqlc.arg(updated_at))
+RETURNING id;
+
 -- name: GetAuthorMemory :one
 SELECT record.id, record.project_id, record.kind, record.body, record.chapter_id, record.name, record.revision,
-       record.created_by, record.created_at, record.updated_at, record.job_id, author.display_name AS author_name
+       record.created_by, record.created_at, record.updated_at, record.job_id, record.carried_origin, author.display_name AS author_name
 FROM author_memory AS record
 JOIN users AS author ON author.id = record.created_by
 WHERE record.project_id = sqlc.arg(project_id) AND record.id = sqlc.arg(id);

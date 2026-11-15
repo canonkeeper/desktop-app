@@ -1,9 +1,11 @@
 import { MessageCircle } from 'lucide-react';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Button } from '../../ui/controls/Button';
 import type { AccountQuota } from '../../entities/account-quota/api';
 import { refusalWords } from '../../entities/account-quota/refusal-words';
 import { QuotaRefusal } from '../../entities/account-quota/ui/QuotaRefusal';
+import { useWatchedTurns } from './answer-ready';
+import type { ChatFailureWords } from './research-chat-presentation';
 import { chatLimitNotice, chatQuotaHint, questionLengthHint, type ChatFieldMode, type ChatLimitNoticeCopy } from './chat-quota';
 import { ChatQuotaHint } from './ChatQuotaHint';
 import styles from './ChatQuotaHint.module.css';
@@ -21,6 +23,8 @@ interface ChatLimitNoticeProps {
   quota: AccountQuota | undefined;
   running?: readonly RunningChat[] | undefined;
   onOpenChat?: ((chatId: string) => void) | undefined;
+  /** The ways out and the words of «разом» of the edition (specs/2026-11-15-desk-account-words-web.md AW4.1); none on the site. */
+  edition?: Pick<ChatFailureWords, 'tariffWays' | 'elsewhere'> | undefined;
 }
 
 function clipTitle(title: string) {
@@ -33,20 +37,25 @@ function clipTitle(title: string) {
  * of every section (specs/2026-11-10-ux2-patterns-refusals.md PR2.1) with what became of the typed text. It is announced
  * when the server refused; standing in advance, it is a quiet note. «Тариф» leads back to the question (PR2.4).
  */
-export function ChatLimitNotice({ id, notice, onOpenChat, quota, running = [] }: ChatLimitNoticeProps) {
+export function ChatLimitNotice({ edition, id, notice, onOpenChat, quota, running = [] }: ChatLimitNoticeProps) {
+  const watched = useWatchedTurns();
   const words = refusalWords(notice.code, quota);
   if (!words) return null;
   // «Идут два ответа» names those questions and leads to their chats: the list may be hidden behind «Чаты» (AA2.7, Ч-36).
   const answering = notice.code === 'quota.active_turns' && onOpenChat ? running : [];
+  // Who holds the places is the edition's to say, by the quota and what the block named (specs/2026-11-15-desk-turns-here.md TH3.1).
+  const places = notice.code === 'quota.active_turns' ? edition?.elsewhere(quota, { named: answering.length, watched: watched.length }) ?? [] : [];
+  const ways: ReactNode[] = answering.map((chat) => (
+    <Button key={chat.id} onClick={() => onOpenChat?.(chat.id)} size="sm" title={chat.title} variant="outline">
+      <MessageCircle aria-hidden="true" size={14} />{`«${clipTitle(chat.title)}»`}
+    </Button>
+  ));
   return (
     <QuotaRefusal announce={notice.refused} className={styles.limit} code={notice.code} id={id} place="question" words={words}
-      actions={answering.length ? answering.map((chat) => (
-        <Button key={chat.id} onClick={() => onOpenChat?.(chat.id)} size="sm" title={chat.title} variant="outline">
-          <MessageCircle aria-hidden="true" size={14} />{`«${clipTitle(chat.title)}»`}
-        </Button>
-      )) : undefined}>
+      actions={ways.length || edition ? <>{ways}{edition?.tariffWays}</> : undefined}>
       <p>{notice.kept}</p>
       {answering.length ? <p>{answering.length === 1 ? 'Готовится ответ на вопрос:' : 'Готовятся ответы на вопросы:'}</p> : null}
+      {places.map((line) => <p key={line}>{line}</p>)}
     </QuotaRefusal>
   );
 }
@@ -62,13 +71,15 @@ interface ChatFieldNotesInput {
   turnActive: boolean;
   mode: ChatFieldMode;
   text: string;
+  /** What the edition says in the block of a limit (AW4.1). */
+  edition?: Pick<ChatFailureWords, 'tariffWays' | 'elsewhere'> | undefined;
 }
 
 /**
  * What stands above the question field (CH3, CH5.1, CH1.7): the block of a limit — or the line of the count and the
  * price — and the count of signs of a long text. The field is described by what is shown.
  */
-export function useChatFieldNotes({ onOpenChat, quota, refusedCode, running, turnActive, mode, text }: ChatFieldNotesInput) {
+export function useChatFieldNotes({ edition, onOpenChat, quota, refusedCode, running, turnActive, mode, text }: ChatFieldNotesInput) {
   const id = useId();
   const limit = chatLimitNotice({ quota, refusedCode, turnActive });
   const hint = limit ? '' : chatQuotaHint(quota, mode);
@@ -76,7 +87,7 @@ export function useChatFieldNotes({ onOpenChat, quota, refusedCode, running, tur
   return {
     limit,
     above: <>
-      {limit ? <ChatLimitNotice id={`${id}-limit`} notice={limit} onOpenChat={onOpenChat} quota={quota} running={running} /> : null}
+      {limit ? <ChatLimitNotice edition={edition} id={`${id}-limit`} notice={limit} onOpenChat={onOpenChat} quota={quota} running={running} /> : null}
       <ChatQuotaHint id={`${id}-count`} text={hint} />
       <ChatQuotaHint id={`${id}-length`} quiet text={length} />
     </>,

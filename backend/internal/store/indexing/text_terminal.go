@@ -136,7 +136,7 @@ func (s *Store) terminalizeCanonTextIndexForClaim(
 
 // QueueChapterCards queues the cards Job of an indexed text version outside a text index
 // terminal, for cards the version still lacks; a Job already waiting is reused. It reports whether a Job waits for the
-// version: a build whose helper is not connected queues none (queueChapterCardsInTx).
+// version: a build whose helper is not connected queues one only for a saga with cards (queueChapterCardsInTx).
 func (s *Store) QueueChapterCards(ctx context.Context, projectID string, sourceView governance.SourceView) (bool, error) {
 	id, err := storedb.ParseUUID(projectID)
 	if err != nil {
@@ -152,6 +152,28 @@ func (s *Store) QueueChapterCards(ctx context.Context, projectID string, sourceV
 		return err
 	}))
 	return queued && err == nil, err
+}
+
+// QueueCardsSampleInTx queues the sample of three chapters of the desktop app over the published text in the caller's
+// transaction (specs/2026-11-13-desk-consent.md CN2.2): its own cards Job with its chapters in its subject.
+func (s *Store) QueueCardsSampleInTx(ctx context.Context, tx pgx.Tx, projectID string, sample jobs.CardsSample) (jobs.Job, error) {
+	id, err := storedb.ParseUUID(projectID)
+	if err != nil {
+		return jobs.Job{}, ErrTextIndexValidation
+	}
+	projectGeneration, err := lockCanonTextTerminalProject(ctx, tx, id)
+	if err != nil {
+		return jobs.Job{}, mapTextIndexError(err)
+	}
+	view := governance.SourceViewPublished
+	source, err := projectJobSource(projectID, projectGeneration, view)
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	return jobstore.New(s.DB).CreateChapterCardsSample(ctx, tx, jobs.ChapterCardsIntentInput{
+		Subject: jobs.ChapterCardsSubject{Type: jobs.KindChapterCards, ProjectID: projectID, SourceView: view, Sample: &sample},
+		Source:  source,
+	})
 }
 
 // QueueSagaLayer queues the thread layer Job of a project built from a text version
@@ -179,9 +201,10 @@ func (s *Store) QueueSagaLayer(ctx context.Context, projectID string, sourceView
 }
 
 // queueChapterCardsInTx queues the cards Job of the indexed text version (UC2 step 1) and reports whether one waits. The
-// one rule of a build without its helper (specs/2026-11-12-desk-window.md WN3.4): no cards Job is queued — nobody would
-// read the chapters, and a Job would only end refused; the text is indexed and found all the same, and the catch-up of the
-// missing cards queues it once the helper is there.
+// one rule of a build without its helper (specs/2026-11-12-desk-window.md WN3.4; specs/2026-11-13-desk-gateway.md GW4.5):
+// a saga without a card gets no cards Job — nobody would read its chapters; the text is indexed and found all the same,
+// and the catch-up of the missing cards queues it once the helper is there. A saga with cards gets its Job: the map of
+// the cards there are is built without the model, and the chapters without cards wait for the helper.
 func (s *Store) queueChapterCardsInTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -190,7 +213,13 @@ func (s *Store) queueChapterCardsInTx(
 	sourceView governance.SourceView,
 ) (bool, error) {
 	if s.helper != nil && !s.helper.Connected(ctx) {
-		return false, nil
+		var carded bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chapter_cards WHERE project_id = $1)`, projectID).Scan(&carded); err != nil {
+			return false, mapTextIndexError(err)
+		}
+		if !carded {
+			return false, nil
+		}
 	}
 	source, err := projectJobSource(projectID, projectGeneration, sourceView)
 	if err != nil {

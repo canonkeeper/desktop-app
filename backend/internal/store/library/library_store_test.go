@@ -1896,24 +1896,12 @@ func TestLibraryStoreListChaptersReturnsOrderedBookChapters(t *testing.T) {
 
 func TestLibraryStoreGetChapterReturnsNavigationAcrossEntireBook(t *testing.T) {
 	ctx := context.Background()
-	db := openCurrentStoreTestDB(t)
-	store := New(db)
-	fixture := createIndexingStoreFixtureForTest(t, db, 1850)
-	now := indexingStoreTestNow()
-
-	chapterIDs := make([]string, 105)
-	chapterIDs[0] = fixture.chapterID
-	rows := make([][]any, 0, len(chapterIDs)-1)
-	for order := 2; order <= len(chapterIDs); order++ {
-		chapterID := indexingStoreUUIDForTest(3000 + order)
-		chapterIDs[order-1] = chapterID
-		rows = append(rows, []any{chapterID, fixture.bookID, fixture.projectID, "Chapter", order, 1, now, now})
+	titles := make([]string, 105)
+	for index := range titles {
+		titles[index] = "Chapter"
 	}
-	if _, err := db.Pool.CopyFrom(ctx, pgx.Identifier{"chapters"}, []string{
-		"id", "book_id", "project_id", "title", "order", "lifecycle_generation", "created_at", "updated_at",
-	}, pgx.CopyFromRows(rows)); err != nil {
-		t.Fatalf("seed chapters for navigation: %v", err)
-	}
+	fixture, bookID, chapterIDs := importedChapterIDs(t, titles...)
+	store := fixture.store
 
 	for _, tc := range []struct {
 		name             string
@@ -1926,7 +1914,7 @@ func TestLibraryStoreGetChapterReturnsNavigationAcrossEntireBook(t *testing.T) {
 		{name: "last", index: len(chapterIDs) - 1, previousExpected: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			record, err := store.GetChapter(ctx, fixture.projectID, fixture.bookID, chapterIDs[tc.index])
+			record, err := store.GetChapter(ctx, fixture.projectID, bookID, chapterIDs[tc.index])
 			if err != nil {
 				t.Fatalf("GetChapter() error = %v", err)
 			}

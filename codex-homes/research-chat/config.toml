@@ -8,6 +8,20 @@ approval_policy = "never"
 default_permissions = "canonkeeper-runtime"
 web_search = "disabled"
 project_root_markers = []
+# Codex goes nowhere of its own (specs/2026-11-13-desk-gateway.md GW2.5): no check of its updates at a start, no
+# analytics, feedback or telemetry of it.
+check_for_update_on_startup = false
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+exporter = "none"
+trace_exporter = "none"
+metrics_exporter = "none"
 
 [output_truncation]
 max_bytes = 3000000
@@ -15,8 +29,11 @@ max_lines = 5000
 mcp_max_lines = 5000
 
 [features]
-goals = true
+# A thread has no goal of the product, and no shell of the system runs for a thread: the goals of a thread and the
+# snapshot of the login shell are on by default since Codex 0.167 (GW2.5).
+goals = false
 shell_tool = false
+shell_snapshot = false
 view_image = false
 # The chat draws nothing: drawings are made in the drawing workshop, never by Codex itself.
 image_generation = false

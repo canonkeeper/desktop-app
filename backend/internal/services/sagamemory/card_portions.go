@@ -14,11 +14,14 @@ import (
 // while the last chapters of a portion are written (specs/2026-11-09-first-session.md, FS6.1) — and only the map is
 // prepared from the cards there are, so it grows with a long build. A store that cannot tell who waits is treated as a
 // waiting project. It reports false when every chapter was handed out or the Job was stopped.
-func (build *BuildCards) handOut(ctx, runCtx context.Context, claim jobs.WorkerClaim, view string, work chan<- int, chapters int) bool {
+func (build *BuildCards) handOut(ctx, runCtx context.Context, halted <-chan struct{}, claim jobs.WorkerClaim, view string, work chan<- int, chapters int) bool {
 	portion := time.NewTimer(build.portion)
 	defer portion.Stop()
 	for index := 0; index < chapters; {
 		select {
+		case <-halted:
+			// A stop of the reading hands out no chapter more (specs/2026-11-13-desk-consent.md CN3.4).
+			return false
 		case work <- index:
 			index++
 		case <-runCtx.Done():

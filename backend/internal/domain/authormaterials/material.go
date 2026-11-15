@@ -69,6 +69,9 @@ const (
 	SourceText SourceKind = "text"
 	// SourceManual is a record the author wrote on the page (MR2.1).
 	SourceManual SourceKind = "manual"
+	// SourceObsidian is a record a load of the bridge of the desktop app wrote from a note of a vault of Obsidian
+	// (specs/2026-11-15-desk-obsidian-notes.md ON2.1); its source name is the path of the note.
+	SourceObsidian SourceKind = "obsidian"
 )
 
 // The limits of a record (R9.1), the same as the checks of its table.

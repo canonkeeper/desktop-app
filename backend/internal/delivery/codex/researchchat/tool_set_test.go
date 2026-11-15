@@ -3,10 +3,14 @@ package researchchat
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"canonkeeper/backend/internal/delivery/codex/researchchat/toolspecs"
 	"canonkeeper/backend/internal/domain/agent"
+	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 )
 
 // recordChatSet writes testdata/chat-tools-with-layer.golden anew: only when the set of the chat changes on purpose.
@@ -58,5 +62,22 @@ func TestTheChatOffersTheThreadsOnlyWithTheLayer(t *testing.T) {
 	}
 	if desktop := toolSetText(t, Bundle(readServiceStub{}, memoryStub{}, false).Tools); desktop != toolSetText(t, without) {
 		t.Fatalf("the set of the chat without the layer:\n%s", desktop)
+	}
+}
+
+// specs/2026-11-15-desk-mcp.md MC2.1: the descriptions and the schemas moved to a package without a service keep the
+// namespace of the chat, and that package imports the agent domain alone.
+func TestTheSpecsOfTheChatLiveWithoutAService(t *testing.T) {
+	if toolspecs.Namespace != researchdomain.ToolNamespace {
+		t.Fatalf("the namespace of the specs %q is not the chat's %q", toolspecs.Namespace, researchdomain.ToolNamespace)
+	}
+	listed, err := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./toolspecs").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imported := range strings.Fields(string(listed)) {
+		if strings.HasPrefix(imported, "canonkeeper/") && imported != "canonkeeper/backend/internal/domain/agent" {
+			t.Fatalf("toolspecs imports %s", imported)
+		}
 	}
 }

@@ -56,7 +56,7 @@ func TestRecentlyDeletedListsEverySagaOfTheAuthor(t *testing.T) {
 		chapterBooks := map[string]bool{}
 		for _, chapter := range sources.Chapters.Items {
 			// The book of a deleted chapter is named by its place among the living books (specs/2026-11-11-ux7-reorder.md RK1.6).
-			chapterBooks[chapter.BookID] = chapter.BookTitle != "" && chapter.Title == "Глава" && chapter.Order == 1 &&
+			chapterBooks[chapter.BookID] = chapter.BookTitle != "" && chapter.Title == "Глава" &&
 				chapter.BookDisplayNumber == map[string]string{fixture.bookIDs[0]: "1", fixture.bookIDs[1]: "2"}[chapter.BookID]
 		}
 		if !chapterBooks[fixture.bookIDs[0]] || !chapterBooks[fixture.bookIDs[1]] {

@@ -7,6 +7,7 @@ import { QuotaRefusal } from '../../entities/account-quota/ui/QuotaRefusal';
 import { isApiStatusFailure, loadFailureWords } from '../../entities/api-errors';
 import { manuscriptQueryKeys, type ManuscriptApiClient } from '../../entities/manuscript/api';
 import { useRecentlyDeletedQuery, useRestoreDeletedSourceMutation } from '../../features/manuscript/api';
+import { useBookUpdateWords } from '../../features/manuscript/shelf/book-update-words';
 import { quotaRefusal } from '../../features/manuscript/shelf/restore-words';
 import { Button } from '../../ui/controls/Button';
 import { IconButton } from '../../ui/controls/IconButton';
@@ -148,6 +149,8 @@ export function RecentlyDeleted({ api, notify, onClose, onOpen, onRevertBook, re
   const data = list.data;
   const groups = data ? trashGroups.map((group) => ({ ...group, ...rowsOf(data, group.kind) })).filter((group) => group.rows.length > 0) : [];
   const updates = data?.bookUpdates ?? { items: [], total: 0 };
+  // «Обновления книг» in the words of the edition: the app does not name the file (specs/2026-11-15-desk-obsidian-book-web.md OU3.2).
+  const updateWords = useBookUpdateWords();
   return (
     <Dialog surface="content" dismissOnScrim label="Недавно удалённые" onDismiss={onClose} scrimClassName={styles.backdrop}>
       <section className={styles.dialog}>
@@ -195,7 +198,7 @@ export function RecentlyDeleted({ api, notify, onClose, onOpen, onRevertBook, re
                 <h3 id="deleted-book-updates">Обновления книг</h3>
                 <ul className={styles.list}>
                   {updates.items.map((item) => {
-                    const title = bookUpdateTitle(item);
+                    const title = bookUpdateTitle(item, updateWords);
                     return (
                       <li className={styles.row} key={`update:${item.id}`}>
                         <div className={styles.copy}>

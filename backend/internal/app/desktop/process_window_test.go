@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestTheWindowKeepsItsAddressFromRunToRun(t *testing.T) {
 		t.Fatalf("settings.json = %v, %v", info, err)
 	}
 	if runtime.GOOS == "linux" {
-		if addresses := listening(t, first.command.Process.Pid); len(addresses) != 1 || addresses[0] != "127.0.0.1:"+strconv.Itoa(port) {
+		if addresses := listening(t, first.command.Process.Pid); !slices.Equal(addresses, listenersOf(first)) {
 			t.Fatalf("the backend listens on %v", addresses)
 		}
 	}

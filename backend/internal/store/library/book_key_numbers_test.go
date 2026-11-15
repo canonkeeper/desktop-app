@@ -191,9 +191,10 @@ func TestAMoveOfABookKeepsTheKeysAndMovesThePlaces(t *testing.T) {
 	before, version := fixture.keysOf()
 	last := fixture.chaptersOfBook(third.BookID)[1]
 	answer := "Порт закрыт [т. 3, «Глава. третья, конец» ¶1](source:" + before[last] + "/1)."
-	chapter, _ := version.Find(before[last])
+	// «Глава. третья, конец» is the second chapter of its book: «гл. 2», though its published order is 1 from zero
+	// (specs/2026-11-14-chapter-place-number.md CP1.1).
 	if got := memorydomain.PlainLinks(answer, version.Places(memorydomain.LinkedKeys(answer))); !strings.HasPrefix(before[last], "b3c") ||
-		got != fmt.Sprintf("Порт закрыт Книга 3, гл. %d „Глава. третья, конец“, абзац 1.", chapter.Order) {
+		got != "Порт закрыт Книга 3, гл. 2 „Глава. третья, конец“, абзац 1." {
 		t.Fatalf("the link before the move reads %q", got)
 	}
 
@@ -213,7 +214,7 @@ func TestAMoveOfABookKeepsTheKeysAndMovesThePlaces(t *testing.T) {
 	if version.Chapters[0].BookID != third.BookID {
 		t.Fatalf("the saga reads first %+v, want the book put first", version.Chapters[0])
 	}
-	if got := memorydomain.PlainLinks(answer, version.Places(memorydomain.LinkedKeys(answer))); got != fmt.Sprintf("Порт закрыт Книга 1, гл. %d „Глава. третья, конец“, абзац 1.", chapter.Order) {
+	if got := memorydomain.PlainLinks(answer, version.Places(memorydomain.LinkedKeys(answer))); got != "Порт закрыт Книга 1, гл. 2 „Глава. третья, конец“, абзац 1." {
 		t.Fatalf("the link after the move reads %q", got)
 	}
 	// The same move again leaves the shelf as it is.

@@ -15,6 +15,7 @@ import (
 	codexadapter "canonkeeper/backend/internal/adapters/codex"
 	coverfiles "canonkeeper/backend/internal/adapters/library"
 	"canonkeeper/backend/internal/adapters/modelapi"
+	"canonkeeper/backend/internal/adapters/tempfiles"
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/config"
 	codexresearch "canonkeeper/backend/internal/delivery/codex/researchchat"
@@ -27,6 +28,7 @@ import (
 	httpnotes "canonkeeper/backend/internal/delivery/http/notes"
 	httpquota "canonkeeper/backend/internal/delivery/http/quota"
 	httpresearch "canonkeeper/backend/internal/delivery/http/researchchat"
+	httpsagaarchive "canonkeeper/backend/internal/delivery/http/sagaarchive"
 	httpsagadraft "canonkeeper/backend/internal/delivery/http/sagadraft"
 	httpsaga "canonkeeper/backend/internal/delivery/http/sagareference"
 	httptrash "canonkeeper/backend/internal/delivery/http/trash"
@@ -40,6 +42,7 @@ import (
 	domainlibrary "canonkeeper/backend/internal/domain/library"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
+	sagalayerdomain "canonkeeper/backend/internal/domain/sagalayer"
 	"canonkeeper/backend/internal/httpapi"
 	"canonkeeper/backend/internal/indexing"
 	"canonkeeper/backend/internal/jobs"
@@ -54,6 +57,7 @@ import (
 	coverrepo "canonkeeper/backend/internal/repository/postgres/library"
 	notesrepo "canonkeeper/backend/internal/repository/postgres/notes"
 	researchrepo "canonkeeper/backend/internal/repository/postgres/researchchat"
+	sagaarchiverepo "canonkeeper/backend/internal/repository/postgres/sagaarchive"
 	sagadraftrepo "canonkeeper/backend/internal/repository/postgres/sagadraft"
 	sagamemoryrepo "canonkeeper/backend/internal/repository/postgres/sagamemory"
 	trashrepo "canonkeeper/backend/internal/repository/postgres/trash"
@@ -67,6 +71,7 @@ import (
 	notesservice "canonkeeper/backend/internal/services/notes"
 	quotaservice "canonkeeper/backend/internal/services/quota"
 	researchservice "canonkeeper/backend/internal/services/researchchat"
+	sagaarchiveservice "canonkeeper/backend/internal/services/sagaarchive"
 	sagadraftservice "canonkeeper/backend/internal/services/sagadraft"
 	sagalayerservice "canonkeeper/backend/internal/services/sagalayer"
 	sagamemoryservice "canonkeeper/backend/internal/services/sagamemory"
@@ -107,9 +112,6 @@ type Extension struct {
 	Flows      []agentdomain.Flow
 	DraftSeams func(*jobstore.Store, quotastore.Fence) sagadraftrepo.SeamCheck
 	Workers    Workers
-	// CardConsent makes the cards Job call the model only for a saga whose author allowed it (DA8.1); the site builds
-	// cards without asking.
-	CardConsent bool
 	// Plans is the writer's plan the quota fence puts between his own limits and the platform's
 	// (specs/2026-11-08-subscription-tiers.md TR2.3); without it — the desktop — the fence has no plan.
 	Plans quotastore.Plans
@@ -117,6 +119,9 @@ type Extension struct {
 	// (specs/2026-11-13-desk-permits.md PM1.4): the site answers with the live permits of turns of his linked apps; without
 	// it — the desktop — active_turns counts his Jobs alone.
 	Elsewhere quotastore.Elsewhere
+	// Charges is the work of the writer a site counts (specs/2026-11-13-desk-account-ai.md AI2.1): the app linked with an
+	// account opens its turns and uploads of materials there as the last step of their start; the site leaves it nil.
+	Charges quotastore.Charges
 	// Listener is the build's own listener (the desktop's 127.0.0.1:0, DA3.1); without one the core listens on
 	// cfg.HTTPAddr.
 	Listener net.Listener
@@ -161,6 +166,17 @@ type Core struct {
 	// when it stops (specs/2026-11-07-desktop-app.md DA1.6).
 	JobService *jobs.Service
 	API        http.Handler
+	// CatchUpReading queues what the start queues: the cards Job of every version that misses cards, names or its map, and the
+	// layer Job of every version whose layer is due. The app runs it once its helper is connected or its settings change
+	// (specs/2026-11-13-desk-gateway.md GW4.2; specs/2026-11-15-desk-reading-rest.md RR1.8).
+	CatchUpReading func(context.Context) (int, error)
+	// QueueReading queues the reading of one saga by the owners of the queue (specs/2026-11-13-desk-consent.md CN3.2): the
+	// cards Job of what it misses, or else the layer Job when it is due.
+	QueueReading func(ctx context.Context, projectID string) error
+	// SagaFiles is the directory of the temporary files of the saga file (specs/2026-11-13-desk-sagafile.md SF2.6);
+	// SagaArchiveOpen opens a saga file as a new saga, mounted by a build that has the operation (SF3.12).
+	SagaFiles       *tempfiles.Directory
+	SagaArchiveOpen *sagaarchiveservice.OpenSaga
 }
 
 // ChatUseCases are the use cases of the chat other modules ask it through, and the deletion of the native tree of a
@@ -201,9 +217,10 @@ type Modules struct {
 	// ReadyLetters writes the letter «Сага готова» (specs/2026-11-09-first-session.md, FS2); a build that writes to
 	// nobody — the desktop — leaves it nil.
 	ReadyLetters indexingservice.ReadyLetters
-	// Helper says whether the helper of the build is connected (specs/2026-11-12-desk-window.md WN3.1, WN3.4): without it
-	// the status says the reading waits for the helper and no cards Job is queued. The site always has its helper and
-	// leaves it nil; the desktop has none until the author connects one.
+	// Helper says whether the helper of the build is connected (specs/2026-11-12-desk-window.md WN3.1;
+	// specs/2026-11-13-desk-gateway.md GW4.1, GW4.5): without it the status says the reading waits for the helper, and a
+	// cards Job is queued only for a saga with cards — it builds the map without the model. The site always has its
+	// helper and leaves it nil; the desktop has none until the author connects one.
 	Helper indexingservice.Helper
 	// DraftNewChapters says whether the first scenes of a draft would count as a new chapter of the writer's tier
 	// (specs/2026-11-10-ux1-writing.md UW1.2); a build without tiers — the desktop — leaves it nil, and its drafts say
@@ -215,6 +232,36 @@ type Modules struct {
 	// BookPictures are the drawings the author put in his books (specs/2026-11-12-ux10-book-pictures.md BP2.2); a build
 	// without drawings — the desktop — leaves it nil, and the file of a book asked with drawings has none.
 	BookPictures coverservice.BookPictures
+	// TurnThreads hears the root thread and the Job of every turn while it runs (specs/2026-11-13-desk-gateway.md GW2.4): the
+	// local gateway of the app names the Job of a request of Codex by it. The site leaves it nil.
+	TurnThreads researchservice.TurnThreads
+	// TurnNames hears what a turn gives Codex of the saga before Codex sends it (specs/2026-11-14-desk-journal.md JR1.3, JR1.4):
+	// the desktop app keeps it by the thread for the record of the next sending; the site has none.
+	TurnNames researchservice.Naming
+	// Reading is the policy of the reading of the books of a build that asks its author (specs/2026-11-13-desk-consent.md
+	// CN3.1): whether the model may read a saga now, and what did not read or come together
+	// (specs/2026-11-15-desk-reading-rest.md RR1.2–RR1.4). The site builds without asking and leaves it nil.
+	Reading ReadingPolicy
+	// ReadingStatus is that reading as the status of a saga says it (CN3.8): what it waits for and its state; the site
+	// leaves it nil and its status is as it was.
+	ReadingStatus indexingservice.Reading
+	// TurnGate admits the new turns of the chat (specs/2026-11-13-desk-updates.md UB2.1): the app closes it while it
+	// installs an update. The site leaves it nil.
+	TurnGate researchservice.TurnGate
+	// TurnWork is the work of a turn a site counts (specs/2026-11-13-desk-account-ai.md AI2.3, AI2.5, AI2.7): taken before the
+	// model, its failure named by the gateway, closed after the terminal transaction. The site leaves it nil.
+	TurnWork researchservice.TurnWork
+	// Questions say whether the unit of the question of a turn came back (AI2.9); the site leaves it nil and its Jobs say
+	// nothing of it.
+	Questions jobs.Questions
+	// AccountQuota is getAccountQuota of a build whose counters a site keeps too (AI2.11); nil — the counters of this
+	// database alone, the site's.
+	AccountQuota httpquota.AccountQuota
+	// WorkEnded hears the end of a Job of the reading or of an upload of materials whose permit a site keeps (AI3.2, AI3.8);
+	// the site leaves it nil.
+	WorkEnded WorkEnded
+	// SagaArchive is what the saga file asks of the build (specs/2026-11-13-desk-sagafile.md SF1.9, SF2.1).
+	SagaArchive SagaArchive
 	// Serve is the root handler of the build around the API and the readiness checks; without it the process serves
 	// them alone (the site: nginx serves the page). The desktop checks Host and serves the embedded page (DA3.4, DA3.6).
 	Serve func(api http.Handler) http.Handler
@@ -310,8 +357,83 @@ func libraryBookRead(reader coverBookReader) httplibrary.BookReadFunc {
 // without the port — the site — always has it.
 type lateHelper struct{ port indexingservice.Helper }
 
+// lateEnded is the end of a Job of the reading or of an upload of materials the builders tell, once the modules are
+// composed (specs/2026-11-13-desk-account-ai.md AI3.2, AI3.8); nothing before and on the site.
+type lateEnded struct{ port WorkEnded }
+
+func (late *lateEnded) Ended(ctx context.Context, jobID string, outcome jobs.Status) {
+	if late.port != nil {
+		late.port.Ended(ctx, jobID, outcome)
+	}
+}
+
+// WorkEnded hears the end of a Job whose work a site counts: the cards, the thread layer, an upload of materials.
+type WorkEnded interface {
+	Ended(ctx context.Context, jobID string, outcome jobs.Status)
+}
+
 func (late *lateHelper) Connected(ctx context.Context) bool {
 	return late.port == nil || late.port.Connected(ctx)
+}
+
+// ReadingPolicy is the policy of the reading a build that asks its author gives (specs/2026-11-15-desk-reading-rest.md): the
+// port of the builder of the cards and the port of the builder of the layer, each declared by its consumer.
+type ReadingPolicy interface {
+	sagamemoryservice.CardBuildPolicy
+	sagalayerservice.ReadingPolicy
+}
+
+// readingPolicy says whether the model may read the books of a saga in a build that asks its author (DA8.1;
+// specs/2026-11-13-desk-gateway.md GW4.3, GW4.5; specs/2026-11-13-desk-consent.md CN3.1): his helper is connected and the
+// policy of the reading of the build allows it. Without the helper a cards Job still prepares the map from the cards there
+// are and calls no model.
+type readingPolicy struct {
+	helper  indexingservice.Helper
+	reading ReadingPolicy
+}
+
+func (policy readingPolicy) ReadingAllowed(ctx context.Context, projectID string, sample bool) (bool, error) {
+	if !policy.helper.Connected(ctx) {
+		return false, nil
+	}
+	return policy.reading.ReadingAllowed(ctx, projectID, sample)
+}
+
+// Unread and MarkUnread are the chapters that did not read (specs/2026-11-13-desk-consent.md CN3.6).
+func (policy readingPolicy) Unread(ctx context.Context, projectID string, version int) (map[sagamemoryservice.CardKey]bool, error) {
+	return policy.reading.Unread(ctx, projectID, version)
+}
+
+func (policy readingPolicy) MarkUnread(ctx context.Context, projectID string, key sagamemoryservice.CardKey, version int, reason string) error {
+	return policy.reading.MarkUnread(ctx, projectID, key, version, reason)
+}
+
+// MarksChapters says the chapters are marked for the helper of now (specs/2026-11-15-desk-reading-no-answer.md NA2.1).
+func (policy readingPolicy) MarksChapters(ctx context.Context) bool {
+	return policy.reading.MarksChapters(ctx)
+}
+
+// ChaptersAtOnce is how many chapters the reading of the build takes at once (specs/2026-11-13-desk-consent.md CN3.5).
+func (policy readingPolicy) ChaptersAtOnce(ctx context.Context) int {
+	return policy.reading.ChaptersAtOnce(ctx)
+}
+
+// NamesUnread, MarkNamesUnread, ThreadsUnread and MarkThreadsUnread are the names and the threads that did not come together
+// (specs/2026-11-15-desk-reading-rest.md RR1.2, RR1.3).
+func (policy readingPolicy) NamesUnread(ctx context.Context, projectID, digest string) (string, error) {
+	return policy.reading.NamesUnread(ctx, projectID, digest)
+}
+
+func (policy readingPolicy) MarkNamesUnread(ctx context.Context, projectID, view, digest, reason string) error {
+	return policy.reading.MarkNamesUnread(ctx, projectID, view, digest, reason)
+}
+
+func (policy readingPolicy) ThreadsUnread(ctx context.Context, projectID string, stamps []sagalayerdomain.Stamp) (string, error) {
+	return policy.reading.ThreadsUnread(ctx, projectID, stamps)
+}
+
+func (policy readingPolicy) MarkThreadsUnread(ctx context.Context, projectID, view string, stamps []sagalayerdomain.Stamp, reason string) error {
+	return policy.reading.MarkThreadsUnread(ctx, projectID, view, stamps, reason)
 }
 
 // lateHandler serves the root API handler once it is built.
@@ -351,6 +473,10 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 	if err != nil {
 		return errors.New("api: book cover storage unavailable")
 	}
+	sagaFiles, err := openSagaFiles(ctx, cfg.FileStorageDir, sagaarchiverepo.New(db).StrayCovers, coverFiles)
+	if err != nil {
+		return err
+	}
 
 	// One app-server per Codex flow (specs/2026-11-02-image-workshop.md IW4.1): the chat and the helpers of the build;
 	// one that fails to start leaves the started ones to Close.
@@ -373,7 +499,9 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 
 	voiceBrainModel, voiceBrainEffort := cfg.ModelAPI.Brain()
 	model, err := modelapi.New(modelapi.Config{
-		BaseURL: cfg.ModelAPI.BaseURL, KeyEnv: cfg.ModelAPI.KeyEnv, Model: cfg.ModelAPI.Model, Effort: cfg.ModelAPI.Effort,
+		BaseURL: cfg.ModelAPI.BaseURL, KeyEnv: cfg.ModelAPI.KeyEnv, Key: cfg.ModelAPI.Key, CarryJob: cfg.ModelAPI.CarryJob,
+		Stops: cfg.ModelAPI.Stops, RetryPause: cfg.ModelAPI.RetryPause,
+		Model: cfg.ModelAPI.Model, Effort: cfg.ModelAPI.Effort,
 		CardsModel: cfg.ModelAPI.CardsModel, CardsEffort: cfg.ModelAPI.CardsEffort,
 		ImageModel: cfg.ModelAPI.ImageModel, ImageQuality: cfg.ModelAPI.ImageQuality, CheckModel: cfg.ModelAPI.CheckModel,
 		WritingModel: cfg.ModelAPI.WritingModel, WritingEffort: cfg.ModelAPI.WritingEffort, WritingCheckModel: cfg.ModelAPI.WritingCheckModel,
@@ -385,11 +513,11 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 
 	canonStore := canonstore.New(db)
 	jobsStore := jobstore.New(db)
-	fence := quotastore.Fence{Plans: extension.Plans, Elsewhere: extension.Elsewhere}
+	fence := quotastore.Fence{Plans: extension.Plans, Elsewhere: extension.Elsewhere, Charges: extension.Charges}
 	libraryStore := librarystore.New(db, librarystore.WithQuota(fence))
 	product, err := composeProduct(Core{
 		Config: cfg, Logger: logger, DB: db, Files: fileRoot, Codex: clients, Model: model, Quota: fence, Jobs: jobsStore,
-		Library: libraryStore,
+		Library: libraryStore, SagaFiles: sagaFiles,
 	}, canonStore, coverFiles, extension)
 	if err != nil {
 		return err
@@ -561,8 +689,9 @@ func composeProduct(
 	agentJobs := agentjobsrepo.New(db)
 
 	indexingService := indexingservice.NewService(indexingrepo.New(db))
-	// The one text index store of the process queues the cards Job after an index and on catch-up, and only while the
-	// helper of the build is connected (specs/2026-11-12-desk-window.md WN3.4); the helper is known once the modules are.
+	// The one text index store of the process queues the cards Job after an index and on catch-up; while the helper of
+	// the build is not connected, only for a saga with cards (specs/2026-11-13-desk-gateway.md GW4.5). The helper is known
+	// once the modules are.
 	helper := &lateHelper{}
 	textIndex := indexingstore.New(db, indexingstore.WithHelper(helper))
 
@@ -593,20 +722,19 @@ func composeProduct(
 			return productApplication{}, err
 		}
 	}
+	// The builders tell the end of their Jobs to the build that counts their work on a site (AI3.2, AI3.8).
+	ended := &lateEnded{}
 	cardsBuilder := sagamemoryservice.NewBuildCards(
 		sagaRepository, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,
 		func(projectID, stage string, err error) { logNamesFailure(logger, projectID, stage, err) }, cardsDone,
-	).WithMap(sagamemoryservice.NewMapBuilder(saga, sagaRepository, authorMaterials), func(projectID, stage string, err error) { logMapFailure(logger, projectID, stage, err) })
-	if extension.CardConsent {
-		// The author pays for the cards: the model is called only for a saga he allowed (DA8.1).
-		cardsBuilder = cardsBuilder.WithPolicy(sagaRepository)
-	}
-	cardsHandler := workersagamemory.NewHandler(cardsBuilder)
+	).WithMap(sagamemoryservice.NewMapBuilder(saga, sagaRepository, authorMaterials), func(projectID, stage string, err error) { logMapFailure(logger, projectID, stage, err) }).WithEnd(ended)
 	// The same gate and cards model: a chat call waiting for a place goes first (R2.1).
-	layerHandler := workersagalayer.NewHandler(sagalayerservice.NewBuildLayer(
+	layerBuilder := sagalayerservice.NewBuildLayer(
 		saga, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,
 		func(projectID, stage string, err error) { logLayerFailure(logger, projectID, stage, err) },
-	))
+	).WithEnd(ended)
+	cardsHandler := workersagamemory.NewHandler(cardsBuilder)
+	layerHandler := workersagalayer.NewHandler(layerBuilder)
 	researchReads := researchservice.NewReadTools(researchRepository, saga, model.Interactive(), usage, researchservice.ScanSettings{
 		Parallel: cfg.ModelAPI.Parallel, Model: cfg.ModelAPI.Model,
 	}, sagaRepository).WithMaterials(authorMaterials).WithAttachments(researchRepository).WithAuthorMemory(researchRepository)
@@ -614,7 +742,7 @@ func composeProduct(
 	authorMemory := authormemoryrepo.New(db)
 	// Nobody stands by the Job of an import, so it runs below the chat.
 	materialHandler := workerauthormaterials.NewHandler(authormaterialsservice.RunImport{
-		Store: authorMaterials, Model: model.Background(), ModelName: model.CardsModel(), Usage: usage,
+		Store: authorMaterials, Model: model.Background(), ModelName: model.CardsModel(), Usage: usage, Ended: ended,
 	})
 	researchCancel := researchservice.NewCancelTurn(researchRepository, func(ctx context.Context, selector researchservice.RootSelector) error {
 		client, err := clients.Client(selector.Flow)
@@ -648,7 +776,8 @@ func composeProduct(
 		}
 		return err
 	}
-	researchSubmit := researchservice.NewSubmitTurn(researchRepository, clock)
+	// A question goes only while the helper of the build is connected (specs/2026-11-13-desk-gateway.md GW4.4).
+	researchSubmit := researchservice.NewSubmitTurn(researchRepository, clock).WithHelper(helper)
 	researchSteer := researchservice.NewSteerTurn(researchRepository, func(ctx context.Context, request researchservice.TurnSteerRequest) error {
 		client, err := clients.Client(request.Flow)
 		if err != nil {
@@ -695,6 +824,23 @@ func composeProduct(
 	core.AuthorMemory, core.AuthorMaterials, core.Drafts = authorMemory, authorMaterials, chapterDrafts
 	core.Covers = Covers{Store: coverRepository, Upload: coverUpload, BookResponse: coverBookResponse(libraryService)}
 	core.API = api
+	missingCards := sagamemoryservice.NewQueueMissingCards(sagaRepository, sagaRepository, sagaRepository, sagaRepository)
+	missingLayers := sagalayerservice.NewQueueMissingLayers(sagaRepository, layerQueue)
+	queues := readingQueues{cards: missingCards, layers: missingLayers, due: layerQueue, layer: extension.Workers.Layer > 0}
+	core.CatchUpReading, core.QueueReading = queues.CatchUp, queues.Queue
+	sagaArchiveGate := sagaarchiveservice.NewGate(time.Now)
+	// «Открыть файл саги» (specs/2026-11-13-desk-sagafile.md SF3): the stores of the saga and its books with the quota fence
+	// of the build and the files of the covers; a build that has the operation mounts it (SF3.12).
+	core.SagaArchiveOpen = &sagaarchiveservice.OpenSaga{
+		Store:  sagaarchiverepo.NewOpener(db, projectstore.New(db, projectstore.WithQuota(core.Quota)), core.Library),
+		Covers: coverFiles,
+		Identity: func() (sagaarchiveservice.CoverIdentity, error) {
+			identity, err := coverservice.NewSecureCoverIdentity()
+			return sagaarchiveservice.CoverIdentity{ArtifactID: identity.ArtifactID, StagingKey: identity.StagingKey, FinalKey: identity.FinalKey}, err
+		},
+		Marks: marksPort{core.SagaFiles}, Now: time.Now,
+	}
+	sagaTranscripts := sagaarchiverepo.New(db)
 	modules, err := extension.Compose(core)
 	if err != nil {
 		return productApplication{}, err
@@ -707,9 +853,25 @@ func composeProduct(
 	cardsBuilder.WithReady(indexingservice.NewAnnounceReady(indexingrepo.New(db), modules.ReadyLetters,
 		func(projectID, stage string, err error) { logReadyFailure(logger, projectID, stage, err) }).Execute)
 	indexingService.WithLetters(modules.ReadyLetters)
+	ended.port = modules.WorkEnded
 	if modules.Helper != nil {
 		helper.port = modules.Helper
 		indexingService.WithHelper(modules.Helper)
+	}
+	if modules.Reading != nil {
+		// The author pays for the reading of his books: the cards and the thread layer call the model only while his helper
+		// is connected and the policy of the reading of the build allows it (DA8.1; specs/2026-11-13-desk-gateway.md GW4.3,
+		// GW4.5; specs/2026-11-13-desk-consent.md CN3.1), and the status says the reading waits for his consent.
+		policy := readingPolicy{helper: helper, reading: modules.Reading}
+		cardsBuilder.WithPolicy(policy)
+		layerBuilder.WithPolicy(policy)
+		// The queues are built before the modules: what did not read or come together is queued again by none of them
+		// without the author (specs/2026-11-15-desk-reading-rest.md RR1.8).
+		missingCards.WithPolicy(policy)
+		layerQueue.WithPolicy(policy)
+	}
+	if modules.ReadingStatus != nil {
+		indexingService.WithReading(modules.ReadingStatus)
 	}
 	// The chat offers saga.threads only in a build with the thread layer (specs/2026-11-12-desk-window.md WN2.1).
 	researchBundle := codexresearch.Bundle(researchReads, researchMemory, extension.Workers.Layer > 0, modules.ChatTools...)
@@ -729,10 +891,29 @@ func composeProduct(
 			ExistingRootThreadID: request.ExistingRootThreadID, ExistingTurnID: request.ExistingTurnID,
 			ContinueFailedTurn: request.ContinueFailedTurn, BundleID: request.BundleID,
 			SkillName: request.SkillName, InitialInput: request.InitialInput,
-			Tools: request.Tools, BindRoot: request.BindRoot, BindTurn: request.BindTurn, Handler: request.Handler,
+			Tools: request.Tools, BindRoot: request.BindRoot, BindTurn: request.BindTurn, BeforeTurn: request.BeforeTurn, Handler: request.Handler,
 		})
 	})
 	researchRun := researchservice.NewRunTurn(researchRepository, researchRunner, bundles)
+	if modules.TurnThreads != nil {
+		researchRun = researchRun.WithThreads(modules.TurnThreads)
+	}
+	if modules.TurnNames != nil {
+		// What a turn gives Codex is named by its thread before it goes: the question, a correction and what the tools show
+		// (specs/2026-11-14-desk-journal.md JR1.3, JR1.4).
+		researchRun = researchRun.WithNaming(modules.TurnNames)
+		researchSteer.WithNaming(modules.TurnNames)
+		researchReads.WithNaming(modules.TurnNames)
+		researchMemory.WithNaming(modules.TurnNames)
+	}
+	if modules.TurnGate != nil {
+		researchSubmit.WithGate(modules.TurnGate)
+	}
+	if modules.TurnWork != nil {
+		researchRun = researchRun.WithWork(modules.TurnWork)
+		researchCancel.WithWork(modules.TurnWork)
+		researchFail.WithWork(modules.TurnWork)
+	}
 
 	timeline := timelineservice.New(func(ctx context.Context, projectID, jobID string) (timelineservice.ThreadBinding, error) {
 		binding, err := agentJobs.JobBinding(ctx, agentjobsrepo.JobKey{ProjectID: projectID, JobID: jobID})
@@ -751,6 +932,7 @@ func composeProduct(
 		SearchStore: canonStore, AllowedOrigins: cfg.AllowedOrigins, RequestLogWriter: os.Stdout,
 		RateLimiter: ratelimit.NewMemoryLimiter(RateLimits(modules.RateLimits)),
 		Accounts:    modules.Accounts,
+		Questions:   modules.Questions,
 		NotesRoutes: func(router chi.Router, currentUser *auth.Service) {
 			repository := notesrepo.New(db)
 			httpnotes.Handlers{
@@ -762,10 +944,11 @@ func composeProduct(
 			}.Mount(router)
 		},
 		AccountQuotaRoutes: func(router chi.Router, currentUser *auth.Service) {
-			httpquota.Handlers{
-				AccountQuota: quotaservice.GetAccountQuota{Reader: quotastore.New(db, core.Quota), Now: time.Now},
-				Auth:         currentUser,
-			}.Mount(router)
+			var counts httpquota.AccountQuota = quotaservice.GetAccountQuota{Reader: quotastore.New(db, core.Quota), Now: time.Now}
+			if modules.AccountQuota != nil {
+				counts = modules.AccountQuota
+			}
+			httpquota.Handlers{AccountQuota: counts, Auth: currentUser}.Mount(router)
 		},
 		TrashRoutes: func(router chi.Router, currentUser *auth.Service) {
 			httptrash.Handlers{List: trashservice.List{Sources: trashrepo.New(db), Drawings: modules.DeletedDrawings}, Auth: currentUser}.Mount(router)
@@ -775,6 +958,14 @@ func composeProduct(
 				coverUpload, coverGet, coverDelete, coverBookResponse(libraryService), currentUser, cfg.AllowedOrigins,
 			).Mount(router)
 			httplibrary.MountBookExport(router, coverservice.NewExportBook(coverRepository, coverGet, time.Now).WithPictures(modules.BookPictures), currentUser)
+			// «Сохранить сагу в файл» (specs/2026-11-13-desk-sagafile.md SF2): the open core of both builds.
+			httpsagaarchive.MountExport(router, &sagaarchiveservice.ExportSaga{
+				Snapshot: sagaarchiverepo.New(db), Covers: coverFiles, Threads: clients, Temp: tempFilesPort{core.SagaFiles},
+				Gate: sagaArchiveGate, Drawings: modules.SagaArchive.Drawings, CreatedBy: modules.SagaArchive.CreatedBy, Now: time.Now,
+			}, currentUser)
+			// The chats a saga file brought, to read (SF3.8).
+			httpsagaarchive.MountTranscripts(router, sagaarchiveservice.ListTranscripts{Store: sagaTranscripts},
+				sagaarchiveservice.GetTranscript{Store: sagaTranscripts, Outlines: saga}, currentUser)
 			// «Вернуть прежнюю версию» of a book after its update from a file (specs/2026-11-12-ux10-book-revert.md BR2).
 			httplibrary.MountBookRevert(router, coverservice.NewPreviewBookUpdateRevert(libraryStore),
 				coverservice.NewRevertBookUpdate(libraryStore), libraryBookRead(libraryService), currentUser, cfg.AllowedOrigins)
@@ -844,8 +1035,8 @@ func composeProduct(
 		httpHandler: handler, routes: router, libraryStore: libraryStore, libraryService: libraryService,
 		indexingService: legacyIndexingService, coverDeletion: coverDeletion.ReconcileOne, cardsHandler: cardsHandler,
 		layerHandler: layerHandler, materialHandler: materialHandler,
-		missingCards:  sagamemoryservice.NewQueueMissingCards(sagaRepository, sagaRepository, sagaRepository, sagaRepository),
-		missingLayers: sagalayerservice.NewQueueMissingLayers(sagaRepository, layerQueue),
+		missingCards:  missingCards,
+		missingLayers: missingLayers,
 		chatHandler:   workerresearch.NewHandler(researchRun, researchCancel, researchFail),
 		chatTools:     researchBundle.Tools,
 		modules:       modules,

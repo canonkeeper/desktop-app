@@ -178,11 +178,14 @@ export function App({ api, navigate, route }: AppProps) {
   }, [pushConnectionToast, serviceOutage, status]);
 
   useEffect(() => {
-    // R1.1: a signed-in writer goes from the home page straight to the shelf.
+    // R1.1: a signed-in writer goes from the home page straight to the shelf. «Написать нам» of a letter to a guest and
+    // of the desktop app is the home page with `contact`: the shelf takes it and opens the window
+    // (specs/2026-11-07-contacts.md F2.5, F3.4).
     if ((route.surface === 'home' || pageDenied) && status === 'authenticated' && user) {
-      navigate('/manuscript/books', undefined, { replace: true });
+      const contact = route.surface === 'home' ? route.query.get('contact') : null;
+      navigate('/manuscript/books', contact ? { contact } : undefined, { replace: true });
     }
-  }, [navigate, pageDenied, route.surface, status, user]);
+  }, [navigate, pageDenied, route.query, route.surface, status, user]);
 
   const hasPublicPage = Boolean(account.publicPage);
   useEffect(() => {

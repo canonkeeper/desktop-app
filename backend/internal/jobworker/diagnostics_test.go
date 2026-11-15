@@ -285,3 +285,25 @@ func (buffer *lockedBuffer) String() string {
 	defer buffer.mu.Unlock()
 	return buffer.buffer.String()
 }
+
+// specs/2026-11-13-desk-gateway.md GW3.2: the worker knows the Job of every claim and puts it into the context of its
+// handler; a call of the core made under it names its Job to the local gateway of the app.
+func TestTheHandlerOfAJobRunsWithItsJobInTheContext(t *testing.T) {
+	var named string
+	var store *fakeWorkerStore
+	store, handler, output := newDiagnosticWorkerFixture(func(ctx context.Context, job jobs.Job) (HandlerResult, error) {
+		named = jobs.JobIDOf(ctx)
+		store.forceStatusForTest(job.ID, jobs.StatusSucceeded)
+		return HandlerResult{Status: jobs.StatusSucceeded}, nil
+	})
+	worker := NewWorker(store, []Handler{handler}, log.New(output, "", 0))
+	if ran, err := worker.RunOnce(t.Context()); !ran || err != nil {
+		t.Fatalf("RunOnce() = %v, %v", ran, err)
+	}
+	if named != "job-1" {
+		t.Fatalf("the handler ran with the Job %q", named)
+	}
+	if jobs.JobIDOf(t.Context()) != "" {
+		t.Fatal("a context without a Job names one")
+	}
+}

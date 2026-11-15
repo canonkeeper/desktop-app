@@ -4,14 +4,14 @@ import { now, type ProjectInvitation, type ProjectMembership, type User } from '
 type InvitationStatus = ProjectInvitation['status'];
 type CanonicalSourceLocator = Schema<'CanonicalChapterSourceLocatorV1'>;
 
-export function createSourceAnchor(locator: CanonicalSourceLocator, chapter: Pick<Chapter, 'navigation' | 'paragraphs'>, paragraphIndex = -1): Schema<'SourceNavigationAnchor'> {
+export function createSourceAnchor(locator: CanonicalSourceLocator, chapter: Pick<Chapter, 'paragraphs'>, number: string, paragraphIndex = -1): Schema<'SourceNavigationAnchor'> {
   const readerLocator = {
     projectId: locator.projectId, bookId: locator.bookId, chapterId: locator.chapterId,
     targetView: locator.sourceView, revision: locator.sourceRevision,
   };
   const paragraph = chapter.paragraphs[paragraphIndex];
   const version = locator.sourceView === 'draft' ? 'черновик' : 'опубликованная версия';
-  const label = `Глава ${chapter.navigation.displayNumber}`;
+  const label = `Глава ${number}`;
   return paragraph
     ? { kind: 'paragraph', label: `${label} · абзац ${paragraphIndex + 1} · ${version}`, locator: { ...readerLocator, paragraphId: paragraph.id } }
     : { kind: 'chapter', label: `${label} · ${version}`, locator: readerLocator };

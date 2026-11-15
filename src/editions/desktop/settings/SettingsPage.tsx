@@ -37,7 +37,11 @@ export function SettingsPage({ api, navigate, route }: Pick<EditionPageProps, 'a
         </nav>
         <section aria-labelledby={heading} className={styles.part}>
           <h2 className={styles.partTitle} id={heading}>{open.label}</h2>
-          <Part api={api} />
+          <Part
+            api={api}
+            choose={(kind) => navigate('/settings', { part: open.key, ...(kind ? { kind } : {}) }, { replace: true })}
+            kind={route.query.get('kind')}
+          />
         </section>
       </div>
     </div>

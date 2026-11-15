@@ -3,9 +3,6 @@ package sagalayer
 import (
 	"context"
 	"errors"
-
-	domain "canonkeeper/backend/internal/domain/sagalayer"
-	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
 // TextVersion names one text version of a project.
@@ -16,9 +13,7 @@ type TextVersion struct {
 
 // QueueStore is what the queueing of a layer Job asks about a project.
 type QueueStore interface {
-	Stamps(ctx context.Context, projectID, view string) ([]domain.Stamp, error)
-	// BuiltChapters returns what the finished build was built from, nil without one.
-	BuiltChapters(ctx context.Context, projectID string) ([]domain.Stamp, error)
+	LayerChapters
 	// QueueLayer queues the Job of the project; a Job already waiting is reused.
 	QueueLayer(ctx context.Context, projectID, view string) error
 }
@@ -26,9 +21,19 @@ type QueueStore interface {
 // QueueDue queues the layer Job of a text version when it is worth paying for (R2.2). A chapter
 // still without a card means the cards Job has work left, and its success asks again. A chapter on
 // older cards means the operator left this saga on them (specs/2026-11-01-index-foundation.md, R3.1):
-// such a saga, a reader's copy for one, pays for no layer.
+// such a saga, a reader's copy for one, pays for no layer. A build marked by the policy of the reading
+// is not queued (specs/2026-11-15-desk-reading-rest.md RR1.3), nor the layer of a saga the model may not
+// read now: its Job would end at once without work (specs/2026-11-15-desk-reading-queue.md RQ2.1).
 type QueueDue struct {
-	store QueueStore
+	store  QueueStore
+	policy QueuePolicy
+}
+
+// QueuePolicy is the policy of the reading the queue of the layer asks: whether the model may read a saga now — the one rule
+// of the builders — and the marks of its threads.
+type QueuePolicy interface {
+	ReadingAllowed(ctx context.Context, projectID string, sample bool) (bool, error)
+	ThreadsMarks
 }
 
 func NewQueueDue(store QueueStore) *QueueDue {
@@ -38,20 +43,23 @@ func NewQueueDue(store QueueStore) *QueueDue {
 	return &QueueDue{store: store}
 }
 
+// WithPolicy makes the queue leave the builds the policy of the reading of the build marks and the sagas it may not read
+// now; the build gives it once its modules are composed. Without it — the site — nothing is marked and every saga is read.
+func (useCase *QueueDue) WithPolicy(policy QueuePolicy) *QueueDue {
+	useCase.policy = policy
+	return useCase
+}
+
 // Execute says whether it queued the Job.
 func (useCase *QueueDue) Execute(ctx context.Context, projectID, view string) (bool, error) {
-	stamps, err := useCase.store.Stamps(ctx, projectID, view)
-	if err != nil || len(stamps) == 0 {
+	due, _, _, err := toBuild(ctx, useCase.store, useCase.policy, projectID, view)
+	if err != nil || !due {
 		return false, err
 	}
-	for _, stamp := range stamps {
-		if stamp.CardVersion < sagamemory.CardVersion {
-			return false, nil
+	if useCase.policy != nil {
+		if allowed, err := useCase.policy.ReadingAllowed(ctx, projectID, false); err != nil || !allowed {
+			return false, err
 		}
-	}
-	built, err := useCase.store.BuiltChapters(ctx, projectID)
-	if err != nil || !domain.Due(stamps, built) {
-		return false, err
 	}
 	return true, useCase.store.QueueLayer(ctx, projectID, view)
 }

@@ -198,7 +198,10 @@ type Job struct {
 	// QueuePosition is the number of waiting questions claimed before a waiting chat turn
 	// (getJob only); nil otherwise.
 	QueuePosition *int64
-	CreatorUserID string
+	// QuestionReturned says whether the unit of the question of a chat turn came back (getJob only, a build with Questions;
+	// specs/2026-11-13-desk-account-ai.md AI2.9); empty otherwise.
+	QuestionReturned string
+	CreatorUserID    string
 	// CreatorRequestID — id HTTP-запроса, создавшего задание; пуст у заданий воркеров и старых
 	// заданий.
 	CreatorRequestID string

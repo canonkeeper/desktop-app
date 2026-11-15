@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/adapters/llmgateway"
 	"canonkeeper/backend/internal/adapters/modelapi"
 	"canonkeeper/backend/internal/app"
 	"canonkeeper/backend/internal/config"
@@ -36,11 +37,11 @@ func mountedOperations(t *testing.T) []string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = root.Close() })
-	model, err := modelapi.New(modelapi.Config{Model: chatModel, CardsModel: cardsModel})
+	model, err := modelapi.New(modelapi.Config{Model: llmgateway.CardsModel, CardsModel: llmgateway.CardsModel})
 	if err != nil {
 		t.Fatal(err)
 	}
-	desktop := &build{host: "127.0.0.1:1", codes: domain.NewOpenCodes(time.Now), files: webFiles()}
+	desktop := &build{host: "127.0.0.1:1", codes: domain.NewOpenCodes(time.Now), files: webFiles(), gateway: gatewayOfTheTest(t), updates: updaterOfTheBuild(), obsidian: bridgeOfTheTest(), programs: programDoorOfTheTest(t)}
 	routes, err := app.Routes(app.Core{
 		Config: config.Config{AllowedOrigins: []string{"http://127.0.0.1:1"}}, Logger: log.New(io.Discard, "", 0), DB: db,
 		Files: root, Codex: &app.CodexClients{}, Model: model, Jobs: jobstore.New(db), Library: librarystore.New(db),

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
@@ -92,6 +93,7 @@ func writeSearchResult(
 func writeSearchHit(out *strings.Builder, saga *sagaScope, index *sagamemory.Index, prefix string, hit sagamemory.Hit) {
 	chapter, paragraph := index.Locate(hit.Para)
 	saga.use(chapter)
+	saga.show(chapter, disclosure.Excerpts, 0, 0)
 	fmt.Fprintf(out, "%s%s%s: %s\n", prefix, chapter.Link(paragraph.N, paragraph.N), labelAfterNumber(chapter), index.Snippet(hit, snippetWidth))
 }
 

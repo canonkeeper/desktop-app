@@ -61,6 +61,12 @@ const shell = {
   words: 'desktop/src-tauri/crates/core/src/words.rs',
 };
 
+/**
+ * The notes of a release of the app (specs/2026-11-15-desk-updates-web.md UW2.2): the pages show them in «Что нового», so
+ * they are read by the rules of the pages of the app.
+ */
+const releaseNotes = { file: 'desktop/release-notes.txt', readAs: 'src/editions/desktop/updates/WhatsNew.tsx' };
+
 /** A letter of the author's language, the sign of a paragraph or the name of the product: what makes a string a saying. */
 const authors = /[А-Яа-яЁё¶]|Canon\s*Keeper/iu;
 
@@ -146,6 +152,12 @@ function shellOffences(): Offence[] {
 
 interface Offence { file: string; says: string; saying: string }
 
+/** Each line of the notes of a release is a saying of the pages of the app. */
+function notesOffences(text: string): Offence[] {
+  const lines = text.split('\n').map((line) => line.trim()).filter((line) => authors.test(line));
+  return lines.flatMap((saying) => hiddenIn(saying, releaseNotes.readAs).map((word) => ({ file: releaseNotes.file, says: word.says, saying })));
+}
+
 function offences(file: string, sayings: readonly string[]): Offence[] {
   return sayings.flatMap((saying) => hiddenIn(saying, file).map((word) => ({ file, says: word.says, saying })));
 }
@@ -157,6 +169,7 @@ function everyOffence(): Offence[] {
     ...(existsSync(path.join(root, pages)) ? offences(pages, sayingsOfPages(readFileSync(path.join(root, pages), 'utf8'))) : []),
     ...offences(firstPage, sayingsOfHtml(readFileSync(path.join(root, firstPage), 'utf8'))),
     ...shellOffences(),
+    ...notesOffences(readFileSync(path.join(root, releaseNotes.file), 'utf8')),
   ];
 }
 
@@ -261,6 +274,13 @@ describe('the guard of the dictionary (DC2.1, DC2.4)', () => {
     }
   });
 
+  // specs/2026-11-15-desk-updates-web.md UW2.2: the notes of a release by the rules of the pages of the app — a word only the
+  // app hides is found in them too.
+  it('finds a hidden word in the notes of a release by the rules of the pages of the app', () => {
+    expect(notesOffences('Что нового:\n- Очередь книг стала быстрее\n- Ключ проверки обновлён').map((offence) => offence.says))
+      .toEqual(['«очередь»', '«ключ» в приложении вне части «Свой ИИ»']);
+  });
+
   it('reads no comment, no name of the code and no words the author may say to the voice', () => {
     expect(sayingsOfSource('// Подробнее на полке\n/** очередь */ const queue = "queue"; type K = \'проект\';', 'src/x.ts')).toEqual([]);
     expect(sayingsOfGo('// очередь\nconst queue = "queue" // проект')).toEqual([]);
@@ -290,3 +310,44 @@ describe('the guard of the dictionary (DC2.1, DC2.4)', () => {
 function writingAndDrawings() {
   return [...new Set(hiddenWords.flatMap((word) => word.where ?? []))].map((place) => `${place}Returned.tsx`);
 }
+
+// specs/2026-11-13-desk-helper-web.md HW4.1: «ИИ», «модель», «ключ», «токены» are the author's words in the part «Помощник» of
+// the app — «Свой ИИ» and its check — and nowhere else: another part of the app and a page of the site keep the ban. The
+// site's «ключ» is the key of a tariff, its own thing: the ban of «ключ» is the app's.
+describe('the words of «Свой ИИ» (HW4.1)', () => {
+  const said = 'export const words = ["Свой ИИ", "Модель для чата", "Ключ сохранён", "Окно контекста, токенов"];';
+  const found = (file: string) => [...new Set(offences(file, sayingsOfSource(said, file)).map((offence) => offence.says))].sort();
+
+  it('pass in the files of the part «Помощник»', () => {
+    expect(found('src/editions/desktop/settings/helper/HelperPart.tsx')).toEqual([]);
+    expect(found('src/editions/desktop/settings/helper/check-words.ts')).toEqual([]);
+  });
+
+  // specs/2026-11-13-desk-consent-web.md RW4.1: the block of the reading of the books by «Свой ИИ» takes the same words by the
+  // same rule of its path; the open shelf it stands on keeps the ban.
+  it('pass in the files of the block of the reading by «Свой ИИ»', () => {
+    expect(found('src/editions/desktop/reading/reading-line.ts')).toEqual([]);
+    expect(found('src/editions/desktop/reading/ConsentWindow.tsx')).toEqual([]);
+  });
+
+  // specs/2026-11-14-desk-journal.md JR3.4: the part «Журнал» says the tokens of the requests of «Свой ИИ» in its details — and
+  // nothing else of the words of «Свой ИИ».
+  it('let the part «Журнал» say the tokens alone', () => {
+    expect(found('src/editions/desktop/settings/log/log-words.ts')).toEqual(['«ИИ»', '«ключ» в приложении вне части «Свой ИИ»', '«модель»'].sort());
+  });
+
+  it('do not pass on the open shelf the line of the reading stands on', () => {
+    expect(found('src/features/manuscript/shelf/SagaState.tsx')).toEqual(['«ИИ»', '«модель»', '«токены»'].sort());
+    expect(found('src/entities/manuscript/preparation-copy.ts')).toEqual(['«ИИ»', '«модель»', '«токены»'].sort());
+  });
+
+  it('do not pass in another part of the app', () => {
+    expect(found('src/editions/desktop/settings/DataPart.tsx')).toEqual(['«ИИ»', '«ключ» в приложении вне части «Свой ИИ»', '«модель»', '«токены»'].sort());
+    expect(found('src/editions/desktop/index.ts')).toEqual(['«ИИ»', '«ключ» в приложении вне части «Свой ИИ»', '«модель»', '«токены»'].sort());
+  });
+
+  it('do not pass on a page of the site', () => {
+    expect(found('src/features/chat/ChatPage.tsx')).toEqual(['«ИИ»', '«модель»', '«токены»'].sort());
+    expect(found('src/editions/site/account.tsx')).toEqual(['«ИИ»', '«модель»', '«токены»'].sort());
+  });
+});

@@ -1,0 +1,149 @@
+[
+ {
+  "name": "a comment with its pair goes, across lines too",
+  "text": "Начало %%заметка автора%% конец.\n%%\nскрыто\n%%\nДальше.",
+  "want": "Начало  конец.\n\nДальше.",
+  "dropped": {
+   "comments": 2
+  }
+ },
+ {
+  "name": "a comment without its pair stays text and is counted",
+  "text": "Начало %% и всё.\nДальше.",
+  "want": "Начало %% и всё.\nДальше.",
+  "dropped": {
+   "unpairedComments": 1
+  }
+ },
+ {
+  "name": "a comment inside code is text",
+  "text": "```\n%% не комментарий %%\n```",
+  "want": "```\n%% не комментарий %%\n```"
+ },
+ {
+  "name": "the blocks of plugins go",
+  "text": "До.\n```dataview\nTABLE x\n```\n```mermaid\ngraph TD\n```\n```tasks\nnot done\n```\nПосле.",
+  "want": "До.\nПосле.",
+  "dropped": {
+   "pluginBlocks": 3
+  }
+ },
+ {
+  "name": "a block of code of another language stays",
+  "text": "```python\nprint(1)\n```",
+  "want": "```python\nprint(1)\n```"
+ },
+ {
+  "name": "a fence open at the end is closed",
+  "text": "Текст.\n```\nкод до конца",
+  "want": "Текст.\n```\nкод до конца\n```"
+ },
+ {
+  "name": "the label of a callout goes, its words stay",
+  "text": "> [!note] Важно\n> Текст выноски.\n> [!warning]- Свёрнуто",
+  "want": "> Важно\n> Текст выноски.\n> Свёрнуто"
+ },
+ {
+  "name": "a line of tags alone goes",
+  "text": "Текст.\n#черновик #todo\n- #персонаж\nДальше.",
+  "want": "Текст.\nДальше.",
+  "tags": [
+   "черновик",
+   "todo",
+   "персонаж"
+  ]
+ },
+ {
+  "name": "a row of tags at the end of a line goes",
+  "text": "Он ушёл. #черновик #todo",
+  "want": "Он ушёл.",
+  "tags": [
+   "черновик",
+   "todo"
+  ]
+ },
+ {
+  "name": "a tag inside a sentence keeps its word",
+  "text": "Это #важная сцена.",
+  "want": "Это важная сцена.",
+  "tags": [
+   "важная"
+  ]
+ },
+ {
+  "name": "what is not a tag stays",
+  "text": "Роман «#1984» и год #1984, язык C# и [[Глава 3#Шторм]], https://example.test/#a и `#код`.",
+  "want": "Роман «#1984» и год #1984, язык C# и [[Глава 3#Шторм]], https://example.test/#a и `#код`."
+ },
+ {
+  "name": "tags inside code and inside links of the wiki and of Markdown stay, their words and addresses too",
+  "text": "Код `x #y`, ссылка [[Сага #Шторм]], [слово #z](адрес #w) — и #тег.",
+  "want": "Код `x #y`, ссылка [[Сага #Шторм]], [слово #z](адрес #w) — и тег.",
+  "tags": [
+   "тег"
+  ]
+ },
+ {
+  "name": "a link of Markdown takes its words to its first «]»: a box of a list before it is no link",
+  "text": "- [ ] купить #дела, [ссылка](адрес)",
+  "want": "- [ ] купить дела, [ссылка](адрес)",
+  "tags": [
+   "дела"
+  ]
+ },
+ {
+  "name": "a heading is no tag",
+  "text": "# Застава\n## Ночь",
+  "want": "# Застава\n## Ночь"
+ },
+ {
+  "name": "the id of a block goes",
+  "text": "Абзац со ссылкой ^abc-123",
+  "want": "Абзац со ссылкой"
+ },
+ {
+  "name": "a book drops its tables and counts them",
+  "text": "До.\n| Раса | человек |\n|---|---|\n| Возраст | 34 |\nПосле.",
+  "want": "До.\nПосле.",
+  "dropped": {
+   "tables": 1
+  }
+ },
+ {
+  "name": "a record takes the rows of a table of two columns",
+  "record": true,
+  "text": "До.\n| Раса | человек |\n|---|---|\n| Возраст | 34 |\nПосле.",
+  "want": "До.\nПосле.",
+  "rows": [
+   [
+    "Раса",
+    "человек"
+   ],
+   [
+    "Возраст",
+    "34"
+   ]
+  ]
+ },
+ {
+  "name": "a record takes the fields",
+  "record": true,
+  "text": "Возраст:: 34\nТекст.\nhttps://example.test:: нет",
+  "want": "Текст.\nhttps://example.test:: нет",
+  "fields": [
+   [
+    "Возраст",
+    "34"
+   ]
+  ]
+ },
+ {
+  "name": "pictures and notes at the foot are counted",
+  "text": "Вид ![[мирон.png]] и ![схема](a.png).\n[^1]: Сноска.",
+  "want": "Вид ![[мирон.png]] и ![схема](a.png).\n[^1]: Сноска.",
+  "dropped": {
+   "embeds": 2,
+   "footnotes": 1
+  }
+ }
+]

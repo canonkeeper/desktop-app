@@ -19,6 +19,10 @@ export const appOnTheComputer: DesktopState = {
     { madeAt: '2026-11-02T08:00:00.000Z', version: null },
   ],
   network: [],
+  welcome: false,
+  checkUpdates: true,
+  proxy: null,
+  programsRead: false,
 };
 
 /** The shell of the window as Tauri gives it to the page; its commands are recorded. */
@@ -34,8 +38,13 @@ export function noShell() {
 
 /** A part of «Настройки» over the state the test gives, in the toasts of the root. */
 export function renderPart(Part: ComponentType<SettingsPartProps>, ...states: DesktopState[]) {
+  return renderPartWith(Part, {}, ...states);
+}
+
+/** The same, with more operations of the client the part calls. */
+export function renderPartWith(Part: ComponentType<SettingsPartProps>, client: Partial<CanonKeeperApiClient>, ...states: DesktopState[]) {
   const getDesktopState = vi.fn(async () => states.length > 1 ? states.shift()! : states[0]!);
-  const api = { getDesktopState } as unknown as CanonKeeperApiClient;
+  const api = { ...client, getDesktopState } as unknown as CanonKeeperApiClient;
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ToastsProvider><Part api={api} /></ToastsProvider>

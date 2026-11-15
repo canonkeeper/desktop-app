@@ -1,0 +1,17 @@
+{
+  "about": "What each tool of the chat names of what it shows (specs/2026-11-14-desk-journal.md JR1.3): the examples of naming_test.go run every tool listed here, and the test of the composition of the app (app/desktop) holds every tool its chat offers to be listed.",
+  "tools": {
+    "saga.read": "the chapter with the paragraphs shown",
+    "saga.search": "the chapters of the excerpts shown, the records of the materials shown",
+    "saga.chapters": "the titles of the chapters, or what the helper learned of them by their cards",
+    "saga.glossary": "what the helper learned of the chapters of the entries, the records of the materials shown",
+    "saga.entity": "what the helper learned of the chapters of the profile, the record of the materials whole",
+    "saga.timeline": "what the helper learned of the chapters of the answer",
+    "saga.changes": "what the helper learned of the chapters of the answer",
+    "saga.threads": "the threads of the saga",
+    "saga.scan": "the excerpts of the chapters with finds; the chunks name their chapters whole to the gateway",
+    "saga.attachment": "the attachment with the paragraphs shown",
+    "saga.memory": "the records of «Вы просили помнить» shown",
+    "saga.remember": "nothing new"
+  }
+}

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { Bug, Globe, Mail } from 'lucide-react';
-import { useId, type MouseEvent } from 'react';
+import { useId } from 'react';
 import { loadFailureWords } from '../../../entities/api-errors';
-import { desktopShell, type DesktopShell } from '../../../shared/desktop/shell';
+import { desktopShell } from '../../../shared/desktop/shell';
 import { ButtonLink } from '../../../ui/controls/Button';
 import { LinkAction } from '../../../ui/controls/LinkAction';
 import { ErrorBlock } from '../../../ui/feedback/ErrorBlock';
 import { SkeletonArea } from '../../../ui/feedback/Skeleton';
-import { useToasts, type Toasts } from '../../../ui/feedback/useToastQueue';
+import { useToasts } from '../../../ui/feedback/useToastQueue';
+import { external } from '../external';
 import { useDesktopState } from './desktop-state';
 import type { SettingsPartProps } from './part-props';
 import styles from './Settings.module.css';
@@ -18,24 +19,20 @@ const issuesUrl = `${sourceUrl}/issues`;
 /** «Написать нам» of the site: its home with the form of the contacts open (route `/` with `contact=write`). */
 const contactUrl = 'https://canonkeeper.ru/?contact=write';
 
-/**
- * A link out of the app: the shell opens it in the browser of the system (`open_external`); in a browser without the shell
- * it is an ordinary link to a new tab.
- */
-function external(href: string, shell: DesktopShell | null, toasts: Toasts) {
-  return {
-    href, target: '_blank', rel: 'noopener noreferrer',
-    onClick: shell ? (event: MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
-      void shell.openExternal(href).catch(() => toasts.push({ message: 'Не удалось открыть ссылку', tone: 'error' }));
-    } : undefined,
-  };
-}
+/** The words of the list of the network (specs/2026-11-14-desk-journal.md JR4.3, Data). */
+export const networkWords = {
+  none: 'Сейчас никуда',
+  when: 'Адреса появятся здесь, когда вы подключите помощника, свяжете приложение с аккаунтом или включите проверку обновлений.',
+  proxy: (host: string) => `Запросы к помощнику и серверу идут через прокси из настроек окружения: ${host}`,
+  /** The reading of the sagas by the programs of the author is on (specs/2026-11-15-desk-mcp.md MC3.5): no address of the app. */
+  programs: 'Чтение саг вашим Claude или Codex включено — куда они отправляют прочитанное, решают они',
+} as const;
 
 /**
  * «О программе» (specs/2026-11-13-desk-settings.md ST4.1–ST4.3; board 44·16, `Pattern/Desktop/Settings About`): the version
- * the backend names, the open core and its code, where the app goes in the network by the list of the server, «Сообщить о
- * проблеме» and «Написать нам». No line of a work not done yet.
+ * the backend names, the open core and its code, where the app goes in the network by the list of the server and the proxy of
+ * the environment (specs/2026-11-14-desk-journal.md JR4.3), «Сообщить о проблеме» and «Написать нам». No line of a work not
+ * done yet.
  */
 export function AboutPart({ api }: SettingsPartProps) {
   const state = useDesktopState(api);
@@ -53,14 +50,23 @@ export function AboutPart({ api }: SettingsPartProps) {
         <p className={styles.label} id={network}>Куда приложение ходит в сеть</p>
         {state.isPending ? <SkeletonArea count={2} shape="lines" /> : state.isError ? (
           <ErrorBlock {...loadFailureWords(state.error)} onRetry={() => void state.refetch()} retrying={state.isRefetching} title="Не открылись данные приложения" />
-        ) : state.data.network.length === 0 ? (
-          <p className={styles.note}>Сейчас никуда: помощник не подключён</p>
         ) : (
-          <ul className={styles.rows}>
-            {state.data.network.map(({ host, purpose }) => (
-              <li className={styles.networkRow} key={host}><Globe aria-hidden="true" className={styles.rowIcon} size={16} />{`${host} — ${purpose}`}</li>
-            ))}
-          </ul>
+          <>
+            {state.data.network.length === 0 ? (
+              <>
+                <p className={styles.text}>{networkWords.none}</p>
+                <p className={styles.note}>{networkWords.when}</p>
+              </>
+            ) : (
+              <ul className={styles.rows}>
+                {state.data.network.map(({ host, purpose }) => (
+                  <li className={styles.networkRow} key={host}><Globe aria-hidden="true" className={styles.rowIcon} size={16} />{`${host} — ${purpose}`}</li>
+                ))}
+              </ul>
+            )}
+            {state.data.programsRead ? <p className={styles.note}>{networkWords.programs}</p> : null}
+            {state.data.proxy ? <p className={styles.note}>{networkWords.proxy(state.data.proxy)}</p> : null}
+          </>
         )}
       </div>
       <div className={styles.actions}>

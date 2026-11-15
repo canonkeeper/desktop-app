@@ -13,6 +13,7 @@ type Service struct {
 	getStatus GetStatusPort
 	letters   ReadyLetters
 	helper    Helper
+	reading   Reading
 }
 
 // WithLetters makes the status promise the letter «Сага готова» only to an author the build would write to
@@ -26,6 +27,14 @@ func (service *Service) WithLetters(letters ReadyLetters) *Service {
 // (specs/2026-11-12-desk-window.md WN3.1); a build without the port — the site — always reads.
 func (service *Service) WithHelper(helper Helper) *Service {
 	service.helper = helper
+	return service
+}
+
+// WithReading makes the status say what the reading of a saga waits for — the consent of its author or a pause — and its
+// state while his helper is connected (specs/2026-11-13-desk-gateway.md GW4.3; specs/2026-11-13-desk-consent.md CN3.8); a
+// build without the port — the site — reads without asking.
+func (service *Service) WithReading(reading Reading) *Service {
+	service.reading = reading
 	return service
 }
 

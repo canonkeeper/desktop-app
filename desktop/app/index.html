@@ -1,7 +1,10 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-<!-- The page the shell carries (specs/2026-11-12-desk-shell.md SH1.5, SH2.1): what the window shows while the backend
-     starts and when it cannot. It loads nothing but its own two files. -->
+<!-- The page the shell carries (specs/2026-11-12-desk-shell.md SH1.5, SH2.1; specs/2026-11-13-desk-upgrade.md UG3;
+     specs/2026-11-13-desk-updates.md UB0): what the window shows while the backend starts, during a long step of the
+     start — the sign of work over its words (the board 44·39) — and when it cannot start: the window of the failure
+     as the board 44·40 draws it. Its words and buttons come from the command of state of the shell, never from its
+     address. It loads nothing but its own two files. -->
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -12,15 +15,33 @@
   </head>
   <body>
     <main id="starting" class="sheet" aria-live="polite">
-      <p class="title">CanonKeeper запускается…</p>
+      <div class="loader" aria-hidden="true"></div>
+      <p id="title" class="title">CanonKeeper запускается…</p>
       <p id="hint" class="hint" hidden>Первый запуск может занять до полуминуты.</p>
     </main>
-    <main id="failure" class="sheet" hidden>
+    <main id="failure" class="dialog" role="alertdialog" aria-labelledby="failure-title" aria-describedby="words" hidden>
+      <div class="head">
+        <p id="failure-title" class="name">CanonKeeper</p>
+        <button type="button" id="dismiss" class="icon" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
       <p id="words" class="words" role="alert"></p>
+      <div id="way-out" class="way-out"></div>
+      <div id="actions" class="actions"></div>
+    </main>
+    <main id="question" class="dialog" role="alertdialog" aria-labelledby="question-title" aria-describedby="question-text" hidden>
+      <div class="head">
+        <p id="question-title" class="name"></p>
+        <button type="button" id="dismiss-question" class="icon" aria-label="Отмена">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p id="question-text" class="words"></p>
+      <ul id="earlier" class="earlier" hidden></ul>
       <div class="actions">
-        <button type="button" id="folder">Открыть папку с данными</button>
-        <button type="button" id="contact">Написать нам</button>
-        <button type="button" id="close" class="quiet">Закрыть</button>
+        <button type="button" id="cancel" class="quiet"></button>
+        <button type="button" id="confirm"></button>
       </div>
     </main>
   </body>

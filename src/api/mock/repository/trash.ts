@@ -1,6 +1,7 @@
 import type { OperationResponse } from '../../../shared/api';
 import type { MockRepositoryContext } from './context';
 import { placedBook } from './books';
+import { titledNumber } from './places';
 
 type RecentlyDeleted = OperationResponse<'listRecentlyDeleted', '200'>;
 
@@ -40,10 +41,12 @@ export function createTrashOperations(context: MockRepositoryContext) {
       const book = state.books.find((candidate) => candidate.id === source.resource.bookId);
       const saga = book && live.get(book.projectId);
       if (!book || !saga || !may(book.projectId, editors)) return [];
+      // A deleted chapter has no place among the living ones: only the number its title writes (RN1.4).
+      const { number, name } = titledNumber(source.resource.title);
       return [{
         id: source.resource.id, projectId: book.projectId, sagaTitle: saga.title, bookId: book.id, bookTitle: book.title,
-        bookDisplayNumber: String(placedBook(state.books, book).place), title: source.resource.title, order: source.resource.order,
-        deletedAt: source.deletedAt, restoreUntil: source.restoreUntil,
+        bookDisplayNumber: String(placedBook(state.books, book).place), title: source.resource.title, displayNumber: number,
+        displayTitle: name, deletedAt: source.deletedAt, restoreUntil: source.restoreUntil,
       }];
     });
     // The books whose last update from a file can be returned (specs/2026-11-12-ux10-book-revert.md BR3.3).

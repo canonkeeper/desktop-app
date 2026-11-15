@@ -52,6 +52,10 @@ type UserModelLockedTarget struct {
 type UserModelCreated struct {
 	Subject jobs.Subject
 	Target  UserModelLockedTarget
+	// Last is the last step of the transaction, after the Job and its key of repeat are written: the counter of a site
+	// opens the work there (specs/2026-11-13-desk-account-ai.md AI2.1), so a refusal or a failure of a local write before
+	// it opens nothing. None for most work.
+	Last func(ctx context.Context, tx pgx.Tx) error
 }
 
 type UserModelStartResult struct {
@@ -167,6 +171,11 @@ func (s *Store) StartUserModelJobInTx(
 	}
 	if err := closeUserModelStartIdempotency(ctx, queries, record, ids, created.Subject, replayAuthority); err != nil {
 		return UserModelStartResult{}, err
+	}
+	if created.Last != nil {
+		if err := created.Last(ctx, tx); err != nil {
+			return UserModelStartResult{}, err
+		}
 	}
 	return UserModelStartResult{Job: job, WorkflowInputID: ids.WorkflowInputID, TargetID: ids.TargetID}, nil
 }

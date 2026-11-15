@@ -1,6 +1,7 @@
 import type { OperationResponse, Schema } from '../../../shared/api';
 import { clone } from './common';
 import type { MockRepositoryContext } from './context';
+import { desktopLinked } from './desktop-account';
 import { spendsImage } from './gallery-state';
 import type { MockQuotaDefaults } from './state';
 import { mockPlanSettings } from './tiers';
@@ -26,6 +27,8 @@ export const mockCodeDefaults: Readonly<Record<DefaultKey, number>> = {
   draft_turns_per_day: 60,
   draft_rewrites_per_day: 200,
   app_returns_per_day: 5,
+  app_tokens_per_question: 360_000,
+  app_reading_tokens_per_character: 8,
 };
 
 /** A limit by default in force: the platform's value, else the code's (R7.2). */
@@ -55,6 +58,15 @@ export function createQuotaOperations(context: MockRepositoryContext) {
     return context.state.gallery.images.reduce((total, image) => total
       + (image.createdBy === principal && moscowDay(new Date(image.createdAt)) === day && spendsImage(image) ? 1 : 0)
       + image.layers.filter((layer) => layer.createdBy === principal && moscowDay(new Date(layer.createdAt)) === day && spendsImage(layer)).length, 0);
+  }
+
+  /**
+   * Who holds the places of «разом» (specs/2026-11-15-desk-turns-here.md TH2.1): only the app linked with its helper of the
+   * account says it, when the scenario gives what its site told.
+   */
+  function accountPlaces(): { places?: Schema<'ActiveTurnPlaces'> } {
+    const places = context.scenario.accountPlaces;
+    return places && context.state.aiSettings.source === 'account' && desktopLinked(context) ? { places: { ...places } } : {};
   }
 
   async function getAccountQuota(): Promise<OperationResponse<'getAccountQuota', '200'>> {
@@ -97,10 +109,10 @@ export function createQuotaOperations(context: MockRepositoryContext) {
       // A correction of a turn is a question of the day as the turn's own question is (specs/2026-11-09-quota-accounting.md Q2.1).
       chatTurns: counter(turns.filter((job) => moscowDay(new Date(job.createdAt)) === day).reduce((total, job) => total + 1
         + (job.subject.type === 'research_chat_turn' ? context.state.gallery.turnSteers[job.subject.turnId]?.length ?? 0 : 0), 0), limits.chatTurnsPerDay),
-      activeTurns: counter(
-        turns.filter((job) => job.status === 'queued' || job.status === 'running' || job.status === 'canceling').length,
-        limits.activeTurns,
-      ),
+      activeTurns: {
+        ...counter(turns.filter((job) => job.status === 'queued' || job.status === 'running' || job.status === 'canceling').length, limits.activeTurns),
+        ...accountPlaces(),
+      },
       imports: counter(imports.filter((job) => moscowDay(new Date(job.createdAt)) === day).length, limits.importsPerDay),
       images: counter(drawingsToday(day), limits.imagesPerDay),
       // The mock keeps no day of «Письмо» and of the helpers: their counters stand at nothing used

@@ -3,6 +3,7 @@ module canonkeeper/backend
 go 1.26.10
 
 require (
+	github.com/canonkeeper/desktop-app/translate v0.0.0-00010101000000-000000000000
 	github.com/coder/websocket v1.8.14
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/jackc/pgx/v5 v5.10.0
@@ -20,3 +21,6 @@ require (
 )
 
 replace github.com/openai/codex/sdk/go v0.167.2 => github.com/Dirard/codex/sdk/go v0.167.2
+
+// The translation of «Свой ИИ» is a module of this tree under its own license (specs/2026-11-13-desk-translate.md).
+replace github.com/canonkeeper/desktop-app/translate => ../translate

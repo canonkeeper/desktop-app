@@ -42,9 +42,9 @@ func chatFlow() runtimeFlow {
 	}}
 }
 
-// codexTools are the only tools Codex itself adds to a flow: the goal tools of `goals = true`. No agents, workflows,
-// worktrees, shell, clock or questions to the user.
-var codexTools = []string{"create_goal", "get_goal", "update_goal"}
+// codexTools are the tools Codex itself adds to a flow: none. No goals (`goals = false`, specs/2026-11-13-desk-gateway.md
+// GW2.5), agents, workflows, worktrees, shell, clock or questions to the user.
+var codexTools = []string{}
 
 func (flow runtimeFlow) request(turnID string, calls *recordedCalls) RunRequest {
 	request := runtimeChatRequest(turnID, calls)
@@ -249,6 +249,9 @@ func TestRuntimeTurnEndCheckSeesATurnAfterTurnCompleted(t *testing.T) {
 	if err != nil || second.RootThreadID != first.RootThreadID || second.TurnID == first.TurnID {
 		t.Fatalf("second turn = %+v, %v", second, err)
 	}
+	// The observer reads the stream beside the client: it listens on after the turn, as the test of one turn does, so the
+	// turn/completed of the last turn is among what it saw and what a woken thread would start shows.
+	time.Sleep(afterTurnQuiet)
 	seen := stop()
 
 	after, completed := wentOn(seen, first.RootThreadID, first.TurnID)
@@ -291,12 +294,12 @@ func TestRuntimeChatProfileNamesTheNewNamespaceOfAgents(t *testing.T) {
 }
 
 // The first request of a chat turn as Codex 0.165.4 sent it (12.11, the stub of these tests): the characters Codex
-// adds around the turn's own instructions and tools — its base instructions and its goal tools. A newer runtime may
-// differ by 2 % at most (CX2.4); the turn's own skill and tools are not counted, so their edits do not move it, nor is
-// the path of the profile, which names the skill roots and depends on where the tree lies.
+// adds around the turn's own instructions — its base instructions. A newer runtime may differ by 2 % at most (CX2.4); the
+// turn's own skill and tools are not counted, so their edits do not move it, nor is the path of the profile, which names
+// the skill roots and depends on where the tree lies. Codex adds no tools of its own: the goal tools of 0.165.4 (3213
+// characters) are off since the profiles turn the goals off (specs/2026-11-13-desk-gateway.md GW2.5).
 const (
 	codexRootInstructionChars = 21698
-	codexRootToolChars        = 3213
 	codexRootTolerance        = 0.02
 )
 
@@ -348,12 +351,10 @@ func TestRuntimeChatRootRequestKeepsCodexPrefixSize(t *testing.T) {
 		}
 	}
 	t.Logf("Codex prefix of the first chat request: instructions %d, tools %d characters", instructions, tools)
-	for _, size := range []struct {
-		name      string
-		got, want int
-	}{{"instructions", instructions, codexRootInstructionChars}, {"tools", tools, codexRootToolChars}} {
-		if diff := float64(size.got-size.want) / float64(size.want); diff > codexRootTolerance || diff < -codexRootTolerance {
-			t.Fatalf("Codex %s of the first chat request = %d characters, %d on 0.165.4 (%+.1f %%)", size.name, size.got, size.want, 100*diff)
-		}
+	if diff := float64(instructions-codexRootInstructionChars) / float64(codexRootInstructionChars); diff > codexRootTolerance || diff < -codexRootTolerance {
+		t.Fatalf("Codex instructions of the first chat request = %d characters, %d on 0.165.4 (%+.1f %%)", instructions, codexRootInstructionChars, 100*diff)
+	}
+	if tools != 0 {
+		t.Fatalf("Codex adds tools of its own to the first chat request: %d characters", tools)
 	}
 }

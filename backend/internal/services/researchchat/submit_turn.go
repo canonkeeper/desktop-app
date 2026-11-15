@@ -102,6 +102,33 @@ type SubmitTurnRepository interface {
 type SubmitTurn struct {
 	repository SubmitTurnRepository
 	clock      Clock
+	helper     Helper
+	gate       TurnGate
+}
+
+// TurnGate admits a new turn of the chat (specs/2026-11-13-desk-updates.md UB2.1): the app closes it by the same step that
+// finds no turn in work before it installs an update; the site has none. Admit holds the gate open until done, so a turn
+// it let in is a Job before the gate can close; a closed gate refuses with ErrUpdating.
+type TurnGate interface {
+	Admit() (done func(), err error)
+}
+
+// WithGate makes the turn wait for the gate of the build.
+func (useCase *SubmitTurn) WithGate(gate TurnGate) *SubmitTurn {
+	useCase.gate = gate
+	return useCase
+}
+
+// Helper says whether the helper of the build is connected (specs/2026-11-13-desk-gateway.md GW4.4): the app has none
+// until the author connects his own AI; the site always has it and gives no port.
+type Helper interface {
+	Connected(ctx context.Context) bool
+}
+
+// WithHelper makes the turn refuse a question while the helper of the build is not connected.
+func (useCase *SubmitTurn) WithHelper(helper Helper) *SubmitTurn {
+	useCase.helper = helper
+	return useCase
 }
 
 func NewSubmitTurn(repository SubmitTurnRepository, clock Clock) *SubmitTurn {
@@ -135,6 +162,10 @@ func (useCase *SubmitTurn) Execute(ctx context.Context, actor researchdomain.Act
 	if session.AgentGeneration != researchdomain.CurrentAgentGeneration {
 		return jobs.Job{}, researchdomain.ErrOutdatedAgent
 	}
+	// Nobody would answer: the question stays with the author, and no turn starts or is spent (GW4.4).
+	if useCase.helper != nil && !useCase.helper.Connected(ctx) {
+		return jobs.Job{}, researchdomain.ErrHelperNotConnected
+	}
 	var attachment *researchdomain.Attachment
 	if input.Chapter != nil {
 		read, err := input.Chapter.read()
@@ -157,6 +188,14 @@ func (useCase *SubmitTurn) Execute(ctx context.Context, actor researchdomain.Act
 	}{chatID, session.LifecycleEpoch, input.Question, input.ContextLocators, fingerprint(attachment)})
 	if err != nil {
 		return jobs.Job{}, err
+	}
+	// UB2.1: while the app installs an update no turn begins; the question stays in the field.
+	if useCase.gate != nil {
+		done, err := useCase.gate.Admit()
+		if err != nil {
+			return jobs.Job{}, err
+		}
+		defer done()
 	}
 	return useCase.repository.SubmitTurn(ctx, SubmitTurnCommand{
 		ActorUserID: actor.UserID, Session: session, Question: input.Question,

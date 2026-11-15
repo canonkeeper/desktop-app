@@ -3,6 +3,7 @@ package jobworker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"slices"
 	"time"
@@ -31,6 +32,16 @@ var (
 	ErrRetryableHandler          = errors.New("jobworker: retryable handler failure")
 	errWorkerShutdown            = errors.New("jobworker: process shutdown")
 )
+
+// RepeatedFailure is a failure of a step with its own safe code the worker repeats while the Job has attempts and that ends
+// the Job with that code on its last one (specs/2026-11-14-desk-journal.md JR1.6): the journal of the app sent nothing, and
+// the Job neither pauses nor fails at once.
+func RepeatedFailure(job jobs.Job, err error) error {
+	if job.RetryCount >= jobs.MaxJobAttempts-1 {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrRetryableHandler, err)
+}
 
 type Handler interface {
 	Kind() jobs.Kind

@@ -33,11 +33,15 @@ type Chapter struct {
 	BookOrder     int
 	BookKeyNumber int
 	BookTitle     string
-	Order         int
-	Title         string
-	Number        int    // global chapter number written in the title, 0 when absent
-	Key           string // stable agent-facing reference, assigned by NewVersion
-	Index         int    // position in reading order, assigned by NewVersion
+	// Order is the stored order of the chapter in its book: it orders the chapters and keys them, and is never said to the
+	// author. InBook is the place of the chapter among the chapters of its book in the text, from one and without gaps — the
+	// number its place says when its title writes none (PlacesInBooks; specs/2026-11-14-chapter-place-number.md CP1.1).
+	Order  int
+	InBook int
+	Title  string
+	Number int    // global chapter number written in the title, 0 when absent
+	Key    string // stable agent-facing reference, assigned by NewVersion
+	Index  int    // position in reading order, assigned by NewVersion
 	// ParagraphCount and Runes size the chapter text; a call loads Paragraphs only where it
 	// reads them, so they come from the stored search text (NewOutline) or from the paragraphs.
 	ParagraphCount int
@@ -99,7 +103,8 @@ func ChapterNumber(title string) int {
 
 // NewVersion orders chapters by the place of their book and their order in it, numbers and normalizes paragraphs
 // and assigns chapter keys — the one rule of the key: the global number when it is unique in the version, otherwise
-// "b<number of the book>c<chapter order>", so a key outlives a move of the volumes (specs/2026-11-11-ux7-reorder.md RK1).
+// "b<number of the book>c<chapter order>", so a key outlives a move of the volumes (specs/2026-11-11-ux7-reorder.md RK1) —
+// and the places of the chapters in their books (PlacesInBooks), which the keys do not read.
 func NewVersion(projectID, view, fingerprint string, chapters []Chapter) *Version {
 	ordered := append([]Chapter(nil), chapters...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -140,6 +145,7 @@ func NewVersion(projectID, view, fingerprint string, chapters []Chapter) *Versio
 		}
 		version.byKey[chapter.Key] = i
 	}
+	PlacesInBooks(version.Chapters)
 	version.keepBookKeys()
 	version.keepBareNumbers(counts)
 	return version

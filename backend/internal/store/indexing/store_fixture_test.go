@@ -26,7 +26,12 @@ type storeFixture struct {
 
 func newStoreFixture(t *testing.T, base int, view governance.SourceView, tracers ...pgx.QueryTracer) storeFixture {
 	t.Helper()
-	db := openCurrentStoreTestDB(t, tracers...)
+	return newStoreFixtureOn(t, openCurrentStoreTestDB(t, tracers...), base, view)
+}
+
+// newStoreFixtureOn builds the fixture on a database of the caller — one migrated to an earlier version too.
+func newStoreFixtureOn(t *testing.T, db *storedb.DB, base int, view governance.SourceView) storeFixture {
+	t.Helper()
 	baseFixture := createIndexingStoreFixtureForTest(t, db, base)
 	f := storeFixture{db: db, store: New(db), actorID: baseFixture.actorID, projectID: baseFixture.projectID, bookID: baseFixture.bookID, chapterID: baseFixture.chapterID, paragraphID: baseFixture.paragraphID, siblingChapterID: indexingStoreUUIDForTest(base + 10), view: view, now: indexingStoreTestNow()}
 	insertIndexingStoreChapterForTest(t, db, f.projectID, f.siblingChapterID, f.bookID, f.now)

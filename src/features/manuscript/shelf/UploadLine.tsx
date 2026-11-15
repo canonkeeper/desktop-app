@@ -42,23 +42,42 @@ function endOf(queue: ImportQueue, books: readonly Book[], preparing: boolean, w
  * The end of an upload (specs/2026-11-11-ux7-upload.md UP4.1): a line of the one area of toasts when an upload this tab saw
  * going ends, and the same words in the line of the saga until the author looks at how the books were read. Whether the
  * saga is read is the server's (`preparing`), and so is the line of a reading that waits for the helper (`waiting`,
- * specs/2026-11-12-desk-window.md WN3.2).
+ * specs/2026-11-12-desk-window.md WN3.2) — said only by a status of the saga the page read after the end of the queue
+ * (specs/2026-11-13-desk-consent-web.md RW1.5): the page asks it again as it sees the end, and an older status says nothing,
+ * since a wrong «Помощник прочитал её» is worse than a line a second later. While the line of the reading stands under it
+ * (`readingSpoken`, RW1.6), the line of the end and its toast say only what came: the reason, the count and the button are
+ * that line's.
  */
-export function useUploadEnd({ books, latest, onLook, preparing, toasts, waiting = null }: {
+export function useUploadEnd({ books, latest, onLook, preparing, readingSpoken = false, rereadStatus, statusReadAt, toasts, waiting = null }: {
   books: readonly Book[];
   latest: ImportQueue | null;
   onLook: (bookIds: string[]) => void;
   preparing: boolean;
+  /** The line of the reading under the end says its reason, its count and its button (RW1.6). */
+  readingSpoken?: boolean;
+  /** Reads the status of the saga again; resolves once its answer is in (or failed). */
+  rereadStatus: () => Promise<{ isError: boolean }>;
+  /** When the answer of the status the page holds came. */
+  statusReadAt: number;
   toasts: Toasts;
   waiting?: string | null;
 }) {
   const seen = useRef(new Set<string>());
   const told = useRef(new Set<string>());
+  // The ends the page asked the status again for, with when it asked, and those whose status came back read again.
+  const asked = useRef(new Map<string, number>());
+  const [reread, setReread] = useState<ReadonlySet<string>>(() => new Set());
   const [, setLookedAt] = useState(0);
-  const finished = latest?.status === 'succeeded' ? endOf(latest, books, preparing, waiting) : null;
+  const ended = latest?.status === 'succeeded' ? latest : null;
+  const askedAt = ended ? asked.current.get(ended.id) : undefined;
+  const fresh = ended !== null && (reread.has(ended.id) || (askedAt !== undefined && statusReadAt > askedAt));
+  const finished = ended && fresh ? endOf(ended, books, preparing, waiting) : null;
   // The line waits to be looked at for a day by the clock of the server; the toast says an end this tab saw at once.
-  const end = finished && latest && !looked(latest.id)
-    && Date.now() - Date.parse(latest.completedAt ?? latest.updatedAt) < endLineFor ? finished : null;
+  const lineDue = (queue: ImportQueue) => !looked(queue.id) && Date.now() - Date.parse(queue.completedAt ?? queue.updatedAt) < endLineFor;
+  // Under the line of the reading the end says only what came — the line of the end and its toast alike: the toast is said
+  // on the shelf, where that line stands (RW1.6).
+  const said = finished && readingSpoken ? { ...finished, detail: '' } : finished;
+  const end = said && ended && lineDue(ended) ? said : null;
   const look = (shown: UploadEnd) => {
     try {
       window.localStorage.setItem(lookedKey(shown.queueId), '1');
@@ -71,14 +90,24 @@ export function useUploadEnd({ books, latest, onLook, preparing, toasts, waiting
   useEffect(() => {
     if (!latest) return;
     if (['uploading', 'draft', 'running'].includes(latest.status)) seen.current.add(latest.id);
-    if (latest.status !== 'succeeded' || !seen.current.has(latest.id) || told.current.has(latest.id) || !finished) return;
+    // An end that may be said has the status of its saga read again: the one the page holds may be older than it.
+    if (latest.status !== 'succeeded' || asked.current.has(latest.id) || !(seen.current.has(latest.id) || lineDue(latest))) return;
+    const id = latest.id;
+    asked.current.set(id, Date.now());
+    void rereadStatus().then((answer) => {
+      if (!answer.isError) setReread((was) => new Set(was).add(id));
+    });
+    // The status is asked again once per end: `asked` keeps the ends already asked for.
+  }, [latest]);
+  useEffect(() => {
+    if (!latest || latest.status !== 'succeeded' || !seen.current.has(latest.id) || told.current.has(latest.id) || !said) return;
     told.current.add(latest.id);
     toasts.push({
-      message: finished.message, detail: finished.detail, tone: 'success',
-      action: <Button onClick={() => look(finished)} size="sm" variant="ghost">{finished.look}</Button>,
+      message: said.message, detail: said.detail, tone: 'success',
+      action: <Button onClick={() => look(said)} size="sm" variant="ghost">{said.look}</Button>,
     });
     // The toast is said once per upload: `told` keeps the uploads already said.
-  }, [latest, finished]);
+  }, [latest, said]);
   return { end, look };
 }
 

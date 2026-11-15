@@ -1766,6 +1766,8 @@ WHERE job.project_id = $1
   AND job.claim_incarnation = 0
   AND job.cancel_requested_at IS NULL
   AND job.subject_json->>'sourceView' = $2::text
+  -- The sample of three chapters is a Job of its own (specs/2026-11-13-desk-consent.md CN2.2): nothing queued takes it.
+  AND NOT (job.subject_json ? 'sample')
   AND ck_artifact_source_owner_is_readable(
     job.artifact_source_owner_id, job.project_id, 'job', job.id
   )

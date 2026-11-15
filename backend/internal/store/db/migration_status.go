@@ -77,3 +77,16 @@ func migrationStatusWithTx(ctx context.Context, tx migrationTx, inventory []dbmi
 	}
 	return MigrationStatus{Last: last, Pending: len(inventory) - len(entries)}, nil
 }
+
+// LastKnownMigration is the version of the last migration of the embedded inventory: the newest schema this program
+// knows (specs/2026-11-13-desk-upgrade.md UG2.3 — a copy of a later schema is no copy this program can bring back).
+func LastKnownMigration() (int64, error) {
+	inventory, err := dbmigrations.Read()
+	if err != nil {
+		return 0, err
+	}
+	if len(inventory) == 0 {
+		return 0, fmt.Errorf("%w: the inventory is empty", ErrUnknownMigrationState)
+	}
+	return inventory[len(inventory)-1].Version, nil
+}

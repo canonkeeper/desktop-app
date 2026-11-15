@@ -13,9 +13,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	codexadapter "canonkeeper/backend/internal/adapters/codex"
+	storedb "canonkeeper/backend/internal/store/db"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // The copy before the migrations of a new version (specs/2026-11-12-desk-process.md PR3): backups/pre-<the last
@@ -183,6 +187,13 @@ func (cluster *Cluster) copyInto(ctx context.Context, directory string) error {
 	if err := cluster.writeVersion(directory); err != nil {
 		return err
 	}
+	// specs/2026-11-13-desk-upgrade.md UG2.3: the copy names the major version of PostgreSQL its database came from; only
+	// a program with the same can bring it back.
+	if major := clusterMajor(cluster.data.Cluster()); major != "" {
+		if err := os.WriteFile(filepath.Join(directory, backupPostgres), []byte(major+"\n"), 0o600); err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(filepath.Join(directory, backupComplete), nil, 0o600)
 }
 
@@ -255,17 +266,48 @@ func copyFile(source, target string) error {
 	return out.Close()
 }
 
-// bootstrapFailure is the fatal of a failed Bootstrap: its reason and, after a failed migration, the name of the copy.
-func bootstrapFailure(err error) ControlMessage {
+// The long steps of a start the shell names (specs/2026-11-13-desk-upgrade.md UG3.1).
+const (
+	stepBackup  = "backup"
+	stepMigrate = "migrate"
+	stepRestore = "restore"
+)
+
+// bootstrapFailure is the fatal of a failed Bootstrap with what its words need (specs/2026-11-13-desk-upgrade.md
+// UG2.3, UG2.4): a copy that failed or a migration that failed after its copy names the version that opened the data
+// before, and the migration the name of the copy; a migration that failed for want of place on the disk is its own reason.
+// A database of a newer program is newerSchema's.
+func bootstrapFailure(err error, opened string) ControlMessage {
 	message := ControlMessage{Type: messageFatal, Reason: reasonDatabase}
 	var migration migrationFailed
 	switch {
-	case errors.Is(err, errNewerSchema):
-		message.Reason = reasonNewerSchema
 	case errors.As(err, &backupFailed{}):
-		message.Reason = reasonBackup
+		message.Reason, message.Opened = reasonBackup, opened
+	case errors.As(err, &migration) && diskFull(migration.err):
+		message.Reason = reasonMigrateSpace
 	case errors.As(err, &migration):
-		message.Reason, message.Backup = reasonMigrate, migration.backup
+		message.Reason, message.Backup, message.Opened = reasonMigrate, migration.backup, opened
+	}
+	return message
+}
+
+// diskFull says whether a migration failed for want of place on the disk: the server said disk_full, or the system no
+// space.
+func diskFull(err error) bool {
+	var refused *pgconn.PgError
+	return errors.As(err, &refused) && refused.Code == "53100" || errors.Is(err, syscall.ENOSPC)
+}
+
+// newerSchema is the fatal of data a newer program opened (UG2.3): the version that opened them, as far as the start
+// knows, the copy a return would bring back — the newest one whose schema and PostgreSQL this program knows — and the
+// folders «до возврата» earlier returns left (UG4.4).
+func newerSchema(opened string, data DataDir, major string) ControlMessage {
+	backups := data.Backups()
+	message := ControlMessage{
+		Type: messageFatal, Reason: reasonNewerSchema, Opened: openedBy(opened, backups), Before: beforeRestores(data),
+	}
+	if known, err := storedb.LastKnownMigration(); err == nil {
+		message.Copy = restoreCandidate(backups, known, major)
 	}
 	return message
 }

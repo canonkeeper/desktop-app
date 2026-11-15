@@ -14,7 +14,6 @@ import { Confirm, deletionLines } from '../../../ui/overlays/Confirm';
 import { MoreMenu, type MoreMenuItem } from '../../../ui/overlays/MoreMenu';
 import { TextBackgroundContext } from '../../../ui/text-background';
 import { TextBackgroundChoice } from '../../../ui/TextBackgroundChoice';
-import { formatReaderChapterTitle } from '../../../ui/copy';
 import { chapterWords } from '../reader/ReaderContents';
 import { afterChapterWords, clockTime, discardQuestion, editorWords } from './editor-words';
 import { useEditActions } from './use-edit-actions';
@@ -52,7 +51,7 @@ export function EditorScreen({ api, author, book, canEdit, chapters, draft, navi
   const edit = draft?.edits ?? null;
   const fresh = !edit;
   const places = chapters.length
-    ? chapters.map((item) => ({ value: item.id, label: afterChapterWords(item, formatReaderChapterTitle(item.displayNumber, item.title)) }))
+    ? chapters.map((item) => ({ value: item.id, label: afterChapterWords(item) }))
     : [{ value: atStart, label: editorWords.atStart }];
   // The place the author chose, else the one of the draft, else after the last chapter of the book (ED2.3).
   const [after, setAfter] = useState<string | null>(null);

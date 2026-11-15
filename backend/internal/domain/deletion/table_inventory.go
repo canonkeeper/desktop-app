@@ -112,6 +112,9 @@ func DeletionTableInventory() []TableDisposition {
 		// (specs/2026-11-13-desk-permits.md PM3.3): rows of account, not of a saga; they go with the account.
 		{"model_permits", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_permit_units", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// What the helper of a linked app read through the models of the site: prints and lengths, no text
+		// (specs/2026-11-13-desk-proxy.md PX3.6); account data, it goes with the account.
+		{"app_text_prints", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_usage_days", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"model_limit_samples", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		// The blind comparison of texts has no link to the product: only `reading-test delete` removes it (specs/2026-11-05-reading-test.md).
@@ -176,6 +179,9 @@ func DeletionTableInventory() []TableDisposition {
 		// The materials of the author belong to the project as his memory does (specs/2026-11-04-saga-map.md, R9.1).
 		{"author_materials", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"author_material_imports", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The chats a saga file brought are records of the saga (specs/2026-11-13-desk-sagafile.md SF3.8): deleting a book
+		// or a chat keeps them, a deleted saga keeps them for its return, the project purge removes them.
+		{"saga_transcripts", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		// A chapter draft is written by the author and belongs to the project: deleting a book keeps it
 		// (specs/2026-11-01-writer-assistant-index.md, R7.2), the project purge removes it.
 		{"chapter_drafts", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
@@ -194,8 +200,27 @@ func DeletionTableInventory() []TableDisposition {
 		// keeps them. A request of the connection check has no project and stays until the author clears the journal.
 		{"card_build_permissions", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"model_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		{"reading_unread_chapters", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The names and the threads of a saga that did not come together (specs/2026-11-15-desk-reading-rest.md RR1.6) leave
+		// with the project.
+		{"reading_unread_rest", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The work of the app a site counts (specs/2026-11-13-desk-account-ai.md AI1.4, AI2.9) is a fact of its Job and goes
+		// with it.
+		{"app_work", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"model_disclosures", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// What a thread named and has not sent, the helpers a thread went to and the requests of the sample of the consent
+		// (specs/2026-11-14-desk-journal.md JR1.8, JR2.6) leave with the project; deleting a book, a chapter or a chat keeps them.
+		{"model_disclosures_pending", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		{"model_thread_recipients", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		{"reading_sample_requests", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		{"obsidian_vaults", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The links of the books of a saga with the folders of its vault (specs/2026-11-14-desk-obsidian-books.md OK0.2) go
+		// with the link of the saga and with the saga; deleting, restoring or purging a book keeps them — the rule of reading
+		// makes the row of a book that is no more inert.
+		{"obsidian_books", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
+		// The links of the records of a saga with the notes of its vault (specs/2026-11-15-desk-obsidian-notes.md ON1.9) go with
+		// the link of the saga, with the saga and with their record.
+		{"obsidian_notes", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		// The wave of the preparation of a saga (specs/2026-11-09-first-session.md, FS1) is a fact of the project:
 		// deleting a book keeps the row (the closing of the wave reads what is left), the project purge removes it.
 		{"saga_ready_waves", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},

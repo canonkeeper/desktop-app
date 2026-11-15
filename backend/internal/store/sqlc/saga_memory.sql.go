@@ -11,21 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const cardModelAllowed = `-- name: CardModelAllowed :one
-SELECT EXISTS (
-  SELECT 1 FROM card_build_permissions
-  WHERE project_id = $1 AND state = 'allowed'
-)::boolean AS allowed
-`
-
-// Whether the cards Job may call the model for a saga (specs/2026-11-07-desktop-app.md, DA8.1): only a consent that is not paused.
-func (q *Queries) CardModelAllowed(ctx context.Context, projectID pgtype.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, cardModelAllowed, projectID)
-	var allowed bool
-	err := row.Scan(&allowed)
-	return allowed, err
-}
-
 const chapterCardsClaimHeld = `-- name: ChapterCardsClaimHeld :one
 SELECT EXISTS (
   SELECT 1 FROM jobs AS job
@@ -1249,43 +1234,6 @@ func (q *Queries) SearchSagaMapNodes(ctx context.Context, arg SearchSagaMapNodes
 		return nil, err
 	}
 	return items, nil
-}
-
-const upsertCardBuildPermission = `-- name: UpsertCardBuildPermission :execrows
-INSERT INTO card_build_permissions (project_id, state, budget_usd_micros, budget_tokens, since, updated_at)
-SELECT project.id, $1, $2, $3, $4, $5
-FROM projects AS project
-WHERE project.id = $6 AND project.deleted_at IS NULL
-ON CONFLICT (project_id) DO UPDATE SET
-  state = EXCLUDED.state,
-  budget_usd_micros = EXCLUDED.budget_usd_micros,
-  budget_tokens = EXCLUDED.budget_tokens,
-  since = EXCLUDED.since,
-  updated_at = EXCLUDED.updated_at
-`
-
-type UpsertCardBuildPermissionParams struct {
-	State           string             `json:"state"`
-	BudgetUsdMicros pgtype.Int8        `json:"budget_usd_micros"`
-	BudgetTokens    pgtype.Int8        `json:"budget_tokens"`
-	Since           pgtype.Timestamptz `json:"since"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	ProjectID       pgtype.UUID        `json:"project_id"`
-}
-
-func (q *Queries) UpsertCardBuildPermission(ctx context.Context, arg UpsertCardBuildPermissionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertCardBuildPermission,
-		arg.State,
-		arg.BudgetUsdMicros,
-		arg.BudgetTokens,
-		arg.Since,
-		arg.UpdatedAt,
-		arg.ProjectID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const upsertSagaNames = `-- name: UpsertSagaNames :exec

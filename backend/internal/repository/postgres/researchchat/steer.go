@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	service "canonkeeper/backend/internal/services/researchchat"
 	authstore "canonkeeper/backend/internal/store/auth"
@@ -82,6 +83,7 @@ func (repository *Repository) BeginSteer(ctx context.Context, command service.Be
 			return err
 		}
 		target.RecordID = storedb.UUIDString(record.ID)
+		target.RepeatKey = command.ScopeHash + "\x00" + command.OperationID + "\x00" + command.IdempotencyKeyHash
 		if !steerableJob(status) {
 			return researchdomain.ErrTurnEnded
 		}
@@ -109,7 +111,9 @@ func (repository *Repository) BeginSteer(ctx context.Context, command service.Be
 			return err
 		}
 		target.Charge = charge
-		return nil
+		// specs/2026-11-13-desk-account-ai.md AI2.8: the counter of the site charges the correction under the permit of its
+		// turn, by the key of its repeat, as the last step.
+		return repository.quota.SteerWorkInTx(ctx, tx, quota.Steer{JobID: target.JobID, Key: target.RepeatKey, At: command.CreatedAt})
 	})
 	if err != nil {
 		return service.SteerTarget{}, mapError(err)
@@ -132,7 +136,7 @@ func (repository *Repository) ReloadSteerTarget(ctx context.Context, target serv
 	if !steerableJob(status) {
 		return service.SteerTarget{}, researchdomain.ErrTurnEnded
 	}
-	reloaded.RecordID, reloaded.ImageTitles, reloaded.Charge = target.RecordID, target.ImageTitles, target.Charge
+	reloaded.RecordID, reloaded.RepeatKey, reloaded.ImageTitles, reloaded.Charge = target.RecordID, target.RepeatKey, target.ImageTitles, target.Charge
 	return reloaded, nil
 }
 
@@ -159,7 +163,10 @@ func (repository *Repository) FinishSteer(ctx context.Context, target service.St
 		if updated.RowsAffected() != 1 || accepted || target.Charge.UserID == "" {
 			return nil
 		}
-		return repository.quota.ReleaseDailyInTx(ctx, tx, target.Charge.UserID, target.Charge.Key, 1, target.Charge.At)
+		if err := repository.quota.ReleaseDailyInTx(ctx, tx, target.Charge.UserID, target.Charge.Key, 1, target.Charge.At); err != nil {
+			return err
+		}
+		return repository.quota.UnsteerWorkInTx(ctx, tx, quota.Steer{JobID: target.JobID, Key: target.RepeatKey, At: target.Charge.At})
 	})
 	return mapError(err)
 }

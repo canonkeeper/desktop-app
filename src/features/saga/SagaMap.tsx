@@ -1,9 +1,10 @@
 import { Waypoints } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AuthorMaterialsApiClient } from '../../entities/author-materials/api';
 import { useIndexingStatusQuery, type ManuscriptApiClient } from '../../entities/manuscript/api';
 import { chaptersOf, mapReadingLine } from '../../entities/manuscript/preparation-copy';
+import { usePreparationView } from '../../entities/manuscript/preparation-slot';
 import { useSagaMapHiddenQuery, useSagaMapQuery, type SagaApiClient, type SagaMap as SagaMapData, type SourceView } from '../../entities/saga/api';
 import { navigateFrom, type AppRoute, type RouteNavigate } from '../../shared/navigation/app-route';
 import { Button } from '../../ui/controls/Button';
@@ -59,7 +60,14 @@ export function SagaMap(props: SagaMapProps) {
   const query = useSagaMapQuery(api, projectId, sourceView);
   // How far the helper has read, by the counts and the time of the shelf (specs/2026-11-10-ux3-saga-state.md SS3.2).
   const unread = query.data?.coverage.withCards === 0;
-  const preparation = useIndexingStatusQuery(api, projectId, { enabled: unread, follow: true }).data?.preparation;
+  const status = useIndexingStatusQuery(api, projectId, { enabled: unread, follow: true }).data;
+  const preparation = status?.preparation;
+  // The line of the reading of the edition, its buttons instead of «К книгам» and its windows (specs/2026-11-13-desk-helper-web.md
+  // HW3.1, specs/2026-11-13-desk-consent-web.md RW1.2).
+  const edition = usePreparationView({ navigate, projectId, status });
+  const editionLines = edition?.lines ?? [];
+  const mainAction = canEdit && editionLines.length > 0
+    ? <>{editionLines.map((line) => <Fragment key={line.label}>{line.actions}</Fragment>)}</> : null;
   const useDrawings = useSagaSlot()?.drawings?.useDrawings ?? useNoDrawings;
   const drawings = useDrawings({ canEdit, navigate, projectId, sourceView });
   // The bar of the map with the heading first in it (specs/2026-11-11-ux2-polish.md PL2.2): the heading stands from the first
@@ -83,11 +91,13 @@ export function SagaMap(props: SagaMapProps) {
         {head}
         {/* The words of the reading are ux3-saga-state's (SS3.2); the block is the one empty state (PS2.1). */}
         <EmptyState
-          action={<Button onClick={() => navigate('/manuscript/books', { projectId })} variant="primary">К книгам</Button>}
+          action={mainAction ?? <Button onClick={() => navigate('/manuscript/books', { projectId })} variant="primary">К книгам</Button>}
           className={styles.empty}
           title="Карта появится, когда помощник прочитает книгу"
-          why={preparation ? mapReadingLine(preparation) : 'Помощник ещё не прочитал ни одной главы.'}
+          why={editionLines.length > 0 ? editionLines.map((line) => line.title).join('. ')
+            : preparation ? mapReadingLine(preparation) : 'Помощник ещё не прочитал ни одной главы.'}
         />
+        {edition?.windows}
       </div>
     );
   }

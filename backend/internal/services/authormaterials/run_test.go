@@ -95,3 +95,29 @@ func TestRunLeavesAFailingModelToTheWorker(t *testing.T) {
 		t.Fatalf("err = %v, outcome = %+v", err, store.outcome)
 	}
 }
+
+// endsOfTheTest hears the ends of the Jobs.
+type endsOfTheTest struct{ ends []jobs.Status }
+
+func (ends *endsOfTheTest) Ended(_ context.Context, _ string, outcome jobs.Status) {
+	ends.ends = append(ends.ends, outcome)
+}
+
+// specs/2026-11-13-desk-account-ai.md AI3.8: the end of an upload the run committed closes its permit — succeeded, failed,
+// canceled —; a failure the worker repeats is no end.
+func TestTheEndOfAnUploadIsTold(t *testing.T) {
+	ends := &endsOfTheTest{}
+	store := &fakeRunStore{parsed: domain.Parsed{Sections: []domain.Section{{Rows: [][]domain.Cell{{{Text: "Имя"}}}}}}}
+	if _, err := (RunImport{Store: store, Model: &fakeModel{err: errors.New("gateway down")}, Ended: ends}).RunForClaim(context.Background(), runClaim, runSubject); err == nil || len(ends.ends) != 0 {
+		t.Fatalf("a failure the worker repeats ended the Job: %v", ends.ends)
+	}
+	run := RunImport{Store: store, Model: &fakeModel{answers: []string{"не знаю"}}, Ended: ends}
+	if status, _ := run.RunForClaim(context.Background(), runClaim, runSubject); status != jobs.StatusFailed {
+		t.Fatal(status)
+	}
+	_ = run.CancelForClaim(context.Background(), runClaim)
+	_, _ = run.FailForClaim(context.Background(), runClaim, jobs.Error{Code: "x"})
+	if len(ends.ends) != 3 || ends.ends[0] != jobs.StatusFailed || ends.ends[1] != jobs.StatusCanceled || ends.ends[2] != jobs.StatusFailed {
+		t.Fatalf("ends = %v", ends.ends)
+	}
+}

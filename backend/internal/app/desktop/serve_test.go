@@ -3,16 +3,19 @@
 package desktop
 
 import (
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"canonkeeper/backend/internal/adapters/llmgateway"
 	"canonkeeper/backend/internal/adapters/modelapi"
 	"canonkeeper/backend/internal/app"
 	"canonkeeper/backend/internal/config"
@@ -34,11 +37,11 @@ func desktopHandler(t *testing.T, page fstest.MapFS) http.Handler {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = root.Close() })
-	model, err := modelapi.New(modelapi.Config{Model: chatModel, CardsModel: cardsModel})
+	model, err := modelapi.New(modelapi.Config{Model: llmgateway.CardsModel, CardsModel: llmgateway.CardsModel})
 	if err != nil {
 		t.Fatal(err)
 	}
-	desktop := &build{host: testHost, codes: domain.NewOpenCodes(time.Now), files: page}
+	desktop := &build{host: testHost, codes: domain.NewOpenCodes(time.Now), files: page, gateway: gatewayOfTheTest(t), updates: updaterOfTheBuild(), account: *accountOfTheTest(t), obsidian: bridgeOfTheTest(), programs: programDoorOfTheTest(t)}
 	routes, err := app.Routes(app.Core{
 		Config: config.Config{AllowedOrigins: []string{"http://" + testHost}}, Logger: log.New(io.Discard, "", 0), DB: db,
 		Files: root, Codex: &app.CodexClients{}, Model: model, Jobs: jobstore.New(db), Library: librarystore.New(db),
@@ -47,6 +50,21 @@ func desktopHandler(t *testing.T, page fstest.MapFS) http.Handler {
 		t.Fatal(err)
 	}
 	return desktop.serve(routes)
+}
+
+// accountOfTheTest is the link with an account of a site no request reaches: the guards and the refusals answer first.
+func accountOfTheTest(t *testing.T) *accountLink {
+	t.Helper()
+	saved, err := loadSettings(filepath.Join(t.TempDir(), "settings.json"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secrets := newShellSecrets(func(ControlMessage) error { return nil }, domain.SecretsInFile, nil, time.Second)
+	link, err := newAccountLink("https://site.example.test", 24567, "1.3.0", secrets, saved, eraseShell{}, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return link
 }
 
 func serveRequest(handler http.Handler, method, target, host string, headers map[string]string) *httptest.ResponseRecorder {
@@ -65,7 +83,7 @@ func serveRequest(handler http.Handler, method, target, host string, headers map
 func TestARequestForAnotherHostGets421(t *testing.T) {
 	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
 	for _, host := range []string{"evil.example", "localhost:43123", "127.0.0.1", "127.0.0.1:1", "[::1]:43123"} {
-		for _, target := range []string{"/", "/api/v1/projects", "/healthz", "/api/v1/desktop/session"} {
+		for _, target := range []string{"/", "/api/v1/projects", "/healthz", "/api/v1/desktop/session", "/desktop/link/callback?code=c&state=s"} {
 			response := serveRequest(handler, http.MethodGet, target, host, nil)
 			if response.Code != http.StatusMisdirectedRequest || response.Body.Len() != 0 {
 				t.Errorf("Host %s, %s = %d %q; want 421 without a body", host, target, response.Code, response.Body.String())
@@ -84,6 +102,14 @@ func TestAWriteOrTheTimelineFromAnotherOriginIsRefused(t *testing.T) {
 	for _, request := range []struct{ method, target string }{
 		{http.MethodPost, "/api/v1/projects"},
 		{http.MethodPost, "/api/v1/desktop/session"},
+		// «Свой ИИ» and its key (specs/2026-11-13-desk-secrets.md SE2.5).
+		{http.MethodPut, "/api/v1/desktop/ai"},
+		{http.MethodPut, "/api/v1/desktop/ai/key"},
+		{http.MethodDelete, "/api/v1/desktop/ai/key"},
+		// The link with an account (specs/2026-11-13-desk-account.md AC1.1, AC2.4).
+		{http.MethodPost, "/api/v1/desktop/account/link"},
+		{http.MethodDelete, "/api/v1/desktop/account/link"},
+		{http.MethodDelete, "/api/v1/desktop/account"},
 		{http.MethodGet, "/api/v1/projects/00000000-0000-4000-8000-000000000001/jobs/00000000-0000-4000-8000-000000000002/agent-timeline/stream"},
 	} {
 		for _, origin := range []string{"http://evil.example", "http://localhost:43123", "null"} {
@@ -99,15 +125,24 @@ func TestAWriteOrTheTimelineFromAnotherOriginIsRefused(t *testing.T) {
 			}
 		}
 	}
-	// No Origin and no same-origin fetch metadata is no window either.
-	if response := serveRequest(handler, http.MethodPost, "/api/v1/desktop/session", testHost, nil); response.Code != http.StatusForbidden {
-		t.Fatalf("a session without Origin = %d; want 403", response.Code)
-	}
-	// The window with its Origin and no CSRF token is refused too.
-	if response := serveRequest(handler, http.MethodPost, "/api/v1/desktop/session", testHost, map[string]string{
-		"Origin": "http://" + testHost,
-	}); response.Code != http.StatusForbidden {
-		t.Fatalf("a session without CSRF = %d; want 403", response.Code)
+	// No Origin and no same-origin fetch metadata is no window either; the window with its Origin and no CSRF token is
+	// refused too.
+	for _, request := range []struct{ method, target string }{
+		{http.MethodPost, "/api/v1/desktop/session"},
+		{http.MethodPut, "/api/v1/desktop/ai"},
+		{http.MethodPut, "/api/v1/desktop/ai/key"},
+		{http.MethodDelete, "/api/v1/desktop/ai/key"},
+		{http.MethodPost, "/api/v1/desktop/account/link"},
+		{http.MethodDelete, "/api/v1/desktop/account"},
+	} {
+		if response := serveRequest(handler, request.method, request.target, testHost, nil); response.Code != http.StatusForbidden {
+			t.Fatalf("%s %s without Origin = %d; want 403", request.method, request.target, response.Code)
+		}
+		if response := serveRequest(handler, request.method, request.target, testHost, map[string]string{
+			"Origin": "http://" + testHost,
+		}); response.Code != http.StatusForbidden {
+			t.Fatalf("%s %s without CSRF = %d; want 403", request.method, request.target, response.Code)
+		}
 	}
 }
 
@@ -169,5 +204,68 @@ func TestTheWindowAsksWhoTheAuthorIs(t *testing.T) {
 	response := serveRequest(handler, http.MethodGet, "/api/v1/auth/session", testHost, nil)
 	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"auth.session_required"`) {
 		t.Fatalf("getCurrentUser without a session = %d %s", response.Code, response.Body.String())
+	}
+}
+
+// specs/2026-11-13-desk-account.md AC1.2: the return of /link is the one route without the session of the window; a
+// request it does not take — another method, no waiting, a code of another shape, another query — is 403 with the page
+// of the refusal, under the headers of the page and not kept by the browser, and the page repeats nothing of the request.
+func TestTheReturnOfTheLinkRefusesWithOnePage(t *testing.T) {
+	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	const code, state = "code-of-the-test-north-00000000000000000000", "state-of-the-test-north-0000000000000000000"
+	for _, request := range []struct{ method, target string }{
+		{http.MethodGet, "/desktop/link/callback?code=" + code + "&state=" + state},
+		{http.MethodPost, "/desktop/link/callback?code=" + code + "&state=" + state},
+		{http.MethodHead, "/desktop/link/callback?code=" + code + "&state=" + state},
+		{http.MethodGet, "/desktop/link/callback?code=short&state=" + state},
+		{http.MethodGet, "/desktop/link/callback?code=" + code},
+		{http.MethodGet, "/desktop/link/callback?code=" + code + "&state=" + state + "&state=" + state},
+		{http.MethodGet, "/desktop/link/callback?code=" + code + "&state=" + state + "&more=1"},
+		{http.MethodGet, "/desktop/link/callback"},
+	} {
+		response := serveRequest(handler, request.method, request.target, testHost, nil)
+		body := response.Body.String()
+		if response.Code != http.StatusForbidden || response.Header().Get("Cache-Control") != "no-store" ||
+			response.Header().Get("Content-Security-Policy") == "" || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s %s = %d %v", request.method, request.target, response.Code, response.Header())
+		}
+		if request.method == http.MethodHead {
+			continue
+		}
+		if !strings.Contains(body, "Эта ссылка связи уже не действует. Вернитесь в CanonKeeper и свяжите приложение ещё раз") ||
+			strings.Contains(body, "<script") || strings.Contains(body, "style") || strings.Contains(body, code) || strings.Contains(body, "state-of") ||
+			strings.Contains(body, "short") {
+			t.Errorf("%s %s = %s", request.method, request.target, body)
+		}
+	}
+}
+
+// specs/2026-11-13-desk-account.md AC1.1, AC2.1, AC2.4: the operations of the link are the window's — without its session
+// a read and a write with the Origin and the CSRF token of the window are the 401 of the site, and nothing is started.
+func TestTheOperationsOfTheLinkNeedTheSessionOfTheWindow(t *testing.T) {
+	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	csrf := serveRequest(handler, http.MethodGet, "/api/v1/auth/csrf", testHost, nil)
+	var token struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if csrf.Code != http.StatusOK || json.Unmarshal(csrf.Body.Bytes(), &token) != nil || token.CSRFToken == "" {
+		t.Fatalf("csrf = %d %s", csrf.Code, csrf.Body.String())
+	}
+	headers := map[string]string{"Origin": "http://" + testHost, "X-CSRF-Token": token.CSRFToken, "Content-Type": "application/json"}
+	for _, cookie := range csrf.Result().Cookies() {
+		headers["Cookie"] = cookie.Name + "=" + cookie.Value
+	}
+	for _, request := range []struct{ method, target string }{
+		{http.MethodGet, "/api/v1/desktop/account"},
+		{http.MethodGet, "/api/v1/desktop/account?fresh=true"},
+		{http.MethodPost, "/api/v1/desktop/account/link"},
+		{http.MethodDelete, "/api/v1/desktop/account/link"},
+		{http.MethodDelete, "/api/v1/desktop/account"},
+	} {
+		response := serveRequest(handler, request.method, request.target, testHost, headers)
+		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"auth.session_required"`) ||
+			strings.Contains(response.Body.String(), "/link?") {
+			t.Errorf("%s %s without the session = %d %s", request.method, request.target, response.Code, response.Body.String())
+		}
 	}
 }

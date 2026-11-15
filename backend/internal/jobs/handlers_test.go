@@ -319,3 +319,37 @@ func authorizeJobRequest(req *http.Request) {
 	req.Header.Set("Origin", "https://app.example.test")
 	req.Header.Set("X-CSRF-Token", "csrf-token")
 }
+
+// questionsOfTheTest say the unit of every question came back.
+type questionsOfTheTest struct{}
+
+func (questionsOfTheTest) Returned(context.Context, Job) string { return "yes" }
+
+// specs/2026-11-13-desk-account-ai.md AI2.9: getJob of a failed chat turn of the site says nothing of the question — the site
+// has no port of the questions and its answer is the same as before —; a build that counts its turns on a site says it.
+func TestOnlyABuildThatCountsItsTurnsSaysWhetherTheQuestionCameBack(t *testing.T) {
+	jobError := Error{Code: "model.turn_failed", Message: "The turn failed."}
+	turn := Job{
+		ID: "job-1", ProjectID: testProjectID, Kind: KindResearchChatTurn, Status: StatusFailed, Error: &jobError,
+		Subject:       ResearchChatTurnSubject{Type: KindResearchChatTurn, ProjectID: testProjectID, ChatID: "chat-1", TurnID: "turn-1"},
+		CreatorUserID: "user-1", CreatedAt: jobTestNow(), UpdatedAt: jobTestNow(),
+	}
+	service := &fakeJobHandlerService{job: turn}
+	for name, handlers := range map[string]Handlers{
+		"the site":  NewHandlers(service, fakeJobHandlerCurrentUser{user: auth.User{ID: "user-1"}}, nil),
+		"the build": NewHandlers(service, fakeJobHandlerCurrentUser{user: auth.User{ID: "user-1"}}, nil).WithQuestions(questionsOfTheTest{}),
+	} {
+		router := chi.NewRouter()
+		handlers.Mount(router)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/jobs/job-1", nil))
+		var answer map[string]any
+		if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &answer) != nil {
+			t.Fatalf("%s: getJob = %d", name, recorder.Code)
+		}
+		returned, said := answer["questionReturned"]
+		if name == "the site" && said || name == "the build" && returned != "yes" {
+			t.Errorf("%s: questionReturned = %v (%v)", name, returned, said)
+		}
+	}
+}

@@ -66,6 +66,12 @@ func (tools *ReadTools) withAuthorWords(ctx context.Context, call ToolContext, s
 	if len(records) == 0 {
 		return output, nil
 	}
+	// The records shown go with the answer (specs/2026-11-14-desk-journal.md JR1.3).
+	for _, record := range records[:min(len(records), maxAuthorWordsShown)] {
+		if saga.names {
+			saga.shown.Memory = append(saga.shown.Memory, record.ID)
+		}
+	}
 	return strings.TrimRight(output, "\n") + "\n\n" + renderAuthorWords(records, saga.version()), nil
 }
 

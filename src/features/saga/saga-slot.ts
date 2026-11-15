@@ -31,6 +31,11 @@ export interface MaterialsImport {
   saved: ReactNode;
   /** The way to add a file or a text. */
   add: ReactNode;
+  /**
+   * A second, quieter way in beside «Записать самому» — «Из Obsidian…» of the app (specs/2026-11-15-desk-obsidian-web.md
+   * OW1.2). It changes neither the words of an empty list nor the look of «Записать самому»: those go by `add`.
+   */
+  more?: ReactNode;
 }
 
 /**

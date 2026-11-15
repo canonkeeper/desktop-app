@@ -18,6 +18,8 @@ export interface Hidden {
   readonly allowed?: readonly string[];
   /** Only the places of these paths of the repository read it so; everywhere when absent. */
   readonly where?: readonly string[];
+  /** The places of these paths, where it is the author's word for the thing: no other place keeps it. */
+  readonly except?: readonly string[];
 }
 
 /** A row of the table: a thing, the word of the author for it, the words he does not read for it. */
@@ -35,6 +37,16 @@ const drawings = [
   'src/features/drawing/', 'src/entities/illustrations/', 'src/entities/illustration-access/', 'src/entities/drawings/',
   'src/features/manuscript/reader/illustrations/',
 ];
+
+/**
+ * The part «Помощник» of «Настройки» of the desktop app — «Свой ИИ» and its check of the link (specs/2026-11-13-desk-helper-web.md
+ * HW4.1): there the author chooses his provider, its key and its models, and «ИИ», «модель», «ключ», «токены» are his words. So
+ * are they in the block of the reading of the books by «Свой ИИ» (specs/2026-11-13-desk-consent-web.md RW4.1): its line and its
+ * windows are a screen of «Свой ИИ», though they stand on the shelf, in the chat and on the map.
+ */
+const helperPart = ['src/editions/desktop/settings/helper/', 'src/editions/desktop/reading/'];
+/** The part «Журнал» says the tokens of the requests of «Свой ИИ» in its details (specs/2026-11-14-desk-journal.md JR3.4). */
+const logPart = 'src/editions/desktop/settings/log/';
 
 /** The rows of the plan (DC1.1) and of the slices of the waves 5–7, then the words of the guards they took over. */
 export const dictionary: readonly Word[] = [
@@ -94,8 +106,8 @@ export const dictionary: readonly Word[] = [
   },
   {
     thing: 'кто отвечает, пишет, рисует', word: 'помощник', hidden: [
-      { says: '«ИИ»', pattern: /(?<!\p{L})ИИ(?!\p{L})/u, sample: 'до действия ИИ' },
-      { says: '«модель»', pattern: /(?<!\p{L})модел(?:ь|и|ью|ей|ям|ями|ях)(?!\p{L})/iu, sample: 'Что уйдёт в модель', allowed: ['Модельный ряд'] },
+      { says: '«ИИ»', pattern: /(?<!\p{L})ИИ(?!\p{L})/u, sample: 'до действия ИИ', except: helperPart },
+      { says: '«модель»', pattern: /(?<!\p{L})модел(?:ь|и|ью|ей|ям|ями|ях)(?!\p{L})/iu, sample: 'Что уйдёт в модель', allowed: ['Модельный ряд'], except: helperPart },
       { says: '«агент»', pattern: /(?<!\p{L})агент/iu, sample: 'Агент письма' },
       // With a capital letter «Художник» is the name of a tier.
       { says: '«художник» как действующее лицо', pattern: /(?<!\p{L})художник/u, sample: 'Так помощник описал рисунок художнику', allowed: ['на тарифах «Художник» и выше'] },
@@ -382,6 +394,35 @@ export const dictionary: readonly Word[] = [
       { says: '«не настроен», «отключён» о помощнике', pattern: /помощник\p{L}*\s+(?:не\s+настроен|отключ)/iu, sample: 'Помощник не настроен' },
     ],
   },
+  {
+    // specs/2026-11-13-desk-helper-web.md HW4.1 (board 44·25, desk-boards2 BX: «токены» only in «Дополнительно» of «Свой ИИ»).
+    thing: 'чем провайдер меряет текст', word: '«токены» — только в части «Свой ИИ» и в подробностях «Журнала»; вне их — знаки и главы', hidden: [
+      { says: '«токены»', pattern: /(?<!\p{L})токен/iu, sample: 'Токенов на вопрос', except: [...helperPart, logPart] },
+    ],
+  },
+  {
+    // The key of the provider is a word of «Свой ИИ» alone in the app; the site's tariff key is its own thing.
+    thing: 'ключ провайдера в приложении', word: '«ключ» — только в части «Свой ИИ»', hidden: [
+      {
+        says: '«ключ» в приложении вне части «Свой ИИ»', pattern: /(?<!\p{L})ключ(?:а|у|ом|е|и|ей|ам|ами|ах)?(?!\p{L})/iu,
+        sample: 'Ключ сохранён', allowed: ['Помощник подключён', 'Подключить помощника'], where: ['src/editions/desktop/'], except: helperPart,
+      },
+    ],
+  },
+  {
+    // specs/2026-11-15-desk-obsidian-web.md OW7.3 (desk-boards7: one name of the store of the system): the folder of a vault is
+    // «папка Obsidian»; «хранилище» is the app's word only for «хранилище паролей системы» and, where the author must know the
+    // word of Obsidian itself, for «хранилище Obsidian» — in any case.
+    thing: 'хранилище паролей системы; папка хранилища Obsidian', word: '«хранилище паролей системы», «хранилище Obsidian»; иначе «папка Obsidian»', hidden: [
+      {
+        says: '«хранилище» в приложении вне «хранилища паролей» и «хранилища Obsidian»',
+        pattern: /(?<!\p{L})хранилищ\p{L}*(?!\p{L})(?!\s+(?:паролей|Obsidian))/iu,
+        sample: 'Хранилище заметок',
+        allowed: ['Хранится в хранилище паролей системы', 'в системе нет хранилища паролей', 'Выберите папку хранилища Obsidian', 'в хранилище Obsidian'],
+        where: ['src/editions/desktop/'],
+      },
+    ],
+  },
 ];
 
 /** Every hidden word of the table, once by what it says. */
@@ -389,6 +430,7 @@ export const hiddenWords: readonly Hidden[] = [...new Map(dictionary.flatMap((ro
 
 /** Whether a hidden word is read so at a path of the repository. */
 export function readsAt(word: Hidden, path: string) {
+  if (word.except?.some((place) => path.startsWith(place))) return false;
   return !word.where || word.where.some((place) => path.startsWith(place));
 }
 

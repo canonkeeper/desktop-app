@@ -345,21 +345,28 @@ RETURNING b.id, b.project_id, b.title, b.subtitle, b.cover_color, b."order",
           b.purge_deadline;
 
 -- name: ListChaptersByBook :many
-SELECT c.id, c.book_id, c.title, c."order", c.status, c.revision,
-       c.published_revision, c.published_at, c.publish_error, c.deleted_at,
-       c.purge_after, c.created_at, c.updated_at, c.lifecycle_generation,
-       c.hard_purge_started_at, c.governance_retention_started_at,
-       c.purge_deadline, c.project_id
-FROM chapters c
-JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
-JOIN projects p ON p.id = c.project_id
-WHERE c.project_id = sqlc.arg(project_id)
-  AND c.book_id = sqlc.arg(book_id)
-  AND c.deleted_at IS NULL
-  AND b.deleted_at IS NULL
-  AND p.deleted_at IS NULL
-  AND (NOT sqlc.arg(has_cursor)::boolean
-    OR (c."order", c.id) > (sqlc.arg(cursor_order)::integer, sqlc.arg(cursor_id)::uuid))
+-- The place of a chapter is its rank in the contents of the reader — the living chapters of the book with a published
+-- text —, counted before the page is cut: one and the chapters of the published text before it, so a chapter without a
+-- published text, which the reader does not show, takes the place it would have and leaves no gap
+-- (specs/2026-11-15-reader-chapter-number.md RN1.2).
+WITH living AS (
+  SELECT c.id,
+         (1 + count(*) FILTER (WHERE c.published_revision IS NOT NULL)
+           OVER (ORDER BY c."order", c.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING))::int AS place
+  FROM chapters c
+  JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
+  JOIN projects p ON p.id = c.project_id
+  WHERE c.project_id = sqlc.arg(project_id)
+    AND c.book_id = sqlc.arg(book_id)
+    AND c.deleted_at IS NULL
+    AND b.deleted_at IS NULL
+    AND p.deleted_at IS NULL
+)
+SELECT sqlc.embed(c), living.place
+FROM living
+JOIN chapters c ON c.id = living.id
+WHERE NOT sqlc.arg(has_cursor)::boolean
+   OR (c."order", c.id) > (sqlc.arg(cursor_order)::integer, sqlc.arg(cursor_id)::uuid)
 ORDER BY c."order" ASC, c.id ASC
 LIMIT sqlc.arg(limit_count);
 
@@ -380,16 +387,14 @@ WHERE c.project_id = sqlc.arg(project_id)
   AND p.deleted_at IS NULL;
 
 -- name: GetChapterWithNavigationByID :one
-WITH navigation AS (
-  SELECT c.id,
-         row_number() OVER (ORDER BY c."order", c.id)::int AS position,
-         count(*) OVER ()::int AS total,
-         lag(c.id) OVER (ORDER BY c."order", c.id)::uuid AS previous_id,
-         coalesce(lag(c.title) OVER (ORDER BY c."order", c.id), '')::text AS previous_title,
-         coalesce(lag(c."order") OVER (ORDER BY c."order", c.id), 0)::int AS previous_order,
-         lead(c.id) OVER (ORDER BY c."order", c.id)::uuid AS next_id,
-         coalesce(lead(c.title) OVER (ORDER BY c."order", c.id), '')::text AS next_title,
-         coalesce(lead(c."order") OVER (ORDER BY c."order", c.id), 0)::int AS next_order
+-- The position of a chapter is its place in the contents of the reader — the living chapters of the book with a published
+-- text — and its neighbours are the chapters of those contents before and after it, as ListChaptersByBook counts them; a
+-- chapter without a published text is read at the place it would take (specs/2026-11-15-reader-chapter-number.md RN1.2).
+WITH placed AS (
+  SELECT c.id, c.title, c."order",
+         (1 + count(*) FILTER (WHERE c.published_revision IS NOT NULL)
+           OVER (ORDER BY c."order", c.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING))::int AS place,
+         count(*) FILTER (WHERE c.published_revision IS NOT NULL) OVER ()::int AS total
   FROM chapters c
   JOIN books b ON b.id = c.book_id AND b.project_id = c.project_id
   JOIN projects p ON p.id = c.project_id
@@ -398,11 +403,22 @@ WITH navigation AS (
     AND c.deleted_at IS NULL
     AND b.deleted_at IS NULL
     AND p.deleted_at IS NULL
+    AND (c.published_revision IS NOT NULL OR c.id = sqlc.arg(chapter_id))
+), navigation AS (
+  SELECT id, place AS position, total,
+         (lag(id) OVER reading)::uuid AS previous_id,
+         coalesce(lag(title) OVER reading, '')::text AS previous_title,
+         coalesce(lag(place) OVER reading, 0)::int AS previous_place,
+         (lead(id) OVER reading)::uuid AS next_id,
+         coalesce(lead(title) OVER reading, '')::text AS next_title,
+         coalesce(lead(place) OVER reading, 0)::int AS next_place
+  FROM placed
+  WINDOW reading AS (ORDER BY "order", id)
 )
 SELECT sqlc.embed(c),
        nav.position, nav.total,
-       nav.previous_id, nav.previous_title, nav.previous_order,
-       nav.next_id, nav.next_title, nav.next_order
+       nav.previous_id, nav.previous_title, nav.previous_place,
+       nav.next_id, nav.next_title, nav.next_place
 FROM navigation AS nav
 JOIN chapters c ON c.id = nav.id
 WHERE c.id = sqlc.arg(chapter_id);

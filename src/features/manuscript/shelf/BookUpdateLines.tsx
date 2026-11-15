@@ -14,6 +14,7 @@ import { Dialog } from '../../../ui/overlays/Dialog';
 import { manuscriptJobQuery, useManuscriptJobQuery } from '../api';
 import { BookUpdatePreview, type BookUpdatePreviewResult } from './BookUpdatePreview';
 import { bookUpdateSummary, revertTermLine, updateLine } from './book-revert-words';
+import { useBookUpdateWords } from './book-update-words';
 import { importFailureMessage } from './import-failure';
 import styles from './ShelfLayers.module.css';
 
@@ -47,7 +48,8 @@ export function updateWords(result: ImportResult) {
  * The line of the result of an update of a book from a file, wherever the author is when it ends (specs/2026-11-11-ux7-trash.md
  * TB4.1): «Книга «…» обновлена: изменена 1 глава · Что изменилось». The shell follows the updates the server says go on in
  * the saga it shows — on any page and on any device of the author — until each ends; the browser keeps nothing of them
- * (specs/2026-11-12-ux10-book-revert.md BR3.4). A failed or stopped update says so.
+ * (specs/2026-11-12-ux10-book-revert.md BR3.4). A failed or stopped update says so. An update the edition knows it started from a
+ * source of its own says it in the lines of that source (specs/2026-11-15-desk-obsidian-book-web.md OU3.2).
  */
 export function useBookUpdateLines({ api, books, jobs, onChanges, toasts }: {
   api: Pick<ManuscriptApiClient, 'getJob'>;
@@ -69,6 +71,7 @@ export function useBookUpdateLines({ api, books, jobs, onChanges, toasts }: {
     }
   }
   const running = [...followed.current.entries()];
+  const linesOf = useBookUpdateWords().useSourceLines();
   // The query of the page that started the update: the page takes its line of the update away in the frame this line
   // comes (specs/2026-11-12-ux12-shell.md SH2.2).
   const updates = useQueries({ queries: running.map(([jobId]) => manuscriptJobQuery(api, jobId, true)) });
@@ -82,16 +85,22 @@ export function useBookUpdateLines({ api, books, jobs, onChanges, toasts }: {
       // One line for each update that ended.
       if (!followed.current.delete(jobId)) continue;
       told.current.add(jobId);
+      const source = linesOf(jobId);
       const book = update.title ? `Книга «${update.title}»` : 'Книга';
       if (job!.status === 'succeeded' && job!.result?.type === 'import') {
         toasts.push({
-          message: `${book} обновлена: ${updateWords(job!.result)}`,
+          message: source?.done ? source.done(book, updateWords(job!.result)) : `${book} обновлена: ${updateWords(job!.result)}`,
           tone: 'success',
           persistent: true,
           action: <Button onClick={() => onChanges({ bookId: update.bookId, projectId: update.projectId, jobId })} size="sm" variant="ghost">Что изменилось</Button>,
         });
       } else if (job!.status === 'canceled') {
         toasts.push({ message: `Обновление ${update.title ? `книги «${update.title}»` : 'книги'} остановлено.`, tone: 'neutral' });
+      } else if (source?.failed) {
+        // The line of the source says how to repeat the update; «Написать нам» goes with the code where the build has it (SH2.3).
+        toasts.push({
+          message: source.failed(book), tone: 'error', action: writeToUs({ topic: 'bug', code: job!.error?.requestId, draft: source.failed(book) }),
+        });
       } else {
         // A reason in the file the author fixes there; a failure on our side says how to repeat and gives «Написать нам»
         // with the code (SH2.3): the browser keeps no file once the update went, so the repeat is the file chosen again.
@@ -128,6 +137,7 @@ export function BookUpdateChanges({ api, asking, book, canRevert, jobId, onClose
   onRevert: () => void;
 }) {
   const job = useManuscriptJobQuery(api, jobId ?? '', Boolean(jobId)).data;
+  const words = useBookUpdateWords();
   const result = job?.result?.type === 'import' && job.result.preview ? job.result as BookUpdatePreviewResult : null;
   const update = book?.update;
   const title = book ? `Что изменилось в «${book.title}»` : 'Что изменилось в книге';
@@ -139,7 +149,7 @@ export function BookUpdateChanges({ api, asking, book, canRevert, jobId, onClose
           <h2>{title}</h2>
         </div>
         <div className={styles.modalBody}>
-          {update ? <p className={styles.modalCopy}>{updateLine(update)}.</p> : null}
+          {update ? <p className={styles.modalCopy}>{updateLine(update, Date.now(), words)}.</p> : null}
           {result ? <BookUpdatePreview done result={result} /> : update ? (
             <p className={styles.modalCopy}>Книга обновлена: {bookUpdateSummary(update)}.</p>
           ) : job || !jobId ? (

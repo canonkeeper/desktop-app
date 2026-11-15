@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagadraft"
@@ -140,6 +141,8 @@ type ReadTools struct {
 	attachments AttachmentReader
 	// memory reads the author's words an answer brings about what it is asked about (specs/2026-11-11-chat-corrections.md).
 	memory AuthorMemoryReader
+	// naming hears what an answer shows (specs/2026-11-14-desk-journal.md JR1.4); nil at the site.
+	naming Naming
 }
 
 // NewReadTools builds the chat tools; usage may be nil where nothing records spend.
@@ -190,6 +193,8 @@ func (tools *ReadTools) Search(ctx context.Context, call ToolContext, input Sear
 		limit = defaultSearchLimit
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		// The list of the chapters with matches names keys and counts; only the excerpts shown are text (JR1.3).
+		saga.shownAs = ""
 		saga.about(sagamemory.NamedWords(input.Queries...), nil)
 		from, to, err := saga.chapterRange(input.From, input.To)
 		if err != nil {
@@ -232,7 +237,7 @@ func (tools *ReadTools) Search(ctx context.Context, call ToolContext, input Sear
 			return "", err
 		}
 		for _, text := range input.Queries {
-			writeMaterialList(&out, materialMatches(records, text), cards.Glossary)
+			writeMaterialList(&out, saga, materialMatches(records, text), cards.Glossary)
 		}
 		return out.String(), nil
 	})
@@ -247,6 +252,7 @@ func (tools *ReadTools) Read(ctx context.Context, call ToolContext, input ReadIn
 		return "", argumentError("$", "номера абзацев начинаются с 1, radius от 0 до %d", maxReadRadius)
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		saga.shownAs = ""
 		chapter, err := saga.chapter("$.chapter", input.Chapter)
 		if err != nil {
 			return "", err
@@ -279,6 +285,7 @@ func (tools *ReadTools) Read(ctx context.Context, call ToolContext, input ReadIn
 			return "", err
 		}
 		saga.use(chapter)
+		saga.show(chapter, disclosure.Paragraphs, first, last)
 		return renderRead(chapter, first, last), nil
 	})
 }
@@ -297,6 +304,11 @@ func (tools *ReadTools) Chapters(ctx context.Context, call ToolContext, input Ch
 		return "", argumentError("$.detail", "допустимы titles, summary, card")
 	}
 	return tools.run(ctx, call, func(saga *sagaScope) (string, error) {
+		// The titles of the chapters, or what the helper learned of them by their cards (JR1.3).
+		saga.shownAs = disclosure.Titles
+		if input.Detail != ChaptersTitles {
+			saga.shownAs = disclosure.Cards
+		}
 		from, to, err := saga.chapterRange(input.From, input.To)
 		if err != nil {
 			return "", err
@@ -336,6 +348,7 @@ func (tools *ReadTools) run(ctx context.Context, call ToolContext, render func(*
 	}
 	saga := &sagaScope{
 		outline: outline, authority: authority, used: map[int]bool{}, end: momentEnd(authority, outline.Version.Chapters),
+		shownAs: disclosure.Cards, names: tools.naming != nil,
 		loadCards: func(from, to int, parts sagamemory.CardParts) (*sagamemory.CardSet, error) {
 			return tools.saga.Cards(ctx, outline, from, to, parts)
 		},
@@ -351,6 +364,11 @@ func (tools *ReadTools) run(ctx context.Context, call ToolContext, render func(*
 		return "", err
 	}
 	if err := tools.repository.RetainChapters(ctx, call, authority, saga.retained()); err != nil {
+		return "", err
+	}
+	// What the answer shows is named after the manifests and before the handler answers the app-server, which sends the
+	// next request at once (JR1.4); a stale source named nothing — it returned above.
+	if err := name(ctx, tools.naming, authority, saga.shown); err != nil {
 		return "", err
 	}
 	return output, nil
@@ -371,6 +389,12 @@ type sagaScope struct {
 	// it (specs/2026-11-11-chat-corrections.md CR1.2).
 	named    sagamemory.Named
 	glossary *sagamemory.Glossary
+	// shown is what the answer gives Codex of the saga (specs/2026-11-14-desk-journal.md JR1.3); shownAs is how a chapter the
+	// answer uses is shown — what the helper learned of it from its card, unless the tool names it itself. names: a port hears
+	// it; without one (the site) nothing is kept.
+	shown   disclosure.Named
+	shownAs disclosure.Precision
+	names   bool
 }
 
 func (saga *sagaScope) version() *sagamemory.Version { return saga.outline.Version }
@@ -391,7 +415,12 @@ func momentEnd(authority researchdomain.ReadAuthority, chapters []sagamemory.Cha
 // OutcomeAfterPlace refuses a chapter after the place of the draft to its helper: its events have not happened yet.
 const OutcomeAfterPlace = "after_place"
 
-func (saga *sagaScope) use(chapter *sagamemory.Chapter) { saga.used[chapter.Index] = true }
+func (saga *sagaScope) use(chapter *sagamemory.Chapter) {
+	saga.used[chapter.Index] = true
+	if saga.names && saga.shownAs != "" {
+		saga.show(chapter, saga.shownAs, 0, 0)
+	}
+}
 
 func (saga *sagaScope) retained() []ChapterRevision {
 	chapters := make([]ChapterRevision, 0, len(saga.used))

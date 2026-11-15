@@ -31,6 +31,20 @@ type Handlers struct {
 	service        JobService
 	currentUser    CurrentUserService
 	allowedOrigins []string
+	questions      Questions
+}
+
+// Questions say whether the unit of the question of a chat turn came back (specs/2026-11-13-desk-account-ai.md AI2.9):
+// yes, no, pending — a late answer may still take it back —, or none; a build that counts its turns on a site answers it.
+// The site has none, and its Jobs say nothing of it.
+type Questions interface {
+	Returned(ctx context.Context, job Job) string
+}
+
+// WithQuestions makes getJob of a chat turn say whether the unit of its question came back.
+func (h Handlers) WithQuestions(questions Questions) Handlers {
+	h.questions = questions
+	return h
 }
 
 type actorUserIDContextKey struct{}
@@ -86,6 +100,9 @@ func (h Handlers) GetJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJobServiceError(w, r.Context(), err)
 		return
+	}
+	if h.questions != nil && job.Kind == KindResearchChatTurn {
+		job.QuestionReturned = h.questions.Returned(r.Context(), job)
 	}
 	writeJobResponse(w, http.StatusOK, job, actorUserID)
 }

@@ -32,6 +32,12 @@ func syntheticBook(chapters, paragraphs int) []byte {
 // importBook sends a book file to importBookFile and returns the id of its Job.
 func (browser *client) importBook(projectID string, book []byte) string {
 	browser.t.Helper()
+	return browser.importBookKeyed(projectID, book, "import-of-the-crash-test-0001")
+}
+
+// importBookKeyed is importBook with its own key of the request.
+func (browser *client) importBookKeyed(projectID string, book []byte, key string) string {
+	browser.t.Helper()
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
 	part, _ := form.CreateFormFile("file", "severny-predel.md")
@@ -42,7 +48,7 @@ func (browser *client) importBook(projectID string, book []byte) string {
 	request.Header.Set("Origin", browser.origin)
 	request.Header.Set("Content-Type", form.FormDataContentType())
 	request.Header.Set("X-CSRF-Token", browser.csrf())
-	request.Header.Set("Idempotency-Key", "import-of-the-crash-test-0001")
+	request.Header.Set("Idempotency-Key", key)
 	request.AddCookie(&http.Cookie{Name: "ck_session", Value: browser.cookie})
 	response, err := browser.http.Do(request)
 	if err != nil {

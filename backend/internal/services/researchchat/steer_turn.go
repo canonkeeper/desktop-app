@@ -9,6 +9,7 @@ import (
 
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 )
@@ -52,8 +53,10 @@ type BeginSteerCommand struct {
 // sent again. An empty ProviderTurnID is a turn that has not started.
 type SteerTarget struct {
 	// Flow is the app-server of the chat session's kind.
-	Flow           agent.Flow
-	RecordID       string
+	Flow     agent.Flow
+	RecordID string
+	// RepeatKey is the key of the repeat of the correction, the same for every sending of it (quota.Steer.Key).
+	RepeatKey      string
 	ProjectID      string
 	ChatID         string
 	TurnID         string
@@ -101,6 +104,14 @@ type SteerTurn struct {
 	steer      TurnSteerer
 	clock      Clock
 	delays     []time.Duration
+	naming     Naming
+}
+
+// WithNaming makes a correction be named before turn/steer and taken back when Codex refused it
+// (specs/2026-11-14-desk-journal.md JR1.3).
+func (useCase *SteerTurn) WithNaming(naming Naming) *SteerTurn {
+	useCase.naming = naming
+	return useCase
 }
 
 func NewSteerTurn(repository SteerRepository, steer TurnSteerer, clock Clock) *SteerTurn {
@@ -168,7 +179,12 @@ func (useCase *SteerTurn) Execute(ctx context.Context, actor researchdomain.Acto
 	}
 	work, cancel := context.WithTimeout(context.WithoutCancel(ctx), steerBudget)
 	defer cancel()
-	sent := useCase.send(work, target, steerID, encoded)
+	named := ""
+	sent := useCase.send(work, target, steerID, encoded, &named)
+	if sent != nil && named != "" {
+		// Codex did not take the correction: what it named goes back, unless a sending of the thread took it already.
+		sent = errors.Join(sent, useCase.naming.Withdraw(work, named))
+	}
 	if err := useCase.repository.FinishSteer(work, target, sent == nil); err != nil {
 		return "", errors.Join(sent, err)
 	}
@@ -180,9 +196,17 @@ func (useCase *SteerTurn) Execute(ctx context.Context, actor researchdomain.Acto
 
 // send retries a turn that works but takes no correction for a moment and stops as soon as the Job
 // has ended (R2.1, R2.2).
-func (useCase *SteerTurn) send(ctx context.Context, target SteerTarget, steerID, input string) error {
+func (useCase *SteerTurn) send(ctx context.Context, target SteerTarget, steerID, input string, named *string) error {
 	for attempt := 0; ; attempt++ {
 		if target.ProviderTurnID != "" {
+			if useCase.naming != nil && *named == "" {
+				// The correction is named before Codex can send it (JR1.3).
+				id, err := useCase.naming.Name(ctx, target.RootThreadID, target.ProjectID, disclosure.Named{Correction: true})
+				if err != nil {
+					return err
+				}
+				*named = id
+			}
 			err := useCase.steer(ctx, TurnSteerRequest{
 				Flow: target.Flow, RootThreadID: target.RootThreadID, TurnID: target.ProviderTurnID, ClientMessageID: steerID, Input: input,
 			})

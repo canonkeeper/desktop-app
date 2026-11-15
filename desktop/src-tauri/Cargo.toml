@@ -20,7 +20,25 @@ tauri-build = { version = "2.7.4", features = [] }
 canonkeeper-desktop-core = { path = "crates/core" }
 tauri = { version = "2.12.5", features = [] }
 tauri-plugin-single-instance = "2.5.5"
+# Installs an update the core downloaded and checked: NSIS on Windows, the AppImage on Linux
+# (specs/2026-11-13-desk-updates.md UB2.4, UB2.5); the network and the checks are the core's.
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["rustls-tls"] }
+# The configuration of the plugins Tauri embeds into the program is JSON.
+serde_json = "1"
 open = { version = "5.3.0", features = ["shellexecute-on-windows"] }
+
+# The system window that chooses the folder of an Obsidian vault (specs/2026-11-13-desk-obsidian.md OB1.2): on Linux the
+# chooser of the GTK the window runs on; on Windows the dialog of the system. Neither gives a page a command.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18.2"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rfd = { version = "0.15.4", default-features = false }
+
+[features]
+# The smoke build of an update in CI (specs/2026-11-13-desk-updates.md UB3.7): a source on the loopback and a key of one
+# run, given when it is built; a release never carries it.
+smoke = ["canonkeeper-desktop-core/smoke"]
 
 [profile.release]
 codegen-units = 1

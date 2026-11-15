@@ -254,6 +254,22 @@ describe('ED1 — the edit of a chapter of the book', () => {
   });
 });
 
+// specs/2026-11-15-reader-chapter-number.md RN1.3: «После главы N «…»» writes the number and the title without it the server
+// gives — a chapter titled «12. Белый порт» is «После главы 12 «Белый порт»».
+describe('the place of a new chapter', () => {
+  it('names the chapters by the number and the title of the server', async () => {
+    const api = editorApi();
+    const { listChapters } = api;
+    api.listChapters = (async (...args: Parameters<typeof listChapters>) => {
+      const page = await listChapters(...args);
+      return { ...page, data: page.data.map((item) => (item.id === chapterId ? { ...item, title: '12. Белый порт' } : item)) };
+    }) as typeof listChapters;
+    renderEditor(api, { bookId });
+    fireEvent.click(await screen.findByRole('button', { name: /^Место в книге/u }));
+    expect(await screen.findByRole('option', { name: 'После главы 12 «Белый порт»' })).toBeTruthy();
+  });
+});
+
 describe('ED2 — a new chapter of a book', () => {
   // ED2.2: the way in writes nothing down; the first save does, after the last chapter by default; the same item opens it again.
   it('writes the new chapter down by its first save and opens it again by the same item', async () => {

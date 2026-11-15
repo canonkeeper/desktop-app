@@ -19,8 +19,8 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 145 {
-		t.Fatalf("migration inventory length = %d, want 145", len(inventory))
+	if len(inventory) != 157 {
+		t.Fatalf("migration inventory length = %d, want 157", len(inventory))
 	}
 	if inventory[0].Version != 0 || inventory[0].Name != "0000_schema_migrations.sql" {
 		t.Fatalf("first migration = %+v", inventory[0])
@@ -399,6 +399,42 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	}
 	if inventory[144].Version != 144 || inventory[144].Name != "0144_model_permits.sql" {
 		t.Fatalf("model permits migration = %+v", inventory[144])
+	}
+	if inventory[145].Version != 145 || inventory[145].Name != "0145_app_text_prints.sql" {
+		t.Fatalf("app text prints migration = %+v", inventory[145])
+	}
+	if inventory[146].Version != 146 || inventory[146].Name != "0146_saga_file.sql" {
+		t.Fatalf("saga file migration = %+v", inventory[146])
+	}
+	if inventory[147].Version != 147 || inventory[147].Name != "0147_model_requests_gateway.sql" {
+		t.Fatalf("journal of the gateway migration = %+v", inventory[147])
+	}
+	if inventory[148].Version != 148 || inventory[148].Name != "0148_reading_consent.sql" {
+		t.Fatalf("reading consent migration = %+v", inventory[148])
+	}
+	if inventory[149].Version != 149 || inventory[149].Name != "0149_obsidian_vault_export_dir.sql" {
+		t.Fatalf("export folder of a vault migration = %+v", inventory[149])
+	}
+	if inventory[150].Version != 150 || inventory[150].Name != "0150_obsidian_books.sql" {
+		t.Fatalf("links of the books with the folders of a vault migration = %+v", inventory[150])
+	}
+	if inventory[151].Version != 151 || inventory[151].Name != "0151_app_work.sql" {
+		t.Fatalf("app work migration = %+v", inventory[151])
+	}
+	if inventory[152].Version != 152 || inventory[152].Name != "0152_obsidian_notes.sql" {
+		t.Fatalf("links of the records with the notes of a vault migration = %+v", inventory[152])
+	}
+	if inventory[153].Version != 153 || inventory[153].Name != "0153_reading_unread_rest.sql" {
+		t.Fatalf("names and threads that did not come together migration = %+v", inventory[153])
+	}
+	if inventory[154].Version != 154 || inventory[154].Name != "0154_reading_no_answer.sql" {
+		t.Fatalf("a provider that does not answer and a chapter it refused migration = %+v", inventory[154])
+	}
+	if inventory[155].Version != 155 || inventory[155].Name != "0155_send_journal.sql" {
+		t.Fatalf("the journal of what went out migration = %+v", inventory[155])
+	}
+	if inventory[156].Version != 156 || inventory[156].Name != "0156_program_reads.sql" {
+		t.Fatalf("the readings of the programs of the author migration = %+v", inventory[156])
 	}
 	if inventory[64].Version != 64 || inventory[64].Name != "0064_illustration_checks.sql" {
 		t.Fatalf("illustration checks migration = %+v", inventory[64])

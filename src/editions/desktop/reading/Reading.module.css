@@ -1,0 +1,160 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The reading of the books by «Свой ИИ» (board 44·27, 44·42; Pattern/Desktop/Read Consent, Trial Card, Stop Sum). */
+
+.window,
+.consent {
+  display: grid;
+  gap: 16px;
+}
+
+.window {
+  padding: 20px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.message,
+.line {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.estimate {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.note {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.link {
+  font-size: var(--ck-font-size-body-sm);
+}
+
+/* «Проба не получилась: …» with the way to the settings when they help. */
+.failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border-radius: var(--ck-radius-sm);
+  padding: 10px 12px;
+  background: var(--ck-color-warning);
+  color: var(--ck-color-warning-foreground);
+}
+
+.failureLine {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.refusal {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+/* The unit at the right edge of the field of a sum: «₽», «млн токенов». */
+/* The unit of a sum stands inside its field at the right edge, as the boards draw «1 000 ₽» (44·27, 44·42). */
+.unit {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Room in the field of a sum for its longest unit, «млн токенов». */
+.sum input[inputmode] {
+  padding-right: 112px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The chapters a sample read, side by side at 720 and a column below it. */
+.sample {
+  display: grid;
+  gap: 10px;
+}
+
+.result {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 10px 12px;
+}
+
+.place {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-body-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.facts dt {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.facts dd {
+  margin: 0 0 6px;
+  color: var(--ck-foreground);
+  overflow-wrap: anywhere;
+}

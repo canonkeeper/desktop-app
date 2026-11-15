@@ -29,25 +29,31 @@ func New(db *storedb.DB, fence Fence) *Store {
 // fence counts them (specs/2026-11-13-desk-permits.md PM3.2) — and the text of the projects the writer owns. Only the
 // writer's own rows are read.
 func (store *Store) AccountQuota(ctx context.Context, userID string, at time.Time) (quota.Account, error) {
+	return store.AccountQuotaInTx(ctx, store.db.Pool, userID, at)
+}
+
+// AccountQuotaInTx is AccountQuota read with db: a transaction of a build reads it in one snapshot with its own rows
+// (specs/2026-11-15-desk-turns-here.md TH1.1).
+func (store *Store) AccountQuotaInTx(ctx context.Context, db Querier, userID string, at time.Time) (quota.Account, error) {
 	if _, err := storedb.ParseUUID(userID); err != nil {
 		return quota.Account{}, quota.ErrNotFound
 	}
-	limits, err := store.fence.EffectiveLimitsInTx(ctx, store.db.Pool, userID)
+	limits, err := store.fence.EffectiveLimitsInTx(ctx, db, userID)
 	if err != nil {
 		return quota.Account{}, err
 	}
 	account := quota.Account{Limits: limits, Day: quota.MoscowDay(at), ResetsAt: quota.NextMoscowMidnight(at)}
-	err = store.db.Pool.QueryRow(ctx, `
+	err = db.QueryRow(ctx, `
 		SELECT chat_turns::bigint, imports::bigint, images::bigint, image_uploads::bigint, chapter_drafts::bigint, drawing_turns::bigint, draft_turns::bigint, draft_rewrites::bigint
 		FROM writer_usage_days WHERE user_id = $1::uuid AND day = $2::date
 	`, userID, moscowDate(at)).Scan(&account.ChatTurns, &account.Imports, &account.Images, &account.ImageUploads, &account.ChapterDrafts, &account.DrawingTurns, &account.DraftTurns, &account.DraftRewrites)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return quota.Account{}, err
 	}
-	if account.ActiveTurns, err = store.fence.activeTurnsInTx(ctx, store.db.Pool, userID, at); err != nil {
+	if account.ActiveTurns, err = store.fence.activeTurnsInTx(ctx, db, userID, at); err != nil {
 		return quota.Account{}, err
 	}
-	if account.OwnedProjects, err = ownerSources(ctx, store.db.Pool, userID); err != nil {
+	if account.OwnedProjects, err = ownerSources(ctx, db, userID); err != nil {
 		return quota.Account{}, err
 	}
 	account.Projects = int64(len(account.OwnedProjects))

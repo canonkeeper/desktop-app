@@ -97,3 +97,54 @@ func TestABookKeyKeptWhileTheNumberWasAmbiguousStillNamesItsChapter(t *testing.T
 		t.Fatal("b1c2 names a chapter of a book the saga has no more")
 	}
 }
+
+// specs/2026-11-15-reader-chapter-number.md RN1.1: the keys of the model are read by ChapterNumber in NewVersion, not by the
+// rule of the number the author reads, so the number of the reader may learn fractions («Глава 581.1: Переход») and no
+// key changes. Golden, written by the code before that rule learnt them: the global number of every title, the key of
+// every chapter, every key it is found by.
+func TestTheKeysOfTheModelStayWhateverTheNumberOfTheReader(t *testing.T) {
+	titles := []struct{ title, key, keys string }{
+		{"Глава 581. Перевал", "b1c1", "581 b1c1"},
+		{"Глава 581.1: Переход", "b1c2", "b1c2"},
+		{"Глава 3.2 — Письмо", "b1c3", "3 b1c3"},
+		{"12.5. Белый порт", "b1c4", "b1c4"},
+		{"Глава 12. Белый порт", "b1c5", "12 b1c5"},
+		{"Глава 12", "b1c6", "b1c6"},
+		{"Глава 12.", "b1c7", "b1c7"},
+		{"12. Белый порт", "b1c8", "b1c8"},
+		{"Глава XIV — Письмо", "b1c9", "b1c9"},
+		{"2024 год", "b1c10", "b1c10"},
+		{"Глава 7. Брод", "7", "7 b1c11"},
+	}
+	numbers := map[string]int{"Глава 581. Перевал": 581, "Глава 581.1: Переход": 581, "Глава 3.2 — Письмо": 3, "Глава 12. Белый порт": 12,
+		"Глава 12": 12, "Глава 12.": 12, "Глава 7. Брод": 7, "Глава 3. Возвращение": 3, "Глава 582": 582}
+	var chapters []Chapter
+	for order, title := range titles {
+		chapters = append(chapters, Chapter{ID: title.key, BookID: "one", BookOrder: 1, BookKeyNumber: 1, Order: order + 1, Title: title.title})
+	}
+	chapters = append(chapters,
+		Chapter{ID: "b2c1", BookID: "two", BookOrder: 2, BookKeyNumber: 2, Order: 1, Title: "Глава 3. Возвращение"},
+		Chapter{ID: "582", BookID: "two", BookOrder: 2, BookKeyNumber: 2, Order: 2, Title: "Глава 582"})
+	titles = append(titles, struct{ title, key, keys string }{"Глава 3. Возвращение", "b2c1", "b2c1"}, struct{ title, key, keys string }{"Глава 582", "582", "582 b2c2"})
+	version := NewVersion("project", "published", "fingerprint", chapters)
+	if len(version.Chapters) != len(titles) {
+		t.Fatalf("%d chapters, want %d", len(version.Chapters), len(titles))
+	}
+	for index, want := range titles {
+		chapter := &version.Chapters[index]
+		if chapter.Title != want.title || chapter.Key != want.key {
+			t.Errorf("chapter %d = %q keyed %q; want %q keyed %q", index+1, chapter.Title, chapter.Key, want.title, want.key)
+		}
+		if got := ChapterNumber(want.title); got != numbers[want.title] {
+			t.Errorf("ChapterNumber(%q) = %d, want %d", want.title, got, numbers[want.title])
+		}
+		if keys := strings.Join(version.KeysOf(chapter), " "); keys != want.keys {
+			t.Errorf("the keys of %q = %s, want %s", want.title, keys, want.keys)
+		}
+		for _, key := range strings.Fields(want.keys) {
+			if found, ok := version.Find(key); !ok || found.Title != want.title {
+				t.Errorf("%q = %+v, %v; want %q", key, found, ok, want.title)
+			}
+		}
+	}
+}

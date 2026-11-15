@@ -3,7 +3,8 @@
 //! Where the window may go (specs/2026-11-12-desk-shell.md SH3.1; specs/2026-11-07-desktop-app.md DA3.7): the pages of
 //! its own backend at `http://127.0.0.1:P/…` and the page the shell carries; `https:` and `mailto:` go to the browser
 //! of the system; anything else is refused. And the addresses the shell itself opens: the page that exchanges the
-//! one-time code for the session of the window (DA3.2, DA3.3), the starting page and the failure page.
+//! one-time code for the session of the window (DA3.2, DA3.3) and the page of the start, which shows the start, its steps
+//! and its failures by what it asks the shell (specs/2026-11-13-desk-upgrade.md UG3.2) — its address carries nothing.
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
@@ -148,16 +149,16 @@ pub fn refused(target: &str, port: Option<u16>) -> Option<u16> {
     url.query_pairs().find(|(name, _)| name == "refused").and_then(|(_, status)| status.parse().ok())
 }
 
-/// The starting page the shell carries: «CanonKeeper запускается…».
+/// The page of the start the shell carries: «CanonKeeper запускается…», a long step of the start or a failure, as the
+/// command of its state says.
 pub fn starting_page(system: System) -> String {
     format!("{}/index.html", bundled_origin(system))
 }
 
-/// The same page with the words of a failure and its three buttons; «Написать нам» opens the contact page of the site.
-pub fn failure_page(system: System, words: &str) -> String {
-    let mut url = Url::parse(&starting_page(system)).expect("the page of the shell is an address");
-    url.query_pairs_mut().append_pair("failure", words).append_pair("contact", crate::words::CONTACT_URL);
-    url.into()
+/// Whether `target` is the page of the start the shell carries: the window reached it before an installation
+/// (specs/2026-11-13-desk-updates.md UB2.3).
+pub fn is_starting_page(target: &str, system: System) -> bool {
+    Url::parse(target).is_ok_and(|url| is_bundled(&url, system) && url.path() == "/index.html")
 }
 
 /// The script of the code exchange (SH1.4; DA3.2, DA3.3), in its own file so that its paths are tested as a script
@@ -179,7 +180,7 @@ mod tests {
             assert_eq!(navigation("http://127.0.0.1:24117/chat", PORT, system), Navigation::Window);
             assert_eq!(navigation("http://127.0.0.1:24117/desktop/open#c=abc", PORT, system), Navigation::Window);
             assert_eq!(navigation(&starting_page(system), PORT, system), Navigation::Window);
-            assert_eq!(navigation(&failure_page(system, "слова"), None, system), Navigation::Window);
+            assert_eq!(navigation(&starting_page(system), None, system), Navigation::Window);
         }
     }
 
@@ -312,19 +313,9 @@ mod tests {
     }
 
     #[test]
-    fn the_failure_page_carries_its_words_in_its_address() {
-        let page = failure_page(System::Linux, "Книги на месте: /home/тест/x & y");
-        let url = Url::parse(&page).unwrap();
-        assert_eq!(url.scheme(), "tauri");
-        let query: Vec<_> = url.query_pairs().map(|(name, value)| (name.into_owned(), value.into_owned())).collect();
-        assert_eq!(
-            query,
-            vec![
-                ("failure".to_string(), "Книги на месте: /home/тест/x & y".to_string()),
-                ("contact".to_string(), crate::words::CONTACT_URL.to_string()),
-            ]
-        );
-        assert!(!page.starts_with("http://tauri.localhost/"));
-        assert!(failure_page(System::Windows, "x").starts_with("http://tauri.localhost/index.html?failure="));
+    fn the_page_of_the_start_carries_nothing_in_its_address() {
+        // specs/2026-11-13-desk-upgrade.md UG3.2: the words and the buttons come from the command of state.
+        assert_eq!(starting_page(System::Linux), "tauri://localhost/index.html");
+        assert_eq!(starting_page(System::Windows), "http://tauri.localhost/index.html");
     }
 }

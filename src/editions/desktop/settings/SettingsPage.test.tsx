@@ -94,14 +94,33 @@ describe('«Настройки» of the app in the top bar', () => {
 
 // ST1.2, ST1.3: the page — the parts on the left in the order of the board, the open part on the right, from the address.
 describe('the page «Настройки» of the app', () => {
-  it('names its three parts in the order of the board and opens «Данные» without a part in the address', async () => {
+  // specs/2026-11-13-desk-helper-web.md HW1.1: «Помощник» stands before «Данные», by the order of the board.
+  it('names its parts in the order of the board and opens «Данные» without a part in the address', async () => {
     windowOf(1440);
     await openSettings(createAppRoute('/settings'));
     const links = within(partsNav()).getAllByRole('link');
-    expect(links.map((link) => link.textContent)).toEqual(['Данные', 'Вид', 'О программе']);
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/settings?part=data', '/settings?part=look', '/settings?part=about']);
-    expect(links[0]!.getAttribute('aria-current')).toBe('page');
+    // specs/2026-11-15-desk-updates-web.md UW2.1: «Обновления» between «Вид» and «О программе», by the board;
+    // specs/2026-11-15-desk-account-link-web.md AW2.1: «Аккаунт» first.
+    // specs/2026-11-14-desk-journal.md JR3.1: «Журнал» after «Помощник».
+    expect(links.map((link) => link.textContent)).toEqual(['Аккаунт', 'Помощник', 'Журнал', 'Данные', 'Вид', 'Обновления', 'О программе']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/settings?part=account', '/settings?part=helper', '/settings?part=log', '/settings?part=data', '/settings?part=look', '/settings?part=updates',
+      '/settings?part=about',
+    ]);
+    expect(links[3]!.getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('region', { name: 'Данные' })).toBeTruthy();
+  });
+
+  // specs/2026-11-14-desk-journal.md JR3.1: «Журнал» reads the kind of the address and writes the choice there.
+  it('gives «Журнал» the kind of the address and writes the choice into it', async () => {
+    windowOf(1440);
+    const { navigate } = await openSettings(createAppRoute('/settings', { part: 'log', kind: 'check' }));
+    expect(await screen.findByRole('region', { name: 'Журнал' })).toBeTruthy();
+    expect((await screen.findAllByText('Проверка связи')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('ваш вопрос; Книга 2, гл. 12 „Белый порт“, абзацы 3–9')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Вид отправок/u }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Вопрос' }));
+    expect(navigate).toHaveBeenLastCalledWith('/settings', { part: 'log', kind: 'question' }, { replace: true });
   });
 
   it('opens the part the address names and «Данные» for a part it does not know', async () => {
@@ -113,7 +132,7 @@ describe('the page «Настройки» of the app', () => {
 
   it('opens «Данные» for a part it does not know', async () => {
     windowOf(1440);
-    await openSettings(createAppRoute('/settings', { part: 'account' }));
+    await openSettings(createAppRoute('/settings', { part: 'journal' }));
     expect(within(partsNav()).getByRole('link', { name: 'Данные' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('region', { name: 'Данные' })).toBeTruthy();
   });

@@ -239,3 +239,78 @@ func TestBuiltInToolsAreRefusedBeforeTheProviderIsCalled(t *testing.T) {
 		}
 	}
 }
+
+// The hook of a request hears the size of the body that goes to the provider — in the language of the provider, after the
+// translation — before the provider gets a byte of it, for a stream and a whole response in both protocols; an error of the
+// hook stops the call as it is, and the provider is asked nothing.
+func TestTheSendingHearsTheBodyThatGoes(t *testing.T) {
+	var heard, before atomic.Int64
+	var received atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		before.Store(heard.Load())
+		received.Store(int64(len(body)))
+		var asked struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.Unmarshal(body, &asked)
+		chat := strings.HasSuffix(r.URL.Path, "/chat/completions")
+		switch {
+		case chat && asked.Stream:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}`+"\n\ndata: [DONE]\n\n")
+		case chat:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}`)
+		case asked.Stream:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":3,\"output_tokens\":1,\"total_tokens\":4}}}\n\n")
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"resp-1","status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}`)
+		}
+	}))
+	defer server.Close()
+	translator := translate.New(server.Client())
+	defer translator.Close()
+	for _, profile := range []translate.Capabilities{chatProfile(), responsesProfile()} {
+		for _, stream := range []bool{true, false} {
+			heard.Store(0)
+			call := request(stream, `,"instructions":"`+strings.Repeat("в", 100)+`"`)
+			call.Sending = func(bytes int) error {
+				heard.Store(int64(bytes))
+				return nil
+			}
+			var err error
+			if stream {
+				_, err = translator.OpenStream(context.Background(), target(server, profile), call, func(translate.Event) error { return nil })
+			} else {
+				_, err = translator.Execute(context.Background(), target(server, profile), call)
+			}
+			if err != nil || heard.Load() == 0 || heard.Load() != received.Load() || before.Load() != heard.Load() {
+				t.Fatalf("%s stream %v: heard %d, the provider got %d (heard before it: %d), %v", profile.Protocol, stream, heard.Load(), received.Load(), before.Load(), err)
+			}
+			if profile.Protocol == translate.ProtocolChatCompletions && heard.Load() == int64(len(call.Body)) {
+				t.Fatalf("the size of Chat Completions is the size of the body of Responses: %d", heard.Load())
+			}
+		}
+	}
+	refused := errors.New("the record did not lie")
+	var sent atomic.Int64
+	quiet := stub(t, http.StatusOK, "application/json", `{}`, &sent)
+	for _, profile := range []translate.Capabilities{chatProfile(), responsesProfile()} {
+		call := request(true, "")
+		call.Sending = func(int) error { return refused }
+		_, err := translator.OpenStream(context.Background(), target(quiet, profile), call, func(translate.Event) error {
+			t.Fatal("an event of a call the hook stopped")
+			return nil
+		})
+		if !errors.Is(err, refused) || sent.Load() != 0 {
+			t.Fatalf("%s: a stopped call = %v, the provider got %d", profile.Protocol, err, sent.Load())
+		}
+		call.Body = request(false, "").Body
+		if _, err := translator.Execute(context.Background(), target(quiet, profile), call); !errors.Is(err, refused) || sent.Load() != 0 {
+			t.Fatalf("%s: a stopped whole call = %v, the provider got %d", profile.Protocol, err, sent.Load())
+		}
+	}
+}

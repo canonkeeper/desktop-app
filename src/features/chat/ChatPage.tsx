@@ -12,21 +12,29 @@ import {
   useManuscriptShelfQuery,
 } from '../../entities/manuscript/api';
 import type { SagaApiClient } from '../../entities/saga/api';
+import { useSagaTranscriptsQuery, type SagaTranscriptClient } from '../../entities/saga-file/api';
 import { toHref, type AppRoute, type RouteNavigate } from '../../shared/navigation/app-route';
 import { EmptyState } from '../../ui/feedback/EmptyState';
 import { SkeletonArea } from '../../ui/feedback/Skeleton';
 import { WorkplaceHeading } from '../../ui/shell/PageHead';
 import { useVoicePlace } from '../../shared/navigation/voice-place';
-import { waitingLine } from '../../entities/manuscript/preparation-copy';
+import { questionsWait, waitingLine } from '../../entities/manuscript/preparation-copy';
+import { usePreparationView } from '../../entities/manuscript/preparation-slot';
 import { PreparationNotice } from './PreparationNotice';
 import { ResearchChatPanel, type ChatSurfaceApi } from './ResearchChatPanel';
+import { useChatSlot } from './chat-slot';
 import { useChatSourceNavigation } from './use-chat-source-navigation';
 import { useChatImageNavigation } from './use-chat-image-navigation';
 import { WhatNext } from './WhatNext';
+import { FileChatsSection, FileChatView } from './file-chats/FileChats';
 import { latestChat } from './chat-days';
 import styles from './ChatPage.module.css';
 
-type ChatPageApiClient = ChatSurfaceApi & ManuscriptApiClient & SagaApiClient;
+type ChatPageApiClient = ChatSurfaceApi & ManuscriptApiClient & SagaApiClient & SagaTranscriptClient;
+
+/** An edition without a reason of its own for «Спросить», nor for the helper not connected. */
+const noAskReason = () => null;
+const noHelperReason = (_waiting: boolean) => null;
 
 interface ChatPageProps {
   api: ChatPageApiClient;
@@ -43,6 +51,8 @@ export function ChatPage({ api, navigate, route }: ChatPageProps) {
   const imageNavigation = useChatImageNavigation(route, navigate);
   const requestedProjectId = route.query.get('projectId');
   const selectedChatId = route.query.get('chatId') ?? '';
+  // A chat a saga file brought, open to read (specs/2026-11-13-desk-sagafile-web.md SW3.2).
+  const fileChatId = selectedChatId ? '' : route.query.get('fileChat') ?? '';
   const workspaceQuery = useManuscriptShelfQuery(api, { projectId: requestedProjectId });
   const workspace = workspaceQuery.data;
   const project = workspace?.project ?? null;
@@ -62,12 +72,25 @@ export function ChatPage({ api, navigate, route }: ChatPageProps) {
   const sourceViewCheckPending = indexingStatusQuery.isPending;
   const sourceViewCheckError = indexingStatusQuery.error;
   const sourceViewAvailable = indexingStatusQuery.isSuccess && !sourceViewUnavailable;
+  // The line of the reading the edition says, with its buttons and windows (specs/2026-11-13-desk-consent-web.md RW1.2).
+  const editionReading = usePreparationView({ navigate, projectId, status: indexingStatus });
   // The advice of the reading of the saga over the chat (specs/2026-11-10-ux3-saga-state.md SS3.1).
-  const reading = indexingStatus && (indexingStatus.preparation || indexingStatus[sourceView]?.context?.state === 'partial')
+  const reading = indexingStatus
+    && (indexingStatus.preparation || indexingStatus[sourceView]?.context?.state === 'partial' || editionReading)
     ? indexingStatus
     : null;
-  // While the reading waits for the helper no question goes, for the reason the line says (specs/2026-11-12-desk-window.md WN3.3).
-  const unavailable = waitingLine(indexingStatus?.preparation);
+  // While the reading waits for the helper no question goes, for the reason the line says (specs/2026-11-12-desk-window.md WN3.3);
+  // a reading that waits for the consent of the author takes questions (specs/2026-11-13-desk-gateway.md GW4.3).
+  // The edition may close it for its own reason, after the server's: an update being installed (specs/2026-11-15-desk-updates-web.md UW3.4).
+  // The helper not connected is said by the reason of the edition — the same as its line of the reading
+  // (specs/2026-11-15-desk-account-link-web.md AW3.4) —, by the open words until it is read and on the site.
+  const slot = useChatSlot();
+  const useAskReason = slot?.useAskReason ?? noAskReason;
+  const useHelperReason = slot?.useHelperReason ?? noHelperReason;
+  const editionReason = useAskReason();
+  const waitsForHelper = questionsWait(indexingStatus?.preparation);
+  const helperReason = useHelperReason(waitsForHelper);
+  const unavailable = waitsForHelper ? helperReason ?? waitingLine(indexingStatus?.preparation) : editionReason;
 
   // A chat the author picked, or the new chat he asked for: the address says which (AA2.1).
   const selectChatId = useCallback((chatId: string) => {
@@ -89,7 +112,7 @@ export function ChatPage({ api, navigate, route }: ChatPageProps) {
   const showChat = Boolean(workspace && project && !routeBlocked && sourceViewAvailable);
   // /chat without a chat opens the latest conversation of the saga, by the time of its last question (AA2.1); a new chat
   // the author asked for and a question brought from another section stay a new chat.
-  const wantsLatest = showChat && !selectedChatId && route.query.get('new') !== '1' && !route.chatQuestion;
+  const wantsLatest = showChat && !selectedChatId && !fileChatId && route.query.get('new') !== '1' && !route.chatQuestion;
   // A list that did not open leaves the page to the panel, which says so with its retry (PR3): no wait of retries here.
   const chats = useQuery({ ...chatSessionsQueryOptions(api, { projectId, sourceView }), enabled: wantsLatest, retry: false });
   const latest = wantsLatest && chats.data ? latestChat(chats.data.data) : undefined;
@@ -107,6 +130,9 @@ export function ChatPage({ api, navigate, route }: ChatPageProps) {
   // and the actions of the open chat into it. The heading is one element from the loading on (PL2.4).
   const [row, setRow] = useState<HTMLDivElement | null>(null);
   const showPanel = Boolean(workspace && project && !routeBlocked && sourceViewAvailable && !findingLatest);
+  // «Из файла саги» of the list: only a saga with such chats has the part (SW3.1).
+  const fileChats = useSagaTranscriptsQuery(api, project?.id ?? '', showPanel).data?.data ?? [];
+  const openFileChat = (transcriptId: string) => navigate('/chat', { projectId: projectId || undefined, fileChat: transcriptId });
 
   return (
         <section className={styles.content} aria-labelledby="chat-page-title" data-state={showPanel ? 'chat' : 'notice'}>
@@ -168,12 +194,18 @@ export function ChatPage({ api, navigate, route }: ChatPageProps) {
               sourceNavigation={sourceNavigation}
               onSelectChatId={selectChatId}
               onStartIndexing={openManuscript}
-              preparation={reading ? <PreparationNotice onOpenBooks={openManuscript} status={reading} /> : undefined}
+              preparation={reading ? <PreparationNotice canEdit={workspace.canEditManuscript} edition={editionReading} onOpenBooks={openManuscript} status={reading} /> : undefined}
               unavailable={unavailable}
               projectId={project.id}
               selectedChatId={selectedChatId}
               row={row}
               sourceView={sourceView}
+              fromFile={(onNavigate) => (
+                <FileChatsSection chats={fileChats} onOpen={(id) => { openFileChat(id); onNavigate(); }} selectedId={fileChatId} />
+              )}
+              fileChat={fileChatId ? (
+                <FileChatView api={api} key={fileChatId} navigate={navigate} onNewChat={() => selectChatId('')} projectId={project.id} transcriptId={fileChatId} />
+              ) : undefined}
               whatNext={<WhatNext api={api} canEdit={workspace.canEditManuscript} projectId={project.id} sourceView={sourceView} routes={{
                 openMap: () => navigate('/saga', { projectId: project.id }),
                 draw: (idea) => navigate('/drawing', { projectId: project.id, drawing: 'new' }, idea ? { drawingIdea: idea } : undefined),

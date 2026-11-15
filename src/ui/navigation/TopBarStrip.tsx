@@ -40,6 +40,19 @@ export function TopBarStrip() {
   );
 }
 
+const TopBarTierContext = createContext<ReactNode>(null);
+
+/**
+ * The edition says what stands in the top bar beside «Настройки»: the tier of the account of the linked app
+ * (specs/2026-11-15-desk-account-words-web.md AW4.7). The site gives none: its top bar has its account.
+ */
+export const TopBarTierProvider = TopBarTierContext.Provider;
+
+/** The place of that mark in a top bar; empty where the edition has none. */
+export function TopBarTier() {
+  return <>{useContext(TopBarTierContext)}</>;
+}
+
 const TopBarTalkContext = createContext<ReactNode>(null);
 
 /** The edition says what stands in the top bar of a page of the saga for its call: «Поговорить» on the site (V1.1). */

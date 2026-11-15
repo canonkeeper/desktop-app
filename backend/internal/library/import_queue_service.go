@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"canonkeeper/backend/internal/auth"
+	"canonkeeper/backend/internal/jobs"
 )
 
 type CreateImportQueueInput struct {
@@ -346,39 +347,56 @@ func findImportQueueItem(queue ImportQueue, itemID string) (ImportQueueItem, boo
 }
 
 func preflightImportQueueItem(fileName, mimeType string, content []byte, fileSHA256 string) (string, []byte, error) {
+	_, failure, err := readImportQueueItem(fileName, mimeType, content, fileSHA256)
+	if err != nil {
+		return "", nil, err
+	}
+	if failure != nil {
+		return importQueueInvalidPreflight(failure.Code, failure.Message)
+	}
+	return ImportQueueItemReady, nil, nil
+}
+
+// readImportQueueItem reads the file of a volume as the queue checks it: the plan of its book, or the refusal the queue
+// keeps for it. A name it cannot take and a file over the size of an import are errors of the upload, not refusals.
+func readImportQueueItem(fileName, mimeType string, content []byte, fileSHA256 string) (importPlan, *jobs.Error, error) {
+	refused := func(code, message string) (importPlan, *jobs.Error, error) {
+		return importPlan{}, &jobs.Error{Code: code, Message: message}, nil
+	}
 	sourceFileName := sanitizedImportSourceFileName(fileName)
 	if sourceFileName == "" {
-		return "", nil, ErrValidation
+		return importPlan{}, nil, ErrValidation
 	}
 	if int64(len(content)) > MaxImportFileSizeBytes {
-		return "", nil, ErrImportFileTooLarge
+		return importPlan{}, nil, ErrImportFileTooLarge
 	}
 	extension := ImportFileKind(sourceFileName)
 	normalizedMIMEType, err := validatedImportMIMEType(extension, mimeType)
 	if err != nil || extension == "" {
-		return importQueueInvalidPreflight("import.unsupported_media_type", "Import file type is not supported.")
+		return refused("import.unsupported_media_type", "Import file type is not supported.")
 	}
 	if err := validateImportExtensionMIMEContent(extension, normalizedMIMEType, content); err != nil {
 		if extension == ".epub" {
-			return importQueueInvalidPreflight("invalid_epub_container", "EPUB container is invalid.")
+			return refused("invalid_epub_container", "EPUB container is invalid.")
 		}
-		return importQueueInvalidPreflight("import.content_mismatch", "Import file content does not match its declared type.")
+		return refused("import.content_mismatch", "Import file content does not match its declared type.")
 	}
 	if int64(len(content)) == 0 {
-		return importQueueInvalidPreflight("empty_import_content", "Import file has no usable content.")
+		return refused("empty_import_content", "Import file has no usable content.")
 	}
 	metadata := ImportFileMetadata{
 		SourceFileName: sourceFileName, Extension: extension, MIMEType: normalizedMIMEType,
 		SizeBytes: int64(len(content)), FileSHA256: fileSHA256, ImportMode: ImportModeNewBook,
 	}
 	if err := verifyImportFileMetadata(content, metadata); err != nil {
-		return importQueueInvalidPreflight("import.content_mismatch", "Import file identity is invalid.")
+		return refused("import.content_mismatch", "Import file identity is invalid.")
 	}
-	if _, err := readImportBook(content, metadata); err != nil {
+	plan, err := readImportBook(content, metadata)
+	if err != nil {
 		failure := importParseFailure(err, extension)
-		return importQueueInvalidPreflight(failure.Code, failure.Message)
+		return refused(failure.Code, failure.Message)
 	}
-	return ImportQueueItemReady, nil, nil
+	return plan, nil, nil
 }
 
 func importQueueInvalidPreflight(code, message string) (string, []byte, error) {

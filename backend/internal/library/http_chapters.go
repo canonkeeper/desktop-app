@@ -94,6 +94,7 @@ type chapterSummaryResponse struct {
 	Title         string        `json:"title"`
 	Order         int           `json:"order"`
 	DisplayNumber string        `json:"displayNumber"`
+	DisplayTitle  string        `json:"displayTitle"`
 	Status        ChapterStatus `json:"status"`
 	WordCount     int           `json:"wordCount"`
 	HasDraft      bool          `json:"hasDraft"`
@@ -131,6 +132,7 @@ type chapterParagraphResponse struct {
 
 type chapterNavigationResponse struct {
 	DisplayNumber      string                         `json:"displayNumber"`
+	DisplayTitle       string                         `json:"displayTitle"`
 	Position           int                            `json:"position"`
 	Total              int                            `json:"total"`
 	ReadingProgress    float64                        `json:"readingProgress"`
@@ -145,6 +147,7 @@ type chapterNavigationItemResponse struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
 	DisplayNumber string `json:"displayNumber"`
+	DisplayTitle  string `json:"displayTitle"`
 }
 
 func writeChapterListResponse(w http.ResponseWriter, status int, page ChapterPage, state SourceListState) {
@@ -178,12 +181,14 @@ func writeChapterListResponse(w http.ResponseWriter, status int, page ChapterPag
 	writeImportJSON(w, status, response)
 }
 func chapterSummaryResponseFromChapter(chapter ChapterSummary) chapterSummaryResponse {
+	number, title := chapter.Numbered()
 	response := chapterSummaryResponse{
 		ID:            chapter.ID,
 		BookID:        chapter.BookID,
 		Title:         chapter.Title,
 		Order:         chapter.Order,
-		DisplayNumber: ChapterDisplayNumber(chapter.Order, chapter.Title),
+		DisplayNumber: number,
+		DisplayTitle:  title,
 		Status:        chapter.Status,
 		WordCount:     chapter.WordCount,
 		HasDraft:      chapter.HasDraft,
@@ -223,23 +228,16 @@ func chapterResponseFromContent(chapter ChapterContent) chapterResponse {
 	var previous *chapterNavigationItemResponse
 	var previousChapterID *string
 	if chapter.Navigation.Previous != nil {
-		previous = &chapterNavigationItemResponse{
-			ID:            chapter.Navigation.Previous.ID,
-			Title:         chapter.Navigation.Previous.Title,
-			DisplayNumber: chapter.Navigation.Previous.DisplayNumber,
-		}
+		previous = chapterNavigationItemResponseFrom(*chapter.Navigation.Previous)
 		previousChapterID = &previous.ID
 	}
 	var next *chapterNavigationItemResponse
 	var nextChapterID *string
 	if chapter.Navigation.Next != nil {
-		next = &chapterNavigationItemResponse{
-			ID:            chapter.Navigation.Next.ID,
-			Title:         chapter.Navigation.Next.Title,
-			DisplayNumber: chapter.Navigation.Next.DisplayNumber,
-		}
+		next = chapterNavigationItemResponseFrom(*chapter.Navigation.Next)
 		nextChapterID = &next.ID
 	}
+	number, title := chapter.Numbered()
 	readingTimeMinutes := 0
 	if chapter.WordCount > 0 {
 		readingTimeMinutes = (chapter.WordCount + 219) / 220
@@ -260,7 +258,8 @@ func chapterResponseFromContent(chapter ChapterContent) chapterResponse {
 		PublishedAt:       publishedAt,
 		PublishError:      chapter.PublishError,
 		Navigation: chapterNavigationResponse{
-			DisplayNumber:      ChapterDisplayNumber(chapter.Order, chapter.Title),
+			DisplayNumber:      number,
+			DisplayTitle:       title,
 			Position:           chapter.Navigation.Position,
 			Total:              chapter.Navigation.Total,
 			ReadingProgress:    0,
@@ -273,4 +272,9 @@ func chapterResponseFromContent(chapter ChapterContent) chapterResponse {
 		CreatedAt: formatImportTime(chapter.CreatedAt),
 		UpdatedAt: formatImportTime(chapter.UpdatedAt),
 	}
+}
+
+func chapterNavigationItemResponseFrom(item ChapterNavigationItem) *chapterNavigationItemResponse {
+	number, title := item.Numbered()
+	return &chapterNavigationItemResponse{ID: item.ID, Title: item.Title, DisplayNumber: number, DisplayTitle: title}
 }

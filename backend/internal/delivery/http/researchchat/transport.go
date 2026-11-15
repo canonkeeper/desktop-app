@@ -206,6 +206,10 @@ func writeServiceError(response http.ResponseWriter, err error) {
 		writeProblem(response, http.StatusBadRequest, "Bad Request", "validation failed", "request.validation")
 	case errors.As(err, &actionError):
 		writeProblem(response, http.StatusConflict, "Conflict", "current source text is unavailable", string(actionError.SearchAction()))
+	case errors.Is(err, researchdomain.ErrHelperNotConnected):
+		writeProblem(response, http.StatusConflict, "Conflict", "the helper is not connected", "helper.not_connected")
+	case errors.Is(err, researchdomain.ErrUpdating):
+		writeProblem(response, http.StatusConflict, "Conflict", "the app is installing an update", "desktop.updating")
 	case errors.Is(err, researchdomain.ErrOutdatedAgent):
 		writeProblem(response, http.StatusConflict, "Conflict", "chat was created by a previous assistant version; start a new chat", "chat.outdated_agent")
 	case errors.Is(err, researchdomain.ErrTurnEnded):

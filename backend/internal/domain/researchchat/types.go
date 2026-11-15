@@ -18,6 +18,12 @@ var (
 	ErrTitleEmpty       = errors.New("research chat: title is empty")
 	ErrTitleTooLong     = errors.New("research chat: title is too long")
 	ErrOutdatedAgent    = errors.New("research chat: chat belongs to an outdated agent generation")
+	// ErrHelperNotConnected refuses a question while the helper of the build is not connected
+	// (specs/2026-11-13-desk-gateway.md GW4.4).
+	ErrHelperNotConnected = errors.New("research chat: the helper is not connected")
+	// ErrUpdating refuses a new question while the app installs an update (specs/2026-11-13-desk-updates.md UB2.1): the
+	// question stays with the author, who asks it after the restart.
+	ErrUpdating = errors.New("research chat: the app is installing an update")
 	// ErrNotEditor: a tool of a turn writes, and the turn's author is not an editor or above of its project.
 	ErrNotEditor = errors.New("research chat: the turn's author is not an editor")
 	// ErrTurnEnded: a correction came after the turn stopped working (specs/2026-10-30-chat-steering.md R2.1).
@@ -184,6 +190,27 @@ const (
 	CodeServerOverloaded      = "model.server_overloaded"
 	CodeConnectionFailed      = "model.http_connection_failed"
 	CodeContextWindowExceeded = "model.context_window_exceeded"
+	// CodeSessionEnded ends a turn whose session ended before it began (specs/2026-11-15-desk-interrupted-turn.md IT1.1):
+	// signing out everywhere, a change of the password, a block; in the desktop app, a restart.
+	CodeSessionEnded = "model.session_ended"
+	// The reasons of a turn of the helper of the account, by the table of the gateway
+	// (specs/2026-11-13-desk-account-ai.md AI2.5): the fence of the day of the work of the app, the link with the account
+	// broke, the permit of the turn ended, the site without its models, an app the site does not take, a thread too large
+	// for the site, no connection with the site.
+	CodeDayFence        = "model.daily_fence"
+	CodeAccountUnlinked = "model.account_unlinked"
+	CodePermitEnded     = "model.permit_ended"
+	CodeSiteUnavailable = "model.site_unavailable"
+	CodeAppUnfit        = "model.app_unfit"
+	CodeThreadTooLarge  = "model.thread_too_large"
+	CodeSiteUnreachable = "model.site_unreachable"
+	// CodeQuestionsOver and CodeTurnsAtOnce end a turn whose permit went by unused while it waited, when the site refused
+	// the next one (AI2.3): the codes of the refusals of the tier, as on the site.
+	CodeQuestionsOver = "quota.chat_turns_daily"
+	CodeTurnsAtOnce   = "quota.active_turns"
+	// CodeJournalUnavailable ends a turn of the desktop app whose request was not sent: its record did not lie in the journal
+	// of what went out (specs/2026-11-14-desk-journal.md JR1.6).
+	CodeJournalUnavailable = "journal.unavailable"
 )
 
 // TurnFailureCodes — закрытый набор кодов отказа хода и английская фраза каждого для журнала
@@ -195,7 +222,28 @@ var TurnFailureCodes = map[string]string{
 	CodeServerOverloaded:      "model server overloaded or temporarily unavailable",
 	CodeConnectionFailed:      "connection to the model failed",
 	CodeContextWindowExceeded: "model context window exceeded",
+	CodeSessionEnded:          "the session that started the turn ended before it began",
+	CodeDayFence:              "the tokens of the day of the work of the app are over",
+	CodeAccountUnlinked:       "the link of the app with the account broke",
+	CodePermitEnded:           "the permit of the turn ended",
+	CodeSiteUnavailable:       "the site has no models now",
+	CodeAppUnfit:              "the site does not take this version of the app",
+	CodeThreadTooLarge:        "the thread is too large for the site",
+	CodeSiteUnreachable:       "the site could not be reached",
+	CodeQuestionsOver:         "the questions of the day are over",
+	CodeTurnsAtOnce:           "too many questions at once",
+	CodeJournalUnavailable:    "the record of the sending could not be written",
 }
+
+// TurnEnd is how a turn ended, for the work a site counts (specs/2026-11-13-desk-account-ai.md AI2.7): its answer, the stop
+// of the author, or a failure — the stop of the app included.
+type TurnEnd string
+
+const (
+	TurnAnswered TurnEnd = "answered"
+	TurnCanceled TurnEnd = "canceled"
+	TurnFailed   TurnEnd = "failed"
+)
 
 type TurnResult struct {
 	RootThreadID   string

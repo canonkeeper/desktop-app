@@ -1,4 +1,5 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { isApiStatusFailure } from '../../../entities/api-errors';
 import {
   type CanonicalSourceLocator,
@@ -13,6 +14,12 @@ import {
 
 const chatTurnReconciliationIntervalMs = 2_000;
 const awaitedTurnIntervalMs = 4_000;
+/**
+ * While the server decides whether the question of a failed turn is counted (`questionReturned: pending`,
+ * specs/2026-11-15-desk-account-words-web.md AW4.4), the page reads its Job again this often, and no longer than this.
+ */
+const countDecidedIntervalMs = 5_000;
+const countDecidedForMs = 10 * 60_000;
 const workingChatsIntervalMs = 4_000;
 
 /** The chat's latest turn is queued, running or canceling: the chat list marks it (R2.2). */
@@ -118,16 +125,20 @@ export function useActiveChatTurnQuery(
   scope: ChatScope,
   chatId: string,
 ) {
+  // When the page first saw the count of a failed turn being decided: an ephemeral fact of the page, the sign is the server's.
+  const deciding = useRef<{ jobId: string; since: number } | null>(null);
   return useQuery({
     queryKey: chatQueryKeys.activeTurn(scope, chatId),
     queryFn: ({ meta, signal }) => findActiveChatTurn(apiFromMeta(meta), scope, chatId, signal),
     meta: chatMeta(api),
     enabled: chatId.length > 0,
-    refetchInterval: (query) => query.state.status === 'success'
-      && query.state.data
-      && ['queued', 'running', 'canceling'].includes(query.state.data.status)
-      ? chatTurnReconciliationIntervalMs
-      : false,
+    refetchInterval: (query) => {
+      const job = query.state.status === 'success' ? query.state.data : null;
+      if (job && ['queued', 'running', 'canceling'].includes(job.status)) return chatTurnReconciliationIntervalMs;
+      if (job?.status !== 'failed' || job.questionReturned !== 'pending') return false;
+      if (deciding.current?.jobId !== job.id) deciding.current = { jobId: job.id, since: Date.now() };
+      return Date.now() - deciding.current.since < countDecidedForMs ? countDecidedIntervalMs : false;
+    },
   });
 }
 

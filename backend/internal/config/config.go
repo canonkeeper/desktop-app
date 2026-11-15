@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	agentdomain "canonkeeper/backend/internal/domain/agent"
 )
@@ -36,8 +37,11 @@ type Config struct {
 	CodexTempDir         string
 	CodexConfigOverrides []string
 	CodexPassEnv         []string
-	ModelAPI             ModelAPI
-	Mail                 Mail
+	// CodexEnvironment are NAME=value pairs for the app-servers alone, by value (specs/2026-11-13-desk-gateway.md GW2.2):
+	// only the app sets them — the token of its local gateway — and never from the environment of the backend.
+	CodexEnvironment []string
+	ModelAPI         ModelAPI
+	Mail             Mail
 	// OperatorSocket is the unix socket the operator command reaches the backend through;
 	// empty disables it (specs/2026-10-28-account-data-rights.md, R2.1).
 	OperatorSocket string
@@ -56,8 +60,17 @@ type Illustrations struct {
 type ModelAPI struct {
 	BaseURL string
 	KeyEnv  string
-	Model   string
-	Effort  string
+	// Key and CarryJob are the client of the app (specs/2026-11-13-desk-gateway.md GW3.1, GW3.2): the token of its local
+	// gateway by value, never an environment, and the Job of a call named to the gateway. The site sets neither.
+	Key      string
+	CarryJob bool
+	// Stops and RetryPause are the client of the app too (specs/2026-11-13-desk-consent.md CN3.4): a stop of the reading
+	// the gateway names is typed and not repeated; RetryPause shortens the pauses of the repeats in the program of the
+	// process tests alone.
+	Stops      bool
+	RetryPause time.Duration
+	Model      string
+	Effort     string
 	// CardsModel and CardsEffort write chapter cards; empty, cards use Model and Effort.
 	CardsModel  string
 	CardsEffort string
@@ -83,6 +96,12 @@ type ModelAPI struct {
 	VoiceModel       string
 	VoiceBrain       string
 	VoiceBrainEffort string
+	// AppKeyEnv names the variable of the key of the provider for the work of linked apps on the models of the site
+	// (specs/2026-11-13-desk-proxy.md; specs/2026-11-12-desktop-target.md DT4.9): its own key with its own limit at the
+	// provider, never the key of the site; the value is read only when an app calls. Empty, the site serves no models to
+	// apps. AppParallel is the number of requests of all apps at once (AppPlaces).
+	AppKeyEnv   string
+	AppParallel int
 }
 
 // Enabled reports whether direct model calls are configured.
@@ -175,6 +194,8 @@ func Load() Config {
 			VoiceModel:        strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_VOICE_MODEL")),
 			VoiceBrain:        strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_VOICE_BRAIN")),
 			VoiceBrainEffort:  strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_VOICE_BRAIN_EFFORT")),
+			AppKeyEnv:         strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_APP_KEY_ENV")),
+			AppParallel:       parseParallel(os.Getenv("BACKEND_MODEL_API_APP_PARALLEL")),
 		},
 		Mail:          developmentMail(),
 		Illustrations: Illustrations{UploadsEnabled: parseBool(os.Getenv("BACKEND_ILLUSTRATIONS_UPLOADS_ENABLED"))},
@@ -246,7 +267,14 @@ func (config Config) Validate() error {
 	if err := config.Mail.validate(config.Environment); err != nil {
 		return err
 	}
-	return config.ModelAPI.validate()
+	if err := config.ModelAPI.validate(); err != nil {
+		return err
+	}
+	// The turns of apps run the model and effort of the chat of the site (specs/2026-11-13-desk-proxy.md PX1.3).
+	if model, _ := config.Chat(); config.ModelAPI.AppKeyEnv != "" && model == "" {
+		return errors.New("config: the models of apps require the chat model of the site in the Codex overrides")
+	}
+	return nil
 }
 
 // ValidateCore checks what the open core runs on in every build (specs/2026-11-07-desktop-app.md DA16.4): the worker
@@ -281,6 +309,9 @@ func (config Config) ValidateCore() error {
 	}
 	if !agentdomain.ValidPassEnv(config.CodexPassEnv) {
 		return errors.New("config: Codex pass-through environment names are invalid")
+	}
+	if !agentdomain.ValidEnvironment(config.CodexEnvironment) {
+		return errors.New("config: the Codex environment must be NAME=value pairs of one line")
 	}
 	return config.ModelAPI.validateShape()
 }
@@ -320,6 +351,9 @@ func (api ModelAPI) validateShape() error {
 	if api.KeyEnv != "" && !agentdomain.ValidPassEnv([]string{api.KeyEnv}) {
 		return errors.New("config: model API key variable name is invalid")
 	}
+	if api.AppKeyEnv != "" && (!agentdomain.ValidPassEnv([]string{api.AppKeyEnv}) || api.AppKeyEnv == api.KeyEnv) || api.AppParallel < 0 {
+		return errors.New("config: the models of apps need a key variable of their own and a non-negative parallelism")
+	}
 	if api.VoiceURL != "" {
 		voice, err := url.Parse(api.VoiceURL)
 		if err != nil || (voice.Scheme != "https" && voice.Scheme != "http") || voice.Host == "" || strings.Trim(voice.Path, "/") != "" {
@@ -327,6 +361,60 @@ func (api ModelAPI) validateShape() error {
 		}
 	}
 	return nil
+}
+
+// AppPlaces is how many requests of all linked apps go to the provider at once (specs/2026-11-13-desk-proxy.md PX1.5):
+// AppParallel, or 16.
+func (api ModelAPI) AppPlaces() int {
+	if api.AppParallel > 0 {
+		return api.AppParallel
+	}
+	return 16
+}
+
+// Chat names the model and effort of the chat of the site: the model and model_reasoning_effort of its overrides of
+// Codex, the one place they are set; empty when the overrides do not set them.
+func (config Config) Chat() (model, effort string) {
+	return overrideString(config.CodexConfigOverrides, "model"), overrideString(config.CodexConfigOverrides, "model_reasoning_effort")
+}
+
+// ChatWindow names the window of the context of the chat of the site and its threshold of compaction: the
+// model_context_window and model_auto_compact_token_limit of its overrides of Codex, the one place they are set, read as
+// Chat reads the model (specs/2026-11-13-desk-account-ai.md AI5.1); zero when the overrides do not set them.
+func (config Config) ChatWindow() (window, compact int64) {
+	return overrideInt(config.CodexConfigOverrides, "model_context_window"), overrideInt(config.CodexConfigOverrides, "model_auto_compact_token_limit")
+}
+
+// overrideInt is the whole value of a key of the overrides of Codex, key=123; zero when absent or not a whole number.
+func overrideInt(overrides []string, key string) int64 {
+	for _, override := range overrides {
+		name, value, found := strings.Cut(override, "=")
+		if !found || strings.TrimSpace(name) != key {
+			continue
+		}
+		number, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || number < 0 {
+			return 0
+		}
+		return number
+	}
+	return 0
+}
+
+// overrideString is the string value of a key of the overrides of Codex, key="value"; empty when absent or not a string.
+func overrideString(overrides []string, key string) string {
+	for _, override := range overrides {
+		name, value, found := strings.Cut(override, "=")
+		if !found || strings.TrimSpace(name) != key {
+			continue
+		}
+		unquoted, err := strconv.Unquote(strings.TrimSpace(value))
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(unquoted)
+	}
+	return ""
 }
 
 // Voice names the model of the voice: VoiceModel, or gpt-live-1.1-codex when none is set.

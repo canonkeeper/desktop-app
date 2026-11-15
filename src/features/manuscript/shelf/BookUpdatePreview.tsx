@@ -4,6 +4,7 @@ import type { ProjectJob } from '../../../entities/manuscript/api';
 import { formatCount, pluralize } from '../../../ui/copy';
 import { Alert } from '../../../ui/feedback/Alert';
 import { useSagaSections } from '../../../ui/saga-sections';
+import { useBookUpdateWords } from './book-update-words';
 import styles from './BookUpdatePreview.module.css';
 
 type ImportResult = Extract<NonNullable<ProjectJob['result']>, { type: 'import' }>;
@@ -14,6 +15,28 @@ type PreviewChapter = BookUpdatePreviewResult['preview']['chapters'][number];
 export function previewHasChanges(result: BookUpdatePreviewResult) {
   return result.preview.chapters.length > 0 || (result.preview.moreChapters ?? 0) > 0;
 }
+
+/**
+ * The words of where the new text comes from (specs/2026-11-15-desk-obsidian-book-web.md OU2.4): a file by default; a folder of
+ * Obsidian says its notes, and the notes of the author to the book are «Ваши заметки», not the notes of the folder.
+ */
+export interface PreviewSourceWords {
+  /** The notes of the author stay at their places. */
+  kept: string;
+  /** The notes (and drawings) of the chapters that go come back with them. */
+  leaving: (drawings: boolean) => string;
+  /** The return of the version before the update, said before the author decides (BR3.1). */
+  wrong: string;
+  /** «текстом файла» of «Правки, сделанные … в этих главах, заменятся текстом файла: …». */
+  text: string;
+}
+
+export const fileSourceWords: PreviewSourceWords = {
+  kept: 'Заметки останутся у своих мест; если цитаты заметки в новом тексте нет, заметка сохранит её и откроет начало главы.',
+  leaving: (drawings) => `${drawings ? 'Заметки и рисунки' : 'Заметки'} уходящих глав сохранятся и вернутся вместе с главой из «Недавно удалённых».`,
+  wrong: 'Если файл окажется не тот, прежнюю версию книги можно вернуть 7 дней — в «Что изменилось» у книги.',
+  text: 'текстом файла',
+};
 
 /** Up to three chapters named, the rest counted: «„Утро“, „Река“ и ещё 2». */
 function chapterNames(chapters: readonly PreviewChapter[]) {
@@ -27,11 +50,14 @@ function chapterNames(chapters: readonly PreviewChapter[]) {
  * was written on the site (specs/2026-11-11-ux9-shelf-chat.md SC1.4), and how long the work after the update takes (R6.5).
  * The notes are copies with the words they cite (`personal_notes`): words the new text has keep their place, others open the
  * start of its chapter; a drawing stands after the paragraph of its number, a removed chapter keeps both until it returns.
+ * Where the edits were made and whether the forecast stands are the words of the edition (OU3.2, OU3.3); what the text comes
+ * from — of its source (`of`, a file by default).
  */
-export function BookUpdatePreview({ done = false, result }: { result: BookUpdatePreviewResult; done?: boolean }) {
+export function BookUpdatePreview({ done = false, of = fileSourceWords, result }: { result: BookUpdatePreviewResult; done?: boolean; of?: PreviewSourceWords }) {
   const { preview } = result;
   const drawings = useSagaSections().includes('drawing');
-  const words = result.changedChapters ?? 0;
+  const words = useBookUpdateWords();
+  const changed = result.changedChapters ?? 0;
   const punctuation = result.punctuationChapters ?? 0;
   const renamed = result.renamedChapters ?? 0;
   const added = result.addedChapters ?? 0;
@@ -39,14 +65,14 @@ export function BookUpdatePreview({ done = false, result }: { result: BookUpdate
   const unchanged = result.unchangedChapters ?? 0;
   // After the update the same lines say what it did (specs/2026-11-11-ux7-trash.md TB4.1).
   const lines = (done ? [
-    words > 0 ? `Слова изменились — в ${words} ${pluralize(words, 'главе', 'главах', 'главах')}` : '',
+    changed > 0 ? `Слова изменились — в ${changed} ${pluralize(changed, 'главе', 'главах', 'главах')}` : '',
     punctuation > 0 ? `Только знаки, регистр или «ё» — ${formatCount(punctuation, 'глава', 'главы', 'глав')}` : '',
     renamed > 0 ? `${pluralize(renamed, 'Переименована', 'Переименованы', 'Переименованы')} — ${renamed}` : '',
     added > 0 ? `${pluralize(added, 'Добавлена', 'Добавлены', 'Добавлены')} — ${added}` : '',
     removed > 0 ? `${pluralize(removed, 'Ушла', 'Ушли', 'Ушли')} в «Недавно удалённые» — ${removed}, вернуть можно 7 дней` : '',
     unchanged > 0 ? `Без изменений — ${unchanged}` : '',
   ] : [
-    words > 0 ? `Слова изменятся — в ${words} ${pluralize(words, 'главе', 'главах', 'главах')}` : '',
+    changed > 0 ? `Слова изменятся — в ${changed} ${pluralize(changed, 'главе', 'главах', 'главах')}` : '',
     punctuation > 0 ? `Только знаки, регистр или «ё» — ${formatCount(punctuation, 'глава', 'главы', 'глав')}, перечитывать их не нужно` : '',
     renamed > 0 ? `${pluralize(renamed, 'Переименуется', 'Переименуются', 'Переименуются')} — ${renamed}` : '',
     added > 0 ? `${pluralize(added, 'Добавится', 'Добавятся', 'Добавятся')} — ${added}` : '',
@@ -55,11 +81,11 @@ export function BookUpdatePreview({ done = false, result }: { result: BookUpdate
   ]).filter(Boolean);
   // What becomes of the notes and the drawings, said before the update only (SC1.4).
   const kept = done ? [] : [
-    words + punctuation > 0 ? 'Заметки останутся у своих мест; если цитаты заметки в новом тексте нет, заметка сохранит её и откроет начало главы.' : '',
-    words + punctuation > 0 && drawings ? 'Рисунки останутся: в изменённой главе — после того же по счёту абзаца.' : '',
-    removed > 0 ? `${drawings ? 'Заметки и рисунки' : 'Заметки'} уходящих глав сохранятся и вернутся вместе с главой из «Недавно удалённых».` : '',
+    changed + punctuation > 0 ? of.kept : '',
+    changed + punctuation > 0 && drawings ? 'Рисунки останутся: в изменённой главе — после того же по счёту абзаца.' : '',
+    removed > 0 ? of.leaving(drawings) : '',
     // The update can be undone (specs/2026-11-12-ux10-book-revert.md BR3.1): said before the author decides.
-    'Если файл окажется не тот, прежнюю версию книги можно вернуть 7 дней — в «Что изменилось» у книги.',
+    of.wrong,
   ].filter(Boolean);
   const edited = done ? [] : preview.chapters.filter((chapter) => chapter.editedOnSite);
   return (
@@ -68,26 +94,28 @@ export function BookUpdatePreview({ done = false, result }: { result: BookUpdate
         {lines.map((line) => <li key={line}>{line}</li>)}
       </ul>
       {edited.length ? (
-        <Alert tone="warning">Правки, сделанные на сайте в этих главах, заменятся текстом файла: {chapterNames(edited)}.</Alert>
+        <Alert tone="warning">{`${words.edits.made} в этих главах, заменятся ${of.text}: ${chapterNames(edited)}.`}</Alert>
       ) : null}
       {kept.map((line) => <p className={styles.kept} key={line}>{line}</p>)}
       <section aria-label="Главы с изменениями" className={styles.chapters}>
         <h3 className={styles.label}>Главы с изменениями</h3>
         <ul className={styles.chapterList}>
-          {preview.chapters.map((chapter) => <PreviewChapterRow chapter={chapter} done={done} key={`${chapter.change}-${chapter.order}-${chapter.title}`} />)}
+          {preview.chapters.map((chapter) => (
+            <PreviewChapterRow chapter={chapter} done={done} editedMark={words.edits.mark} key={`${chapter.change}-${chapter.order}-${chapter.title}`} />
+          ))}
         </ul>
         {preview.moreChapters ? (
           <p className={styles.more}>И ещё {formatCount(preview.moreChapters, 'глава', 'главы', 'глав')} с изменениями.</p>
         ) : null}
       </section>
-      {done ? null : <p className={styles.estimate}>{estimate(preview.newCards, preview.threads, removed)}</p>}
+      {done || !words.forecast ? null : <p className={styles.estimate}>{estimate(preview.newCards, preview.threads, removed)}</p>}
     </>
   );
 }
 
-function PreviewChapterRow({ chapter, done }: { chapter: PreviewChapter; done: boolean }) {
+function PreviewChapterRow({ chapter, done, editedMark }: { chapter: PreviewChapter; done: boolean; editedMark: string }) {
   const [open, setOpen] = useState(false);
-  const label = `${chapter.order}. ${chapter.title} — ${changeLabel(chapter, done)}${!done && chapter.editedOnSite ? ', есть правки с сайта' : ''}`;
+  const label = `${chapter.order}. ${chapter.title} — ${changeLabel(chapter, done)}${!done && chapter.editedOnSite ? `, ${editedMark}` : ''}`;
   if (!chapter.places?.length) {
     return <li className={styles.chapter}>{label}</li>;
   }

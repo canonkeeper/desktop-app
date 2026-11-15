@@ -10,9 +10,14 @@ export const firstSagaTitle = 'Моя сага';
  * saga — the one main button —, look at the example of a build that has it, proofread a chapter of one's own. The shell
  * stands without the sections around it (S1.4), and every page of a saga leads here while there is none (FS1.1).
  */
-export function FirstScreen({ createSaga, example, proofread }: {
+export function FirstScreen({ createSaga, example, proofread, sagaFile = null }: {
   /** The form of the name with «Создать сагу». */
   createSaga: ReactNode;
+  /**
+   * «Перенести сагу с сайта или другого компьютера» of a build that opens a saga file — the app — right after the name: the
+   * second way to a saga (specs/2026-11-13-desk-sagafile-web.md SW2.1; board 44·2).
+   */
+  sagaFile?: ReactNode;
   /** «Посмотреть на примере» of a build with the demo saga (specs/2026-11-09-demo-saga.md DS1.1); none without. */
   example: ReactNode;
   /** «Вычитать мою главу» of a build with «Письмо» (FS2.1); none without. */
@@ -29,6 +34,7 @@ export function FirstScreen({ createSaga, example, proofread }: {
           {createSaga}
           <EntryLine>Сага — это все ваши книги одной истории. Дальше — загрузите первую книгу: через пару минут по ней можно спрашивать</EntryLine>
         </EntryCard>
+        {sagaFile}
         {example}
         {proofread}
       </div>

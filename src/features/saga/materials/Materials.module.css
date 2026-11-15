@@ -46,6 +46,11 @@
   line-height: 18px;
 }
 
+/* Where a record came from — a path of a note or a name of a file without a space breaks inside its column. */
+.origin {
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

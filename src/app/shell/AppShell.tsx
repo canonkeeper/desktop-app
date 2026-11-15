@@ -119,6 +119,11 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
   const bookRevert = useBookRevert({ api, onReturned: () => setBookChanges(null), toasts });
   // An author alone in his saga is told no role (specs/2026-11-11-ux9-shelf-chat.md SC1.1).
   const alone = useAloneInSaga(api, project, settings !== null);
+  // The closed block of «Настроить сагу» of the edition: «Скачать сагу файлом…» of the site (specs/2026-11-13-desk-sagafile-web.md SW4).
+  const sagaBlock = edition.useSagaSettingsBlock?.({
+    api, open: settings !== null,
+    saga: project ? { id: project.id, title: project.title, role: project.currentMembership.role } : null,
+  });
   const sagaSettings = useSagaSettings({ api, navigate, onDeleted: (deleted) => announceDeleted({ kind: 'project', id: deleted.id, title: deleted.title }) });
   const deletePresence = usePresence(deleting && project ? project : null);
   // The sagas take their place: «Новая сага» says so in one quiet line; its window says the refusal after the press (PR2.7).
@@ -233,7 +238,10 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
       label={title}
       narrow={narrowColumn(route)}
       newSagaNote={newSagaNote}
-      notice={limited ? <ReaderLine role={limited} /> : unnamed ? <FirstSagaLine name={project.title} onRename={() => setSettings({ error: null })} /> : undefined}
+      notice={<>
+        {sagaBlock?.notice}
+        {limited ? <ReaderLine role={limited} /> : unnamed ? <FirstSagaLine name={project.title} onRename={() => setSettings({ error: null })} /> : null}
+      </>}
       onNewSaga={() => setNewSaga(true)}
       onOpenSearch={() => search.openSearch(isReaderRoute(route) ? 'book' : 'project')}
       overlays={overlays()}
@@ -294,6 +302,7 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
       {settings && project ? (
         <SagaSettings
           alone={alone}
+          beforeDelete={sagaBlock?.item?.(() => setSettings(null))}
           error={settings.error}
           name={project.title}
           onClose={() => setSettings(null)}
@@ -329,6 +338,7 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
           onRevert={() => changedBook && bookRevert.ask({ bookId: changedBook.id, title: changedBook.title })} />
       ) : null}
       {bookRevert.element}
+      {sagaBlock?.overlay}
       {/* «Недавно удалённые» of every saga of the author (specs/2026-11-11-ux7-trash.md TB1.1): the server lists what each
           role may return. */}
       {deletedOpen ? (

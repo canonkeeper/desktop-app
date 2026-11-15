@@ -25,6 +25,8 @@ type desktopState struct {
 	Network []struct {
 		Host string `json:"host"`
 	} `json:"network"`
+	Welcome      *bool `json:"welcome"`
+	CheckUpdates *bool `json:"checkUpdates"`
 }
 
 // stateOfTheWindow reads getDesktopState until the place of the data is counted. How long a request waits for the count is

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	accountdomain "canonkeeper/backend/internal/domain/accountlink"
+	"canonkeeper/backend/internal/domain/aisettings"
 	service "canonkeeper/backend/internal/services/desktop"
 )
 
@@ -25,21 +29,172 @@ const usageLimit = 2 * time.Second
 // counts, and a count that ended between two of its requests is the place it waits for.
 const usageFresh = 30 * time.Second
 
-// appState is getDesktopState of this run: the version the build names, the data directory and its copies.
-func appState(data DataDir, version string) service.ReadAppState {
+// appState is getDesktopState of this run: the version the build names, the data directory and its copies, the welcome
+// settings.json keeps (specs/2026-11-13-desk-upgrade.md UG5.1) and where the app goes in the network (ST4.3, DT11.4).
+func appState(data DataDir, version string, welcome service.WelcomeSettings, network func() []service.NetworkUse, proxy func() string) service.ReadAppState {
 	return service.ReadAppState{
 		Version: version,
 		DataDir: data.Root,
 		Usage:   &usageMeter{root: data.Root, limit: usageLimit, count: placeOf, now: time.Now},
 		Backups: backupList{directory: data.Backups()},
-		Network: networkUses,
+		Network: network,
+		Proxy:   proxy,
+		Welcome: welcome,
 	}
 }
 
+// reaches is the link with an account as the list of the network reads it.
+type reaches interface{ Reaches() bool }
+
 // networkUses is where the app goes in the network in this build and its settings (ST4.3, DT11.4): the open app goes
-// nowhere; a slice that makes the app go somewhere adds its host and what for here.
-func networkUses() []service.NetworkUse {
-	return nil
+// nowhere; a linked app, or one whose link started, goes to the server CanonKeeper of its build
+// (specs/2026-11-13-desk-account.md AC2.7); a build that updates itself goes to the hosts of its updates — others
+// (specs/2026-11-13-desk-updates.md UB1.6). One line a host: what the app goes to one host for stands in its one line.
+// A slice that makes the app go somewhere adds its host and what for here.
+func networkUses(account reaches, site string, others ...func() []service.NetworkUse) func() []service.NetworkUse {
+	return func() []service.NetworkUse {
+		var uses []service.NetworkUse
+		if account.Reaches() {
+			uses = append(uses, service.NetworkUse{Host: accountdomain.HostOf(site), Purpose: "связь с аккаунтом: имя, тариф и остатки"})
+		}
+		for _, other := range others {
+			for _, use := range other() {
+				at := slices.IndexFunc(uses, func(known service.NetworkUse) bool { return known.Host == use.Host })
+				if at < 0 {
+					uses = append(uses, use)
+					continue
+				}
+				uses[at].Purpose += "; " + use.Purpose
+			}
+		}
+		return uses
+	}
+}
+
+// ownNetwork is the provider of «Свой ИИ» while its address is kept (specs/2026-11-14-desk-journal.md JR4.1): the questions,
+// the reading of the books, the list of the models and the check of the connection go there; an address of this computer
+// is a program of this computer, with no promise that the text goes no further.
+func ownNetwork(ai func() aisettings.Settings) func() []service.NetworkUse {
+	return func() []service.NetworkUse {
+		own := ai().Own
+		if own == nil || own.BaseURL == "" || own.Host() == "" {
+			return nil
+		}
+		purpose := "помощник через «Свой ИИ»"
+		if own.Local() {
+			purpose = "программа на этом компьютере, помощник через «Свой ИИ»"
+		}
+		return []service.NetworkUse{{Host: own.Host(), Purpose: purpose}}
+	}
+}
+
+// proxyOfTheNetwork is the host of the proxy of the environment the requests of the backend go through (JR4.3), without a
+// name or a password — "" when no address of the list goes through one: the server of the link while the app reaches it,
+// the provider of «Свой ИИ» by its kept address. The gateway and the client of the site take the proxy by
+// http.ProxyFromEnvironment, and so does this: the proxy of the scheme of the address, never for this computer, not for a
+// host NO_PROXY names.
+func proxyOfTheNetwork(lookup func(string) string, account reaches, site string, ai func() aisettings.Settings) func() string {
+	return func() string {
+		var targets []string
+		if account.Reaches() {
+			targets = append(targets, site)
+		}
+		if own := ai().Own; own != nil && own.BaseURL != "" {
+			targets = append(targets, own.BaseURL)
+		}
+		for _, target := range targets {
+			if host := proxyFor(lookup, target); host != "" {
+				return host
+			}
+		}
+		return ""
+	}
+}
+
+// proxyFor is the host of the proxy a request to the address goes through, "" when it goes straight.
+func proxyFor(lookup func(string) string, address string) string {
+	target, err := url.Parse(address)
+	if err != nil || target.Hostname() == "" {
+		return ""
+	}
+	var value string
+	switch target.Scheme {
+	case "https":
+		value = environmentOf(lookup, "HTTPS_PROXY", "https_proxy")
+	case "http":
+		value = environmentOf(lookup, "HTTP_PROXY", "http_proxy")
+	}
+	if value == "" || !throughProxy(target, environmentOf(lookup, "NO_PROXY", "no_proxy")) {
+		return ""
+	}
+	proxy, err := url.Parse(value)
+	if err != nil || proxy.Host == "" {
+		if proxy, err = url.Parse("http://" + value); err != nil || proxy.Host == "" {
+			return ""
+		}
+	}
+	return proxy.Host
+}
+
+func environmentOf(lookup func(string) string, names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(lookup(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// throughProxy is the rule of http.ProxyFromEnvironment for an address: this computer goes straight, and so does a host
+// NO_PROXY names — «*», an address or a network, a domain with its subdomains, «.domain» for the subdomains, with a port or
+// without.
+func throughProxy(target *url.URL, noProxy string) bool {
+	host, port := strings.ToLower(target.Hostname()), target.Port()
+	if port == "" {
+		port = map[string]string{"https": "443", "http": "80"}[target.Scheme]
+	}
+	ip := net.ParseIP(host)
+	if host == "localhost" || ip != nil && ip.IsLoopback() {
+		return false
+	}
+	for _, entry := range strings.Split(strings.ToLower(noProxy), ",") {
+		entry = strings.TrimSpace(entry)
+		switch {
+		case entry == "":
+			continue
+		case entry == "*":
+			return false
+		}
+		if _, network, err := net.ParseCIDR(entry); err == nil {
+			if ip != nil && network.Contains(ip) {
+				return false
+			}
+			continue
+		}
+		name, entryPort := entry, ""
+		if at := strings.LastIndex(entry, ":"); at > 0 && !strings.Contains(entry[at+1:], "]") && net.ParseIP(entry) == nil {
+			name, entryPort = entry[:at], entry[at+1:]
+		}
+		name = strings.Trim(name, "[]")
+		if entryPort != "" && entryPort != port {
+			continue
+		}
+		if entryIP := net.ParseIP(name); entryIP != nil {
+			if ip != nil && entryIP.Equal(ip) {
+				return false
+			}
+			continue
+		}
+		name = strings.TrimPrefix(name, "*")
+		whole := !strings.HasPrefix(name, ".")
+		if whole {
+			name = "." + name
+		}
+		if ip == nil && (strings.HasSuffix(host, name) || whole && host == name[1:]) {
+			return false
+		}
+	}
+	return true
 }
 
 // usageMeter counts the place of the data directory in the background: a request starts a count unless one goes on or

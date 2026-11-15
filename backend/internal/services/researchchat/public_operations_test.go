@@ -236,3 +236,85 @@ func TestSubmitTurnHashesAQuestionWithoutImages(t *testing.T) {
 		t.Fatalf("question = %+v", command)
 	}
 }
+
+// helperOfTheApp is the helper of the build as the turn of the chat asks it.
+type helperOfTheApp bool
+
+func (connected helperOfTheApp) Connected(context.Context) bool { return bool(connected) }
+
+// specs/2026-11-13-desk-gateway.md GW4.4: a build whose helper is not connected refuses a question of the chat itself —
+// no turn starts and nothing is spent — and takes it once the helper is there; a build without the port — the site —
+// takes it as before.
+func TestSubmitTurnRefusesAQuestionWhileTheHelperIsNotConnected(t *testing.T) {
+	session := researchdomain.Session{
+		ID: "chat-1", ProjectID: "10000000-0000-4000-8000-000000000001", SourceView: "draft", Scope: researchdomain.ScopeProject,
+		LifecycleEpoch: 1, AgentGeneration: researchdomain.CurrentAgentGeneration, Kind: agent.SessionResearch,
+	}
+	input := SubmitTurnInput{
+		Question: "Где застава?", IdempotencyKey: "idempotency-helper", RequestMethod: "post",
+		RequestPath:       "/api/v1/research-chats/chat-1/turns",
+		SessionWriteProof: auth.SessionWriteProof{SessionHash: "session-hash", CSRFSecretHash: "csrf-hash"},
+	}
+	for _, test := range []struct {
+		name   string
+		helper Helper
+		want   error
+	}{
+		{"not connected", helperOfTheApp(false), researchdomain.ErrHelperNotConnected},
+		{"connected", helperOfTheApp(true), nil},
+		{"the site", nil, nil},
+	} {
+		repository := &sessionRepositoryStub{session: session, job: jobs.Job{ID: "job-1", ProjectID: session.ProjectID, Kind: jobs.KindResearchChatTurn}}
+		useCase := NewSubmitTurn(repository, clockStub{value: time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)})
+		if test.helper != nil {
+			useCase = useCase.WithHelper(test.helper)
+		}
+		_, err := useCase.Execute(context.Background(), researchdomain.Actor{UserID: "user-1"}, session.ID, input)
+		if !errors.Is(err, test.want) || (test.want != nil) != (repository.started.ActorUserID == "") {
+			t.Fatalf("%s = %v, started %+v", test.name, err, repository.started)
+		}
+	}
+}
+
+// gateOfTheTest is the gate of new turns of the app: closed, it refuses; open, it records that the turn was let in and
+// kept it open until the turn was a Job.
+type gateOfTheTest struct {
+	closed       bool
+	admitted     int
+	doneAfterJob bool
+	repository   *sessionRepositoryStub
+}
+
+func (gate *gateOfTheTest) Admit() (func(), error) {
+	if gate.closed {
+		return nil, researchdomain.ErrUpdating
+	}
+	gate.admitted++
+	return func() { gate.doneAfterJob = gate.repository.started.ActorUserID != "" }, nil
+}
+
+// specs/2026-11-13-desk-updates.md UB2.1: while the app installs an update no turn begins and nothing is spent; a turn the
+// gate let in holds it open until it is a Job.
+func TestSubmitTurnWaitsForTheGateOfTheApp(t *testing.T) {
+	session := researchdomain.Session{
+		ID: "chat-1", ProjectID: "10000000-0000-4000-8000-000000000001", SourceView: "published", Scope: researchdomain.ScopeProject,
+		LifecycleEpoch: 1, AgentGeneration: researchdomain.CurrentAgentGeneration, Kind: agent.SessionResearch,
+	}
+	input := SubmitTurnInput{
+		Question: "Где застава?", IdempotencyKey: "idempotency-gate", RequestMethod: "post",
+		RequestPath:       "/api/v1/research-chats/chat-1/turns",
+		SessionWriteProof: auth.SessionWriteProof{SessionHash: "session-hash", CSRFSecretHash: "csrf-hash"},
+	}
+	for _, closed := range []bool{true, false} {
+		repository := &sessionRepositoryStub{session: session, job: jobs.Job{ID: "job-1", ProjectID: session.ProjectID, Kind: jobs.KindResearchChatTurn}}
+		gate := &gateOfTheTest{closed: closed, repository: repository}
+		useCase := NewSubmitTurn(repository, clockStub{value: time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)}).WithGate(gate)
+		_, err := useCase.Execute(context.Background(), researchdomain.Actor{UserID: "user-1"}, session.ID, input)
+		switch {
+		case closed && (!errors.Is(err, researchdomain.ErrUpdating) || repository.started.ActorUserID != ""):
+			t.Fatalf("a question while the app installs = %v, started %+v", err, repository.started)
+		case !closed && (err != nil || gate.admitted != 1 || !gate.doneAfterJob):
+			t.Fatalf("a question with the gate open = %v, admitted %d, done after the Job %v", err, gate.admitted, gate.doneAfterJob)
+		}
+	}
+}

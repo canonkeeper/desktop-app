@@ -144,13 +144,14 @@ func TestAFailedMapLeavesTheCardsJobAlone(t *testing.T) {
 	}
 }
 
-// specs/2026-11-10-map-nodes.md MN1.7: the rules of the nodes are saga-map/8, so every map of the rules before is stale and the
-// catch-up at start builds it again without the model.
+// specs/2026-11-10-map-nodes.md MN1.7, specs/2026-11-14-chapter-place-number.md CP1.1: the rules of the nodes and of the
+// places of the chapters are saga-map/9, so every map of the rules before — with the places of the stored order — is stale
+// and the catch-up at start builds it again without the model.
 func TestTheRevisionOfTheMapNamesItsRules(t *testing.T) {
 	version := domain.NewVersion("project", "draft", "fp", nil)
 	stamp := CardsStamp{Cards: 17, Names: "names"}
-	sum := sha256.Sum256([]byte("saga-map/8\x00" + cardsRevision(version, stamp)))
+	sum := sha256.Sum256([]byte("saga-map/9\x00" + cardsRevision(version, stamp)))
 	if got, want := mapRevision(version, stamp), hex.EncodeToString(sum[:16]); got != want {
-		t.Fatalf("revision = %s, want %s of saga-map/8", got, want)
+		t.Fatalf("revision = %s, want %s of saga-map/9", got, want)
 	}
 }

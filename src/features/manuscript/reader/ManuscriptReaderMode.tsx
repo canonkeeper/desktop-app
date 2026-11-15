@@ -7,7 +7,7 @@ import {
   readerColumnWidths, readerTextSizes, textSizeStep, useReaderPreferencesStore, useTextBackground,
 } from '../../../entities/manuscript/display-preferences-store';
 import type { AppRoute, BackFrom, RouteNavigate } from '../../../shared/navigation/app-route';
-import { formatReaderChapterTitle } from '../../../ui/copy';
+import { chapterHeading } from '../../../ui/copy';
 import { useToasts } from '../../../ui/feedback/useToastQueue';
 import type { MoreMenuItem } from '../../../ui/overlays/MoreMenu';
 import { usePresence } from '../../../ui/overlays/use-presence';
@@ -157,7 +157,7 @@ export function ManuscriptReaderMode({ api, navigate, route }: ReaderPageProps) 
   const activeParagraphId = landing.paragraph?.id ?? null;
   const locator = chapter ? buildReaderLocator(project?.id ?? '', book?.id ?? '', chapter.id, activeParagraphId ?? '', landing.paragraph?.text ?? '',
     chapter.revision, textSourceView) : null;
-  const title = chapter ? `Глава ${chapter.navigation.displayNumber}. ${formatReaderChapterTitle(chapter.navigation.displayNumber, chapter.title)}`.replace(/\. $/u, '') : '';
+  const title = chapter ? chapterHeading(chapter.navigation.displayNumber, chapter.navigation.displayTitle) : '';
   // The tab names the chapter and the book read, and the saga (specs/2026-11-10-ux1-shell.md SH1.3).
   usePageTitlePart('object', [title || null, book?.title].filter(Boolean).join(' · '));
 
@@ -270,7 +270,7 @@ export function ManuscriptReaderMode({ api, navigate, route }: ReaderPageProps) 
     const from = Math.min(...numbers);
     const to = Math.max(...numbers);
     const paragraphs = numbers.length ? to > from ? `, абзацы ${from}–${to}` : `, абзац ${from}` : '';
-    return `Книга ${book.place}, ${chapterWords({ displayNumber: chapter.navigation.displayNumber, title: chapter.title })}${paragraphs}`;
+    return `Книга ${book.place}, ${chapterWords(chapter.navigation)}${paragraphs}`;
   };
 
   const lookPresence = usePresence(lookOpen && status === 'ready' ? 'open' : null);

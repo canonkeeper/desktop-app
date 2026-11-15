@@ -18,7 +18,21 @@ type cardsPolicy struct {
 	asked   int
 }
 
-func (policy *cardsPolicy) CardModelAllowed(_ context.Context, projectID string) (bool, error) {
+func (*cardsPolicy) Unread(context.Context, string, int) (map[CardKey]bool, error) { return nil, nil }
+
+func (*cardsPolicy) MarkUnread(context.Context, string, CardKey, int, string) error { return nil }
+
+func (*cardsPolicy) MarksChapters(context.Context) bool { return false }
+
+func (*cardsPolicy) NamesUnread(context.Context, string, string) (string, error) { return "", nil }
+
+func (*cardsPolicy) MarkNamesUnread(context.Context, string, string, string, string) error {
+	return nil
+}
+
+func (*cardsPolicy) ChaptersAtOnce(context.Context) int { return 0 }
+
+func (policy *cardsPolicy) ReadingAllowed(_ context.Context, projectID string, _ bool) (bool, error) {
 	policy.asked++
 	if projectID != cardsProjectID {
 		return false, errors.New("wrong project")

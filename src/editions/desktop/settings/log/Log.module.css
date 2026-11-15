@@ -1,0 +1,125 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* «Настройки → Журнал» (board 44·10, Pattern/Desktop/Settings Log, Log Row). */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.choice {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+.days {
+  display: grid;
+  gap: 20px;
+}
+
+.day {
+  display: grid;
+  gap: 10px;
+}
+
+.dayTitle {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  font-weight: 600;
+}
+
+.rows,
+.sendings {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--ck-border);
+  padding-bottom: 10px;
+}
+
+/* time · kind · what (sent + to) · size: what wraps, the kind and the size keep their places (44·10, 900). */
+.line {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.time,
+.size {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kind {
+  white-space: nowrap;
+}
+
+.what {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.to {
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+}
+
+/* Under the time what the row was about, under the size «Подробно» (44·10). */
+.foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.about {
+  min-width: 0;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.details {
+  display: grid;
+  gap: 8px;
+  border-left: 2px solid var(--ck-border);
+  padding-left: 12px;
+}
+
+.sending {
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-label);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .line {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .kind {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .what {
+    grid-column: 1 / -1;
+  }
+}

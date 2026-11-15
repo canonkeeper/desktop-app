@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronUp, EyeOff, MessageCircleQuestion, Network, Pencil, Search, Undo2, Unlink, X } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { isApiStatusFailure } from '../../entities/api-errors';
-import { authorMaterialKindLabel, type AuthorMaterialsApiClient } from '../../entities/author-materials/api';
+import { authorMaterialKindLabel, obsidianOrigin, type AuthorMaterialsApiClient } from '../../entities/author-materials/api';
 import { useSagaMapNodeQuery, type SagaApiClient, type SagaChapterRef, type SagaMap, type SagaMapCategory, type SagaMapNodeCard, type SourceView } from '../../entities/saga/api';
 import { Button } from '../../ui/controls/Button';
 import { IconButton } from '../../ui/controls/IconButton';
@@ -303,7 +303,9 @@ function MaterialBlock({ api, canEdit, material, onGone, plan, projectId }: { ap
           {material.properties.map((property) => <div key={`${property.key}:${property.value}`} style={{ display: 'contents' }}><dt>{property.key}</dt><dd>{property.value}</dd></div>)}
         </dl>
       ) : null}
-      {material.sourceName ? <p className={styles.meta}>Из файла «{material.sourceName}»{material.section ? `, ${material.section}` : ''}</p> : null}
+      {/* specs/2026-11-15-desk-obsidian-notes.md ON2.1: a record from a note says it as «Ваши материалы» say it. */}
+      {obsidianOrigin(material) ? <p className={`${styles.meta} ${materialStyles.origin}`}>Запись {obsidianOrigin(material)}</p>
+        : material.sourceName ? <p className={`${styles.meta} ${materialStyles.origin}`}>Из файла «{material.sourceName}»{material.section ? `, ${material.section}` : ''}</p> : null}
       {canEdit ? (
         <div className={styles.cardActions}>
           <Button onClick={() => setDialog('edit')} size="sm" variant="outline"><Pencil aria-hidden="true" size={15} />Изменить</Button>

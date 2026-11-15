@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	domain "canonkeeper/backend/internal/domain/authormaterials"
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/jobs"
 )
@@ -19,17 +20,6 @@ const callAttempts = 3
 
 // answerFailed is the code of a Job whose model kept answering what does not read.
 const answerFailed = "author_materials.unreadable_answer"
-
-const mapInstructions = `Ты размечаешь раздел файла, в котором автор книги собрал свои материалы: навыки, места, персонажей, предметы, фракции.
-Верни только JSON без пояснений.
-
-Если раздел — таблица (строки с номерами столбцов): {"kind":"<тип>","header":<первая строка — заголовки столбцов: true или false>,"name":<номер столбца с названием записи>,"description":<номер столбца с описанием или null>}.
-
-Если раздел — абзацы: {"kind":"<тип>","items":[{"name":"<имя записи дословно из текста>","kind":"<тип>","from":<номер первого абзаца о ней>,"to":<номер последнего абзаца о ней>}]}.
-Запись — отдельная сущность с именем, о которой абзацы что-то сообщают. Обычное повествование без такой сущности — не запись.
-
-<тип> — одно из: skill (навык, умение, заклинание), place (место), character (персонаж), item (предмет), faction (фракция, организация), other (другое). Тип таблицы подскажет название раздела и столбцов.
-Не выдумывай имён и не добавляй записей, которых нет в тексте.`
 
 // Model is the direct model client of the Job: the cards model behind the model_api gate, below the chat.
 type Model interface {
@@ -61,9 +51,25 @@ type RunImport struct {
 	Model     Model
 	ModelName string
 	Usage     UsageRecorder
+	// Ended hears the end of the Job (specs/2026-11-13-desk-account-ai.md AI3.8): a build whose uploads a site counts closes
+	// the permit of the upload there; the site has none.
+	Ended WorkEnded
 }
 
-func (run RunImport) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, subject jobs.AuthorMaterialsImportSubject) (jobs.Status, error) {
+// WorkEnded hears the end of a Job of an upload of materials: succeeded, canceled or failed.
+type WorkEnded interface {
+	Ended(ctx context.Context, jobID string, outcome jobs.Status)
+}
+
+// ended tells the end of the Job the run committed; a failure the worker repeats is no end.
+func (run RunImport) ended(ctx context.Context, jobID string, status jobs.Status, err error) {
+	if run.Ended != nil && err == nil && (status == jobs.StatusSucceeded || status == jobs.StatusFailed || status == jobs.StatusCanceled) {
+		run.Ended.Ended(context.WithoutCancel(ctx), jobID, status)
+	}
+}
+
+func (run RunImport) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, subject jobs.AuthorMaterialsImportSubject) (status jobs.Status, err error) {
+	defer func() { run.ended(ctx, claim.JobID, status, err) }()
 	if claim.Validate() != nil || claim.ProjectID != subject.ProjectID {
 		return "", ErrInvalidJob
 	}
@@ -73,7 +79,9 @@ func (run RunImport) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, su
 	}
 	mappings := make([]domain.Mapping, len(parsed.Sections))
 	for index, section := range parsed.Sections {
-		mapping, ok, err := run.mapSection(ctx, claim, section)
+		// A call gives a part of one section of the file or text of the author, named by its number
+		// (specs/2026-11-14-desk-journal.md JR1.3).
+		mapping, ok, err := run.mapSection(disclosure.With(ctx, disclosure.Named{Sections: []int{index + 1}}), claim, section)
 		if err != nil {
 			return "", err
 		}
@@ -89,12 +97,16 @@ func (run RunImport) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, su
 
 // CancelForClaim ends a stopped Job: its import goes with the text.
 func (run RunImport) CancelForClaim(ctx context.Context, claim jobs.WorkerClaim) error {
-	return run.Store.FinishImport(ctx, claim, ImportOutcome{Status: jobs.StatusCanceled})
+	err := run.Store.FinishImport(ctx, claim, ImportOutcome{Status: jobs.StatusCanceled})
+	run.ended(ctx, claim.JobID, jobs.StatusCanceled, err)
+	return err
 }
 
 // FailForClaim ends a Job the worker gave up on.
 func (run RunImport) FailForClaim(ctx context.Context, claim jobs.WorkerClaim, failure jobs.Error) (jobs.Status, error) {
-	return jobs.StatusFailed, run.Store.FinishImport(ctx, claim, ImportOutcome{Status: jobs.StatusFailed, Error: &failure})
+	err := run.Store.FinishImport(ctx, claim, ImportOutcome{Status: jobs.StatusFailed, Error: &failure})
+	run.ended(ctx, claim.JobID, jobs.StatusFailed, err)
+	return jobs.StatusFailed, err
 }
 
 func (run RunImport) mapSection(ctx context.Context, claim jobs.WorkerClaim, section domain.Section) (domain.Mapping, bool, error) {
@@ -120,7 +132,7 @@ func (run RunImport) mapSection(ctx context.Context, claim jobs.WorkerClaim, sec
 func (run RunImport) ask(ctx context.Context, claim jobs.WorkerClaim, input string) (mapAnswer, bool, error) {
 	var lastErr error
 	for range callAttempts {
-		text, usage, err := run.Model.Complete(ctx, mapInstructions, input)
+		text, usage, err := run.Model.Complete(ctx, domain.MapInstructions, input)
 		if ctx.Err() != nil {
 			return mapAnswer{}, false, ctx.Err()
 		}
@@ -128,6 +140,10 @@ func (run RunImport) ask(ctx context.Context, claim jobs.WorkerClaim, input stri
 			run.Usage.RecordModelUsage(context.WithoutCancel(ctx), quota.UsageRecord{
 				Source: quota.UsageAuthorMaterials, ProjectID: claim.ProjectID, JobID: claim.JobID, Model: run.ModelName, Usage: usage,
 			})
+		}
+		if errors.Is(err, disclosure.ErrJournal) {
+			// The journal of the app sent nothing: the worker repeats the Job (JR1.6).
+			return mapAnswer{}, false, err
 		}
 		if err != nil {
 			lastErr = err

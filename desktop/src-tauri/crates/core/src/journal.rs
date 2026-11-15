@@ -36,6 +36,14 @@ impl Journal {
         Journal { file: Arc::new(Mutex::new(file)) }
     }
 
+    /// Closes the file for every clone: the erasure removes the directory of the log (specs/2026-11-13-desk-erase.md
+    /// ER1.3); what follows is written nowhere.
+    pub fn close(&self) {
+        if let Ok(mut file) = self.file.lock() {
+            *file = None;
+        }
+    }
+
     /// Writes one event: a fixed name and, at most, numbers and names the shell itself chose.
     pub fn note(&self, event: &str) {
         let Ok(mut file) = self.file.lock() else { return };

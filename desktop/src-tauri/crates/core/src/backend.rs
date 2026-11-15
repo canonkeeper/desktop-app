@@ -5,6 +5,7 @@
 //! through its stdout (DA3.2). Two threads hear it: one reads the lines, one notices the exit — and the exit is reported
 //! only after the last line, so a `fatal` always comes before it.
 
+use std::collections::BTreeMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -14,7 +15,10 @@ use std::thread;
 use std::time::Duration;
 
 use crate::control::{parse, LineError, ToBackend};
+use crate::folder::Reply;
+use crate::secrets::{Secret, Store};
 use crate::supervisor::Event;
+use crate::update::worker::Done;
 
 /// One line is at most this long, as on the side of the backend (control.go, maxControlLine).
 const MAX_LINE: u64 = 1 << 20;
@@ -24,13 +28,41 @@ const POLL: Duration = Duration::from_millis(100);
 const DRAIN: Duration = Duration::from_secs(2);
 
 /// What the threads of a backend tell their owner besides the events of the supervisor.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Heard {
     Event(Event),
     /// A line that is not a message: logged by its kind, never by its text.
     Unreadable(LineError),
     /// The process ended with this code (`None` — killed by a signal).
     ExitCode(Option<i32>),
+    /// The keeper of the secrets did what `request` asked, or did not (`secret-result`).
+    Kept {
+        request: String,
+        ok: bool,
+    },
+    /// The keeper of the secrets read the records of the set for the `start` of `launch`.
+    Records {
+        launch: u64,
+        store: Store,
+        records: BTreeMap<String, Secret>,
+    },
+    /// The keeper of the secrets removed every record of the set, or did not (specs/2026-11-13-desk-erase.md ER1.3).
+    Erased {
+        ok: bool,
+    },
+    /// The thread of the network of an update found something (specs/2026-11-13-desk-updates.md UB1.3, UB2.2).
+    Update(Done),
+    /// The page asks for the system window of a choice of a folder (specs/2026-11-13-desk-obsidian.md OB1.2).
+    Pick {
+        request: String,
+        reply: Reply,
+    },
+    /// The system window of a choice closed: the folder the shell checked — its path or why it is refused — or nothing,
+    /// when the author canceled.
+    Chosen {
+        request: String,
+        checked: Option<Result<String, String>>,
+    },
 }
 
 /// A running backend.

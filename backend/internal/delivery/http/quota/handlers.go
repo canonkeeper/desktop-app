@@ -48,13 +48,27 @@ type projectQuota struct {
 	Sources   sources `json:"sources"`
 }
 
+// activeTurns is ActiveTurnsQuota of the contract: «разом» and, only where the build tells it, who holds its places
+// (specs/2026-11-15-desk-turns-here.md TH2.1); the site never does.
+type activeTurns struct {
+	Used   int64   `json:"used"`
+	Limit  int64   `json:"limit"`
+	Places *places `json:"places,omitempty"`
+}
+
+type places struct {
+	Answering int64 `json:"answering"`
+	Held      int64 `json:"held"`
+	Elsewhere int64 `json:"elsewhere"`
+}
+
 type accountQuota struct {
-	Day         string  `json:"day"`
-	ResetsAt    string  `json:"resetsAt"`
-	ChatTurns   counter `json:"chatTurns"`
-	ActiveTurns counter `json:"activeTurns"`
-	Imports     counter `json:"imports"`
-	Images      counter `json:"images"`
+	Day         string      `json:"day"`
+	ResetsAt    string      `json:"resetsAt"`
+	ChatTurns   counter     `json:"chatTurns"`
+	ActiveTurns activeTurns `json:"activeTurns"`
+	Imports     counter     `json:"imports"`
+	Images      counter     `json:"images"`
 	// The other counters of a day a refusal can meet (specs/2026-11-10-ux2-tariff-account.md TA2.3): the author's own
 	// pictures, the scenes, checks and proofreadings of «Письмо», the messages of the helpers of «Рисование» and «Письмо»
 	// and «Переписать».
@@ -103,7 +117,7 @@ func response(account domain.Account) accountQuota {
 		Day:           account.Day.Format(time.DateOnly),
 		ResetsAt:      account.ResetsAt.UTC().Format(time.RFC3339),
 		ChatTurns:     counter{Used: account.ChatTurns, Limit: limits.ChatTurnsPerDay},
-		ActiveTurns:   counter{Used: account.ActiveTurns, Limit: limits.ActiveTurns},
+		ActiveTurns:   activeTurnsOf(account),
 		Imports:       counter{Used: account.Imports, Limit: limits.ImportsPerDay},
 		Images:        counter{Used: account.Images, Limit: limits.ImagesPerDay},
 		ImageUploads:  counter{Used: account.ImageUploads, Limit: limits.ImageUploadsPerDay},
@@ -116,6 +130,14 @@ func response(account domain.Account) accountQuota {
 			limits.AccountBooks, limits.AccountChapters, limits.AccountCharacters),
 		OwnedProjects: owned,
 	}
+}
+
+func activeTurnsOf(account domain.Account) activeTurns {
+	counted := activeTurns{Used: account.ActiveTurns, Limit: account.Limits.ActiveTurns}
+	if told := account.Places; told != nil {
+		counted.Places = &places{Answering: told.Answering, Held: told.Held, Elsewhere: told.Elsewhere}
+	}
+	return counted
 }
 
 func sourcesOf(value domain.Sources, books, chapters, characters int64) sources {

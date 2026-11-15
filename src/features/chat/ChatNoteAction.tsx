@@ -6,12 +6,11 @@ import { TextSelectionMenu } from '../../ui/TextSelectionMenu';
 import { captureMessageText } from '../../shared/notes/note-capture';
 import { useNotes } from '../../shared/notes/notes-context';
 
-export function ChatNoteAction({ chatId, event, contentRef }: {
-  chatId: string;
-  event: CanonicalAgentTimelineEvent;
-  contentRef: RefObject<HTMLElement | null>;
-}) {
-  const notes = useNotes();
+/**
+ * The selection the author made in the words of a message, while it lies wholly in them: what it says and where it stands,
+ * for the menu of a selection. An answer of a chat and an answer of a chat of a saga file read it alike.
+ */
+export function useMessageSelection(contentRef: RefObject<HTMLElement | null>) {
   const [selection, setSelection] = useState<{ body: string; quote: string; rect: DOMRect } | null>(null);
   useEffect(() => {
     function updateSelection() {
@@ -29,6 +28,16 @@ export function ChatNoteAction({ chatId, event, contentRef }: {
     document.addEventListener('selectionchange', updateSelection);
     return () => document.removeEventListener('selectionchange', updateSelection);
   }, [contentRef]);
+  return { selection, clear: () => setSelection(null) };
+}
+
+export function ChatNoteAction({ chatId, event, contentRef }: {
+  chatId: string;
+  event: CanonicalAgentTimelineEvent;
+  contentRef: RefObject<HTMLElement | null>;
+}) {
+  const notes = useNotes();
+  const { selection, clear } = useMessageSelection(contentRef);
   if (!notes || !chatId || !event.providerTurnId || !event.providerItemId || !event.text?.trim()) return null;
 
   function capture({ body, quote }: { body: string; quote: string }) {
@@ -40,7 +49,7 @@ export function ChatNoteAction({ chatId, event, contentRef }: {
   function finishSelection(run: () => void) {
     contentRef.current?.parentElement?.focus({ preventScroll: true });
     window.getSelection()?.removeAllRanges();
-    setSelection(null);
+    clear();
     run();
   }
 
@@ -50,7 +59,7 @@ export function ChatNoteAction({ chatId, event, contentRef }: {
     const text = captureMessageText(content);
     finishSelection(() => capture(text));
   }}><StickyNote aria-hidden="true" size={16} />В заметки</Button>
-    {selection ? <TextSelectionMenu rect={selection.rect} onDismiss={() => setSelection(null)}
+    {selection ? <TextSelectionMenu rect={selection.rect} onDismiss={clear}
       onAddNote={() => finishSelection(() => capture(selection))}
       onCopy={() => finishSelection(() => { void navigator.clipboard?.writeText(selection.body).catch(() => undefined); })} /> : null}
   </>;

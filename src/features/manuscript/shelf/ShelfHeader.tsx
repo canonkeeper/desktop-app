@@ -1,5 +1,5 @@
 import { ErrorBlock } from '../../../ui/feedback/ErrorBlock';
-import { ArchiveRestore, BookOpen, Library, Plus, Upload } from 'lucide-react';
+import { ArchiveRestore, BookOpen, FolderInput, Library, Plus, Upload } from 'lucide-react';
 import { useRef, useState, type ChangeEventHandler, type ReactNode, type RefObject } from 'react';
 import type { RefusalWords } from '../../../entities/account-quota/refusal-words';
 import { QuotaRefusal } from '../../../entities/account-quota/ui/QuotaRefusal';
@@ -39,6 +39,8 @@ interface ShelfHeaderProps {
    * (specs/2026-11-10-ux2-shell.md S2.2); none without a place of reading.
    */
   continueReading?: { book: string; onOpen: () => void } | undefined;
+  /** A second source of books of the build beside «Добавить книги» — «Из Obsidian…» of the app (OW1.2); none at the site. */
+  source?: { label: string; onOpen: () => void } | undefined;
 }
 
 interface ShelfStatusMessagesProps {
@@ -69,6 +71,7 @@ export function ShelfHeader({
   projectExists,
   projectMeta,
   showActions = true,
+  source,
 }: ShelfHeaderProps) {
   const importDisabled = !projectExists || !canEditManuscript || importBlocked;
   // Closed for now, the button stays and says why (specs/2026-11-10-ux2-patterns-refusals.md PR1.1, PR1.3); a reader of
@@ -87,6 +90,9 @@ export function ShelfHeader({
             <Upload aria-hidden="true" size={16} />
             Добавить книги
           </Button>
+          {canEditManuscript && source ? (
+            <Button onClick={source.onOpen} variant="ghost"><FolderInput aria-hidden="true" size={16} />{source.label}</Button>
+          ) : null}
           {/* The system window filters nothing: a file a book cannot be made of gets its reason, as a dropped one does
               (specs/2026-11-10-ux1-names.md N8.1; L-19). A reader of the saga has the button and its reason only. */}
           {canEditManuscript ? <input

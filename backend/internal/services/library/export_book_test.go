@@ -139,9 +139,20 @@ func TestExportBookTakesTheActiveCover(t *testing.T) {
 	if err != nil || file.book.Cover == nil || file.book.Cover.MediaType != "image/jpeg" || !bytes.Equal(file.book.Cover.Content, jpegContent) {
 		t.Fatalf("jpeg cover = %+v, %v", file.book.Cover, err)
 	}
-	unavailable := errors.New("the file of the cover is gone")
-	if _, err := exportBook(store, exportCoverFake{err: unavailable}, "docx"); !errors.Is(err, unavailable) {
-		t.Fatalf("a cover that cannot be read: %v", err)
+	broken := errors.New("the store of the covers is broken")
+	if _, err := exportBook(store, exportCoverFake{err: broken}, "docx"); !errors.Is(err, broken) {
+		t.Fatalf("a failure of the store: %v", err)
+	}
+}
+
+// specs/2026-11-13-desk-upgrade.md UG4.5: a cover whose bytes are not there — its file deleted after the copy a return
+// brought back — is read as no cover, as the page shows it: the book comes without it, not as an error.
+func TestExportBookLeavesOutACoverWhoseFileIsGone(t *testing.T) {
+	store := exportFixture()
+	store.head.CoverVersion = 2
+	file, err := exportBook(store, exportCoverFake{err: domainlibrary.ErrUnavailable}, "docx")
+	if err != nil || file.book.Cover != nil {
+		t.Fatalf("a cover whose file is gone = %+v, %v", file.book.Cover, err)
 	}
 }
 

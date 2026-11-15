@@ -8,6 +8,7 @@ import { createAppRoute } from '../../shared/navigation/app-route';
 import type { MapCanvasProps } from './MapCanvas';
 import { HiddenPanel } from './HiddenPanel';
 import { SagaMap } from './SagaMap';
+import materialStyles from './materials/Materials.module.css';
 import { ToastsProvider } from '../../ui/feedback/Toast';
 
 // WebGL is not in jsdom: the canvas is a stand-in that shows what it would draw.
@@ -300,6 +301,21 @@ describe('«Карта саги»', () => {
     id: 'record-1', name: 'Мара', kind: 'character' as const, description: 'Старое описание', properties: [], section: '', sourceName: '', sourceKind: 'text' as const,
     revision: 1, createdAt: '2026-11-04T10:00:00Z', updatedAt: '2026-11-04T10:00:00Z',
   };
+
+  // specs/2026-11-15-desk-obsidian-notes.md ON2.1: the card says a record from a note of Obsidian in the words of «Ваши
+  // материалы», and a record from a file in the words it said before.
+  it.each([
+    [{ sourceKind: 'obsidian' as const, sourceName: 'Персонажи/Мара.md', section: 'Персонажи' }, 'Запись из Obsidian: Персонажи/Мара.md'],
+    [{ sourceKind: 'xlsx' as const, sourceName: 'навыки.xlsx', section: 'Персонажи' }, 'Из файла «навыки.xlsx», Персонажи'],
+  ])('says where the record came from: %o', async (source, line) => {
+    const api = createMockApiClient();
+    const mara = await api.getSagaMapNode(projectId, { sourceView: 'draft', key: 'мара' });
+    vi.spyOn(api, 'getSagaMapNode').mockResolvedValue({ ...mara, material: { ...record, ...source } });
+    renderMap({ node: 'мара' }, 'draft', api);
+    const block = await screen.findByRole('region', { name: 'По вашим материалам' });
+    // The line breaks inside the card, a path without a space too.
+    expect(within(block).getByText(line).classList.contains(materialStyles.origin!)).toBe(true);
+  });
 
   // R9.6: the card is from the rows of the last build, and what the server answered about the record is on it at once.
   it('shows a changed record on the card at once and asks the map, not the card, again', async () => {

@@ -1,0 +1,356 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* «Помощник» of «Настройки» of the app (board 44·9, 44·25, 44·26, 44·36; `Pattern/Desktop/Settings Helper`, `Check Line`). */
+
+.helper {
+  display: grid;
+  gap: 18px;
+}
+
+.intro {
+  display: grid;
+  gap: 6px;
+}
+
+.text {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.note {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.refusal,
+.error {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.error {
+  font-size: 12px;
+}
+
+/* A choice of its own line: «Протокол», «Рассуждения». */
+.choice {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.choiceLabel {
+  color: var(--ck-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* «Ключ» with «Заменить» and «Удалить» or «Сохранить ключ» beside the field (`Key Row`, `Key Actions`). */
+.keyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.keyRow > :first-child {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* Level with the input under its label. */
+  padding-top: 22px;
+}
+
+.models {
+  display: grid;
+  gap: 8px;
+}
+
+.modelRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.modelField {
+  display: grid;
+  align-content: start;
+  justify-items: stretch;
+  gap: 6px;
+}
+
+.fromList {
+  justify-self: start;
+}
+
+.modelsLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.advanced {
+  display: grid;
+  gap: 14px;
+}
+
+.advancedFields {
+  display: grid;
+  gap: 16px;
+  border-left: 2px solid var(--ck-border);
+  padding-left: 16px;
+}
+
+.prices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+/* «Валюта» of the prices, in the row of the prices (board 44·25). */
+.currency {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The check of the link: its lines with a mark (`Pattern/Desktop/Check Line`) and its verdict. */
+.check {
+  display: grid;
+  gap: 12px;
+}
+
+.lines {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  margin: 4px 0 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  font-weight: 600;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.mark {
+  margin-top: 2px;
+}
+
+.line[data-passed='true'] .mark {
+  color: var(--ck-color-success-foreground);
+}
+
+.line[data-passed='false'] .mark {
+  color: var(--ck-destructive-text);
+}
+
+/* The probe that runs (specs/2026-11-13-desk-consent-web.md RW3.3; board 44·26 «Идёт по пробам»): a muted mark that turns. */
+.line[data-running='true'] .mark {
+  color: var(--ck-muted-foreground);
+}
+
+.going {
+  animation: check-line-spin 1.1s linear infinite;
+}
+
+@keyframes check-line-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .going { animation: none; }
+}
+
+.advice {
+  grid-column: 2;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 767px) {
+  .modelRow,
+  .prices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .keyActions {
+    padding-top: 0;
+  }
+}
+
+/* The choice of the helper (board 44·9, `Pattern/Desktop/Settings Helper`): «Откуда помощник» and the helper of the account. */
+.source {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.source legend {
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-label);
+  font-weight: 600;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.account {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+/* «Подключить помощника» (board 44·4, `Pattern/Desktop/Connect Dialog`, `Helper Choice`). */
+.connect {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.connectHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connectHead h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  padding: 14px;
+}
+
+.card h3 {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.cardIcon {
+  color: var(--ck-muted-foreground);
+}
+
+.refused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* «Свой Claude или Codex» (specs/2026-11-15-desk-mcp.md MC3.1; board 44·9): a section of its own after «Откуда помощник». */
+.programs {
+  display: grid;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ck-border);
+}
+
+.programsTitle {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.programsSteps {
+  display: grid;
+  gap: 16px;
+}
+
+.program {
+  display: grid;
+  gap: 6px;
+}
+
+.programTitle {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.programsCopy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.programsCode {
+  flex: 1 1 280px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--ck-border);
+  border-radius: 6px;
+  background: var(--ck-muted);
+  color: var(--ck-foreground);
+  font-family: var(--ck-font-mono, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

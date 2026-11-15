@@ -60,6 +60,20 @@ func TestMissingCardsCatchUpLogsFailureCause(t *testing.T) {
 	}
 }
 
+// specs/2026-11-15-desk-reading-queue.md RQ2.2: a catch-up of the start that queued nothing says its end all the same — one line
+// of both builds, the one sign of its end.
+func TestACatchUpThatQueuedNothingSaysItsEnd(t *testing.T) {
+	var output bytes.Buffer
+	<-startCatchUp(context.Background(), emptyCatchUpQueue{}, "chapter cards", "cards_catch_up_failed", log.New(&output, "", 0))
+	if got := output.String(); got != "chapter cards catch-up queued 0 text versions\n" {
+		t.Fatalf("the journal of a catch-up that queued nothing = %q", got)
+	}
+}
+
+type emptyCatchUpQueue struct{}
+
+func (emptyCatchUpQueue) Execute(context.Context) (int, error) { return 0, nil }
+
 type catchUpSQLStateError struct{}
 
 func (catchUpSQLStateError) Error() string    { return "SECRET_SQL_DETAIL" }

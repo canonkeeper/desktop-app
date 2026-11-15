@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 
+	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/domain/shelf"
 
 	"github.com/jackc/pgx/v5"
@@ -40,6 +41,40 @@ func shelfPlaces(ctx context.Context, queryer placesQueryer, projects []string) 
 	}
 	for project, books := range shelves {
 		places[project] = shelf.Places(books)
+	}
+	return places, nil
+}
+
+// chapterPlaces are the places of the published living chapters of the books in them, by chapter — the one rule of the
+// number (sagamemory.PlacesInBooks, specs/2026-11-14-chapter-place-number.md CP1.1): from one and without gaps in the order
+// of the published text, whatever the stored order is.
+func chapterPlaces(ctx context.Context, queryer placesQueryer, books []string) (map[string]int, error) {
+	places := map[string]int{}
+	if len(books) == 0 {
+		return places, nil
+	}
+	rows, err := queryer.Query(ctx, `
+		SELECT id::text, book_id::text, "order" FROM chapters
+		WHERE book_id = ANY($1::uuid[]) AND deleted_at IS NULL AND published_revision IS NOT NULL
+	`, books)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var chapters []sagamemory.Chapter
+	for rows.Next() {
+		var chapter sagamemory.Chapter
+		if err := rows.Scan(&chapter.ID, &chapter.BookID, &chapter.Order); err != nil {
+			return nil, err
+		}
+		chapters = append(chapters, chapter)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sagamemory.PlacesInBooks(chapters)
+	for _, chapter := range chapters {
+		places[chapter.ID] = chapter.InBook
 	}
 	return places, nil
 }

@@ -30,6 +30,9 @@ type TrashRoutes func(chi.Router, *auth.Service)
 type ClientErrorRoutes func(router chi.Router, csrf func(http.Handler) http.Handler, currentUserID func(*http.Request) string)
 
 type HTTPDependencies struct {
+	// Questions say whether the unit of the question of a chat turn came back (specs/2026-11-13-desk-account-ai.md AI2.9);
+	// nil on the site.
+	Questions               jobs.Questions
 	ProjectsStore           projects.Store
 	LibraryStore            library.Store
 	JobsStore               jobs.Store
@@ -64,6 +67,9 @@ func RateLimits(build map[string]ratelimit.Rule) ratelimit.MemoryLimiterConfig {
 		// Corrections of a running turn (specs/2026-10-30-chat-steering.md R1.8): an author sends
 		// a few per turn; a turn takes at most MaxSteersPerTurn of them.
 		"steerChatTurn": {Limit: 20, Window: time.Minute},
+		// A saga saved into its file and a file opened as a saga: ten an hour (specs/2026-11-13-desk-sagafile.md SF2.4, SF3.12).
+		"getSagaArchive":  {Limit: 10, Window: time.Hour},
+		"openSagaArchive": {Limit: 10, Window: time.Hour},
 	}
 	for operation, rule := range build {
 		operations[operation] = rule
@@ -151,7 +157,7 @@ func newRouter(deps HTTPDependencies) chi.Router {
 		jobService,
 		authService,
 		deps.AllowedOrigins,
-	)
+	).WithQuestions(deps.Questions)
 	indexingHandlers := indexing.NewHandlers(
 		deps.IndexingService,
 		authService,

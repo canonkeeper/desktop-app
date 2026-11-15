@@ -63,7 +63,7 @@ func (port VisionPort) Look(ctx context.Context, instructions, prompt string, im
 		return "", quota.ModelUsage{}, err
 	}
 	defer port.client.gate.release()
-	text, usage, _, err := port.client.once(ctx, payload, nil)
+	text, usage, _, err := port.client.once(ctx, payload, nil, false)
 	return text, usage, err
 }
 

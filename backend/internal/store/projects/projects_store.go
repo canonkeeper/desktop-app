@@ -110,6 +110,21 @@ func New(db *storedb.DB, options ...Option) *Store {
 }
 
 func (s *Store) CreateProjectWithOwnerMembership(ctx context.Context, input projects.CreateProjectStoreInput) (projects.ProjectRecord, error) {
+	var record projects.ProjectRecord
+	err := s.WithTx(ctx, func(tx pgx.Tx) error {
+		var err error
+		record, err = s.CreateProjectInTx(ctx, tx, input)
+		return err
+	})
+	if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	return record, nil
+}
+
+// CreateProjectInTx creates a project with the membership of its owner and its draft text on the transaction of the
+// caller: the saga file opens a saga with the rest of it in one transaction (specs/2026-11-13-desk-sagafile.md SF3.3).
+func (s *Store) CreateProjectInTx(ctx context.Context, tx pgx.Tx, input projects.CreateProjectStoreInput) (projects.ProjectRecord, error) {
 	projectID, err := storedb.ParseUUID(input.ProjectID)
 	if err != nil {
 		return projects.ProjectRecord{}, err
@@ -123,55 +138,48 @@ func (s *Store) CreateProjectWithOwnerMembership(ctx context.Context, input proj
 		return projects.ProjectRecord{}, err
 	}
 	createdAt := storedb.Timestamptz(input.CreatedAt)
-
-	var createdProject sqlc.CreateProjectRow
-	var createdMembership sqlc.ProjectMembership
-	err = s.WithTx(ctx, func(tx pgx.Tx) error {
-		// A blocked or deleted account creates no project; the lock orders this with blocking
-		// and deletion of the account (specs/2026-10-28-account-data-rights.md, R3.10).
-		var enabled bool
-		if err := tx.QueryRow(ctx, `
-			SELECT true FROM users WHERE id = $1 AND disabled_at IS NULL FOR SHARE
-		`, ownerUserID).Scan(&enabled); errors.Is(err, pgx.ErrNoRows) {
-			return projects.ErrForbidden
-		} else if err != nil {
-			return err
+	// A blocked or deleted account creates no project; the lock orders this with blocking
+	// and deletion of the account (specs/2026-10-28-account-data-rights.md, R3.10).
+	var enabled bool
+	if err := tx.QueryRow(ctx, `
+		SELECT true FROM users WHERE id = $1 AND disabled_at IS NULL FOR SHARE
+	`, ownerUserID).Scan(&enabled); errors.Is(err, pgx.ErrNoRows) {
+		return projects.ProjectRecord{}, projects.ErrForbidden
+	} else if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	// The demo saga is not a saga of the limit of its owner (specs/2026-11-09-demo-saga.md DS3.2); the index of
+	// the table lets him have one live.
+	if !input.Demo {
+		if err := s.quota.CheckOwnerProjectsInTx(ctx, tx, ownerUserID.String(), 1); err != nil {
+			return projects.ProjectRecord{}, err
 		}
-		// The demo saga is not a saga of the limit of its owner (specs/2026-11-09-demo-saga.md DS3.2); the index of
-		// the table lets him have one live.
-		if !input.Demo {
-			if err := s.quota.CheckOwnerProjectsInTx(ctx, tx, ownerUserID.String(), 1); err != nil {
-				return err
-			}
-		}
-		queries := sqlc.New(tx)
-		createdProject, err = queries.CreateProject(ctx, sqlc.CreateProjectParams{
-			ID: projectID, OwnerUserID: ownerUserID, Name: input.Title,
-			Description: input.Description, Demo: input.Demo, CreatedAt: createdAt,
-		})
-		if isSecondLiveDemoSaga(err) {
-			return projects.ErrConflict
-		}
-		if err != nil {
-			return err
-		}
-
-		createdMembership, err = queries.CreateProjectMembership(ctx, sqlc.CreateProjectMembershipParams{
-			ID:        membershipID,
-			ProjectID: projectID,
-			UserID:    ownerUserID,
-			Role:      string(projects.RoleOwner),
-			CreatedAt: createdAt,
-		})
-		if err != nil {
-			return err
-		}
-		if _, err = s.library.CreateDraftProjectSourceView(ctx, tx, projectID, 1); err != nil {
-			return err
-		}
-		return s.runProjectDeletionFailpoint("create_after_catalog_mutation")
+	}
+	queries := sqlc.New(tx)
+	createdProject, err := queries.CreateProject(ctx, sqlc.CreateProjectParams{
+		ID: projectID, OwnerUserID: ownerUserID, Name: input.Title,
+		Description: input.Description, Demo: input.Demo, CreatedAt: createdAt,
+	})
+	if isSecondLiveDemoSaga(err) {
+		return projects.ProjectRecord{}, projects.ErrConflict
+	}
+	if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	createdMembership, err := queries.CreateProjectMembership(ctx, sqlc.CreateProjectMembershipParams{
+		ID:        membershipID,
+		ProjectID: projectID,
+		UserID:    ownerUserID,
+		Role:      string(projects.RoleOwner),
+		CreatedAt: createdAt,
 	})
 	if err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	if _, err = s.library.CreateDraftProjectSourceView(ctx, tx, projectID, 1); err != nil {
+		return projects.ProjectRecord{}, err
+	}
+	if err := s.runProjectDeletionFailpoint("create_after_catalog_mutation"); err != nil {
 		return projects.ProjectRecord{}, err
 	}
 	return projectRecord(createdProject, createdMembership), nil

@@ -1,3 +1,4 @@
+import { mockSendLog, type MockSendLogRow } from './send-log-fixture';
 import type {
   Book,
   Chapter,
@@ -47,6 +48,22 @@ export type MockBookCoverState = {
 };
 
 export type MockReadingTestVote = { number: number; voterId: string; chosen: string; note: string };
+
+type MockUnreadReason = NonNullable<Schema<'ReadingUnreadReason'>>;
+
+/**
+ * The marks of the reading of a saga in the mock (specs/2026-11-15-desk-reading-rest.md RR2.5): the chapters that did not read
+ * and why; the names and the threads — marked with a reason, waiting to be brought together, or together (null); the reasons
+ * the worker marks them with again when the scenario said so; and the seed of the scenario they were sown by.
+ */
+export interface MockReadingRest {
+  chapters: number;
+  chaptersReason: NonNullable<Schema<'IndexingReading'>['unread']>['reason'];
+  names: MockUnreadReason | 'wait' | null;
+  threads: MockUnreadReason | 'wait' | null;
+  again: { names: MockUnreadReason | null; threads: MockUnreadReason | null } | null;
+  seed: string;
+}
 
 export type MockState = {
   user: User;
@@ -126,6 +143,80 @@ export type MockState = {
   tierLettersOff: string[];
   /** The linked apps of the accounts (specs/2026-11-13-desk-link.md LK4.1). */
   linkedApps: MockLinkedApp[];
+  /** «Свой ИИ» of the desktop app and whether its key is kept (specs/2026-11-13-desk-secrets.md SE2). */
+  aiSettings: Schema<'AiSettings'>;
+  aiKeySaved: boolean;
+  /** The helper of the account the site told last (specs/2026-11-13-desk-account-ai.md AI1.1). */
+  aiAccount: Schema<'AiAccountHelper'> | null;
+  /** The link of the desktop app with an account of the site (specs/2026-11-13-desk-account.md). */
+  desktopAccount: Pick<Schema<'DesktopAccount'>, 'state' | 'link' | 'failure' | 'account'> & {
+    /** The link waits to choose the helper of the account (specs/2026-11-15-desk-account-link-web.md AW3.2). */
+    chooseHelper?: boolean;
+  };
+  /** The links a scenario made once (`accountLinked`, `accountBroken`): after an unlinking it does not make them again. */
+  desktopAccountScenario: { linked: boolean; broken: boolean };
+  /** The chats a saga file brought into a saga, to read (specs/2026-11-13-desk-sagafile.md SF3.8). */
+  sagaTranscripts: (Schema<'SagaTranscript'> & { projectId: string })[];
+  /** «Проверить связь» of this run and the last check kept, with what it checked (specs/2026-11-13-desk-probes.md PB2). */
+  aiCheck: Schema<'AiCheck'>;
+  aiCheckKept: MockAiCheckKept | null;
+  /** The consent of the reading of the books of each saga by «Свой ИИ» (specs/2026-11-13-desk-consent.md CN3.1). */
+  readingConsents: Record<string, Schema<'ReadingConsent'>>;
+  /** The last sample of three chapters of each saga (CN2.4). */
+  readingSamples: Record<string, Schema<'ReadingSample'>>;
+  /**
+   * What of each saga did not read or come together and what waits to be brought together (specs/2026-11-15-desk-reading-rest.md
+   * RR2.5): the state of the saga a scenario sows, «Повторить» forgets and the worker of the mock moves on.
+   */
+  readingRest: Record<string, MockReadingRest>;
+  /** The probes of the check that runs still to go, one a read (specs/2026-11-13-desk-helper-web.md HW2.1). */
+  aiCheckPlan: Schema<'AiProbe'>[];
+  /** The provider refuses the key kept: a key of the mock that says so (`key-test-refused-…`); the key itself is never kept. */
+  aiKeyRefused: boolean;
+  /** A new window of the chat waits for the answer of the helper that runs (GW2.3). */
+  aiWindowWaits: boolean;
+  /**
+   * «Добро пожаловать» of the app and the daily check of a new version (specs/2026-11-13-desk-upgrade.md UG5.1): the
+   * computer of the mock has said its welcome, so the scenarios open without the window (specs/2026-11-15-desk-updates-web.md).
+   */
+  desktopWelcome: { shown: boolean; checkUpdates: boolean };
+  /** The journal of what went out of the app and when it was cleared (specs/2026-11-14-desk-journal.md JR2). */
+  sendLog: { rows: MockSendLogRow[]; clearedAt: string | null };
+  /** The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3.1). */
+  programs: { enabled: boolean; ever: boolean };
+  /** The update of the app as the shell reported it last (specs/2026-11-13-desk-updates.md UB1.7): nothing checked yet. */
+  appUpdate: Pick<Schema<'AppUpdate'>, 'phase' | 'found' | 'available' | 'percent' | 'checkedAt'>;
+  /**
+   * The link of each saga with the folder of its Obsidian vault, the choice that waits for the shell and the refusal of the
+   * last one (specs/2026-11-13-desk-obsidian.md OB1.5).
+   */
+  obsidianVaults: Record<string, { path: string; name: string }>;
+  obsidianChoices: Record<string, { request: string | null; refused: Schema<'ObsidianChoiceReason'> | null }>;
+  /**
+   * The links of the books of each saga with the folders of its vault (specs/2026-11-14-desk-obsidian-books.md OK0.2): a
+   * book linked with a folder, or a volume of a load in work of its queue; the latest link of a folder holds it. A volume keeps
+   * the composition of its load: the paths left out under its folder and the folders inside it chosen otherwise (OK1.3), and
+   * the fingerprint of the glue the book now has — of its load, then of its last update from the folder
+   * (specs/2026-11-15-desk-obsidian-book-web.md, the mock): another glue of the folder now is a change.
+   */
+  obsidianBooks: Record<string, Array<{
+    folder: string; bookId?: string; queueId?: string; itemId?: string; at: number; excluded?: string[]; nested?: string[]; fingerprint?: string;
+  }>>;
+  /**
+   * The links of the notes of each saga with the records of «Ваши материалы» they made (specs/2026-11-15-desk-obsidian-web.md
+   * OW7.2): the path of the note, its record and the revision the load left it at. The unlink of the vault and the deletion of
+   * the record take a link off.
+   */
+  obsidianNotes: Record<string, Array<{ path: string; materialId: string; revision: number }>>;
+};
+
+/** The last check of «Свой ИИ» the mock keeps: its probes, what it checked and whether the key changed since. */
+export type MockAiCheckKept = {
+  at: string;
+  probes: Schema<'AiProbe'>[];
+  calibration: number | null;
+  checked: { baseUrl: string; protocol: string; chatModel: string; cardsModel: string };
+  keyChanged: boolean;
 };
 
 /** A linked CanonKeeper app of an account: the computer, its system and version, when linked and last seen. */
@@ -329,14 +420,15 @@ function createInitialState(): MockState {
     publishedAt: now,
     navigation: {
       displayNumber: '12',
+      displayTitle: 'Белый порт',
       position: 12,
       total: 48,
       readingProgress: 0.25,
       readingTimeMinutes: 14,
       previousChapterId: 'chapter-11',
       nextChapterId: 'chapter-13',
-      previous: { id: 'chapter-11', title: 'Соль на стекле', displayNumber: '11' },
-      next: { id: 'chapter-13', title: 'Голоса под водой', displayNumber: '13' },
+      previous: { id: 'chapter-11', title: 'Соль на стекле', displayNumber: '11', displayTitle: 'Соль на стекле' },
+      next: { id: 'chapter-13', title: 'Голоса под водой', displayNumber: '13', displayTitle: 'Голоса под водой' },
     },
     createdAt: now,
     updatedAt: now,
@@ -392,13 +484,14 @@ function createInitialState(): MockState {
     publishedAt: null,
     navigation: {
       displayNumber: '16',
+      displayTitle: 'Возвращение к записи',
       position: 16,
       total: 48,
       readingProgress: 0.34,
       readingTimeMinutes: 5,
       previousChapterId: 'chapter-15',
       nextChapterId: null,
-      previous: { id: 'chapter-15', title: 'Перед судом', displayNumber: '15' },
+      previous: { id: 'chapter-15', title: 'Перед судом', displayNumber: '15', displayTitle: 'Перед судом' },
       next: null,
     },
     createdAt: now,
@@ -424,6 +517,7 @@ function createInitialState(): MockState {
     navigation: {
       ...chapter.navigation,
       displayNumber: '1',
+      displayTitle: 'Туманный берег',
       position: 1,
       total: 22,
       previousChapterId: null,
@@ -454,6 +548,7 @@ function createInitialState(): MockState {
     navigation: {
       ...chapter.navigation,
       displayNumber: '1',
+      displayTitle: 'Северный суд',
       position: 1,
       total: 9,
       previousChapterId: null,
@@ -484,6 +579,7 @@ function createInitialState(): MockState {
     navigation: {
       ...chapter.navigation,
       displayNumber: '1',
+      displayTitle: 'Последний свет',
       position: 1,
       total: 3,
       previousChapterId: null,
@@ -584,6 +680,28 @@ function createInitialState(): MockState {
     lettersOff: [],
     tierLettersOff: [],
     linkedApps: [],
+    aiSettings: { source: 'none', own: null },
+    aiKeySaved: false,
+    aiAccount: null,
+    desktopAccount: { state: 'none', link: null, failure: null, account: null },
+    desktopAccountScenario: { linked: false, broken: false },
+    sagaTranscripts: [],
+    aiCheck: { state: 'idle', startedAt: null, current: null, probes: [], report: null },
+    aiCheckKept: null,
+    readingConsents: {},
+    readingSamples: {},
+    readingRest: {},
+    aiCheckPlan: [],
+    aiKeyRefused: false,
+    aiWindowWaits: false,
+    desktopWelcome: { shown: false, checkUpdates: true },
+    sendLog: { rows: mockSendLog(), clearedAt: null },
+    programs: { enabled: false, ever: false },
+    appUpdate: { phase: 'idle', found: 'never', available: null, percent: null, checkedAt: null },
+    obsidianVaults: {},
+    obsidianChoices: {},
+    obsidianBooks: {},
+    obsidianNotes: {},
   };
 }
 export { createInitialState };

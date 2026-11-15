@@ -150,9 +150,18 @@ func startSagaToolsTurnAsking(t *testing.T, database string, scope researchdomai
 	return startTurnInChat(t, db, proof, now, chapterID, submitTurnChatID, scope, question)
 }
 
-// startTurnInChat creates a chat of the seeded project and a running turn of it asking question.
+// startTurnInChat creates a chat of the seeded project over its draft text and a running turn of it asking question.
 func startTurnInChat(
 	t *testing.T, db *storedb.DB, proof auth.SessionWriteProof, now time.Time, chapterID, chatID string, scope researchdomain.Scope, question string,
+) sagaToolsTurn {
+	t.Helper()
+	return startTurnInChatOf(t, db, proof, now, chapterID, chatID, scope, governance.SourceViewDraft, question)
+}
+
+// startTurnInChatOf is startTurnInChat over the text of a view.
+func startTurnInChatOf(
+	t *testing.T, db *storedb.DB, proof auth.SessionWriteProof, now time.Time, chapterID, chatID string, scope researchdomain.Scope,
+	view governance.SourceView, question string,
 ) sagaToolsTurn {
 	t.Helper()
 	ctx := context.Background()
@@ -163,7 +172,7 @@ func startTurnInChat(
 	}
 	session, err := repository.CreateSession(ctx, service.CreateSessionCommand{
 		ID: chatID, ProjectID: submitTurnProjectID, ActorUserID: submitTurnActorID,
-		SourceView: string(governance.SourceViewDraft), Scope: scope, BookID: bookID,
+		SourceView: string(view), Scope: scope, BookID: bookID,
 		Title: "Research", SessionWriteProof: proof, ScopeHash: "read-session-scope" + chatID,
 		OperationID: "research_chat.session.create.v1", IdempotencyKeyHash: "read-session-key" + chatID,
 		RequestHash: "read-session-request" + chatID, StatusCode: 201, CreatedAt: now,

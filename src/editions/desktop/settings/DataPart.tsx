@@ -8,7 +8,9 @@ import { formatFileSize } from '../../../ui/copy';
 import { ErrorBlock } from '../../../ui/feedback/ErrorBlock';
 import { SkeletonArea } from '../../../ui/feedback/Skeleton';
 import { useToasts } from '../../../ui/feedback/useToastQueue';
+import { SagaFileSection } from '../saga-file/SagaFileSection';
 import { dayWords, useDesktopState, type DesktopState } from './desktop-state';
+import { EraseData } from './EraseData';
 import type { SettingsPartProps } from './part-props';
 import styles from './Settings.module.css';
 
@@ -26,7 +28,8 @@ function copyWords({ madeAt, version }: DesktopState['backups'][number]) {
 /**
  * «Данные» (specs/2026-11-13-desk-settings.md ST2.4; board 44·11, `Pattern/Desktop/Settings Data`): where the data lie with
  * «Открыть папку» of the shell — no such button in a browser without it — the place they take and the copies before an
- * update; no block of copies before the first one.
+ * update; no block of copies before the first one; the saga file (specs/2026-11-13-desk-sagafile-web.md SW1, SW2); last,
+ * «Стереть все данные…» (specs/2026-11-13-desk-erase.md ER1.1).
  */
 export function DataPart({ api }: SettingsPartProps) {
   const state = useDesktopState(api);
@@ -66,6 +69,9 @@ export function DataPart({ api }: SettingsPartProps) {
           </ul>
         </div>
       ) : null}
+      {/* «Файл саги» before the erasure (specs/2026-11-13-desk-sagafile-web.md SW1, SW2; board 44·11). */}
+      <SagaFileSection api={api} />
+      <EraseData api={api} />
     </>
   );
 }

@@ -1,7 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Upload } from 'lucide-react';
 import { sagaHasAnswerQueryOptions } from '../../../entities/chat/api';
-import { Button } from '../../../ui/controls/Button';
 import { LinkAction } from '../../../ui/controls/LinkAction';
 import { type ChangeEvent, useRef, useState } from 'react';
 import { publicApiErrorMessage } from '../../../entities/api-errors';
@@ -30,15 +28,16 @@ import { Confirm } from '../../../ui/overlays/Confirm';
 import { useSagaState } from './SagaState';
 import { bookStateOf, waitingLine } from '../../../entities/manuscript/preparation-copy';
 import { saveFile } from '../../../ui/save-file';
-import { BookActionMenu } from './BookActionMenu';
 import { DownloadDialog } from './BookDownload';
 import { useSagaSections } from '../../../ui/saga-sections';
 import { ShelfBooks } from './ShelfBooks';
+import { AddBooks, bookSourceOf } from './AddBooks';
 import { useBookFileUpdate } from './BookFileUpdate';
 import { ConfirmDelete } from './ShelfLayers';
 import { useDeletedSagaToast } from './useDeletedSagaToast';
 import { useToasts } from '../../../ui/feedback/useToastQueue';
-import { noDemoOffer, noProofreadOffer, useShelfSlot } from './shelf-slot';
+import { noDemoOffer, noLoadingElsewhere, noProofreadOffer, noSagaFileOffer, useShelfSlot } from './shelf-slot';
+import { ShelfBookMenu } from './ShelfBookMenu';
 import {
   DeletedSagasEntry,
   DemoSagaNotice,
@@ -58,7 +57,7 @@ import { useShelfProjectActions } from './useShelfProjectActions';
 import { useVoiceFirstSaga, useVoicePlace } from '../../../shared/navigation/voice-place';
 import { useShellActions } from '../../../ui/shell/shell-actions';
 import { isActiveImportJob, isActiveJob, isNewBookOnItsWay } from './shelf-jobs';
-import { updateLine } from './book-revert-words';
+import { useBookUpdateWords } from './book-update-words';
 import styles from './ManuscriptShelfPage.module.css';
 
 /** The books a saga takes by the counters of the account (SC1.8): null while they are not read or nothing is limited. */
@@ -138,8 +137,13 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
     ...sagaHasAnswerQueryOptions(api, { projectId: project?.id ?? '', sourceView }),
     enabled: Boolean(project) && canEditManuscript,
   }).data === true;
-  // One way from a file to a book (specs/2026-11-11-ux7-upload.md): the upload is the server's queue and the files of this tab.
-  const upload = useUpload({ api, books, canEdit: canEditManuscript && !(project?.demo ?? false), projectId: project?.id ?? null });
+  const shelfSlot = useShelfSlot();
+  const useLoadingElsewhere = shelfSlot?.useLoadingElsewhere ?? noLoadingElsewhere;
+  // One way from a file to a book (specs/2026-11-11-ux7-upload.md): the upload is the server's queue and the files of this tab;
+  // a volume another work of the build sends — the books of an Obsidian folder of the app — is loaded, not lost (OW4.6).
+  const upload = useUpload({
+    api, books, canEdit: canEditManuscript && !(project?.demo ?? false), elsewhere: useLoadingElsewhere(project?.id ?? ''), projectId: project?.id ?? null,
+  });
   const latestImportQueue = upload.latest;
   const terminalImportQueue = latestImportQueue
     && (latestImportQueue.status === 'failed' || latestImportQueue.status === 'succeeded' || latestImportQueue.status === 'canceled')
@@ -160,7 +164,6 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
   // upload, and «Три шага» — the steps to a saga of his own — are not about it.
   const demo = project?.demo === true;
   const firstStep = demo ? null : firstStepOfSaga;
-  const shelfSlot = useShelfSlot();
   // The update of a book from a file in work closes a new upload and the deletion of its book; the reading of the saga
   // after it is told by the status, not by Jobs (SS2.1).
   const activeBookUpdateJob = jobs.find((job) => manuscriptApi.isBookUpdateJob(job)
@@ -179,6 +182,8 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
     toasts,
   });
   const bookUpdate = useBookFileUpdate({ api, canUpdate: canEditManuscript, onNotice: setNotice, projectId: project?.id ?? null });
+  // The words of a book being updated are the edition's (specs/2026-11-15-desk-obsidian-book-web.md OU3.2).
+  const updateWords = useBookUpdateWords();
   const bookExport = useBookExportMutation(api);
   // An unverified address imports nothing: every import entry stays closed (UC1.4).
   const emailUnverified = Boolean(useAccountSession()?.emailVerification);
@@ -188,7 +193,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
   // Why «Добавить книги» and a drop on the page wait now (UP1.1, UP3.5).
   const importReason = emailUnverified ? emailUnverifiedShort
     : upload.blockedReason
-      ?? (activeImportJob || bookUpdate.busy ? 'Дождитесь, пока книга обновится из файла.' : null);
+      ?? (activeImportJob || bookUpdate.busy ? updateWords.updating.wait : null);
   const importBlocked = Boolean(importReason);
   // «Переставить…» and the drag of a card (specs/2026-11-11-ux7-reorder.md RK2): not while books are read or uploaded.
   const bookMove = useBookMove({
@@ -226,9 +231,6 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
     blockedReason: importReason, enabled: Boolean(project) && !demo && !explicitProjectMissing,
     onFiles: openImportFiles, onRefused: (reason) => toasts.push({ message: 'Книги сейчас не добавить', detail: reason, tone: 'warning' }),
   });
-  const uploadEnd = useUploadEnd({
-    books, latest: latestImportQueue, onLook: setSummary, preparing: sagaPreparing, toasts, waiting: sagaWaiting,
-  });
 
   async function downloadBook(book: Book, format: BookExportFormat, drawings: boolean) {
     // While the file is made, the line of the long work stands in the place of the notice (PS3.3); its end is a toast (PA1.1).
@@ -248,15 +250,9 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
     }
   }
 
+  const bookSource = bookSourceOf(shelfSlot, project && canEditManuscript && !demo ? project.id : null, navigate);
   // The first steps call for the books with the same entry as the top of the shelf (UP1.1): there is no zone of their own.
-  const addBooks = !explicitProjectMissing ? (
-    <div className={styles.addBooks}>
-      <Button disabledReason={importReason} onClick={chooseImportFile} variant="primary">
-        <Upload aria-hidden="true" size={16} />Добавить книги
-      </Button>
-      <span>или перетащите файлы на страницу</span>
-    </div>
-  ) : null;
+  const addBooks = !explicitProjectMissing ? <AddBooks importReason={importReason} onChoose={chooseImportFile} source={bookSource} /> : null;
   // «Попробовать на примере» of the site stands on a shelf without a book (specs/2026-11-09-demo-saga.md DS1.1), and
   // stays while the example is being opened, whatever the shelf shows by then.
   const useDemoOffer = shelfSlot?.useDemoOffer ?? noDemoOffer;
@@ -271,16 +267,27 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
     foundSaga: () => foundFirstSaga(firstSagaTitle),
     onOpenDraft: (projectId, draftId) => navigate('/writing', { projectId, draft: draftId, tab: 'check' }),
   });
+  // «Перенести сагу с сайта или другого компьютера» of the app (specs/2026-11-13-desk-sagafile-web.md SW2.1).
+  const useSagaFileOffer = shelfSlot?.useSagaFileOffer ?? noSagaFileOffer;
+  const sagaFileOffer = useSagaFileOffer();
   useVoiceFirstSaga(workspace && projects.length === 0 ? () => createFirstProject(firstSagaTitle) : null);
   const projectMeta = explicitProjectMissing ? 'Сага недоступна' : formatProjectMeta(project);
   const exportingBook = bookExport.isPending ? books.find((book) => book.id === bookExport.variables?.bookId) : undefined;
-  const sagaReading = useSagaState({
-    api, books, canEdit: canEditManuscript, jobs, projectId: project?.id ?? '',
+  const sagaReadingState = useSagaState({
+    api, books, canEdit: canEditManuscript, jobs, navigate, projectId: project?.id ?? '',
     // The file of a volume the server reads now: the line of the reading names it while it is parsed (SS2.1).
     fileName: upload.volumes.find((volume) => volume.state === 'loading')?.fileName ?? null,
     onAskQuestion: () => navigate('/chat', { projectId: project?.id }),
     // A reader opens the book he read last, else the first one (SC1.2).
     onRead: books.length ? () => bookActions.openBook(readingBook ?? books[0]!) : undefined,
+  });
+  const sagaReading = sagaReadingState.element;
+  const uploadEnd = useUploadEnd({
+    books, latest: latestImportQueue, onLook: setSummary, preparing: sagaPreparing, toasts, waiting: sagaWaiting,
+    // The end is said by a status read after it (specs/2026-11-13-desk-consent-web.md RW1.5); under a line of the reading of
+    // the edition it says only what came — the reason, the count and the button are that line's (RW1.6).
+    rereadStatus: () => indexingStatusQuery.refetch(), statusReadAt: indexingStatusQuery.dataUpdatedAt,
+    readingSpoken: sagaReadingState.readingSpoken,
   });
   // UP3.1: one line of the saga over the books — the upload over the reading.
   const uploadLineElement = <UploadLine end={uploadEnd.end} onLook={uploadEnd.look} upload={upload} />;
@@ -290,21 +297,11 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
   const sourceNames = Object.fromEntries((latestImportQueue?.items ?? [])
     .filter((item) => item.bookId).map((item) => [item.bookId!, item.sourceFileName]));
 
-  const bookMenuPresence = usePresence(bookActions.menuBook);
   // «Что изменилось» of the last update of a book from a file, for the 7 days the server keeps it (specs/2026-11-12-ux10-book-revert.md BR3.1).
   const openChanges = (book: Book) => shell.openBookChanges({ bookId: book.id, projectId: book.projectId, jobId: book.update?.jobId ?? undefined });
   const deletePresence = usePresence(bookActions.deleteTarget);
-  const lastMenuAnchor = useRef(bookActions.menuAnchor);
-  if (bookActions.menuAnchor) lastMenuAnchor.current = bookActions.menuAnchor;
   // «Дочитать» of a book is the restart of the reading of the saga, the one of its line (SF2.2).
   const restart = useRestartIndexingMutation(api);
-  // Why «Новая версия из файла…» and «Удалить книгу…» of a book wait now (specs/2026-11-10-ux2-patterns-refusals.md PR1.1).
-  const updateReasonOf = (book: Book) => bookActions.isBookUpdating(book.id) ? 'Книга уже обновляется из файла.'
-    : emailUnverified ? emailUnverifiedShort
-      : uploadRunning || bookUpdate.busy ? 'Пока идёт загрузка книг — новую версию можно будет выбрать после неё.' : null;
-  // UP3.5: while books are uploaded no book of the saga is deleted — the server holds the places of the volumes.
-  const deleteReasonOf = (book: Book) => bookActions.isBookUpdating(book.id) ? 'Пока книга обновляется из файла, удалить её нельзя.'
-    : upload.queue ? 'Пока идёт загрузка книг, удалить книгу нельзя — дождитесь её конца.' : null;
 
   // Before the first saga — one screen with its ways in (specs/2026-11-10-ux3-first-screen.md FS1.2).
   if (firstStep === 1) {
@@ -314,6 +311,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
           createSaga={<FirstProjectPanel creating={creatingFirstProject} onCreate={createFirstProject} stacked />}
           example={demoOffer}
           proofread={proofreadOffer}
+          sagaFile={sagaFileOffer}
         />
         <ShelfStatusMessages emptySaga={false} error={null} notice={notice} noticeRefusal={quotaRefusalOfNotice(notice)}
           onRetry={() => void shelfQuery.refetch()} retrying={false} status="empty" />
@@ -337,6 +335,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
             projectExists={Boolean(project)}
             projectMeta={projectMeta}
             continueReading={readingBook ? { book: readingBook.title, onOpen: bookNavigation.onOpenReader } : undefined}
+            source={bookSource ?? undefined}
             materials={project ? <>
               {shelfSlot?.materialsFromFiles ? 'Навыки, места и герои из таблиц — в ' : 'Навыки, места и герои — в '}
               <LinkAction onClick={() => navigate('/memory', { projectId: project.id, part: 'materials' })}>«Ваши материалы»</LinkAction>
@@ -395,7 +394,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
             onRename={bookActions.rename}
             onRenameEnd={bookActions.endRename}
             renaming={bookActions.renaming}
-            stateOf={(book) => bookStateOf(book, indexingStatusQuery.data, bookActions.isBookUpdating(book.id))}
+            stateOf={(book) => bookStateOf(book, indexingStatusQuery.data, bookActions.isBookUpdating(book.id), updateWords.updating.mark)}
             upload={{
               queue: upload.queue, volumes: upload.volumes,
               card: (volume, shape) => (
@@ -441,52 +440,11 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
           onRename={(book) => bookActions.startRename(book)} sourceNames={sourceNames} toasts={toasts} />
       ) : null}
 
-      {bookMenuPresence.mounted && bookMenuPresence.value ? (
-        <BookActionMenu
-          anchor={bookActions.menuAnchor ?? lastMenuAnchor.current}
-          book={bookMenuPresence.value}
-          canEdit={canEditManuscript}
-          deleteReason={deleteReasonOf(bookMenuPresence.value)}
-          onChangeCover={() => bookActions.changeCover(bookMenuPresence.value!)}
-          onClose={bookActions.closeBookMenu}
-          onDelete={() => bookActions.requestDeleteBook(bookMenuPresence.value!)}
-          onDownload={() => {
-            const book = bookMenuPresence.value!;
-            bookActions.closeBookMenu();
-            setDownloading(book);
-          }}
-          moveReason={bookMove.reason}
-          onMove={bookMove.available ? () => {
-            const book = bookMenuPresence.value!;
-            bookActions.leaveMenu();
-            bookMove.open(book, bookActions.menuTrigger);
-          } : undefined}
-          onNewChapter={shelfSlot?.newChapterAt && !demo ? () => {
-            const at = shelfSlot.newChapterAt!(bookMenuPresence.value!);
-            bookActions.closeBookMenu();
-            navigate(at.path, at.query);
-          } : undefined}
-          onParseSummary={() => {
-            const book = bookMenuPresence.value!;
-            bookActions.closeBookMenu();
-            setSummary([book.id]);
-          }}
-          onReadFromStart={() => bookActions.readFromStart(bookMenuPresence.value!)}
-          onRename={() => bookActions.startRename(bookMenuPresence.value!)}
-          onUpdateFromFile={demo ? undefined : () => {
-            const book = bookMenuPresence.value!;
-            bookActions.closeBookMenu();
-            bookUpdate.choose(book);
-          }}
-          state={bookMenuPresence.status}
-          updated={bookMenuPresence.value.update ? { summary: updateLine(bookMenuPresence.value.update), onOpen: () => {
-            const book = bookMenuPresence.value!;
-            bookActions.closeBookMenu();
-            openChanges(book);
-          } } : undefined}
-          updateReason={updateReasonOf(bookMenuPresence.value)}
-        />
-      ) : null}
+      <ShelfBookMenu
+        actions={bookActions} canEdit={canEditManuscript} demo={demo} emailUnverified={emailUnverified} move={bookMove} navigate={navigate}
+        onChanges={openChanges} onDownload={setDownloading} onSummary={(book) => setSummary([book.id])} projectId={project?.id ?? ''}
+        update={bookUpdate} upload={{ running: uploadRunning, live: Boolean(upload.queue), sending: upload.sending, updating: Boolean(activeImportJob) }}
+      />
       {downloading ? (
         <DownloadDialog busy={false} heading={`Скачать книгу «${downloading.title}»`} onClose={() => setDownloading(null)}
           drawings={drawingsHere ? { api, projectId: downloading.projectId, bookIds: [downloading.id] } : null}

@@ -1,4 +1,7 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from 'react';
+import type { Book } from '../../../entities/manuscript/api';
+import type { RouteNavigate } from '../../../shared/navigation/app-route';
+import type { BookUpdateSource } from './book-update-source';
 
 /** What the offer of the demo saga needs of the shelf it stands on (specs/2026-11-09-demo-saga.md DS1). */
 export interface ShelfDemoOfferOptions {
@@ -46,6 +49,40 @@ export interface CoverDrawingsProps {
   onChoose: (drawing: CoverDrawing) => void;
 }
 
+/** An item of the edition in the menu of a book: its word, its icon, why it waits now (specs/2026-11-15-desk-obsidian-book-web.md OU1.1). */
+export interface ShelfBookMenuItem {
+  key: string;
+  label: string;
+  icon: ReactNode;
+  reason: string | null;
+  /** The press: the shelf closes the menu first. */
+  onSelect: () => void;
+}
+
+/** What the items of the edition in the menu of a book know of the shelf: the facts, not the words (OU1.2). */
+export interface ShelfBookMenuOptions {
+  projectId: string;
+  /** The author may change the books of the saga: only then the edition reads what its items need. */
+  canEdit: boolean;
+  navigate: RouteNavigate;
+  /** The window of an update of a book from a source of the edition: the owner of «Новая версия из файла…» (OU2.1). */
+  // The source is the edition's: the shelf carries it to its owner as it is.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  open: (book: Book, source: BookUpdateSource<any>) => void;
+  /** The book is being updated now. */
+  updating: (book: Book) => boolean;
+  /** Another update of the shelf goes, or its window is open. */
+  busy: boolean;
+  /** The saga loads books now. */
+  uploading: boolean;
+}
+
+/** The items of the edition in the menu of every book and the windows they open. */
+export interface ShelfBookMenu {
+  items: (book: Book) => readonly ShelfBookMenuItem[];
+  overlay: ReactNode;
+}
+
 /** The closed blocks of the shelf (specs/2026-11-07-desktop-app.md DA16.4); an absent one is not shown. */
 export interface ShelfSlot {
   /** «Попробовать на примере» of a shelf without a book: the page holds its state, so a reread shelf does not lose it. */
@@ -66,11 +103,49 @@ export interface ShelfSlot {
    * ED2.1); without it the menu has no such item — the site writes a chapter in «Письмо».
    */
   newChapterAt?: (book: { id: string; projectId: string }) => { path: string; query: Record<string, string> };
+  /**
+   * «Перенести сагу с сайта или другого компьютера» of the first screen: the card of a build that opens a saga file — the
+   * app (specs/2026-11-13-desk-sagafile-web.md SW2.1); the site has none.
+   */
+  useSagaFileOffer?: () => ReactNode;
+  /**
+   * A second source of books beside «Добавить книги» (specs/2026-11-15-desk-obsidian-web.md OW1.2): «Из Obsidian…» of the app
+   * in the head of «Книги» and in the first steps of a saga without a book, there with its caption; it leads to the page of
+   * the source with the way back to the books. The site has none.
+   */
+  bookSource?: { label: string; caption: string; at: (projectId: string) => { path: string; query: Record<string, string> } };
+  /**
+   * Volumes of the load of the saga whose files another work of the build sends, not this tab: the load of books from an
+   * Obsidian folder (OW4.6). While it says so, such a volume is «Загружается», not «Файл не дошёл». The site has none.
+   */
+  useLoadingElsewhere?: (projectId: string) => boolean;
+  /**
+   * Items of the edition in the menu of a book after «Новая версия из файла…» and the windows they open
+   * (specs/2026-11-15-desk-obsidian-book-web.md OU1): the book and its folder of Obsidian in the app. The site has none.
+   */
+  useBookMenu?: (saga: ShelfBookMenuOptions) => ShelfBookMenu;
 }
 
 /** The shelf without the demo saga of the site: nothing is offered. */
 export function noDemoOffer(_options: ShelfDemoOfferOptions): ShelfDemoOffer {
   return { element: null, preparing: false };
+}
+
+/** The shelf of a build that does not open a saga file: no card. */
+export function noSagaFileOffer(): ReactNode {
+  return null;
+}
+
+/** The shelf of a build whose every volume this tab sends: none goes elsewhere. */
+export function noLoadingElsewhere(_projectId: string): boolean {
+  return false;
+}
+
+const noItems: readonly ShelfBookMenuItem[] = [];
+
+/** The shelf of a build without items of its own in the menu of a book. */
+export function noBookMenu(_saga: ShelfBookMenuOptions): ShelfBookMenu {
+  return { items: () => noItems, overlay: null };
 }
 
 /** The shelf of a build without «Письмо»: no proofreading is offered. */

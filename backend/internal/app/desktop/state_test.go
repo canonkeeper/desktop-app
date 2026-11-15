@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/domain/aisettings"
 	service "canonkeeper/backend/internal/services/desktop"
 )
 
@@ -151,9 +152,98 @@ func TestTheCopyOfAnUpdateHoldsTheVersionThatMadeIt(t *testing.T) {
 	}
 }
 
-// ST4.3: the open app goes nowhere in the network until a slice adds an address to the list.
+// reaching is a link with an account that goes to the site or not.
+type reaching bool
+
+func (reach reaching) Reaches() bool { return bool(reach) }
+
+// ST4.3: the open app goes nowhere in the network until a slice adds an address to the list; specs/2026-11-13-desk-account.md
+// AC2.7: a linked app, or one whose link started, goes to the server CanonKeeper of its build for the link.
 func TestTheOpenAppGoesNowhereInTheNetwork(t *testing.T) {
-	if uses := networkUses(); len(uses) != 0 {
+	if uses := networkUses(reaching(false), "https://site.example.test")(); len(uses) != 0 {
 		t.Fatalf("the network of the app = %+v", uses)
+	}
+	uses := networkUses(reaching(true), "https://site.example.test")()
+	if len(uses) != 1 || uses[0].Host != "site.example.test" || uses[0].Purpose != "связь с аккаунтом: имя, тариф и остатки" {
+		t.Fatalf("the network of a linked app = %+v", uses)
+	}
+}
+
+// One line a host (ST4.3): a linked app that updates itself goes to the server CanonKeeper for both, in its one line.
+func TestTheNetworkOfTheAppNamesAHostOnce(t *testing.T) {
+	updates := func() []service.NetworkUse {
+		return []service.NetworkUse{{Host: "site.example.test", Purpose: "узнать о новой версии"}, {Host: "files.example.test", Purpose: "скачать её"}}
+	}
+	uses := networkUses(reaching(true), "https://site.example.test", updates)()
+	if len(uses) != 2 || uses[0].Host != "site.example.test" || uses[1].Host != "files.example.test" ||
+		uses[0].Purpose != "связь с аккаунтом: имя, тариф и остатки; узнать о новой версии" || uses[1].Purpose != "скачать её" {
+		t.Fatalf("the network of a linked app that updates itself = %+v", uses)
+	}
+	if uses := networkUses(reaching(false), "https://site.example.test", updates)(); len(uses) != 2 || uses[0].Purpose != "узнать о новой версии" {
+		t.Fatalf("the network of an app that only updates itself = %+v", uses)
+	}
+}
+
+// specs/2026-11-14-desk-journal.md JR4.1, JR4.3: the provider of «Свой ИИ» stands while its address is kept — an address of this
+// computer as a program of this computer —, nothing without a helper, a link and updates, one line a host, and the proxy of
+// the environment by its host alone.
+func TestTheNetworkNamesTheProviderOfTheHelperAndTheProxy(t *testing.T) {
+	none := func() aisettings.Settings { return aisettings.None() }
+	if uses := networkUses(reaching(false), "https://site.example.test", ownNetwork(none))(); len(uses) != 0 {
+		t.Fatalf("the network without anything = %+v", uses)
+	}
+	of := func(draft aisettings.OwnDraft) func() aisettings.Settings {
+		settings, err := aisettings.Draft{Source: "own", Own: &draft}.Settings()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return func() aisettings.Settings { return settings }
+	}
+	address, local, chat, cards := "https://provider.example.com/v1", "http://127.0.0.1:11434/v1", "north-chat", "north-cards"
+	external := of(aisettings.OwnDraft{Preset: "custom", BaseURL: &address, ChatModel: &chat, CardsModel: &cards})
+	if uses := networkUses(reaching(false), "https://site.example.test", ownNetwork(external))(); len(uses) != 1 ||
+		uses[0].Host != "provider.example.com" || uses[0].Purpose != "помощник через «Свой ИИ»" {
+		t.Fatalf("the network of «Свой ИИ» = %+v", uses)
+	}
+	ollama := of(aisettings.OwnDraft{Preset: "custom", BaseURL: &local, ChatModel: &chat, CardsModel: &cards})
+	if uses := networkUses(reaching(false), "https://site.example.test", ownNetwork(ollama))(); len(uses) != 1 ||
+		uses[0].Host != "127.0.0.1:11434" || uses[0].Purpose != "программа на этом компьютере, помощник через «Свой ИИ»" {
+		t.Fatalf("the network of a helper of this computer = %+v", uses)
+	}
+	updates := func() []service.NetworkUse {
+		return []service.NetworkUse{{Host: "site.example.test", Purpose: "узнать о новой версии приложения и скачать её"}}
+	}
+	if uses := networkUses(reaching(true), "https://site.example.test", ownNetwork(none), updates)(); len(uses) != 1 {
+		t.Fatalf("the link and the updates at one host = %+v", uses)
+	}
+	// JR4.3: the line of the proxy stands only while an address of the list goes through it — by its host alone, without a
+	// name or a password; nothing goes through it without a helper and a link, a helper of this computer goes straight, and
+	// so does a host NO_PROXY names; an address of https goes through the proxy of https only.
+	proxyOf := func(environment map[string]string, account bool, ai func() aisettings.Settings) string {
+		return proxyOfTheNetwork(func(name string) string { return environment[name] }, reaching(account), "https://site.example.test", ai)()
+	}
+	both := map[string]string{"https_proxy": "http://user:secret@proxy.example.test:3128", "HTTP_PROXY": "proxy.example.com:8080"}
+	for _, example := range []struct {
+		name        string
+		environment map[string]string
+		account     bool
+		ai          func() aisettings.Settings
+		want        string
+	}{
+		{"nothing in the list", both, false, none, ""},
+		{"a helper of this computer", both, false, ollama, ""},
+		{"the provider of «Свой ИИ»", both, false, external, "proxy.example.test:3128"},
+		{"the server of the link, a proxy without a scheme", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080"}, true, none, "proxy.example.com:8080"},
+		{"an address of https and a proxy of http alone", map[string]string{"HTTP_PROXY": "proxy.example.com:8080"}, true, external, ""},
+		{"the provider in NO_PROXY", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080", "NO_PROXY": "localhost, provider.example.com"}, false, external, ""},
+		{"the subdomains in NO_PROXY", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080", "no_proxy": ".example.com"}, false, external, ""},
+		{"everything in NO_PROXY", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080", "NO_PROXY": "*"}, true, external, ""},
+		{"another host in NO_PROXY", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080", "NO_PROXY": "other.example.com,10.0.0.0/8"}, false, external, "proxy.example.com:8080"},
+		{"the server of the link while the provider goes straight", map[string]string{"HTTPS_PROXY": "proxy.example.com:8080", "NO_PROXY": "provider.example.com"}, true, external, "proxy.example.com:8080"},
+		{"no proxy", map[string]string{}, true, external, ""},
+	} {
+		if got := proxyOf(example.environment, example.account, example.ai); got != example.want {
+			t.Errorf("%s: the proxy = %q, want %q", example.name, got, example.want)
+		}
 	}
 }

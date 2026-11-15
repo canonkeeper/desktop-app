@@ -35,11 +35,15 @@ type networkResponse struct {
 }
 
 type stateResponse struct {
-	Version *string           `json:"version"`
-	DataDir string            `json:"dataDir"`
-	Usage   usageResponse     `json:"usage"`
-	Backups []backupResponse  `json:"backups"`
-	Network []networkResponse `json:"network"`
+	Version      *string           `json:"version"`
+	DataDir      string            `json:"dataDir"`
+	Usage        usageResponse     `json:"usage"`
+	Backups      []backupResponse  `json:"backups"`
+	Network      []networkResponse `json:"network"`
+	Proxy        *string           `json:"proxy"`
+	Welcome      bool              `json:"welcome"`
+	CheckUpdates bool              `json:"checkUpdates"`
+	ProgramsRead bool              `json:"programsRead"`
 }
 
 // state is getDesktopState (specs/2026-11-13-desk-settings.md ST2.1): what «Настройки» of the app show — the version,
@@ -53,12 +57,12 @@ func (handlers Handlers) state(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpapi.WriteProblem(w, "", http.StatusInternalServerError, "Internal Server Error", "unexpected error", "server.error")
+		unexpected(w, r, err)
 		return
 	}
 	state, err := handlers.State.Execute(r.Context())
 	if err != nil {
-		httpapi.WriteProblem(w, "", http.StatusInternalServerError, "Internal Server Error", "unexpected error", "server.error")
+		unexpected(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -71,7 +75,8 @@ func stateResponseOf(state service.AppState) stateResponse {
 		Version: textOrNull(state.Version), DataDir: state.DataDir,
 		Usage:   usageResponse{Counting: state.Usage.Counting},
 		Backups: make([]backupResponse, 0, len(state.Backups)),
-		Network: make([]networkResponse, 0, len(state.Network)),
+		Network: make([]networkResponse, 0, len(state.Network)), Proxy: textOrNull(state.Proxy),
+		Welcome: state.Welcome, CheckUpdates: state.CheckUpdates, ProgramsRead: state.ProgramsRead,
 	}
 	if state.Usage.Known {
 		bytes := state.Usage.Bytes

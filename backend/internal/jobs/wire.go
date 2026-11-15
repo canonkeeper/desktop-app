@@ -233,7 +233,7 @@ func validateSubject(kind Kind, subject Subject) error {
 			return ErrValidation
 		}
 	case ChapterCardsSubject:
-		if s.Type != KindChapterCards || !validSourceView(s.SourceView) {
+		if s.Type != KindChapterCards || !validSourceView(s.SourceView) || !validCardsSample(s.Sample) {
 			return ErrValidation
 		}
 	case SagaLayerSubject:

@@ -1,0 +1,159 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The link with an account (board 44·4–44·8; Pattern/Desktop/Settings Account, Link Waiting). */
+
+.part {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+}
+
+.part > * {
+  max-width: 100%;
+}
+
+.text,
+.who {
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.who {
+  font-weight: 600;
+}
+
+.note,
+.hint {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  justify-self: stretch;
+  gap: 12px;
+}
+
+.card {
+  display: grid;
+  justify-self: stretch;
+  gap: 4px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 10px 12px;
+}
+
+.fresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  overflow-wrap: anywhere;
+}
+
+.factIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ck-muted-foreground);
+}
+
+.offline {
+  display: grid;
+  justify-self: stretch;
+  gap: 6px;
+}
+
+.offlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* «Ждёт подтверждения в браузере · Осталось 9 минут» with «Открыть окно связи» in the place of «Связать…». */
+.waiting {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.waitingLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+/* The window of the waiting (Pattern/Desktop/Link Waiting). */
+.window {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head h2 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.addressRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.address {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-sm);
+  padding: 0 10px;
+  background: var(--ck-muted);
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  text-overflow: ellipsis;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}

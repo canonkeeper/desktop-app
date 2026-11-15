@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockApiClient } from '../../api/mock';
 import { projectId } from '../../api/mock/repository/fixtures';
@@ -150,6 +150,24 @@ describe('Research Chat rate limits', () => {
     expect(composer).toHaveProperty('placeholder', 'Спросите о своей саге…');
     expect(screen.getByRole('button', { name: 'Спросить' }).getAttribute('data-variant')).toBe('primary');
     expect(screen.queryByRole('button', { name: /попытка|повторить|спросить снова/iu })).toBeNull();
+  });
+
+  // specs/2026-11-15-desk-turns-here.md TH3.1, TH2.4: the site has no member of the slot — a quota that named who holds the
+  // places, which the site never sends, changes nothing of the block, to the sign.
+  it('says nothing of who holds the places without the words of an edition', async () => {
+    const texts: string[] = [];
+    for (const places of [undefined, { answering: 3, held: 1, elsewhere: 2 }]) {
+      const { submit } = await renderRateLimitedPanel(rateLimit('quota.active_turns'), async (api) => {
+        const quota = await api.getAccountQuota();
+        vi.spyOn(api, 'getAccountQuota').mockResolvedValue({ ...quota, activeTurns: { ...quota.activeTurns, ...(places ? { places } : {}) } });
+      });
+      fireEvent.click(submit);
+      const block = await screen.findByRole('alert', { name: 'Сейчас готовятся ответы на 4 ваших вопроса' });
+      await waitFor(() => expect(within(block).getByText('Ваш вопрос остался в поле.')).toBeTruthy());
+      texts.push(block.textContent ?? '');
+      cleanup();
+    }
+    expect(texts[1]).toBe(texts[0]);
   });
 
   // CH3.1: a short day is counted at the field from the first question; a long one from 80 % (quota spec R5.3).

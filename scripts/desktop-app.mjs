@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Lays out the set of the desktop installers (specs/2026-11-12-desk-shell.md SH4.2):
 //
-//   node scripts/desktop-app.mjs --target <triple> --postgres <set archive> --codex <package archive>
+//   node scripts/desktop-app.mjs --target <triple> --postgres <set archive> --codex <package archive> [--smoke]
 //
 // into desktop/bundle, the directory desktop/src-tauri/tauri.bundle.json names: the backend with the desktop web
-// inside (scripts/desktop-backend.mjs) as canonkeeper-backend-<triple>[.exe]; postgres/ (bin, lib, share) from the
+// inside (scripts/desktop-backend.mjs) as canonkeeper-backend-<triple>[.exe] and the program of the bridge for the
+// programs of the author beside it as canonkeeper-mcp-<triple>[.exe]; postgres/ (bin, lib, share) from the
 // archive desktop/postgres/build.py made of the source pinned in desktop/release.json; codex/codex-app-server[.exe]
 // from the package of the Codex fork pinned there, of the version backend/go.mod pins; codex-homes/research-chat, the
 // one profile of the open app. Each archive is checked against its pin before anything is built, and a mismatch is a
@@ -96,9 +97,15 @@ function postgresSet(archive, pin, exe, work) {
   return set;
 }
 
-/** Builds the backend with the desktop web inside for the target (scripts/desktop-backend.mjs). */
-function buildBackend(output, target) {
-  const result = spawnSync(process.execPath, [path.join(repositoryRoot, 'scripts', 'desktop-backend.mjs'), output], {
+/**
+ * Builds the backend with the desktop web inside for the target, or the program of the bridge — by the name of the output
+ * (scripts/desktop-backend.mjs).
+ */
+function buildBackend(output, target, smoke = false) {
+  const script = path.join(repositoryRoot, 'scripts', 'desktop-backend.mjs');
+  const bridge = path.basename(output).startsWith('canonkeeper-mcp-');
+  const flags = bridge ? ['--bridge'] : smoke ? ['--smoke'] : [];
+  const result = spawnSync(process.execPath, [script, ...flags, output], {
     cwd: repositoryRoot, stdio: 'inherit', env: { ...process.env, GOOS: target.goos, GOARCH: target.goarch },
   });
   if (result.status !== 0) throw new Error('the backend did not build');
@@ -132,6 +139,7 @@ export function assemble({ root = repositoryRoot, target, postgres, codex, out, 
       cpSync(path.join(root, 'codex-homes', home), path.join(out, 'codex-homes', home), { recursive: true });
     }
     build(path.join(out, `canonkeeper-backend-${target}${spec.exe}`), spec);
+    build(path.join(out, `canonkeeper-mcp-${target}${spec.exe}`), spec);
   } finally {
     rmSync(work, { force: true, recursive: true });
   }
@@ -141,7 +149,7 @@ export function assemble({ root = repositoryRoot, target, postgres, codex, out, 
 export function main(args = process.argv.slice(2)) {
   const { values } = parseArgs({
     args,
-    options: { target: { type: 'string' }, postgres: { type: 'string' }, codex: { type: 'string' } },
+    options: { target: { type: 'string' }, postgres: { type: 'string' }, codex: { type: 'string' }, smoke: { type: 'boolean' } },
   });
   if (!values.target || !values.postgres || !values.codex) {
     throw new Error('usage: desktop-app.mjs --target <triple> --postgres <set archive> --codex <package archive>');
@@ -151,6 +159,7 @@ export function main(args = process.argv.slice(2)) {
     postgres: path.resolve(values.postgres),
     codex: path.resolve(values.codex),
     out: path.join(repositoryRoot, 'desktop', 'bundle'),
+    build: (output, spec) => buildBackend(output, spec, values.smoke === true),
   });
   console.log(`desktop set: ${out}`);
 }

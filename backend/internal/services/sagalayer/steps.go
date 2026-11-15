@@ -2,8 +2,10 @@ package sagalayer
 
 import (
 	"context"
+	"errors"
 	"sync"
 
+	"canonkeeper/backend/internal/domain/disclosure"
 	domain "canonkeeper/backend/internal/domain/sagalayer"
 	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/jobs"
@@ -39,6 +41,7 @@ type run struct {
 
 	textMu sync.Mutex
 	texts  map[int]string // of the positions of chapters
+	cut    map[int]bool   // the check reads only their beginning
 }
 
 func (build *BuildLayer) newRun(ctx context.Context, claim jobs.WorkerClaim, subject jobs.SagaLayerSubject, stamps []domain.Stamp, stored *domain.Stored) (*run, error) {
@@ -54,7 +57,7 @@ func (build *BuildLayer) newRun(ctx context.Context, claim jobs.WorkerClaim, sub
 	for _, stamp := range stamps {
 		byChapter[stamp.Chapter] = stamp
 	}
-	current := &run{build: build, ctx: ctx, claim: claim, subject: subject, outline: outline, cards: set.Cards, stored: stored, texts: map[int]string{}}
+	current := &run{build: build, ctx: ctx, claim: claim, subject: subject, outline: outline, cards: set.Cards, stored: stored, texts: map[int]string{}, cut: map[int]bool{}}
 	sources := make([]domain.Source, 0, len(stamps))
 	for i := range outline.Version.Chapters {
 		chapter := &outline.Version.Chapters[i]
@@ -84,15 +87,30 @@ func (current *run) save(books []domain.Book, progress float64) error {
 	return current.build.store.SaveCheckpoint(current.ctx, current.claim, current.stamps, Checkpoint{Books: books, Steps: current.steps, Model: current.build.modelName}, progress)
 }
 
-// ask sends one call, up to three times; parse takes an answer and says whether it can be read.
-func (current *run) ask(instructions, input string, parse func(string) error) error {
+// ask sends one call, up to three times; parse takes an answer and says whether it can be read. With the policy of the
+// reading of the app only an answer that did not read is asked again (specs/2026-11-15-desk-reading-rest.md RR1.3): a cut
+// answer, a refusal and no answer would come again at the same settings, and a cut answer was paid whole — the question gives
+// up at once with its reason; an answer that did not read through the three gives up as unreadable.
+//
+// The call names what it gives (specs/2026-11-14-desk-journal.md JR1.3) in a context of its own over the context of the run:
+// the books and the checks run in parallel. A request the journal of the app did not send is not asked again (JR1.6).
+func (current *run) ask(named disclosure.Named, instructions, input string, parse func(string) error) error {
 	var last error
+	marks, unreadable := current.build.policy != nil, false
 	for range callAttempts {
 		if err := current.ctx.Err(); err != nil {
 			return err
 		}
-		output, spent, err := current.build.model.Complete(current.ctx, instructions, input)
+		output, spent, err := current.build.model.Complete(disclosure.With(current.ctx, named), instructions, input)
 		current.build.recordUsage(current.ctx, current.claim.ProjectID, spent)
+		if _, stopped := sagamemory.StopOf(err); stopped || errors.Is(err, disclosure.ErrJournal) {
+			// A stop of the reading is not asked again (specs/2026-11-13-desk-consent.md CN3.4).
+			return err
+		}
+		if reason := sagamemory.UnreadOf(err); marks && reason != "" {
+			return &unanswered{reason: reason, err: err}
+		}
+		unreadable = err == nil
 		if err == nil {
 			err = parse(output)
 		}
@@ -101,8 +119,21 @@ func (current *run) ask(instructions, input string, parse func(string) error) er
 		}
 		last = err
 	}
+	if marks && unreadable {
+		return &unanswered{reason: sagamemory.UnreadUnreadable, err: last}
+	}
 	return last
 }
+
+// unanswered is a question of a build that gave no answer for a named reason (RR1.1, RR1.3): the build is marked with it.
+type unanswered struct {
+	reason string
+	err    error
+}
+
+func (missed *unanswered) Error() string { return missed.err.Error() }
+
+func (missed *unanswered) Unwrap() error { return missed.err }
 
 // steps_ goes through the steps the checkpoint does not hold yet.
 func (current *run) runSteps() (*domain.Layer, *jobs.SagaLayerResult, error) {
@@ -112,7 +143,8 @@ func (current *run) runSteps() (*domain.Layer, *jobs.SagaLayerResult, error) {
 		return nil, nil, err
 	}
 	if !current.steps.Reduced {
-		err := current.ask(domain.ReduceInstructions, domain.ReduceInput(books, version), func(output string) (err error) {
+		// The reduction reads the threads of the books (JR1.3).
+		err := current.ask(disclosure.Named{Threads: true}, domain.ReduceInstructions, domain.ReduceInput(books, version), func(output string) (err error) {
 			current.steps.Registry, err = domain.ParseRegistry(output, version)
 			return err
 		})
@@ -129,7 +161,10 @@ func (current *run) runSteps() (*domain.Layer, *jobs.SagaLayerResult, error) {
 	}
 	kept := domain.ApplyVerdicts(current.steps.Registry, current.steps.Verdicts)
 	if !current.steps.GapDone {
-		err := current.ask(domain.GapInstructions, domain.GapInput(kept, books, version), func(output string) (err error) {
+		// «Что упущено» reads the threads and what the helper learned of the chapters of the books (JR1.3).
+		gap := current.cardsOf(current.chapters)
+		gap.Threads = true
+		err := current.ask(gap, domain.GapInstructions, domain.GapInput(kept, books, version), func(output string) (err error) {
 			current.steps.Gap, err = domain.ParseRegistry(output, version)
 			return err
 		})
@@ -218,7 +253,7 @@ func (current *run) mapBooks() ([]domain.Book, int, error) {
 			digests[j] = domain.ChapterDigest(&current.outline.Version.Chapters[index], current.cards[index])
 		}
 		var book domain.Book
-		err := current.ask(domain.MapInstructions, domain.BookInput(plan.book.Order, digests), func(output string) (err error) {
+		err := current.ask(current.cardsOf(plan.chapters), domain.MapInstructions, domain.BookInput(plan.book.Order, digests), func(output string) (err error) {
 			book, err = domain.ParseBook(output, current.outline.Version)
 			return err
 		})
@@ -254,17 +289,22 @@ func (current *run) verify(threads []domain.Thread, verdicts map[int]domain.Verd
 	}
 	var lastFailure error
 	err := runAll(current.ctx, current.build.parallel, pending, func(ctx context.Context, i int) error {
-		input, err := current.evidence(threads[i])
+		input, named, err := current.evidence(threads[i])
 		if err != nil {
 			return err
 		}
 		var verdict domain.Verdict
-		err = current.ask(domain.VerifyInstructions, input, func(output string) (err error) {
+		err = current.ask(named, domain.VerifyInstructions, input, func(output string) (err error) {
 			verdict, err = domain.ParseVerdict(output)
 			return err
 		})
 		if stopped := current.ctx.Err(); stopped != nil {
 			return stopped
+		}
+		if _, stopped := sagamemory.StopOf(err); stopped || errors.Is(err, disclosure.ErrJournal) {
+			// A stop of the reading ends the build; the verdicts so far stay in the checkpoint. A check the journal did not send
+			// writes no verdict: the worker repeats the Job (specs/2026-11-14-desk-journal.md JR1.6).
+			return err
 		}
 		current.mu.Lock()
 		defer current.mu.Unlock()
@@ -280,29 +320,51 @@ func (current *run) verify(threads []domain.Thread, verdicts map[int]domain.Verd
 	return err
 }
 
-func (current *run) evidence(thread domain.Thread) (string, error) {
+// evidence is the input of the check of a thread and what it gives (JR1.3): the chapters of the thread whole, or their
+// beginning when longer than the check reads, and what the helper learned of the later chapters.
+func (current *run) evidence(thread domain.Thread) (string, disclosure.Named, error) {
 	version := current.outline.Version
 	texts := map[int]string{}
+	var named disclosure.Named
 	for _, position := range current.index.Chapters(thread) {
-		text, err := current.chapterText(position)
+		text, cut, err := current.chapterText(position)
 		if err != nil {
-			return "", err
+			return "", disclosure.Named{}, err
 		}
 		texts[position] = text
+		precision := disclosure.Whole
+		if cut {
+			precision = disclosure.Beginning
+		}
+		named.Chapter(version.Chapters[current.chapters[position]].ID, precision, 0, 0)
 	}
-	return current.index.Evidence(thread, domain.RenderRefs(thread.First, version), domain.RenderRefs(thread.Last, version), texts), nil
+	later := make([]int, 0)
+	for _, position := range current.index.Later(thread) {
+		later = append(later, current.chapters[position])
+	}
+	named = disclosure.Merge(named, current.cardsOf(later))
+	return current.index.Evidence(thread, domain.RenderRefs(thread.First, version), domain.RenderRefs(thread.Last, version), texts), named, nil
 }
 
-// chapterText loads a chapter once and keeps only what a check reads of it.
-func (current *run) chapterText(position int) (string, error) {
+// cardsOf names what the helper learned of the chapters of the indexes of the version (JR1.3).
+func (current *run) cardsOf(indexes []int) disclosure.Named {
+	named := disclosure.Named{Chapters: make([]disclosure.Chapter, 0, len(indexes))}
+	for _, index := range indexes {
+		named.Chapters = append(named.Chapters, disclosure.Chapter{ID: current.outline.Version.Chapters[index].ID, Precision: disclosure.Cards})
+	}
+	return named
+}
+
+// chapterText loads a chapter once and keeps only what a check reads of it, and whether that is only its beginning.
+func (current *run) chapterText(position int) (string, bool, error) {
 	current.textMu.Lock()
 	defer current.textMu.Unlock()
 	if text, ok := current.texts[position]; ok {
-		return text, nil
+		return text, current.cut[position], nil
 	}
 	index := current.chapters[position]
 	if err := current.build.text.Chapters(current.ctx, current.outline, []int{index}); err != nil {
-		return "", err
+		return "", false, err
 	}
 	chapter := &current.outline.Version.Chapters[index]
 	paragraphs := make([]string, len(chapter.Paragraphs))
@@ -310,8 +372,9 @@ func (current *run) chapterText(position int) (string, error) {
 		paragraphs[i] = paragraph.Text
 	}
 	current.texts[position] = domain.ChapterEvidenceText(chapter.Title, paragraphs)
+	current.cut[position] = domain.EvidenceCut(paragraphs)
 	chapter.Paragraphs = nil
-	return current.texts[position], nil
+	return current.texts[position], current.cut[position], nil
 }
 
 // runAll runs work over items with at most parallel at once; the first error stops what has not
@@ -330,6 +393,10 @@ func runAll(ctx context.Context, parallel int, items []int, work func(context.Co
 		go func() {
 			defer group.Done()
 			for item := range queue {
+				if ctx.Err() != nil {
+					// The first error stopped what has not started, an item handed over at that moment too.
+					continue
+				}
 				if err := work(ctx, item); err != nil {
 					mu.Lock()
 					if first == nil {

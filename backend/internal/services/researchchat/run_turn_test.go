@@ -17,13 +17,24 @@ type runRepositoryStub struct {
 	failed    []researchdomain.FinishFailure
 	boundRoot string
 	boundTurn string
+	// sessionGone: the session that started the turn ended — the binding of its thread refuses it as the late effects do.
+	sessionGone  bool
+	sessionReads int
 }
 
 func (stub *runRepositoryStub) LoadRun(context.Context, researchdomain.WorkerClaim) (researchdomain.TurnRun, error) {
 	return stub.run, nil
 }
 
+func (stub *runRepositoryStub) SessionLive(context.Context, researchdomain.TurnRun) (bool, error) {
+	stub.sessionReads++
+	return !stub.sessionGone, nil
+}
+
 func (stub *runRepositoryStub) BindRoot(_ context.Context, run researchdomain.TurnRun, rootThreadID string) error {
+	if stub.sessionGone {
+		return researchdomain.ErrForbidden
+	}
 	stub.boundRoot = rootThreadID
 	return nil
 }
@@ -449,5 +460,59 @@ func TestTheInputOfATurnAButtonSentSaysSo(t *testing.T) {
 	}
 	if question, ok := researchdomain.PublicAssignmentQuestion(steer); !ok || question.Button {
 		t.Fatalf("a correction = %+v, %v", question, ok)
+	}
+}
+
+// threadsOfTheGateway is the registry «нить → Job» of the gateway of the app as the turn sees it.
+type threadsOfTheGateway struct {
+	bound map[string]string
+}
+
+func (threads *threadsOfTheGateway) Bind(threadID, jobID string) func() {
+	threads.bound[threadID] = jobID
+	return func() { delete(threads.bound, threadID) }
+}
+
+// bindingRunner remembers what the registry held while the model answered.
+type bindingRunner struct {
+	agentRunnerStub
+	threads *threadsOfTheGateway
+	during  map[string]string
+}
+
+func (runner *bindingRunner) Run(ctx context.Context, request AgentRunRequest) (agent.RunOutcome, error) {
+	if err := request.BindRoot(ctx, runner.result.RootThreadID); err != nil {
+		return agent.RunOutcome{}, err
+	}
+	runner.during = map[string]string{}
+	for thread, job := range runner.threads.bound {
+		runner.during[thread] = job
+	}
+	if err := request.BindTurn(ctx, runner.result.RootThreadID, runner.result.TurnID); err != nil {
+		return agent.RunOutcome{}, err
+	}
+	return runner.result, nil
+}
+
+// specs/2026-11-13-desk-gateway.md GW2.4: a turn puts its root thread and its Job into the registry of the gateway once
+// the root is bound — before the model is asked — and takes them out when the turn ends, answered or not.
+func TestATurnNamesItsJobToTheGatewayForItsTime(t *testing.T) {
+	for _, status := range []agent.TurnStatus{agent.TurnCompleted, agent.TurnFailed} {
+		run := researchdomain.TurnRun{
+			Kind: agent.SessionResearch, ProjectID: "project-1", ChatID: "chat-1", TurnID: "chat-turn-1", JobID: "job-1",
+			ActorUserID: "user-1", ClaimIncarnation: 1, SourceView: "draft", Scope: researchdomain.ScopeProject, Question: "Где застава?",
+		}
+		threads := &threadsOfTheGateway{bound: map[string]string{}}
+		runner := &bindingRunner{threads: threads, agentRunnerStub: agentRunnerStub{result: agent.RunOutcome{
+			RootThreadID: "root-1", TurnID: "provider-turn-1", Status: status, FinalResponse: "У перевала.",
+		}}}
+		useCase := NewRunTurn(&runRepositoryStub{run: run}, runner, chatBundles(Bundle{SkillName: "chat-skill", Handler: successfulToolHandler})).WithThreads(threads)
+		_, _ = useCase.Execute(t.Context(), researchdomain.WorkerClaim{ProjectID: "project-1", JobID: "job-1", ClaimIncarnation: 1})
+		if runner.during["root-1"] != "job-1" || len(runner.during) != 1 {
+			t.Fatalf("%s: the registry while the model answered = %v", status, runner.during)
+		}
+		if len(threads.bound) != 0 {
+			t.Fatalf("%s: the registry after the turn = %v", status, threads.bound)
+		}
 	}
 }

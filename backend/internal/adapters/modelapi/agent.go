@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -163,12 +162,8 @@ func (client *Client) items(ctx context.Context, payload []byte) ([]json.RawMess
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if client.config.KeyEnv != "" {
-		key := os.Getenv(client.config.KeyEnv)
-		if key == "" {
-			return nil, usage, false, fmt.Errorf("model API key variable %s is empty", client.config.KeyEnv)
-		}
-		req.Header.Set("Authorization", "Bearer "+key)
+	if err := client.authorize(req, false); err != nil {
+		return nil, usage, false, err
 	}
 	resp, err := client.http.Do(req)
 	if err != nil {

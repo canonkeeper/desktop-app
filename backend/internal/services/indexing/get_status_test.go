@@ -111,3 +111,75 @@ func TestTheStatusAsksWhetherTheHelperIsConnected(t *testing.T) {
 		})
 	}
 }
+
+// readingFake is the reading of the books of a saga as the app says it: what it waits for and its state by the counts of
+// the store.
+type readingFake struct {
+	waiting canon.PreparationWaiting
+	asked   *[]string
+	counts  *canon.IndexingPreparation
+}
+
+func (reading readingFake) Waiting(_ context.Context, projectID string) (canon.PreparationWaiting, error) {
+	*reading.asked = append(*reading.asked, projectID)
+	return reading.waiting, nil
+}
+
+func (reading readingFake) State(_ context.Context, _ string, counts canon.IndexingPreparation) (*canon.IndexingReading, error) {
+	*reading.counts = counts
+	return &canon.IndexingReading{State: canon.ReadingPaused, ChaptersRead: counts.ChaptersRead, ChaptersTotal: counts.ChaptersTotal}, nil
+}
+
+// counted is the store of the status that counts the reading of a saga of 600 chapters, 212 of them read.
+type counted struct{ asked *[]GetStatusInput }
+
+func (fake counted) GetStatus(_ context.Context, input GetStatusInput) (canon.IndexingStatusResponse, error) {
+	*fake.asked = append(*fake.asked, input)
+	return canon.IndexingStatusResponse{Counts: &canon.IndexingPreparation{ChaptersRead: 212, ChaptersTotal: 600}}, nil
+}
+
+// specs/2026-11-13-desk-gateway.md GW4.3; specs/2026-11-13-desk-consent.md CN3.8: a build that asks the author — the app —
+// says what the reading of a saga waits for by one port — its consent, or its pause — and the state of the reading next to
+// the counts of the store; a helper not connected comes first and has no state; a build without the port — the site — asks
+// nothing and answers as before.
+func TestTheStatusSaysTheReadingByOnePort(t *testing.T) {
+	input := GetStatusInput{ActorUserID: statusReaderID, ProjectID: readyProjectID}
+	for _, test := range []struct {
+		name      string
+		helper    Helper
+		reading   *canon.PreparationWaiting
+		waiting   canon.PreparationWaiting
+		askedSaga bool
+		state     bool
+	}{
+		{"the site", nil, nil, "", false, false},
+		{"no consent yet", helperFake(true), new(canon.PreparationWaitingConsent), canon.PreparationWaitingConsent, true, true},
+		{"paused", helperFake(true), new(canon.PreparationWaitingPaused), canon.PreparationWaitingPaused, true, true},
+		{"the consent given", helperFake(true), new(canon.PreparationWaiting("")), "", true, true},
+		{"no consent and no helper", helperFake(false), new(canon.PreparationWaitingConsent), canon.PreparationWaitingHelper, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var asked []GetStatusInput
+			var sagas []string
+			var counts canon.IndexingPreparation
+			service := NewService(counted{asked: &asked})
+			if test.helper != nil {
+				service.WithHelper(test.helper)
+			}
+			if test.reading != nil {
+				service.WithReading(readingFake{waiting: *test.reading, asked: &sagas, counts: &counts})
+			}
+			status, err := service.GetStatus(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(asked) != 1 || asked[0].Waiting != test.waiting || (len(sagas) == 1) != test.askedSaga ||
+				test.askedSaga && sagas[0] != readyProjectID {
+				t.Fatalf("the store was asked %+v, the reading of %v; want waiting %q", asked, sagas, test.waiting)
+			}
+			if (status.Reading != nil) != test.state || test.state && (counts.ChaptersRead != 212 || status.Reading.ChaptersTotal != 600) {
+				t.Fatalf("the state of the reading = %+v by %+v", status.Reading, counts)
+			}
+		})
+	}
+}

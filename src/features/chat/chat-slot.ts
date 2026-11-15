@@ -4,6 +4,7 @@ import type { ChapterFileInput, ChatApiClient, ChatScope } from '../../entities/
 import type { ChatSourceTarget, SourceCitation } from '../../shared/navigation/chat-source';
 import type { MarkdownImage, WorkshopLinkTarget } from '../../ui/MarkdownContent';
 import type { FeedAction } from './feed/feed-model';
+import type { ChatFailureWords } from './research-chat-presentation';
 import type { ChatImageNavigation } from './use-chat-image-navigation';
 
 /** Where the drawings of the chat lead beyond it: the lightbox in the URL, the workshop, the feature page, the gallery. */
@@ -72,6 +73,23 @@ export interface ChatSlot {
   proofread?: ChatProofreadSlot;
   /** An empty chat of the demo saga of the site begins with questions about its book (specs/2026-11-09-demo-saga.md DS4.3). */
   demoExamples?: (options: ChatDemoExamplesOptions) => ReactNode;
+  /**
+   * A hook: why «Спросить» is closed now by the edition, after the reason of the server — the app installs an update
+   * (specs/2026-11-15-desk-updates-web.md UW3.4). None on the site.
+   */
+  useAskReason?: () => string | null;
+  /**
+   * A hook: why the helper is not connected, in the words of the edition, while the reading waits for it (`waiting`) — the
+   * same reason the line of the reading says (specs/2026-11-15-desk-account-link-web.md AW3.4); null — the open words. None on
+   * the site.
+   */
+  useHelperReason?: (waiting: boolean) => string | null;
+  /**
+   * The words of the edition for the refusals and the failed turns of its helper, over the words of the core: a question of the
+   * helper of the account refused or failed (specs/2026-11-15-desk-account-words-web.md AW4), a question a restart of the app
+   * interrupted (specs/2026-11-15-desk-interrupted-turn.md IT1.4). None on the site.
+   */
+  failures?: ChatFailureWords;
 }
 
 const ChatSlotContext = createContext<ChatSlot | null>(null);

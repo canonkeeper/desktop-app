@@ -287,9 +287,15 @@ chapter_results AS (
     document.chapter_content_hash AS content_hash,
     source_book.title AS book_title,
     source_chapter.title AS chapter_title,
+    -- The place of the chapter among the living chapters of its book: the row of a deleted chapter stays in the members of
+    -- the text, and it is not counted (specs/2026-11-15-reader-chapter-number.md RN1.2).
     (
       SELECT count(*)::integer + 1
       FROM chapter_source_members AS prior
+      JOIN chapters AS prior_chapter
+        ON prior_chapter.id = prior.chapter_id
+       AND prior_chapter.lifecycle_generation = prior.chapter_lifecycle_generation
+       AND prior_chapter.deleted_at IS NULL
       WHERE prior.project_id = source_chapter.project_id
         AND prior.source_view = source_chapter.source_view
         AND prior.project_lifecycle_generation = source_chapter.project_lifecycle_generation

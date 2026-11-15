@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"canonkeeper/backend/internal/app/desktop"
 )
@@ -17,6 +18,19 @@ import (
 // version is the version of the app: scripts/desktop-backend.mjs sets it from the shell's Cargo.toml (-X main.version), so
 // the window, the backend and the installer name one (specs/2026-11-13-desk-settings.md ST4.2).
 var version string
+
+// retryPause is the unit of the pauses of the repeats of a call of the model: empty in a release — the client's own; the
+// process tests build a program with short pauses (-X main.retryPause=…, specs/2026-11-13-desk-consent.md CN3.4).
+var retryPause string
+
+// resumeEvery is how often the reading of the helper of the account checks the pauses that go on by themselves: empty in a
+// release — ten minutes; the process tests build a program with a short one (-X main.resumeEvery=…,
+// specs/2026-11-13-desk-account-ai.md AI3.6).
+var resumeEvery string
+
+// siteURL is the address of the site the app links with (specs/2026-11-13-desk-account.md AC1.4): only the build sets it
+// (-X main.siteURL); neither the environment nor the settings change it.
+var siteURL = "https://canonkeeper.ru"
 
 func main() {
 	if len(os.Args) != 1 {
@@ -27,7 +41,9 @@ func main() {
 	os.Stdout = os.Stderr
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := desktop.Run(ctx, desktop.Options{In: os.Stdin, Control: control, Version: version, Logs: func(file *os.File) {
+	pause, _ := time.ParseDuration(retryPause)
+	every, _ := time.ParseDuration(resumeEvery)
+	err := desktop.Run(ctx, desktop.Options{In: os.Stdin, Control: control, Version: version, Site: siteURL, RetryPause: pause, ResumeEvery: every, Logs: func(file *os.File) {
 		os.Stdout = file
 		log.SetOutput(file)
 	}})

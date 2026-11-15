@@ -312,6 +312,15 @@ func (repository *Repository) providerTurnID(ctx context.Context, projectID, cha
 	return *providerTurnID, nil
 }
 
+// SessionLive reads, before the turn asks anything, whether the session that started it is the one its binding will check
+// (specs/2026-11-15-desk-interrupted-turn.md IT1.1): the same rule of the store of the Jobs, one read.
+func (repository *Repository) SessionLive(ctx context.Context, run researchdomain.TurnRun) (bool, error) {
+	live, err := repository.jobs.ModelClaimSessionLive(ctx, jobs.WorkerClaim{
+		ProjectID: run.ProjectID, JobID: run.JobID, ClaimIncarnation: run.ClaimIncarnation,
+	})
+	return live, mapError(err)
+}
+
 func (repository *Repository) BindRoot(ctx context.Context, run researchdomain.TurnRun, rootThreadID string) error {
 	err := repository.db.WithTx(ctx, func(tx pgx.Tx) error {
 		return repository.bindChatAuthorityInTx(ctx, tx, run, rootThreadID)

@@ -1,8 +1,10 @@
-import type { OperationRequest, OperationResponse } from '../../../shared/api';
+import type { OperationId, OperationRequest, OperationResponse } from '../../../shared/api';
 import { clone, normalizedEmail, now, rejectUnknownKeys } from './common';
 import type { MockRepositoryContext } from './context';
 import { mockPassword } from './fixtures';
+import { desktopAuthorId } from './tiers';
 import { MockApiError } from '../scenarios';
+import { desktopLinked, mockSiteHost } from './desktop-account';
 
 function validateRegisterRequest(body: OperationRequest<'registerUser'>) {
   rejectUnknownKeys('registerUser', body, ['acceptedPersonalDataConsent', 'acceptedTerms', 'displayName', 'email', 'password']);
@@ -25,7 +27,7 @@ const loginLockMinutes = 15;
 const takenEmail = 'mira@example.com';
 /** The local author of the desktop app (backend/internal/services/desktop LocalAuthorEmail, LocalAuthorName). */
 const desktopAuthor = {
-  id: 'user-local', email: 'local@desktop.invalid', emailVerified: true, documentsAccepted: true, displayName: 'Автор', avatarUrl: null, createdAt: now,
+  id: desktopAuthorId, email: 'local@desktop.invalid', emailVerified: true, documentsAccepted: true, displayName: 'Автор', avatarUrl: null, createdAt: now,
 };
 
 /** Mock links carry a deterministic value: `mock-<purpose>-<userId>`. */
@@ -279,10 +281,43 @@ export function createSessionOperations(context: MockRepositoryContext) {
     return clone(context.state.session);
   }
 
+  function hostOf(address: string | undefined): URL | null {
+    if (!address) return null;
+    try {
+      return new URL(address);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Where the app goes, by the one owner of the backend (networkUses): the line of the site while linked or a link waits, which
+   * names the questions to the helper and the reading of the books while linked with the source account, and the provider of
+   * «Свой ИИ» while its address is kept — an address of this computer as a program of this computer
+   * (specs/2026-11-14-desk-journal.md JR4.1).
+   */
+  function networkOf(): OperationResponse<'getDesktopState', '200'>['network'] {
+    const network: OperationResponse<'getDesktopState', '200'>['network'] = [];
+    const linked = desktopLinked(context);
+    if (linked || context.state.desktopAccount.state === 'waiting') {
+      const purposes = ['связь с аккаунтом: имя, тариф и остатки'];
+      if (linked && context.state.aiSettings.source === 'account') purposes.push('вопросы помощнику и чтение книг');
+      network.push({ host: mockSiteHost, purpose: purposes.join('; ') });
+    }
+    const provider = hostOf(context.state.aiSettings.own?.baseUrl);
+    if (provider?.host) {
+      const local = provider.hostname === 'localhost' || provider.hostname === '127.0.0.1' || provider.hostname === '[::1]';
+      network.push({ host: provider.host, purpose: local ? 'программа на этом компьютере, помощник через «Свой ИИ»' : 'помощник через «Свой ИИ»' });
+    }
+    return network;
+  }
+
   /**
    * getDesktopState (specs/2026-11-13-desk-settings.md ST2.1): the app on the computer of the local author — its version,
    * where its data lie and the place they take, two copies before an update (the older one made before the copies named
-   * their version) and no host of the network.
+   * their version), where it goes — one line of the site while linked, which names the questions to the helper and the
+   * reading of the books while the source is the account (specs/2026-11-13-desk-account-ai.md AI1.7) — and whether «Добро
+   * пожаловать» is still to be shown.
    */
   async function getDesktopState(): Promise<OperationResponse<'getDesktopState', '200'>> {
     context.applyOperation('getDesktopState');
@@ -297,8 +332,122 @@ export function createSessionOperations(context: MockRepositoryContext) {
         { madeAt: '2026-11-12T09:15:00.000Z', version: '1.1.4' },
         { madeAt: '2026-11-02T08:00:00.000Z', version: null },
       ],
-      network: [],
+      network: networkOf(),
+      welcome: context.state.desktopWelcome.shown,
+      checkUpdates: context.state.desktopWelcome.checkUpdates,
+      proxy: null,
+      programsRead: context.state.programs.enabled,
     };
+  }
+
+  /** dismissWelcome (specs/2026-11-13-desk-upgrade.md UG5.1): the author closed «Добро пожаловать» with the choice. */
+  async function dismissWelcome(body: { checkUpdates?: unknown } | undefined): Promise<void> {
+    context.applyOperation('dismissWelcome');
+    if (!context.state.session) {
+      throw new MockApiError(401, 'Сессия отсутствует.', 'dismissWelcome', 'auth.session_required');
+    }
+    if (typeof body?.checkUpdates !== 'boolean') {
+      throw new MockApiError(400, 'invalid request body', 'dismissWelcome', 'validation.failed');
+    }
+    context.state.desktopWelcome = { shown: false, checkUpdates: body.checkUpdates };
+  }
+
+  /**
+   * An update of the app (specs/2026-11-13-desk-updates.md UB1.7): the mock is an AppImage of 1.2.0 that finds 1.3.0 at
+   * once; a download ends after two reads of the state, then the update waits for the turns of the chat. The state is the
+   * one of the repository, so reset() brings back an app that checked nothing (specs/2026-11-15-desk-updates-web.md).
+   */
+  type AppUpdate = OperationResponse<'getAppUpdate', '200'>;
+
+  function appUpdate(): AppUpdate {
+    const update = context.state.appUpdate;
+    return {
+      version: '1.2.0', daily: context.state.desktopWelcome.checkUpdates, kind: 'appimage', phase: update.phase,
+      found: update.phase === 'idle' ? update.found : null, available: clone(update.available),
+      percent: update.phase === 'downloading' ? update.percent : null, refusal: null, package: null, checkedAt: update.checkedAt,
+    };
+  }
+
+  function updateSession(operationId: OperationId): void {
+    context.applyOperation(operationId);
+    if (!context.state.session) {
+      throw new MockApiError(401, 'Сессия отсутствует.', operationId, 'auth.session_required');
+    }
+  }
+
+  function updateConflict(operationId: OperationId): MockApiError {
+    return new MockApiError(409, 'the update is in another phase', operationId, 'desktop.update_state');
+  }
+
+  async function getAppUpdate(): Promise<AppUpdate> {
+    updateSession('getAppUpdate');
+    const update = context.state.appUpdate;
+    if (update.phase === 'downloading') {
+      update.percent = (update.percent ?? 0) + 50;
+      if (update.percent >= 100) {
+        update.phase = 'waiting_turn';
+        update.percent = null;
+      }
+    }
+    return appUpdate();
+  }
+
+  async function checkAppUpdate(): Promise<AppUpdate> {
+    updateSession('checkAppUpdate');
+    const update = context.state.appUpdate;
+    if (['checking', 'downloading', 'waiting_turn', 'installing'].includes(update.phase)) throw updateConflict('checkAppUpdate');
+    update.phase = 'idle';
+    update.found = 'available';
+    update.available = { version: '1.3.0', notes: 'Северный предел читается быстрее; карта саги показывает дороги.' };
+    update.checkedAt = new Date().toISOString();
+    return appUpdate();
+  }
+
+  async function installAppUpdate(): Promise<AppUpdate> {
+    updateSession('installAppUpdate');
+    const update = context.state.appUpdate;
+    const retry = ['download_failed', 'verify_failed', 'install_refused', 'install_failed'].includes(update.phase);
+    if (!update.available || !(retry || (update.phase === 'idle' && update.found === 'available'))) {
+      throw updateConflict('installAppUpdate');
+    }
+    update.phase = 'downloading';
+    update.percent = 0;
+    return appUpdate();
+  }
+
+  async function cancelAppUpdate(): Promise<AppUpdate> {
+    updateSession('cancelAppUpdate');
+    const update = context.state.appUpdate;
+    if (update.phase !== 'downloading' && update.phase !== 'waiting_turn') throw updateConflict('cancelAppUpdate');
+    update.phase = 'idle';
+    update.found = 'available';
+    return appUpdate();
+  }
+
+  async function updateAppUpdateSettings(body: { daily?: unknown } | undefined): Promise<AppUpdate> {
+    updateSession('updateAppUpdateSettings');
+    if (typeof body?.daily !== 'boolean') {
+      throw new MockApiError(400, 'invalid request body', 'updateAppUpdateSettings', 'validation.failed');
+    }
+    context.state.desktopWelcome.checkUpdates = body.daily;
+    return appUpdate();
+  }
+
+  /**
+   * eraseDesktopData (specs/2026-11-13-desk-erase.md ER1.2): with the word «стереть» — whatever its case and the spaces
+   * at its ends — the request goes to the shell, which the mock has not; another word asks nothing.
+   */
+  async function eraseDesktopData(body: { confirm?: unknown } | undefined): Promise<void> {
+    context.applyOperation('eraseDesktopData');
+    if (!context.state.session) {
+      throw new MockApiError(401, 'Сессия отсутствует.', 'eraseDesktopData', 'auth.session_required');
+    }
+    if (typeof body?.confirm !== 'string') {
+      throw new MockApiError(400, 'invalid request body', 'eraseDesktopData', 'validation.failed');
+    }
+    if (body.confirm.trim().toLocaleLowerCase('ru') !== 'стереть') {
+      throw new MockApiError(400, 'the word of the erasure is not written', 'eraseDesktopData', 'desktop.erase_unconfirmed');
+    }
   }
 
   async function getCurrentUser(): Promise<OperationResponse<'getCurrentUser', '200'>> {
@@ -336,6 +485,13 @@ export function createSessionOperations(context: MockRepositoryContext) {
     startDesktop,
     openDesktopSession,
     getDesktopState,
+    dismissWelcome,
+    getAppUpdate,
+    checkAppUpdate,
+    installAppUpdate,
+    cancelAppUpdate,
+    updateAppUpdateSettings,
+    eraseDesktopData,
     getCurrentUser,
   };
 }

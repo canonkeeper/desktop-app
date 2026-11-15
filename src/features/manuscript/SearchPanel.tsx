@@ -12,7 +12,7 @@ import { SegmentedControl } from '../../ui/navigation/SegmentedControl';
 import { Overlay } from '../../ui/overlays/Overlay';
 import { Portal } from '../../ui/overlays/Portal';
 import type { PresenceStatus } from '../../ui/overlays/use-presence';
-import { pluralize } from '../../ui/copy';
+import { chapterHeading, pluralize } from '../../ui/copy';
 import styles from './SearchPanel.module.css';
 import { EmptyFilter } from '../../ui/feedback/EmptyState';
 import { SkeletonArea } from '../../ui/feedback/Skeleton';
@@ -212,7 +212,7 @@ export function SearchPanel({
               <Button onClick={() => void chapters.refetch()} size="sm">Повторить поиск глав</Button>
             </Alert> : null}
             {chapterResults.map((result) => <article className={styles.result} key={`chapter:${result.locator.chapterId}`}>
-              <strong>{result.chapterTitle.startsWith(`Глава ${result.chapterNumber}.`) ? result.chapterTitle : `Глава ${result.chapterNumber} · ${result.chapterTitle}`}</strong>
+              <strong>{chapterHeading(result.chapterNumber, result.chapterDisplayTitle)}</strong>
               <span>{result.projectTitle} · {result.bookTitle}</span>
               <div className={styles.resultActions}><Button data-search-result-action onClick={() => onOpenChapter(result.locator)} size="sm">Открыть главу</Button></div>
             </article>)}

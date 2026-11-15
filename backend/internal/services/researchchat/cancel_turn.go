@@ -27,6 +27,21 @@ type RootInterrupt func(context.Context, RootSelector) error
 type CancelTurn struct {
 	repository CancellationRepository
 	interrupt  RootInterrupt
+	work       TurnWork
+}
+
+// WithWork makes a stopped turn close the work a site counts once its cancel is written
+// (specs/2026-11-13-desk-account-ai.md AI2.7).
+func (useCase *CancelTurn) WithWork(work TurnWork) *CancelTurn {
+	useCase.work = work
+	return useCase
+}
+
+// ended closes the work of a turn whose Job the cancel ended.
+func (useCase *CancelTurn) ended(ctx context.Context, job jobs.Job) {
+	if useCase.work != nil && job.Status == jobs.StatusCanceled {
+		useCase.work.End(ctx, job.ID, researchdomain.TurnCanceled)
+	}
 }
 
 func NewCancelTurn(repository CancellationRepository, interrupt RootInterrupt) *CancelTurn {
@@ -57,6 +72,7 @@ func (useCase *CancelTurn) CancelJobTarget(ctx context.Context, input jobs.Targe
 			return jobs.CancelResult{}, err
 		}
 	}
+	useCase.ended(ctx, updated)
 	if !input.TargetReadable {
 		return jobs.CancelResult{Opaque: true}, nil
 	}
@@ -71,7 +87,10 @@ func (useCase *CancelTurn) CancelClaim(ctx context.Context, job jobs.Job) error 
 	if err := useCase.interrupt(ctx, RootSelector{Flow: target.Flow, CorrelationID: target.ChatID, ThreadID: target.RootThreadID}); err != nil {
 		return err
 	}
-	_, err = useCase.repository.CompleteCancel(ctx, target)
+	canceled, err := useCase.repository.CompleteCancel(ctx, target)
+	if err == nil {
+		useCase.ended(ctx, canceled)
+	}
 	return err
 }
 

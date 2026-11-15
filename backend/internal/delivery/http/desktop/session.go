@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package desktop is the HTTP of the desktop build (specs/2026-11-07-desktop-app.md DA3): the operation that opens the
-// session of the window, «кто автор» of the window (specs/2026-11-12-desk-window.md WN1.1) and the state of the app its
-// «Настройки» show (specs/2026-11-13-desk-settings.md ST2.1).
+// session of the window, «кто автор» of the window (specs/2026-11-12-desk-window.md WN1.1), the state of the app its
+// «Настройки» show (specs/2026-11-13-desk-settings.md ST2.1), «Свой ИИ» (specs/2026-11-13-desk-secrets.md SE2),
+// «Стереть все данные» (specs/2026-11-13-desk-erase.md ER1.2), «Добро пожаловать» (specs/2026-11-13-desk-upgrade.md
+// UG5.1) and the updates of the app (specs/2026-11-13-desk-updates.md UB1.7).
 package desktop
 
 import (
@@ -32,11 +34,25 @@ type Sessions interface {
 }
 
 // Handlers mount openDesktopSession behind the strict Origin of the window and the CSRF check of the core,
-// getCurrentUser, which names the local author of the session of the window, and getDesktopState.
+// getCurrentUser, which names the local author of the session of the window, getDesktopState, the operations of
+// «Свой ИИ» (specs/2026-11-13-desk-secrets.md SE2), eraseDesktopData (specs/2026-11-13-desk-erase.md ER1.2) and the
+// link with an account (specs/2026-11-13-desk-account.md), whose writes take the same guards and the session of the
+// window.
 type Handlers struct {
-	Open           OpenSession
-	Sessions       Sessions
-	State          ReadState
+	Open     OpenSession
+	Sessions Sessions
+	State    ReadState
+	AI       AI
+	Erase    Erase
+	Welcome  Welcome
+	Reading  Reading
+	Updates  Updates
+	// Account is the link of the app with an account of the site (specs/2026-11-13-desk-account.md).
+	Account Account
+	// Log is the journal of what went out (specs/2026-11-14-desk-journal.md JR2).
+	Log SendLog
+	// Programs are the reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3).
+	Programs       Programs
 	CSRF           func(http.Handler) http.Handler
 	AllowedOrigins []string
 }
@@ -44,8 +60,42 @@ type Handlers struct {
 func (handlers Handlers) Mount(router chi.Router) {
 	router.Get("/auth/session", handlers.currentUser)
 	router.Get("/desktop/state", handlers.state)
-	router.With(httpapi.StrictOriginRequiredMiddleware(handlers.AllowedOrigins...), handlers.CSRF).
-		Post("/desktop/session", handlers.openSession)
+	router.Get("/desktop/ai", handlers.aiSettings)
+	router.Get("/desktop/update", handlers.appUpdate)
+	router.Get("/desktop/account", handlers.account)
+	router.Get("/desktop/ai/models", handlers.aiModels)
+	router.Get("/desktop/ai/check", handlers.aiCheck)
+	router.Get("/projects/{projectId}/reading/estimate", handlers.readingEstimate)
+	router.Get("/projects/{projectId}/reading/consent", handlers.readingConsent)
+	router.Get("/projects/{projectId}/reading/sample", handlers.readingSample)
+	router.Get("/desktop/log", handlers.sendLog)
+	router.Get("/desktop/log/sendings", handlers.sendLogSendings)
+	router.Get("/desktop/log/file", handlers.sendLogFile)
+	router.Get("/desktop/programs", handlers.programAccess)
+	router.Get("/desktop/programs/claude-desktop-extension", handlers.claudeDesktopExtension)
+	router.Group(func(router chi.Router) {
+		router.Use(httpapi.StrictOriginRequiredMiddleware(handlers.AllowedOrigins...), handlers.CSRF)
+		router.Post("/desktop/session", handlers.openSession)
+		router.Put("/desktop/ai", handlers.updateAiSettings)
+		router.Put("/desktop/ai/key", handlers.setAiKey)
+		router.Delete("/desktop/ai/key", handlers.deleteAiKey)
+		router.Post("/desktop/ai/check", handlers.startAiCheck)
+		router.Delete("/desktop/ai/check", handlers.cancelAiCheck)
+		router.Post("/desktop/erase", handlers.eraseData)
+		router.Post("/desktop/welcome", handlers.dismissWelcome)
+		router.Put("/projects/{projectId}/reading/consent", handlers.setReadingConsent)
+		router.Post("/projects/{projectId}/reading/sample", handlers.startReadingSample)
+		router.Delete("/projects/{projectId}/reading/sample", handlers.cancelReadingSample)
+		router.Post("/desktop/update/check", handlers.checkAppUpdate)
+		router.Post("/desktop/update/install", handlers.installAppUpdate)
+		router.Post("/desktop/update/cancel", handlers.cancelAppUpdate)
+		router.Put("/desktop/update/settings", handlers.updateAppUpdateSettings)
+		router.Post("/desktop/account/link", handlers.startLink)
+		router.Delete("/desktop/account/link", handlers.cancelLink)
+		router.Delete("/desktop/account", handlers.unlinkAccount)
+		router.Delete("/desktop/log", handlers.clearSendLog)
+		router.Put("/desktop/programs", handlers.updateProgramAccess)
+	})
 }
 
 type openSessionRequest struct {
@@ -86,7 +136,7 @@ func (handlers Handlers) openSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpapi.WriteProblem(w, "", http.StatusInternalServerError, "Internal Server Error", "unexpected error", "server.error")
+		unexpected(w, r, err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -108,7 +158,7 @@ func (handlers Handlers) currentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpapi.WriteProblem(w, "", http.StatusInternalServerError, "Internal Server Error", "unexpected error", "server.error")
+		unexpected(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

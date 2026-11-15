@@ -2,7 +2,7 @@ import { loadFailureWords } from '../../entities/api-errors';
 import { ErrorBlock } from '../../ui/feedback/ErrorBlock';
 import { useQueryClient } from '@tanstack/react-query';
 import { MessageCircle, MoreHorizontal, Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { isApiStatusFailure, publicApiErrorMessage } from '../../entities/api-errors';
 import {
@@ -29,6 +29,10 @@ interface ResearchChatSessionsProps {
   canCreate: boolean;
   error: unknown;
   errorRequestId?: string;
+  /** A chat of a saga file is open: no chat of the list and no new chat is the open one (SW3.1). */
+  fileChatOpen?: boolean;
+  /** «Из файла саги» under the chats (specs/2026-11-13-desk-sagafile-web.md SW3.1). */
+  fromFile?: ReactNode;
   loading: boolean;
   /** The head of the column the page keeps, beside its heading: «Новый чат» stands there (specs/2026-11-11-ux2-polish.md PL2.1). */
   newChatIn?: HTMLElement | null;
@@ -64,6 +68,8 @@ export function ResearchChatSessions({
   canCreate,
   error,
   errorRequestId,
+  fileChatOpen = false,
+  fromFile,
   loading,
   newChatIn = null,
   onAuthorityLost,
@@ -120,7 +126,7 @@ export function ResearchChatSessions({
   const groups = useMemo(() => chatsByDay(found, new Date()), [found]);
   const newChatButton = canCreate && !error ? (
     <button
-      aria-current={!selectedChatId ? 'page' : undefined}
+      aria-current={!selectedChatId && !fileChatOpen ? 'page' : undefined}
       className={styles.newChatButton}
       data-in-row={newChatIn ? '' : undefined}
       disabled={startBusy || renameMutation.isPending}
@@ -312,6 +318,7 @@ export function ResearchChatSessions({
           ))}
         </section>
       )) : null}
+      {fromFile}
       {error ? (
         <ErrorBlock className={styles.sessionsError} cause={loadFailureWords(error).cause} code={errorRequestId} onRetry={onRetry} title="Не открылся список чатов" />
       ) : null}

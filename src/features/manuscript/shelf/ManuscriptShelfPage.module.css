@@ -384,6 +384,19 @@
   font-size: 14px;
 }
 
+/* A second source of books (the app: «Из Obsidian…», specs/2026-11-15-desk-obsidian-web.md OW1.2): the two buttons side by side,
+   «или перетащите…» and the caption of the source under them. */
+.addBooks[data-source] > span {
+  flex-basis: 100%;
+}
+
+.sourceCaption {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
 /* «Навыки, места и персонажи из таблиц — в «Ваши материалы»» under «Добавить книги» (specs/2026-11-11-ux9-shelf-chat.md SC1.7):
    a quiet line of the action, its whole width under the buttons of the top. */
 .materialsLine {

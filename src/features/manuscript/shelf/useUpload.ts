@@ -54,10 +54,12 @@ export type StoppedUpload = Readonly<{ done: number; total: number; files: Local
  * two files and more open the window of their order. Once sent, the upload is the server's queue (React Query); this tab
  * keeps only what it alone knows — its files and how far each went.
  */
-export function useUpload({ api, books, canEdit, projectId }: {
+export function useUpload({ api, books, canEdit, elsewhere = false, projectId }: {
   api: UploadClient;
   books: readonly Book[];
   canEdit: boolean;
+  /** Another work of the build sends the files of the volumes this tab does not hold (`ShelfSlot.useLoadingElsewhere`). */
+  elsewhere?: boolean;
   projectId: string | null;
 }) {
   const queues = useImportQueuesQuery(api, projectId ?? '');
@@ -98,8 +100,8 @@ export function useUpload({ api, books, canEdit, projectId }: {
     [queues.data]);
   const queue = latest && activeStatuses.has(latest.status) ? latest : null;
   const shelfBookIds = useMemo(() => new Set(books.map((book) => book.id)), [books]);
-  const volumes: VolumeView[] = useMemo(() => queue ? volumeViews(queue, transfers, shelfBookIds) : pendingViews(sending),
-    [queue, sending, shelfBookIds, transfers]);
+  const volumes: VolumeView[] = useMemo(() => queue ? volumeViews(queue, transfers, shelfBookIds, elsewhere) : pendingViews(sending),
+    [elsewhere, queue, sending, shelfBookIds, transfers]);
   const sendingHere = Object.values(transfers).some((transfer) => transfer.state === 'sending' || transfer.state === 'waiting');
   // Once every volume is a book of the shelf, the line of the reading says the rest (UP3.1: one line of the saga).
   const line = queue && volumes.length > 0 ? uploadLine(queue, volumes, sendingHere) : null;

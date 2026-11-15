@@ -1,0 +1,31 @@
+/* A chat of a saga file (board 44·38, Pattern/Desktop/File Chat): the feed of a chat without its field. */
+.view {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-3);
+}
+
+/* What stands of a turn besides its question and answer: the chapter attached, an answer that is not there, the others. */
+.line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-label);
+  line-height: 1.5;
+}
+
+.line svg {
+  flex: none;
+  margin-top: 3px;
+}

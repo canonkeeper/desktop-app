@@ -15,6 +15,7 @@ import {
   type SourceListOptions,
 } from './common';
 import type { MockRepositoryContext } from './context';
+import { numberedTitle, placeInBook } from './places';
 import { scrubAgentWorkflows } from './workflow-scrub';
 import { MockApiError } from '../scenarios';
 
@@ -36,16 +37,21 @@ export function createChapterOperations(context: MockRepositoryContext) {
     const data = context.state.chapters
       .filter((chapter) => chapter.bookId === id)
       .sort((left, right) => left.order - right.order)
-      .map((chapter) => ({
+      .map((chapter) => {
+        // The number and the title the reader shows, by the one rule of the server (RN1.1, RN1.5).
+        const { number, name } = numberedTitle(chapter.title, placeInBook(context, chapter));
+        return {
         id: chapter.id,
         bookId: chapter.bookId,
         title: chapter.title,
         order: chapter.order,
-        displayNumber: String(chapter.order),
+        displayNumber: number,
+        displayTitle: name,
         status: chapter.status,
         wordCount: chapter.wordCount,
         hasDraft: chapter.draftRevision > (typeof chapter.publishedRevision === 'number' ? chapter.publishedRevision : 0),
-      }));
+        };
+      });
     return paginateList('listChapters', context.scenario.preset === 'empty-lists' ? [] : data, pagination, { bookId: id, state });
   }
 
@@ -63,10 +69,24 @@ export function createChapterOperations(context: MockRepositoryContext) {
     if (revision === null) {
       throw new MockApiError(404, 'Resource not found.', 'getChapter');
     }
+    // The chapter is named, with its neighbours one place before and after it, as the server names it (RN1.2, RN1.5).
+    const place = placeInBook(context, chapter);
+    const named = (title: string, at: number) => {
+      const { number, name } = numberedTitle(title, at);
+      return { displayNumber: number, displayTitle: name };
+    };
+    const { previous, next } = chapter.navigation;
     return clone({
       ...chapter,
       contentVariant,
       revision,
+      navigation: {
+        ...chapter.navigation,
+        ...named(chapter.title, place),
+        position: place,
+        previous: previous ? { ...previous, ...named(previous.title, place - 1) } : null,
+        next: next ? { ...next, ...named(next.title, place + 1) } : null,
+      },
     });
   }
 

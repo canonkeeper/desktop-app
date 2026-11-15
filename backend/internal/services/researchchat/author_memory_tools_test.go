@@ -137,7 +137,7 @@ func TestMemoryNamesWhatIsNotShown(t *testing.T) {
 	for range 40 {
 		page.Records = append(page.Records, authormemory.Record{Kind: authormemory.KindPlan, Text: long, AuthorName: "Лена"})
 	}
-	output := renderMemory(page, nil)
+	output, _ := renderMemory(page, nil)
 	if !strings.Contains(output, "показаны 18 самых новых") {
 		t.Fatalf("output = %s", output[:200])
 	}

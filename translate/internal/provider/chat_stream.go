@@ -38,13 +38,16 @@ type chatStreamState struct {
 	think *think.Filter
 }
 
-func (a *HTTPAdapter) streamChat(ctx context.Context, target Target, req responsesWireRequest, items []responsesItem, catalog toolCatalog, emit func(Event) error) (Result, error) {
+func (a *HTTPAdapter) streamChat(ctx context.Context, target Target, req responsesWireRequest, items []responsesItem, catalog toolCatalog, request Request, emit func(Event) error) (Result, error) {
 	chat, err := translateToChat(req, items, catalog, target, true)
 	if err != nil {
 		return Result{}, err
 	}
 	body, err := mapRequestBody(chat, target.Capabilities)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := request.sent(body); err != nil {
 		return Result{}, err
 	}
 	state := &chatStreamState{

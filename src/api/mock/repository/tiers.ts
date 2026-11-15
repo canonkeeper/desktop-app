@@ -28,11 +28,16 @@ export function mockEffectiveTier(state: MockState, userId: string, at = Date.no
   return state.tiers.find((tier) => tier.code === code)!;
 }
 
+/** The local author of the desktop app (backend/internal/services/desktop LocalAuthorEmail, LocalAuthorName). */
+export const desktopAuthorId = 'user-local';
+
 /**
  * The plan of the quota fence (TR2.2, specs/2026-11-11-tier-limits.md TL2.1): every key of the core the tier in force sets,
- * the books of one saga among them; one saga holds all the text the account does.
+ * the books of one saga among them; one saga holds all the text the account does. The desktop app has no tiers: its plan is
+ * empty (`app.Extension.Plans`), and the limits of its local author are the platform's.
  */
 export function mockPlanSettings(state: MockState, userId: string): Partial<Record<QuotaKey, number>> {
+  if (userId === desktopAuthorId) return {};
   const { limits } = mockEffectiveTier(state, userId);
   return {
     chat_turns_per_day: limits.chatTurnsPerDay, active_turns: limits.activeTurns, imports_per_day: limits.importsPerDay,

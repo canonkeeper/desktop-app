@@ -1,0 +1,67 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The switch of the edition (`Switch/On`, `Switch/Off`; boards 44·1, 44·14, 44·46): a target of 44 px around its track. */
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.switch::before {
+  content: '';
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--ck-border-strong);
+  transition: background 120ms ease;
+}
+
+.switch[aria-checked='true']::before {
+  background: var(--ck-primary);
+}
+
+.knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ck-card);
+  transform: translateY(-50%);
+  transition: left 120ms ease;
+}
+
+.switch[aria-checked='true'] .knob {
+  left: 19px;
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--ck-ring);
+  outline-offset: 2px;
+  border-radius: var(--ck-radius-sm);
+}
+
+.switch[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.switchLabel {
+  min-width: 0;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}

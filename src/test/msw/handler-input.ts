@@ -17,6 +17,12 @@ export async function readJson(request: Request): Promise<JsonObject> {
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as JsonObject) : {};
 }
 
+/** A JSON body an operation may go without (startAccountLink): no body — undefined. */
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  const text = await request.text();
+  return text === '' ? undefined : JSON.parse(text) as unknown;
+}
+
 export async function readImportForm(request: Request): Promise<ImportBookInput> {
   const contentType = request.headers.get('content-type') ?? '';
   if (contentType.includes('multipart/form-data')) {
@@ -77,6 +83,16 @@ export async function readImageUploadForm(request: Request): Promise<ImageUpload
   const title = field('title');
   const consentVersion = field('consentVersion');
   return { file, ...(title !== undefined ? { title } : {}), ...(consentVersion !== undefined ? { consentVersion } : {}) };
+}
+
+/** The saga file of «Открыть файл саги» with its bytes (specs/2026-11-13-desk-sagafile.md SF3). */
+export async function readSagaFileForm(request: Request): Promise<File> {
+  if (!(request.headers.get('content-type') ?? '').includes('multipart/form-data')) {
+    throw new MockApiError(415, 'a form with the file is required', 'openSagaArchive', 'request.media_type');
+  }
+  const file = extractMultipartFilePart(Buffer.from(await request.arrayBuffer()));
+  if (!file) throw new MockApiError(400, 'one file is required', 'openSagaArchive', 'request.validation');
+  return new File([new Uint8Array(file.body)], file.name, { type: file.contentType ?? 'application/octet-stream' });
 }
 
 export async function readBookCoverForm(request: Request): Promise<File> {

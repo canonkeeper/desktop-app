@@ -7,11 +7,12 @@ type ProjectCounts = {
 const integerFormatter = new Intl.NumberFormat('ru-RU');
 const compactFormatter = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 
-export function formatReaderChapterTitle(displayNumber: string, title: string) {
-  const ordinal = `Глава ${displayNumber}.`;
-  const prefix = `${ordinal} `;
-  if (title === ordinal) return '';
-  return title.startsWith(prefix) ? title.slice(prefix.length) : title;
+/**
+ * «Глава 12. Белый порт», «Глава 12» — a chapter as the head of the reader names it, by the number and the title without
+ * it the server gives (specs/2026-11-15-reader-chapter-number.md RN1.3): the page reads no number from a title itself.
+ */
+export function chapterHeading(displayNumber: string, displayTitle: string) {
+  return displayTitle ? `Глава ${displayNumber}. ${displayTitle}` : `Глава ${displayNumber}`;
 }
 
 /** The counts of a saga; nothing before the saga is known (no saga, a load or its error). */

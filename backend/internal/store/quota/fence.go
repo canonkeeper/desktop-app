@@ -37,12 +37,50 @@ type Elsewhere interface {
 	ActiveTurnsInTx(ctx context.Context, db Querier, userID string, at time.Time) (int64, error)
 }
 
+// Charges is the work of the writer a site counts (specs/2026-11-13-desk-account-ai.md AI2.1, AI2.8, AI3.8): the desktop app
+// linked with an account opens the permit of a turn or of an upload of materials as the last step of the transaction of
+// its start — after every local write and check — and charges and returns the units of the corrections of a turn. A
+// refusal of the site is *quota.Exceeded, as on the site; quota.ErrCounterUnlinked and *quota.CounterUnreachable say the
+// counter could not be asked. The fence declares it and a build implements it; the site has none, and the implementation
+// answers nil to work of another source. The import of books spends imports_per_day too, and never asks it.
+type Charges interface {
+	OpenInTx(ctx context.Context, tx pgx.Tx, work quota.Work) error
+	SteerInTx(ctx context.Context, tx pgx.Tx, steer quota.Steer) error
+	UnsteerInTx(ctx context.Context, tx pgx.Tx, steer quota.Steer) error
+}
+
 // Fence is the quota fence of a build (TR2.4): every limit is read and checked through it. Without Plans — the
 // desktop, a test — the limits are the writer's own, the platform's and the code's, as before plans; without Elsewhere
-// his active turns are his Jobs alone.
+// his active turns are his Jobs alone; without Charges no site counts his work.
 type Fence struct {
 	Plans     Plans
 	Elsewhere Elsewhere
+	Charges   Charges
+}
+
+// OpenWorkInTx is the last step of the transaction that starts a turn or an upload of materials (AI2.1, AI3.8): the work
+// is counted by the site of the build, if any.
+func (fence Fence) OpenWorkInTx(ctx context.Context, tx pgx.Tx, work quota.Work) error {
+	if fence.Charges == nil {
+		return nil
+	}
+	return fence.Charges.OpenInTx(ctx, tx, work)
+}
+
+// SteerWorkInTx is the last step of the transaction that charges a correction (AI2.8).
+func (fence Fence) SteerWorkInTx(ctx context.Context, tx pgx.Tx, steer quota.Steer) error {
+	if fence.Charges == nil {
+		return nil
+	}
+	return fence.Charges.SteerInTx(ctx, tx, steer)
+}
+
+// UnsteerWorkInTx gives back the unit of a correction the turn did not take (AI2.8).
+func (fence Fence) UnsteerWorkInTx(ctx context.Context, tx pgx.Tx, steer quota.Steer) error {
+	if fence.Charges == nil {
+		return nil
+	}
+	return fence.Charges.UnsteerInTx(ctx, tx, steer)
 }
 
 // EffectiveLimitsInTx returns the writer's limits in force (R1.1; admin-panel R7.2; TR2.2): his own value, else his

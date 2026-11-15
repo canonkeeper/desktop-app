@@ -92,8 +92,9 @@ func materialMatches(records []authormaterials.Record, query string) []authormat
 	return found
 }
 
-// writeMaterialList adds the records found to the answer of a list, with a short excerpt of each.
-func writeMaterialList(out *strings.Builder, records []authormaterials.Record, glossary *sagamemory.Glossary) {
+// writeMaterialList adds the records found to the answer of a list, with a short excerpt of each; the records shown are
+// named (specs/2026-11-14-desk-journal.md JR1.3).
+func writeMaterialList(out *strings.Builder, saga *sagaScope, records []authormaterials.Record, glossary *sagamemory.Glossary) {
 	if len(records) == 0 {
 		return
 	}
@@ -103,6 +104,7 @@ func writeMaterialList(out *strings.Builder, records []authormaterials.Record, g
 			fmt.Fprintf(out, "… и ещё %d\n", len(records)-maxMaterialsShown)
 			break
 		}
+		saga.showMaterial(record.ID)
 		fmt.Fprintf(out, "- %s (%s; %s)", record.Name, materialKindNames[record.Kind], materialLabel(record, glossary))
 		if excerpt := materialExcerpt(record.Description); excerpt != "" {
 			out.WriteString(" — " + excerpt)

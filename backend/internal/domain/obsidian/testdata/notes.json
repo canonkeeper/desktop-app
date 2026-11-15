@@ -1,0 +1,133 @@
+[
+ {
+  "name": "UTF-8",
+  "path": "Книга/Застава.md",
+  "text": "Застава стояла на холме.\n",
+  "body": "Застава стояла на холме.\n"
+ },
+ {
+  "name": "UTF-16 by its mark",
+  "path": "Застава.md",
+  "hex": "fffe17043004410442043004320430042e000a00",
+  "body": "Застава.\n"
+ },
+ {
+  "name": "Windows-1251",
+  "path": "Застава.md",
+  "hex": "c7e0f1f2e0e2e020f1f2eeffebe020ede020f5eeebece52e0a",
+  "body": "Застава стояла на холме.\n"
+ },
+ {
+  "name": "UTF-8 with a broken byte does not read",
+  "path": "Застава.md",
+  "hex": "d097d0b0d181d182d0b0d0b2d0b020ffd181d182d0bed18fd0bbd0b020d0bdd0b020d185d0bed0bbd0bcd0b52e0a",
+  "skip": "encoding"
+ },
+ {
+  "name": "the mark of UTF-8 and CRLF",
+  "path": "Застава.md",
+  "hex": "efbbbf2d2d2d0d0a7469746c653a20d097d0b0d181d182d0b0d0b2d0b00d0a2d2d2d0d0ad09fd0b5d180d0b2d0b0d18f20d181d182d180d0bed0bad0b02e0d0ad092d182d0bed180d0b0d18f2e0d0a",
+  "front": {
+   "title": "Застава"
+  },
+  "body": "Первая строка.\nВторая.\n"
+ },
+ {
+  "name": "a zero sign goes",
+  "path": "Застава.md",
+  "hex": "d097d0b0d181d18200d0b0d0b2d0b02e0a",
+  "body": "Застава.\n"
+ },
+ {
+  "name": "larger than 10 MB",
+  "path": "Большая.md",
+  "repeat": 10485761,
+  "skip": "too_big"
+ },
+ {
+  "name": "scalars and quotes",
+  "path": "Мирон.md",
+  "text": "---\ntitle: \"Мирон: сын\"\nage: 34\nname: 'Мирон ''Старший'''\nempty:\n---\nТекст.\n",
+  "front": {
+   "title": "Мирон: сын",
+   "age": "34",
+   "name": "Мирон 'Старший'",
+   "empty": ""
+  },
+  "body": "Текст.\n"
+ },
+ {
+  "name": "two kinds of lists",
+  "path": "Мирон.md",
+  "text": "---\naliases: [Мирон, \"Сват, младший\"]\ntags:\n  - персонаж\n  - главный\n---\nТекст.\n",
+  "front": {
+   "aliases": [
+    "Мирон",
+    "Сват, младший"
+   ],
+   "tags": [
+    "персонаж",
+    "главный"
+   ]
+  },
+  "body": "Текст.\n"
+ },
+ {
+  "name": "a link of the wiki",
+  "path": "Мирон.md",
+  "text": "---\ntype: \"[[Персонажи]]\"\nhome: [[Застава]]\n---\nТекст.\n",
+  "front": {
+   "type": "[[Персонажи]]",
+   "home": "[[Застава]]"
+  },
+  "body": "Текст.\n"
+ },
+ {
+  "name": "a nested object is skipped and counted",
+  "path": "Мирон.md",
+  "text": "---\ntitle: Мирон\nstats:\n  сила: 3\n  ловкость: 5\nflow: {a: 1}\n---\nТекст.\n",
+  "front": {
+   "title": "Мирон"
+  },
+  "frontSkipped": 2,
+  "body": "Текст.\n"
+ },
+ {
+  "name": "a header without its end is no header",
+  "path": "Застава.md",
+  "text": "---\ntitle: Застава\nТекст главы без конца шапки.\n",
+  "front": {},
+  "body": "---\ntitle: Застава\nТекст главы без конца шапки.\n"
+ },
+ {
+  "name": "a note that begins with a break of a scene",
+  "path": "Застава.md",
+  "text": "---\n\nУтро было тихим.\n",
+  "front": {},
+  "body": "---\n\nУтро было тихим.\n"
+ },
+ {
+  "name": "a drawing of Excalidraw by its name",
+  "path": "Карта.excalidraw.md",
+  "text": "Switch to EXCALIDRAW VIEW\n",
+  "skip": "service"
+ },
+ {
+  "name": "a drawing of Excalidraw by its header",
+  "path": "Карта.md",
+  "text": "---\nexcalidraw-plugin: parsed\n---\nрисунок\n",
+  "skip": "service"
+ },
+ {
+  "name": "a board of Kanban",
+  "path": "Доска.md",
+  "text": "---\nkanban-plugin: basic\n---\n## Сделать\n",
+  "skip": "service"
+ },
+ {
+  "name": "a template",
+  "path": "Шаблон.md",
+  "text": "# <% tp.file.title %>\nТекст.\n",
+  "skip": "service"
+ }
+]

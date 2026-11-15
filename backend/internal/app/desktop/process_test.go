@@ -3,7 +3,6 @@
 package desktop
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,35 +14,40 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 
 	"github.com/jackc/pgx/v5"
 )
 
 // resourcesVariable names the directory of the bundle the process tests run the backend with: postgres/ (our build of
 // PostgreSQL 18), codex/codex-app-server of the go.mod version and codex-homes/. Without it the tests are skipped.
-const resourcesVariable = "CANONKEEPER_DESKTOP_RESOURCES"
+const resourcesVariable = desktoptest.ResourcesVariable
 
-// backend is the built cmd/desktop run as the shell runs it: a child with the control channel on its stdin and stdout.
+// backend is the built cmd/desktop run as the shell runs it: a child with the control channel on its stdin and stdout,
+// over the open support of the process tests (desktoptest).
 type backend struct {
 	t       *testing.T
+	process *desktoptest.Process
 	command *exec.Cmd
 	stdin   io.WriteCloser
-	lines   *bufio.Scanner
 	data    string
 	ready   ControlMessage
+	steps   []ControlMessage
+	began   time.Time
 	took    time.Duration
+	// stderr is what the backend wrote besides the channel; the test sees it on its own stderr too.
+	stderr *desktoptest.Output
 }
 
 func desktopBinary(t *testing.T) (binary, resources string) {
 	t.Helper()
-	resources = os.Getenv(resourcesVariable)
-	if resources == "" {
-		t.Skipf("%s is not set", resourcesVariable)
-	}
+	resources = desktoptest.Resources(t)
 	return program(t, programOfTheTree), resources
 }
 
@@ -56,61 +60,56 @@ func startBackend(t *testing.T, binary, resources, data string, secrets map[stri
 	return process
 }
 
-// launchBackend starts the backend and keeps its first answer to start in ready, whether ready or fatal.
+// launchBackend starts the backend and keeps its first answer to start in ready, whether ready or fatal. Its start names
+// the version of the program, as the shell of the same version does.
 func launchBackend(t *testing.T, binary, resources, data string, secrets map[string]string) *backend {
 	t.Helper()
-	command := exec.Command(binary)
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	command.Stderr = os.Stderr
-	started := time.Now()
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	process := &backend{t: t, command: command, stdin: stdin, lines: bufio.NewScanner(stdout), data: data}
-	t.Cleanup(func() {
-		if command.ProcessState == nil {
-			_ = command.Process.Kill()
-			_ = command.Wait()
-		}
+	return launchWith(t, binary, ControlMessage{
+		Type: messageStart, DataDir: data, Resources: resources, Secrets: secrets, SecretsStore: "file",
+		Version: versionOfProgram(binary),
 	})
-	process.send(ControlMessage{Type: messageStart, DataDir: data, Resources: resources, Secrets: secrets})
+}
+
+// launchWith starts the backend with its own start.
+func launchWith(t *testing.T, binary string, start ControlMessage) *backend {
+	t.Helper()
+	process := beginBackend(t, binary, start)
 	process.ready = process.receive(60 * time.Second)
-	process.took = time.Since(started)
+	// The steps of a long start come before its answer (specs/2026-11-13-desk-upgrade.md UG3.1).
+	for process.ready.Type == messageStep {
+		process.steps = append(process.steps, process.ready)
+		process.ready = process.receive(10 * time.Minute)
+	}
+	process.took = time.Since(process.began)
 	return process
+}
+
+// beginBackend starts the backend and sends it start; its answers are the test's to read. The end of the test ends the
+// backend the way the shell does (desktoptest.Process.End).
+func beginBackend(t *testing.T, binary string, start ControlMessage) *backend {
+	t.Helper()
+	child := desktoptest.Begin(t, binary, desktoptest.Launch{Data: start.DataDir, Resources: start.Resources}, start)
+	return &backend{
+		t: t, process: child, command: child.Command, stdin: child.Stdin, data: start.DataDir, began: child.Began, stderr: child.Stderr,
+	}
 }
 
 func (process *backend) send(message ControlMessage) {
 	process.t.Helper()
-	line, _ := json.Marshal(message)
-	if _, err := process.stdin.Write(append(line, '\n')); err != nil {
+	if err := process.process.Send(message); err != nil {
 		process.t.Fatal(err)
 	}
 }
 
 func (process *backend) receive(timeout time.Duration) ControlMessage {
 	process.t.Helper()
-	received := make(chan ControlMessage, 1)
-	go func() {
-		var message ControlMessage
-		if process.lines.Scan() {
-			_ = json.Unmarshal(process.lines.Bytes(), &message)
-		}
-		received <- message
-	}()
-	select {
-	case message := <-received:
-		return message
-	case <-time.After(timeout):
+	line, err := process.process.Line(timeout)
+	if err != nil {
 		process.t.Fatalf("no control message in %s", timeout)
-		return ControlMessage{}
 	}
+	var message ControlMessage
+	_ = json.Unmarshal(line, &message)
+	return message
 }
 
 func (process *backend) origin() string {
@@ -120,15 +119,8 @@ func (process *backend) origin() string {
 // wait waits for the backend to exit after the shell stopped or closed the channel.
 func (process *backend) wait(timeout time.Duration) {
 	process.t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- process.command.Wait() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			process.t.Fatalf("the backend exited with %v", err)
-		}
-	case <-time.After(timeout):
-		process.t.Fatalf("the backend did not exit in %s", timeout)
+	if err := process.process.Wait(timeout); err != nil {
+		process.t.Fatalf("the backend exited with %v", err)
 	}
 }
 
@@ -274,7 +266,17 @@ func family(t *testing.T, pid int, data string) []int {
 	return members
 }
 
-// listening are the TCP addresses a process listens on (Linux: its socket inodes in /proc/net/tcp and tcp6).
+// listenersOf are the two listeners of a run on 127.0.0.1, sorted: the window and the local gateway of «Свой ИИ»
+// (specs/2026-11-13-desk-gateway.md GW1.1).
+func listenersOf(process *backend) []string {
+	listeners := []string{
+		fmt.Sprintf("127.0.0.1:%d", process.ready.Port), fmt.Sprintf("127.0.0.1:%d", process.ready.GatewayPort),
+	}
+	slices.Sort(listeners)
+	return listeners
+}
+
+// listening are the TCP addresses a process listens on, sorted (Linux: its socket inodes in /proc/net/tcp and tcp6).
 func listening(t *testing.T, pid int) []string {
 	t.Helper()
 	inodes := map[string]bool{}
@@ -308,6 +310,7 @@ func listening(t *testing.T, pid int) []string {
 			addresses = append(addresses, host+":"+strconv.FormatInt(number, 10))
 		}
 	}
+	slices.Sort(addresses)
 	return addresses
 }
 
@@ -319,7 +322,7 @@ func TestAColdStartServesTheWindowAndAClosedChannelLeavesNoProcess(t *testing.T)
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "Данные автора", strings.Repeat("длинный-каталог-", 4))
 	const key = "provider-key-of-the-author-for-the-test-0000"
-	process := startBackend(t, binary, resources, data, map[string]string{"openai": key})
+	process := startBackend(t, binary, resources, data, map[string]string{"provider:own": key})
 	if process.took > 30*time.Second {
 		t.Fatalf("the first start took %s, over the 30 s of DA1.9", process.took)
 	}
@@ -374,7 +377,7 @@ func TestAColdStartServesTheWindowAndAClosedChannelLeavesNoProcess(t *testing.T)
 
 	pid := process.command.Process.Pid
 	if runtime.GOOS == "linux" {
-		if addresses := listening(t, pid); len(addresses) != 1 || addresses[0] != fmt.Sprintf("127.0.0.1:%d", process.ready.Port) {
+		if addresses := listening(t, pid); !slices.Equal(addresses, listenersOf(process)) {
 			t.Fatalf("the backend listens on %v", addresses)
 		}
 		members := family(t, pid, data)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 
+	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/jobworker"
 	service "canonkeeper/backend/internal/services/sagalayer"
@@ -38,6 +39,10 @@ func (handler Handler) HandleResult(ctx context.Context, job jobs.Job) (jobworke
 		return jobworker.HandlerResult{}, err
 	}
 	status, err := handler.builder.RunForClaim(ctx, job.WorkerClaim, subject)
+	if disclosure.CodeOf(err) != "" {
+		// The journal of the app sent the request of a step nothing (specs/2026-11-14-desk-journal.md JR1.6).
+		return jobworker.HandlerResult{}, jobworker.RepeatedFailure(job, err)
+	}
 	if err != nil {
 		return jobworker.HandlerResult{}, handlerError(err)
 	}

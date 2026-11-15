@@ -93,6 +93,10 @@ describe('Research Chat turn failures (UC4.2)', () => {
     ['model.turn_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
     ['worker.handler_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
     ['runtime.client_start_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
+    // specs/2026-11-15-desk-interrupted-turn.md IT1.4: a question whose session ended while it waited — the site has no words
+    // of its own for it, the block is the one runtime.root_bind_failed showed.
+    ['runtime.root_bind_failed', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
+    ['model.session_ended', 'Помощник не смог ответить', 'Спросите снова. Если ошибка повторится, напишите нам: код ошибки приложим сами. Этот вопрос не засчитан.'],
   ])('%s: one block with its title, what to do, the count, the code and a letter', async (code, title, hint) => {
     const { block, createTurn, jobId } = await renderFailedTurn(code);
 
@@ -151,6 +155,23 @@ describe('Research Chat turn failures (UC4.2)', () => {
     expect(onSelectChatId).toHaveBeenCalledWith('');
   });
 
+  // specs/2026-11-15-desk-account-words-web.md AW4.4: the site keeps its one block of a failure — a new question refused after a
+  // failed turn is that block, and the turn says its end in the feed's own words, as it did before the words of the app.
+  it('a question asked again and refused after a failed turn is the one block of the site', async () => {
+    const { block, createTurn } = await renderFailedTurn('model.server_overloaded');
+    expect(block.getAttribute('aria-label')).toBe('Помощник сейчас перегружен');
+    createTurn.mockRejectedValueOnce(new ApiStatusError(503, {
+      type: 'about:blank', title: 'Service Unavailable', status: 503, code: 'service_unavailable', requestId: 'send-again-503',
+    }, new Response(null, { status: 503 })));
+    fireEvent.click(within(block).getByRole('button', { name: 'Повторить вопрос' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Спросить снова' }));
+    const refused = await screen.findByRole('alert', { name: 'Вопрос не отправлен' });
+    expect(within(refused).getByText('Сервис временно недоступен. Вопрос сохранён — отправьте его ещё раз через минуту.')).toBeTruthy();
+    const ended = screen.getByRole('alert', { name: 'Помощник не смог ответить' });
+    expect(ended.textContent).toContain('Ответ прервался. Этот вопрос не засчитан.');
+    expect(screen.queryByRole('alert', { name: 'Помощник сейчас перегружен' })).toBeNull();
+  });
+
   it('a question the service did not take stays in the field with one «Спросить снова»', async () => {
     const api = createMockApiClient();
     const createTurn = vi.spyOn(api, 'createChatTurn').mockRejectedValueOnce(new ApiStatusError(503, {
@@ -175,5 +196,49 @@ describe('Research Chat turn failures (UC4.2)', () => {
     expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Спросить снова' }));
     await waitFor(() => expect(createTurn).toHaveBeenCalledTimes(2));
+  });
+
+  // specs/2026-11-13-desk-gateway.md GW4.4: the server of the app refuses a question while the helper is not connected —
+  // the question stays in the field and the block says why, in the words of the line of the reading.
+  it('a question the server refuses without the helper stays in the field', async () => {
+    const api = createMockApiClient();
+    vi.spyOn(api, 'createChatTurn').mockRejectedValueOnce(new ApiStatusError(409, {
+      type: 'about:blank', title: 'Conflict', status: 409, code: 'helper.not_connected', requestId: 'send-409',
+    }, new Response(null, { status: 409 })));
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}><ToastsProvider>
+        <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()} projectId={projectId}
+          selectedChatId="" sourceView="published" />
+      </ToastsProvider></QueryClientProvider>,
+    );
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Вопрос' }), { target: { value: question } });
+    fireEvent.click(screen.getByRole('button', { name: 'Спросить' }));
+
+    const block = await screen.findByRole('alert');
+    expect(within(block).getByText('Помощник ещё не подключён. Вопрос остался в поле.')).toBeTruthy();
+    expect(block.textContent).not.toMatch(/ИИ|модел|не засчитан/u);
+    expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question);
+  });
+
+  // specs/2026-11-13-desk-updates.md UB2.1 (the board 44·41): while the app installs an update a new question is refused —
+  // it stays in the field, and the block says why.
+  it('a question the app refuses while it installs an update stays in the field', async () => {
+    const api = createMockApiClient();
+    vi.spyOn(api, 'createChatTurn').mockRejectedValueOnce(new ApiStatusError(409, {
+      type: 'about:blank', title: 'Conflict', status: 409, code: 'desktop.updating', requestId: 'send-updating',
+    }, new Response(null, { status: 409 })));
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })}><ToastsProvider>
+        <ResearchChatPanel api={api} canCreate onOpenSource={vi.fn()} onSelectChatId={vi.fn()} projectId={projectId}
+          selectedChatId="" sourceView="published" />
+      </ToastsProvider></QueryClientProvider>,
+    );
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Вопрос' }), { target: { value: question } });
+    fireEvent.click(screen.getByRole('button', { name: 'Спросить' }));
+
+    const block = await screen.findByRole('alert');
+    expect(within(block).getByText('Ставлю обновление — спросите после перезапуска')).toBeTruthy();
+    expect(block.textContent).not.toMatch(/не засчитан/u);
+    expect(screen.getByRole('textbox', { name: 'Вопрос' })).toHaveProperty('value', question);
   });
 });

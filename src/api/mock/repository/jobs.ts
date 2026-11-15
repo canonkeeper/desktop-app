@@ -13,6 +13,8 @@ import { draftBookId } from './fixtures';
 import { importFileTitle, nextShelfOrder } from './books';
 import { canProcessImportQueueJob, reconcileImportQueueAfterJob } from './import-queues';
 import { advanceIndexingJob, openSagaWave, queueImportTextIndexes } from './indexing';
+import { cardsReadingOf } from './reading';
+import { accountUnlinked } from './desktop-account';
 import { completeAgentJob } from './agent-job-transition';
 import { MockApiError } from '../scenarios';
 
@@ -85,7 +87,12 @@ export function createJobOperations(context: MockRepositoryContext) {
     context.applyOperation('getJob');
     const job = context.jobFor(id, 'getJob');
     completeAgentJob(job, context.scenario.turnFailure);
-    advanceIndexingJob(context.state, job, context.scenario.helperMissing === true);
+    const returned = context.scenario.questionReturned;
+    if (returned && job.kind === 'research_chat_turn' && job.status === 'failed') {
+      // Whether the unit of the question came back, as the app with the helper of the account says it (AI2.9).
+      return { ...context.visibleJob(job), questionReturned: returned };
+    }
+    advanceIndexingJob(context.state, job, context.scenario.helperMissing === true || accountUnlinked(context), (projectId) => cardsReadingOf(context, projectId));
     if (
       job.kind === 'import'
       && job.subject.type === 'import'

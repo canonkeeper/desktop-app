@@ -17,6 +17,8 @@ import {
   validateSourceView,
 } from './common';
 import type { MockRepositoryContext } from './context';
+import { bringRestTogether, cardsReadingOf, readingStatusOf, restWaits, type CardsReading } from './reading';
+import { accountUnlinked } from './desktop-account';
 import type { MockState } from './state';
 import { settleImportQueueBooks } from './import-queues';
 import { MockApiError } from '../scenarios';
@@ -245,6 +247,46 @@ function completeTextIndex(state: MockState, job: Job, projectId: string, source
   if (!helperMissing) queueIndexingJob(state, 'chapter_cards', projectId, sourceView);
 }
 
+/** The cards Job ends: what it built and the wave of «Сага готова» it may close (FS1.3). */
+function endChapterCards(state: MockState, job: Job, sourceView: SourceView, chapterIds: string[], built: number) {
+  Object.assign(job, { status: 'succeeded', progress: 1, canCancel: false, updatedAt: now });
+  job.result = { type: 'chapter_cards', sourceView, chapters: chapterIds.length, built };
+  closeSagaWave(state, job.subject.projectId);
+}
+
+/**
+ * The cards Job of a saga of the app with «Свой ИИ» (specs/2026-11-13-desk-consent.md CN3.1–CN3.4): without a consent that
+ * acts it reads nothing; under one the Job of the published text reads a chapter a step, paid from the consent, and ends at the
+ * last chapter or at the pause «сумма». The card is one for the draft and the published text (cards-once): a chapter read is
+ * read for both, and the Job of the draft reads nothing itself.
+ */
+function readChapterCards(state: MockState, job: Job, sourceView: SourceView, chapterIds: string[], reading: Exclude<CardsReading, { kind: 'all' }>) {
+  const carded = state.cardedChapterIds[sourceView];
+  const indexed = new Set(state.indexedChapterIds[sourceView]);
+  const next = chapterIds.find((id) => indexed.has(id) && !carded.includes(id));
+  if (reading.kind === 'paid' && sourceView === 'published' && !next && restWaits(state, job.subject.projectId)) {
+    // Every chapter is read: the step brings the names and the threads together, or marks them again
+    // (specs/2026-11-15-desk-reading-rest.md RR2.5).
+    bringRestTogether(state, job.subject.projectId);
+    endChapterCards(state, job, sourceView, chapterIds, 0);
+    return;
+  }
+  if (reading.kind === 'none' || sourceView === 'draft' || !next || !reading.pay()) {
+    endChapterCards(state, job, sourceView, chapterIds, 0);
+    return;
+  }
+  if (!chapterIds.some((id) => carded.includes(id))) state.sagaMapsPending.push(`${job.subject.projectId}:${sourceView}`);
+  carded.push(next);
+  const draft = state.cardedChapterIds.draft;
+  if (state.indexedChapterIds.draft.includes(next) && !draft.includes(next)) draft.push(next);
+  const left = chapterIds.filter((id) => indexed.has(id) && !carded.includes(id)).length;
+  if (left === 0) {
+    endChapterCards(state, job, sourceView, chapterIds, 1);
+    return;
+  }
+  Object.assign(job, { progress: (chapterIds.length - left) / chapterIds.length, updatedAt: now });
+}
+
 function completeChapterCards(state: MockState, job: Job, sourceView: SourceView, chapterIds: string[]) {
   const indexed = new Set(state.indexedChapterIds[sourceView]);
   const carded = state.cardedChapterIds[sourceView];
@@ -304,22 +346,38 @@ function readingOf(books: BookIndexState[]): Preparation {
  */
 function waveStatus(
   context: MockRepositoryContext, projectId: string, published: IndexingViewEnvelope,
-): Pick<OperationResponse<'getIndexingStatus', '200'>, 'preparation' | 'sagaReady'> {
+): Pick<OperationResponse<'getIndexingStatus', '200'>, 'preparation' | 'sagaReady' | 'reading'> {
   const wave = context.state.sagaWaves[projectId];
   const books = viewBooks(context.state, projectId, 'published');
   const reading = readingOf(books);
+  // The reading of the books by «Свой ИИ» of the desktop app (specs/2026-11-13-desk-consent.md CN3.8): its state next to the
+  // counts, and what it waits for — the consent or a pause; told after the saga is ready too, while the names and the threads
+  // wait or did not come together (specs/2026-11-15-desk-reading-rest.md RR2.2).
+  const desk = published.context ? readingStatusOf(context, projectId, reading) : {};
+  const state = desk.reading ? { reading: desk.reading } : {};
+  // A consent that lets the reading go queues the cards Job that reads the chapters left, as the server does after
+  // setReadingConsent (CN3.2): the mock queues it when the page reads the status.
+  if (desk.reading?.state === 'reading' && (reading.chaptersRead < reading.chaptersTotal || restWaits(context.state, projectId))
+    && cardsReadingOf(context, projectId).kind === 'paid'
+    && !context.state.jobs.some((job) => job.subject.projectId === projectId && isIndexingJob(job, 'chapter_cards', 'published') && !isTerminalJobStatus(job.status))) {
+    queueIndexingJob(context.state, 'chapter_cards', projectId, 'published');
+  }
   if (wave && wave.readyAt !== null) {
     return published.context?.state === 'ready' && reading.chaptersTotal > 0
-      ? { sagaReady: { at: wave.readyAt, books: books.length, chapters: reading.chaptersTotal } }
-      : published.context?.state === 'processing' ? { preparation: reading } : {};
+      ? { sagaReady: { at: wave.readyAt, books: books.length, chapters: reading.chaptersTotal }, ...state }
+      : published.context?.state === 'processing' ? { preparation: reading, ...state } : state;
   }
   const importing = Boolean(wave) && newBookImporting(context.state, projectId);
-  if (context.scenario.helperMissing) {
-    // The reading waits for the helper (specs/2026-11-12-desk-window.md WN3.1): what is read, with no time and no letter.
-    return published.context && (reading.chaptersRead < reading.chaptersTotal || importing) ? { preparation: { ...reading, waiting: 'helper' } } : {};
+  // The helper of the account of an app that is not linked is not connected (specs/2026-11-13-desk-account-ai.md AI1.2).
+  const helperGone = context.scenario.helperMissing === true || accountUnlinked(context);
+  if (helperGone || desk.waiting) {
+    // The reading waits for the helper (specs/2026-11-12-desk-window.md WN3.1), the consent of the author
+    // (specs/2026-11-13-desk-gateway.md GW4.3) or stands paused: what is read, with no time and no letter.
+    const waiting = helperGone ? 'helper' as const : desk.waiting!;
+    return published.context && (reading.chaptersRead < reading.chaptersTotal || importing) ? { preparation: { ...reading, waiting }, ...state } : state;
   }
-  if (published.context?.state !== 'processing' && !importing) return {};
-  if (!wave) return { preparation: reading };
+  if (published.context?.state !== 'processing' && !importing) return state;
+  if (!wave) return { preparation: reading, ...state };
   const jobs = context.state.jobs.filter((job) => job.subject.projectId === projectId);
   const paced = latestCardsJob(jobs, 'published')?.status === 'running' && !importing;
   const missing = reading.chaptersTotal - reading.chaptersRead;
@@ -333,6 +391,7 @@ function waveStatus(
       remainingSeconds: paced && missing > 0 ? Math.max(60, missing * 20) : null,
       letterPromised: paced && written && recipient,
     },
+    ...state,
   };
 }
 
@@ -340,7 +399,9 @@ function waveStatus(
  * Имитация фоновых работников: каждое чтение Job индекса или карточек продвигает его на один шаг; без помощника индекс
  * текста не ставит Job карточек (WN3.4).
  */
-export function advanceIndexingJob(state: MockState, job: Job, helperMissing = false) {
+export function advanceIndexingJob(
+  state: MockState, job: Job, helperMissing = false, reading: (projectId: string) => CardsReading = () => ({ kind: 'all' }),
+) {
   const { subject } = job;
   if (subject.type !== 'canon_text_index' && subject.type !== 'chapter_cards') return;
   if (job.status === 'queued') {
@@ -354,9 +415,11 @@ export function advanceIndexingJob(state: MockState, job: Job, helperMissing = f
     .flatMap((book) => viewChapterIds(state, book.id, subject.sourceView));
   if (subject.type === 'canon_text_index') {
     completeTextIndex(state, job, subject.projectId, subject.sourceView, chapterIds, helperMissing);
-  } else {
-    completeChapterCards(state, job, subject.sourceView, chapterIds);
+    return;
   }
+  const gate = reading(subject.projectId);
+  if (gate.kind === 'all') completeChapterCards(state, job, subject.sourceView, chapterIds);
+  else readChapterCards(state, job, subject.sourceView, chapterIds, gate);
 }
 
 export function createIndexingOperations(context: MockRepositoryContext) {

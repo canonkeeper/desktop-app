@@ -29,6 +29,29 @@ export interface Edition {
    * site (specs/2026-11-11-ux6-drawing-flow.md DF2.2). An edition without such a section has none.
    */
   useSectionMarks?: (route: AppRoute, saga: SectionMarksSaga) => SectionMarks;
+  /**
+   * The closed block of «Настроить сагу» of the edition: «Скачать сагу файлом…» of the site
+   * (specs/2026-11-13-desk-sagafile-web.md SW4). An edition without one has nothing there.
+   */
+  useSagaSettingsBlock?: (input: SagaSettingsBlockInput) => SagaSettingsBlock;
+}
+
+/** The saga «Настроить сагу» is about and whether its window is open. */
+export interface SagaSettingsBlockInput {
+  api: CanonKeeperApiClient;
+  saga: { id: string; title: string; role: string } | null;
+  /** The window is open: what the block reads for it is read now. */
+  open: boolean;
+}
+
+/** What a block of «Настроить сагу» puts on the page: its item in the window, its line under the top bar, its windows. */
+export interface SagaSettingsBlock {
+  /** An item of the window before «Удалить сагу…»; `close` closes the window. Null — none for this author. */
+  item: ((close: () => void) => ReactNode) | null;
+  /** A line under the top bar while its work goes, on every page. */
+  notice: ReactNode;
+  /** Its windows over the page. */
+  overlay: ReactNode;
 }
 
 /** The saga of the page the marks are read for, and whether its author may change it (specs/2026-11-11-ux9-shelf-chat.md SC3.6). */

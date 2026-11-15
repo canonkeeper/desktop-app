@@ -348,11 +348,13 @@ func (s *Store) RestoreChapter(ctx context.Context, input library.RestoreChapter
 		if err := s.runDeletionFailpoint("chapter_restore_after_source_update"); err != nil {
 			return err
 		}
-		chapter, err := sqlc.New(tx).GetChapterByID(ctx, sqlc.GetChapterByIDParams{ProjectID: projectID, BookID: bookID, ChapterID: chapterID})
+		// The chapter back among the living ones takes its place in the book again (specs/2026-11-15-reader-chapter-number.md RN1.2).
+		chapter, err := sqlc.New(tx).GetChapterWithNavigationByID(ctx, sqlc.GetChapterWithNavigationByIDParams{ProjectID: projectID, BookID: bookID, ChapterID: chapterID})
 		if err != nil {
 			return err
 		}
-		restored = libraryChapterFromSQL(chapter)
+		restored = libraryChapterFromSQL(chapter.Chapter)
+		restored.Place = int(chapter.Position)
 		return nil
 	})
 	if err != nil {

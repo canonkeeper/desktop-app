@@ -2,7 +2,7 @@ import type { CanonKeeperApiClient, NotesListEntry, NotesListOptions, PersonalNo
 import { MockApiError } from '../scenarios';
 import { clone, paginateList, rejectUnknownKeys } from './common';
 import type { MockRepositoryContext } from './context';
-import { chapterPlace } from './places';
+import { chapterPlace, placeInBook } from './places';
 
 type NotesOperations = Pick<CanonKeeperApiClient, 'listNotes' | 'createPersonalNote' | 'getPersonalNote' | 'updatePersonalNote' | 'deletePersonalNote' | 'resolvePersonalNoteSource'>;
 
@@ -68,7 +68,7 @@ export function createNotesOperations(context: MockRepositoryContext): NotesOper
     return {
       projectId: project.id, projectTitle: project.title,
       ...(book ? { bookId: book.id, bookTitle: book.title } : {}),
-      ...(book && chapter ? { chapterTitle: chapter.title, place: chapterPlace(book.order, chapter.order, chapter.title) } : {}),
+      ...(book && chapter ? { chapterTitle: chapter.title, place: chapterPlace(book.order, placeInBook(context, chapter), chapter.title) } : {}),
     };
   }
   return {
@@ -137,7 +137,7 @@ export function createNotesOperations(context: MockRepositoryContext): NotesOper
         const chapter = context.chapterFor(source.locator.chapterId, 'resolvePersonalNoteSource');
         context.requireReadableSourceView('resolvePersonalNoteSource', source.locator.projectId, source.locator.targetView);
         if (!context.locatorHasLiveParent(source.locator)) return { state: 'unavailable' };
-        const place = chapterPlace(context.bookFor(source.locator.bookId, 'resolvePersonalNoteSource').order, chapter.order, chapter.title);
+        const place = chapterPlace(context.bookFor(source.locator.bookId, 'resolvePersonalNoteSource').order, placeInBook(context, chapter), chapter.title);
         if (chapter.revision !== source.locator.revision) return { state: 'changed', place, source: { ...source, locator: { ...source.locator, revision: chapter.revision, paragraphId: undefined, range: undefined } } };
         return { state: 'current', place, source: clone(source) };
       } catch (error) {

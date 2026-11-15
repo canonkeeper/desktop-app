@@ -9,12 +9,15 @@ type ChapterNavigationLocator struct {
 	Revision   int    `json:"revision"`
 }
 
+// ChapterNavigationSearchResult is a chapter the search found, named as the reader names it: its number and its title
+// without that number (specs/2026-11-15-reader-chapter-number.md RN1.3).
 type ChapterNavigationSearchResult struct {
-	ProjectTitle  string                   `json:"projectTitle"`
-	BookTitle     string                   `json:"bookTitle"`
-	ChapterTitle  string                   `json:"chapterTitle"`
-	ChapterNumber string                   `json:"chapterNumber"`
-	Locator       ChapterNavigationLocator `json:"locator"`
+	ProjectTitle        string                   `json:"projectTitle"`
+	BookTitle           string                   `json:"bookTitle"`
+	ChapterTitle        string                   `json:"chapterTitle"`
+	ChapterNumber       string                   `json:"chapterNumber"`
+	ChapterDisplayTitle string                   `json:"chapterDisplayTitle"`
+	Locator             ChapterNavigationLocator `json:"locator"`
 }
 
 type ChapterSearchRequest struct {

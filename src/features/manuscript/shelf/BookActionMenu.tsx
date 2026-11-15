@@ -5,6 +5,7 @@ import { IconButton } from '../../../ui/controls/IconButton';
 import { DeleteMenuItem } from '../../../ui/overlays/DeleteMenuItem';
 import { Popover } from '../../../ui/overlays/Popover';
 import type { PresenceStatus } from '../../../ui/overlays/use-presence';
+import type { ShelfBookMenuItem } from './shelf-slot';
 import styles from './ShelfBooks.module.css';
 
 /** Where the «⋯» of a book stands in the window. */
@@ -48,6 +49,11 @@ export interface BookActionMenuProps {
   onNewChapter?: (() => void) | undefined;
   /** Why «Переставить…» waits now — the reading of the saga, the upload (RK2.2) — or null. */
   moveReason?: string | null;
+  /**
+   * Items of the edition after «Новая версия из файла…» (specs/2026-11-15-desk-obsidian-book-web.md OU1.1): «Обновить из
+   * Obsidian…» or «Связать с папкой Obsidian…» of the app; the site has none.
+   */
+  more?: readonly ShelfBookMenuItem[] | undefined;
   onReadFromStart: () => void;
   /** «Как разобралась книга» (specs/2026-11-11-ux7-upload.md UP4.2): its chapters as the file gave them. */
   onParseSummary?: (() => void) | undefined;
@@ -73,7 +79,7 @@ export interface BookActionMenuProps {
  * styles).
  */
 export function BookActionMenu({
-  anchor, book, canEdit, deleteReason, moveReason = null, onChangeCover, onClose, onDelete, onDownload, onMove, onNewChapter, onParseSummary,
+  anchor, book, canEdit, deleteReason, more, moveReason = null, onChangeCover, onClose, onDelete, onDownload, onMove, onNewChapter, onParseSummary,
   onReadFromStart, onRename, onUpdateFromFile, state, updateReason, updated,
 }: BookActionMenuProps) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -122,6 +128,7 @@ export function BookActionMenu({
           {onUpdateFromFile ? (
             <MenuItem icon={<FileUp aria-hidden="true" size={17} />} label="Новая версия из файла…" onClick={onUpdateFromFile} reason={updateReason} />
           ) : null}
+          {more?.map((item) => <MenuItem icon={item.icon} key={item.key} label={item.label} onClick={item.onSelect} reason={item.reason} />)}
           {onParseSummary && book.chapterCount > 0 ? (
             <MenuItem icon={<ListTree aria-hidden="true" size={17} />} label="Как разобралась книга" onClick={onParseSummary} />
           ) : null}

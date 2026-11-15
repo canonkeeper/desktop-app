@@ -1,6 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import materialStyles from '../features/saga/materials/Materials.module.css';
 import { createMockApiClient } from '../api/mock';
 import { projectId } from '../api/mock/repository/fixtures';
 import { createAppRoute } from '../shared/navigation/app-route';
@@ -74,6 +77,29 @@ describe('AuthorMemoryPage (R4.5)', () => {
     // The part of the records keeps its tools; the materials have their own «Записать самому» (MR2.2).
     expect(screen.queryByRole('searchbox', { name: 'Найти в записях' })).toBeNull();
     expect(within(part).getByRole('button', { name: 'Записать самому' })).toBeTruthy();
+  });
+
+  // specs/2026-11-15-desk-obsidian-notes.md ON2.1: a record from a note of Obsidian says its note; a record of a file says what
+  // it said before.
+  it('says under a record from a note of Obsidian the path of its note', async () => {
+    const api = editor();
+    const at = '2026-11-15T10:00:00Z';
+    const base = { description: '', properties: [], revision: 1, createdAt: at, updatedAt: at };
+    vi.spyOn(api, 'listAuthorMaterials').mockResolvedValue({
+      data: [
+        { ...base, id: '00000000-0000-4000-8000-0000000000a1', name: 'Мирон Сватов', kind: 'character', section: 'Персонажи', sourceKind: 'obsidian', sourceName: 'Персонажи/Мирон Сватов.md' },
+        { ...base, id: '00000000-0000-4000-8000-0000000000a2', name: 'Перевал', kind: 'place', section: 'Места', sourceKind: 'xlsx', sourceName: 'навыки.xlsx' },
+      ],
+      meta: { totalCount: 2, hasMore: false, nextCursor: null },
+    });
+    renderPage(api, { projectId, part: 'materials' });
+    const part = await screen.findByRole('tabpanel', { name: 'Ваши материалы' });
+    expect(await within(part).findByText('Герой · из Obsidian: Персонажи/Мирон Сватов.md')).toBeTruthy();
+    expect(within(part).getByText('Место · из „навыки.xlsx“, лист „Места“')).toBeTruthy();
+    // A path without a space breaks inside the column of the record, as the name of the record does.
+    expect(within(part).getByText('Герой · из Obsidian: Персонажи/Мирон Сватов.md').classList.contains(materialStyles.origin!)).toBe(true);
+    const css = readFileSync(path.join(process.cwd(), 'src/features/saga/materials/Materials.module.css'), 'utf8');
+    expect(css).toMatch(/\.origin\s*\{[^}]*overflow-wrap:\s*anywhere/u);
   });
 
   // MP1.2: an empty part says what comes here and leads to the chat.

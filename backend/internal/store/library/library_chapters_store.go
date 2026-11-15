@@ -162,7 +162,9 @@ func (s *Store) ListChapters(ctx context.Context, input library.ListChaptersStor
 	}
 	chapters := make([]library.Chapter, 0, len(rows))
 	for _, row := range rows {
-		chapters = append(chapters, libraryChapterFromSQL(row))
+		chapter := libraryChapterFromSQL(row.Chapter)
+		chapter.Place = int(row.Place)
+		chapters = append(chapters, chapter)
 	}
 	return chapters, nil
 }
@@ -259,21 +261,15 @@ func (s *Store) GetChapter(ctx context.Context, projectID, bookID, chapterID str
 	}
 	navigation := library.ChapterNavigation{Position: int(row.Position), Total: int(row.Total)}
 	if row.PreviousID.Valid {
-		navigation.Previous = &library.ChapterNavigationItem{
-			ID:            storedb.UUIDString(row.PreviousID),
-			Title:         row.PreviousTitle,
-			DisplayNumber: library.ChapterDisplayNumber(int(row.PreviousOrder), row.PreviousTitle),
-		}
+		navigation.Previous = &library.ChapterNavigationItem{ID: storedb.UUIDString(row.PreviousID), Title: row.PreviousTitle, Place: int(row.PreviousPlace)}
 	}
 	if row.NextID.Valid {
-		navigation.Next = &library.ChapterNavigationItem{
-			ID:            storedb.UUIDString(row.NextID),
-			Title:         row.NextTitle,
-			DisplayNumber: library.ChapterDisplayNumber(int(row.NextOrder), row.NextTitle),
-		}
+		navigation.Next = &library.ChapterNavigationItem{ID: storedb.UUIDString(row.NextID), Title: row.NextTitle, Place: int(row.NextPlace)}
 	}
+	chapter := libraryChapterFromSQL(row.Chapter)
+	chapter.Place = int(row.Position)
 	return library.ChapterRecord{
-		Chapter:    libraryChapterFromSQL(row.Chapter),
+		Chapter:    chapter,
 		ProjectID:  storedb.UUIDString(row.Chapter.ProjectID),
 		Navigation: navigation,
 	}, nil

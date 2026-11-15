@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type RefObject } from 'react';
 import { Button } from '../controls/Button';
+import type { DisabledReasonValue } from '../controls/DisabledReason';
 import { IconButton } from '../controls/IconButton';
 import { useNarrowScreen } from '../use-narrow-screen';
 import { Dialog } from './Dialog';
@@ -41,6 +42,22 @@ export interface ConfirmProps {
    * an outline button between «Отмена» and the action.
    */
   alternative?: { label: string; onClick: () => void };
+  /**
+   * What the author writes before an action that has no way back, under the lines — the word of «Стереть все данные»
+   * (specs/2026-11-13-desk-erase.md ER1.1, board 44·12) — with `actionReason` closing the action until it is written and
+   * `focusRef` putting the focus in it.
+   */
+  field?: ReactNode;
+  /** Why the action is closed now: it stays in its place and says it by a press (PR1.1). */
+  actionReason?: DisabledReasonValue;
+  /** The words of the action while it runs, when they are not its own: «Стираю…». */
+  busyAction?: string;
+  /** The icon before the words of the action. */
+  actionIcon?: ReactNode;
+  /** Where the focus starts, when not on a button: the field. */
+  focusRef?: RefObject<HTMLElement | null>;
+  /** The width of the card in px (440 by default). */
+  width?: number;
 }
 
 /**
@@ -51,17 +68,23 @@ export interface ConfirmProps {
  */
 export function Confirm({
   action,
+  actionIcon,
+  actionReason,
   alternative,
   also,
   busy = false,
+  busyAction,
   children,
   consent = 'yes',
   error,
+  field,
+  focusRef,
   irreversible = false,
   onCancel,
   onConfirm,
   state = 'open',
   title,
+  width = 440,
 }: ConfirmProps) {
   const phone = useNarrowScreen(767);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -82,21 +105,25 @@ export function Confirm({
       </div>
       <div className={styles.line}>{children}</div>
       {also ? <p className={styles.line}>{also}</p> : null}
+      {field ? <div className={styles.field}>{field}</div> : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       <div className={styles.actions}>
         <Button disabled={busy} onClick={cancel} ref={cancelRef} size={phone ? 'touch' : 'md'} variant="outline">Отмена</Button>
         {alternative ? (
           <Button disabled={busy} onClick={alternative.onClick} size={phone ? 'touch' : 'md'} variant="outline">{alternative.label}</Button>
         ) : null}
-        <Button data-voice-consent={consent} loading={busy} onClick={onConfirm} ref={actionRef} size={phone ? 'touch' : 'md'}
-          variant={irreversible ? 'danger' : 'primary'}>{action}</Button>
+        <Button data-voice-consent={consent} disabledReason={busy ? null : actionReason} loading={busy} onClick={onConfirm} ref={actionRef}
+          size={phone ? 'touch' : 'md'} variant={irreversible ? 'danger' : 'primary'}>
+          {busy && busyAction ? null : actionIcon}
+          {busy && busyAction ? busyAction : action}
+        </Button>
       </div>
     </section>
   );
-  const focus = irreversible ? cancelRef : actionRef;
+  const focus = focusRef ?? (irreversible ? cancelRef : actionRef);
   return phone ? (
     <Sheet canDismiss={!busy} className={styles.sheet} initialFocusRef={focus} label={title} onDismiss={cancel} state={state}>{body}</Sheet>
   ) : (
-    <Dialog canDismiss={!busy} dismissOnScrim initialFocusRef={focus} label={title} onDismiss={cancel} state={state} width={440}>{body}</Dialog>
+    <Dialog canDismiss={!busy} dismissOnScrim initialFocusRef={focus} label={title} onDismiss={cancel} state={state} width={width}>{body}</Dialog>
   );
 }

@@ -130,7 +130,9 @@ type catchUpQueue interface {
 
 // startCatchUp queues once at start the Jobs of what lacks them: the cards of indexed text, so text
 // indexed before a release with new card instructions needs no reindex, and the thread layer of a saga
-// with cards. What is queued and the class of a failure go to the log.
+// with cards. The class of a failure goes to the log, and the end of every catch-up says how many versions it queued —
+// none too: the one sign of its end, which the tests of the app count the rows of jobs after
+// (specs/2026-11-15-desk-reading-queue.md RQ2.2). The line names no saga and no text.
 func startCatchUp(ctx context.Context, queue catchUpQueue, work, failureEvent string, logger *log.Logger) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
@@ -139,9 +141,7 @@ func startCatchUp(ctx context.Context, queue catchUpQueue, work, failureEvent st
 		if err != nil {
 			logCatchUpFailure(logger, failureEvent, err)
 		}
-		if queued > 0 {
-			logger.Printf("%s catch-up queued %d text versions", work, queued)
-		}
+		logger.Printf("%s catch-up queued %d text versions", work, queued)
 	}()
 	return done
 }

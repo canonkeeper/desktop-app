@@ -1,0 +1,480 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The page of the bridge with an Obsidian vault (specs/2026-11-15-desk-obsidian-web.md; board 44·48–44·53: Pattern/Desktop/
+   Obsidian Start, Folder Line, Folder Row, Choice, Choice Menu, Book Card, Record Row, Preview, Result, Link Window). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ck-space-4);
+  padding: var(--ck-space-5) var(--ck-space-5) var(--ck-space-7);
+  width: 100%;
+  min-width: 0;
+}
+
+.title {
+  color: var(--ck-foreground-strong);
+  font-family: var(--ck-font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.title:focus,
+.stepTitle:focus {
+  outline: none;
+}
+
+.stepTitle {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.text {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+}
+
+.muted {
+  margin: 0;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.warning {
+  margin: 0;
+  color: var(--ck-color-warning-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.error {
+  margin: 0;
+  color: var(--ck-destructive-text);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.start,
+.step,
+.part {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+}
+
+.start > button,
+.part > button {
+  align-self: flex-start;
+}
+
+/* The line of the folder: its name and its whole path, which wraps, «Сменить папку…» with its note and «⋯». */
+.folderLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ck-space-3);
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+  padding: var(--ck-space-3) var(--ck-space-4);
+}
+
+.folderName {
+  display: grid;
+  flex: 1 1 260px;
+  min-width: 0;
+  gap: 2px;
+}
+
+.folderName strong {
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.path {
+  color: var(--ck-muted-foreground);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-font-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.folderSide {
+  display: grid;
+  flex: 0 1 320px;
+  justify-items: end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.folderButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folderSide .muted,
+.folderSide .error {
+  text-align: end;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+
+/* The folders of the look: lists in lists (OW7.4, not a tree), each row with its choice. */
+.folders,
+.folders ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folders {
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+}
+
+.folders ul {
+  padding-inline-start: var(--ck-space-5);
+}
+
+.folderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-3);
+  border-bottom: 1px solid var(--ck-border);
+  padding: var(--ck-space-2) var(--ck-space-3);
+}
+
+.folderText {
+  display: grid;
+  flex: 1 1 220px;
+  min-width: 0;
+  gap: 2px;
+}
+
+.folderText strong {
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.folderChoice {
+  flex: 0 1 280px;
+  min-width: 200px;
+}
+
+.nested {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+  padding: 2px var(--ck-space-3) var(--ck-space-2);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-3);
+}
+
+.footerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ck-space-2);
+}
+
+.decision {
+  display: grid;
+  gap: var(--ck-space-2);
+  border: 1px solid var(--ck-color-warning);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-color-warning);
+  padding: var(--ck-space-3) var(--ck-space-4);
+}
+
+.decision h3,
+.part h3 {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}
+
+.decision ul,
+.lines {
+  display: grid;
+  gap: var(--ck-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skipped {
+  display: grid;
+  gap: 4px;
+}
+
+.skipped summary {
+  cursor: pointer;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.skipped ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-inline-start: var(--ck-space-4);
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+/* A card of a book of «что получится»: its name and size, its state with its buttons, its warnings, its notes. */
+.cards {
+  display: grid;
+  gap: var(--ck-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  gap: var(--ck-space-2);
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+  padding: var(--ck-space-3) var(--ck-space-4);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ck-space-2);
+}
+
+.cardHead strong {
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body);
+  overflow-wrap: anywhere;
+}
+
+.state {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.notes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-2);
+  border-top: 1px solid var(--ck-border);
+  padding-top: 6px;
+}
+
+.noteText {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+/* The records: a row each — its name, kind and state, its decision, its warnings — and «Не брать». */
+.records {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ck-border);
+  border-radius: var(--ck-radius-md);
+  background: var(--ck-card);
+}
+
+.record {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--ck-border);
+  padding: var(--ck-space-2) var(--ck-space-3);
+}
+
+.recordLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+
+.recordLine strong {
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.recordLine > :last-child {
+  margin-inline-start: auto;
+}
+
+.decide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ck-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.decide label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.forAll {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.bottom {
+  display: grid;
+  gap: var(--ck-space-2);
+  border-top: 1px solid var(--ck-border);
+  padding-top: var(--ck-space-3);
+}
+
+/* The window «Связать с папкой Obsidian»: the book, its folder, the folders on one choice. */
+.window {
+  display: grid;
+  gap: var(--ck-space-3);
+  padding: 20px;
+}
+
+.windowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-2);
+}
+
+.windowHead h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.choices {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 36px;
+  border-radius: var(--ck-radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.choice[data-disabled] {
+  color: var(--ck-disabled-foreground);
+  cursor: default;
+}
+
+.choiceText {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: var(--ck-font-size-body-sm);
+  overflow-wrap: anywhere;
+}
+
+.windowButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ck-space-2);
+}
+
+/*
+ * The window «Обновить книгу из Obsidian» (board 44·56): 640 wide, up to 24 px from the edges of the window; the body scrolls
+ * inside it, the head and the buttons stay.
+ */
+.updateWindow {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--ck-space-3);
+  max-height: calc(100dvh - 48px);
+  padding: 20px;
+}
+
+.updateBody {
+  display: grid;
+  align-content: start;
+  gap: var(--ck-space-3);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The folder of the book: its name and numbers, «Другая папка…» and «Снять связь» quiet beside them. */
+.folderOfBook {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ck-space-2);
+  border-radius: var(--ck-radius-sm);
+  background: var(--ck-muted);
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+
+.folderOfBook > p {
+  flex: 1 1 240px;
+  font-size: var(--ck-font-size-body-sm);
+}
+
+.planTitle {
+  margin: 0;
+  font-size: var(--ck-font-size-body);
+  font-weight: 600;
+}

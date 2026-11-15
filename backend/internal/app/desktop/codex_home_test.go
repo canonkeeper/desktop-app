@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/domain/aisettings"
 )
 
 // specs/2026-11-13-desk-home.md HM1.1: the app copies the profile of its bundle into the homes of Codex.
@@ -22,11 +24,50 @@ func TestTheAppCopiesTheProfileIntoTheHomesOfCodex(t *testing.T) {
 	}
 	defer listener.Close()
 	data, resources := DataDir{Root: filepath.Join(t.TempDir(), "data")}, Resources{Root: filepath.Join(t.TempDir(), "bundle")}
-	cfg := desktopConfig(data, resources, &Cluster{data: data}, listener)
+	cfg := desktopConfig(data, resources, &Cluster{data: data}, listener, gatewayOfTheTest(t), aisettings.None(), 0)
 	if !cfg.CodexHomeCopies || cfg.CodexRepositoryHome != resources.CodexHomes() || cfg.CodexHome != data.CodexHome() {
 		t.Fatalf("the Codex homes of the app = %q from %q, copies %v", cfg.CodexHome, cfg.CodexRepositoryHome, cfg.CodexHomeCopies)
 	}
 }
+
+// specs/2026-11-13-desk-gateway.md GW2.1, GW2.2: Codex of the app runs the alias of the chat on the provider canonkeeper
+// of the gateway, with the window the author set and the compaction and the output of a tool by it; the token goes to
+// the app-server by value, never through the environment of the backend.
+func TestCodexOfTheAppRunsOnTheGateway(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	gateway := gatewayOfTheTest(t)
+	ai, err := aisettings.Draft{Source: "own", Own: &aisettings.OwnDraft{Preset: "ollama", Advanced: aisettings.AdvancedDraft{ContextWindow: ptr(32_000)}}}.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, resources := DataDir{Root: filepath.Join(t.TempDir(), "data")}, Resources{Root: filepath.Join(t.TempDir(), "bundle")}
+	cfg := desktopConfig(data, resources, &Cluster{data: data}, listener, gateway, ai, 0)
+	overrides := strings.Join(cfg.CodexConfigOverrides, "\n")
+	for _, want := range []string{
+		`model="canonkeeper-chat"`, `model_provider="canonkeeper"`, "model_context_window=32000", "model_auto_compact_token_limit=28800",
+		"tool_output_token_limit=8000", `model_providers.canonkeeper.base_url="` + gateway.BaseURL() + `"`,
+		`model_providers.canonkeeper.wire_api="responses"`, "model_providers.canonkeeper.requires_openai_auth=false",
+		"model_providers.canonkeeper.supports_websockets=false", "model_providers.canonkeeper.stream_max_retries=10",
+		`model_providers.canonkeeper.env_key="CANONKEEPER_GATEWAY_TOKEN"`,
+	} {
+		if !strings.Contains(overrides, want) {
+			t.Errorf("the overrides of the app lack %s", want)
+		}
+	}
+	if strings.Contains(overrides, gateway.Token()) || len(cfg.CodexPassEnv) != 0 ||
+		len(cfg.CodexEnvironment) != 1 || cfg.CodexEnvironment[0] != "CANONKEEPER_GATEWAY_TOKEN="+gateway.Token() {
+		t.Fatalf("the token goes %v, pass %v", len(cfg.CodexEnvironment), cfg.CodexPassEnv)
+	}
+	if cfg.ValidateCore() != nil {
+		t.Fatalf("the configuration of the app is not valid: %v", cfg.ValidateCore())
+	}
+}
+
+func ptr[T any](value T) *T { return &value }
 
 // bundleAt lays the bundle of the test at a new place, as a new mount of an AppImage or a moved installation does: the
 // profiles codex-homes/ copied, file by file, the programs linked to the bundle's — PostgreSQL finds its lib and share by

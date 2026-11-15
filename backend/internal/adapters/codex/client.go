@@ -31,6 +31,8 @@ type ClientConfig struct {
 	TempDir          string
 	ConfigOverrides  []string
 	PassEnv          []string
+	// Environment are NAME=value pairs for the app-server alone (transportConfig.Environment).
+	Environment []string
 	// HomeCopies puts the profile into the home by copy, not by links: the way of the app (CopyHome); the site links it
 	// (PrepareHome).
 	HomeCopies bool
@@ -70,29 +72,31 @@ func NewClient(ctx context.Context, config ClientConfig) (*Client, error) {
 	if config.Transport != nil && config.transportFactory == nil {
 		return newRuntimeClient(ctx, config, config.Transport)
 	}
+	now := config.now
+	if now == nil {
+		now = time.Now
+	}
+	supervisor := &clientSupervisor{now: now, logger: config.Logger, overrides: append([]string(nil), config.ConfigOverrides...)}
 	transportFactory := config.transportFactory
 	if transportFactory == nil {
+		// The factory runs under the lock of the supervisor: an app-server starts with the settings it holds then
+		// (specs/2026-11-13-desk-gateway.md GW2.3).
 		transportFactory = func(ctx context.Context) (Transport, error) {
 			return startTransport(ctx, transportConfig{
 				CodexPath: config.CodexPath, CodeModeHostPath: config.CodeModeHostPath, CWD: config.CWD,
 				CodexHome: config.CodexHome, CodexSQLiteHome: config.CodexSQLiteHome,
 				PrivateHome: config.PrivateHome, TempDir: config.TempDir,
-				ConfigOverrides: config.ConfigOverrides, PassEnv: config.PassEnv, Logger: config.Logger,
+				ConfigOverrides: supervisor.overrides, PassEnv: config.PassEnv, Environment: config.Environment, Logger: config.Logger,
 			})
 		}
 	}
-	factory := func(ctx context.Context) (*Client, error) {
+	supervisor.factory = func(ctx context.Context) (*Client, error) {
 		transport, err := transportFactory(ctx)
 		if err != nil {
 			return nil, err
 		}
 		return newRuntimeClient(ctx, config, transport)
 	}
-	now := config.now
-	if now == nil {
-		now = time.Now
-	}
-	supervisor := &clientSupervisor{factory: factory, now: now, logger: config.Logger}
 	// Сбой запуска не останавливает backend: среда поднимется при следующем ходе (R3.1).
 	_, _ = supervisor.runtime(ctx)
 	return &Client{supervisor: supervisor}, nil
@@ -170,6 +174,21 @@ func runtimeStopped(done <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+// Configure gives the app-server new settings (specs/2026-11-13-desk-gateway.md GW2.3): when no turn runs a new app-server
+// starts with them at once and Configure says so; while a turn runs they wait, Pending says so, and the app-server is
+// replaced when the last turn ends. The threads stay in the homes and go on with the new app-server.
+func (client *Client) Configure(ctx context.Context, overrides []string) (bool, error) {
+	if client == nil || client.supervisor == nil || ctx == nil || !agent.ValidConfigOverrides(overrides) {
+		return false, ErrInvalid
+	}
+	return client.supervisor.configure(ctx, overrides)
+}
+
+// Pending says that new settings wait for the end of the turns that run.
+func (client *Client) Pending() bool {
+	return client != nil && client.supervisor != nil && client.supervisor.waiting()
 }
 
 // RuntimeReady сообщает, работает ли процесс app-server, не пытаясь его запустить.

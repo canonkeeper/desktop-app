@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode, type RefObject } from 'react';
+import { Fragment, useCallback, useRef, type ReactNode, type RefObject } from 'react';
 import { Plus } from 'lucide-react';
 import type { PendingSteer } from '../../entities/chat/steer';
 import { ChatFeed } from './feed/ChatFeed';
@@ -33,6 +33,12 @@ interface ResearchChatConversationProps {
   /** What a new chat shows instead of its empty message: examples of a first question (UC2.3). */
   examples?: ReactNode;
   failure?: ChatFailure | null;
+  /**
+   * The block under the failed turn the edition says apart from `failure` (specs/2026-11-15-desk-account-words-web.md AW4.4):
+   * it stands while that turn is the last failed one, a refused new question its own block. None — the block under the turn is
+   * `failure` when it carries a count, as on the site.
+   */
+  turnFailure?: ChatFailure | null;
   footer?: ReactNode;
   /**
    * «Что дальше» of the first answer of the saga (specs/2026-11-10-ux3-first-screen.md FS3.1): the panel gives it to the one
@@ -77,6 +83,7 @@ export function ResearchChatConversation({
   emptyMessage,
   examples,
   failure,
+  turnFailure,
   events,
   feedFooter,
   firstAnswerNext,
@@ -123,29 +130,35 @@ export function ResearchChatConversation({
   const lostQuietly = (connection === 'reconnecting' || connection === 'closed') && !failure && working;
   const notice = connection === 'connecting' && events.length === 0 && jobStatus ? 'Подключаемся…' : undefined;
   // The failure of the Job of the turn is one block under its question, of the common look: what happened in the word
-  // «помощник», the count as it is, «Повторить вопрос» or «Новый чат», the code and «Написать нам» (CW2.8).
+  // «помощник», the count as it is, «Повторить вопрос», «Новый чат» or the way out of the edition, the code and «Написать нам»
+  // (CW2.8). It is the same block without a line of the count (specs/2026-11-15-desk-account-words-web.md AW4.3).
   const latestQuestion = latestUserBody(events);
-  const turnEnd = failure?.count ? (
-    <ErrorBlock title={failure.title ?? 'Помощник не смог ответить'} cause={failure.text} kept={failure.count}
-      action={failure.action === 'ask_again' && onRepeatQuestion && latestQuestion ? { label: 'Повторить вопрос', onClick: () => onRepeatQuestion(latestQuestion) }
-        : failure.action === 'new_chat' && onStartNew ? { label: 'Новый чат', onClick: onStartNew } : undefined}>
-      <SupportReference code={failure.supportCode} />
+  const ended = turnFailure ?? (failure?.count !== undefined ? failure : null);
+  const turnEnd = ended ? (
+    <ErrorBlock title={ended.title ?? 'Помощник не смог ответить'} cause={ended.text} kept={ended.count}
+      action={ended.action === 'ask_again' && onRepeatQuestion && latestQuestion ? { label: 'Повторить вопрос', onClick: () => onRepeatQuestion(latestQuestion) }
+        : ended.action === 'new_chat' && onStartNew ? { label: 'Новый чат', onClick: onStartNew } : undefined}>
+      {ended.way ? <div className={styles.failureActions}>{ended.way}</div> : null}
+      <SupportReference code={ended.supportCode} />
     </ErrorBlock>
   ) : undefined;
-  // What happened, what to do, the way out and the support code — one block (R4.2.3).
-  const error = failure && !turnEnd ? <>
-    {failure.title ? <strong className={styles.failureTitle}>{failure.title}</strong> : null}
-    <p className={styles.failureText}>{failure.text}</p>
-    <SupportReference code={failure.supportCode} />
+  // What happened, what to do, the way out and the support code — one block (R4.2.3): a refusal, a read or the stream, never
+  // the failed turn its block under the question says.
+  const shown = failure === ended ? null : failure;
+  const error = shown ? <>
+    {shown.title ? <strong className={styles.failureTitle}>{shown.title}</strong> : null}
+    <p className={styles.failureText}>{shown.reason ?? shown.text}</p>
+    <SupportReference code={shown.supportCode} />
   </> : undefined;
-  const actions = turnEnd ? [] : [
-    failure?.action === 'retry' && onRetry ? <Button key="retry" onClick={onRetry}>Повторить</Button> : null,
-    failure?.action === 'new_chat' && onStartNew ? <Button key="new" onClick={onStartNew} variant="primary"><Plus aria-hidden="true" size={16} />Новый чат</Button> : null,
-    failure?.action === 'books' && onStartIndexing ? <Button key="books" onClick={onStartIndexing} variant="primary">К книгам</Button> : null,
+  const actions = shown ? [
+    shown.action === 'retry' && onRetry ? <Button key="retry" onClick={onRetry}>Повторить</Button> : null,
+    shown.action === 'new_chat' && onStartNew ? <Button key="new" onClick={onStartNew} variant="primary"><Plus aria-hidden="true" size={16} />Новый чат</Button> : null,
+    shown.action === 'books' && onStartIndexing ? <Button key="books" onClick={onStartIndexing} variant="primary">К книгам</Button> : null,
+    shown.way ? <Fragment key="way">{shown.way}</Fragment> : null,
     onReturnToChats ? <Button key="chats" onClick={onReturnToChats} variant="outline">К списку чатов</Button> : null,
-  ].filter(Boolean);
+  ].filter(Boolean) : [];
   const errorActions = actions.length ? <>{actions}</> : undefined;
-  const errorLabel = failure?.title ?? 'Ответ не получен';
+  const errorLabel = shown?.title ?? shown?.label ?? 'Ответ не получен';
 
   return (
     <div className={styles.conversation} data-source={sourcePane ? '' : undefined}>

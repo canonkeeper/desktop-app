@@ -68,8 +68,8 @@ func TestANetworkPathInStartIsRefused(t *testing.T) {
 		start  ControlMessage
 		reason string
 	}{
-		{ControlMessage{Type: messageStart, DataDir: `\\?\UNC\server\share\data`, Resources: "/opt/canonkeeper"}, reasonDataDir},
-		{ControlMessage{Type: messageStart, DataDir: data, Resources: `\\?\UNC\server\share\canonkeeper`}, reasonResources},
+		{ControlMessage{Type: messageStart, DataDir: `\\?\UNC\server\share\data`, Resources: "/opt/canonkeeper", SecretsStore: "system"}, reasonDataDir},
+		{ControlMessage{Type: messageStart, DataDir: data, Resources: `\\?\UNC\server\share\canonkeeper`, SecretsStore: "system"}, reasonResources},
 	} {
 		line, _ := json.Marshal(test.start)
 		var control bytes.Buffer

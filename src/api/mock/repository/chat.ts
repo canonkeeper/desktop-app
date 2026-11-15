@@ -13,6 +13,7 @@ import type { MockRepositoryContext } from './context';
 import { agentWorkflowScenario, MockApiError } from '../scenarios';
 import { mockAsksToDraw } from './agent-timeline';
 import { readChapterFile } from './chapter-draft-proofread';
+import { accountUnlinked } from './desktop-account';
 
 /** The limit of an attached chapter, as the server holds it (specs/2026-11-07-chat-attach-chapter.md CA0.1). */
 const attachmentSigns = 400_000;
@@ -150,6 +151,25 @@ export function createChatOperations(context: MockRepositoryContext) {
   }
 
   /**
+   * The counter of the helper of the account refuses the start of a question or a correction (specs/2026-11-13-desk-account-ai.md
+   * AI2.1, AI2.2, AI2.6): the refusal of the scenario, as the app answers it — the text stays in the field.
+   */
+  function refuseByTheCounter(operationId: 'createChatTurn' | 'createChatTurnWithChapter' | 'steerChatTurn') {
+    // An app that is not linked has no helper of the account (AI1.2): the question is refused as without a helper.
+    if (accountUnlinked(context)) throw new MockApiError(409, 'the helper is not connected', operationId, 'helper.not_connected');
+    const refusal = context.scenario.accountTurnRefusal;
+    if (!refusal || context.state.aiSettings.source !== 'account') return;
+    const statuses: Record<string, number> = {
+      'ai.account_unreachable': 503, 'ai.daily_fence': 429, 'quota.chat_turns_daily': 429, 'quota.active_turns': 429,
+    };
+    const status = statuses[refusal.code] ?? 409;
+    const retryAfter = refusal.code === 'ai.daily_fence' || refusal.code === 'quota.chat_turns_daily' ? 3_600 : undefined;
+    throw new MockApiError(status, 'the counter of the account refused the question', operationId, refusal.code, {
+      retryAfter, fields: refusal.code === 'ai.account_unreachable' ? { mayReturn: refusal.mayReturn === true } : undefined,
+    });
+  }
+
+  /**
    * A question of the chat — or, from the workshop mocks, a message of a helper: only the helper's message carries the
    * author's images (the chat takes none, image-workshop IW7.2), as the backend's start of a turn takes them.
    */
@@ -161,6 +181,7 @@ export function createChatOperations(context: MockRepositoryContext) {
     context.applyOperation('createChatTurn');
     const chat = readableChat(chatId, 'createChatTurn');
     context.requireProjectAccess('createChatTurn', chat.projectId, ['editor', 'admin', 'owner']);
+    refuseByTheCounter('createChatTurn');
     if (chat.outdated) {
       throw new MockApiError(409, 'chat was created by a previous assistant version; start a new chat', 'createChatTurn', 'chat.outdated_agent');
     }
@@ -203,6 +224,7 @@ export function createChatOperations(context: MockRepositoryContext) {
     context.applyOperation(operation);
     const chat = readableChat(chatId, operation);
     context.requireProjectAccess(operation, chat.projectId, ['editor', 'admin', 'owner']);
+    refuseByTheCounter(operation);
     const question = input.body.trim();
     if (!question || [...question].length > 8000) throw new MockApiError(400, 'validation failed', operation, 'request.validation');
     const read = await readChapterFile(input.file ? { file: input.file } : { text: input.text ?? '' }, 'startChapterProofread').catch((error: unknown) => {
@@ -258,6 +280,7 @@ export function createChatOperations(context: MockRepositoryContext) {
     if (job.status !== 'queued' && job.status !== 'running') {
       throw new MockApiError(409, 'the turn has already ended', 'steerChatTurn', 'chat.turn_ended');
     }
+    refuseByTheCounter('steerChatTurn');
     const text = body.body.trim();
     if (!text) throw new MockApiError(400, 'validation failed', 'steerChatTurn', 'request.validation');
     const images = body.attachedImages ?? [];

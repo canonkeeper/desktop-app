@@ -94,6 +94,17 @@ type Target struct {
 
 type Request struct {
 	Body json.RawMessage
+	// Sending, when set, hears the size in bytes of the body that goes to the provider — in its protocol, after the
+	// translation — right before it goes; an error it returns stops the call and comes back as it is: nothing is sent.
+	Sending func(bytes int) error
+}
+
+// sent tells the hook of a request the size of the body about to go.
+func (request Request) sent(body []byte) error {
+	if request.Sending == nil {
+		return nil
+	}
+	return request.Sending(len(body))
 }
 
 type Event struct {

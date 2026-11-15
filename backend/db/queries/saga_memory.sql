@@ -357,21 +357,3 @@ RETURNING id, node_key, other_key, node_name, other_name, created_at;
 DELETE FROM saga_map_hidden
 WHERE project_id = sqlc.arg(project_id) AND id = sqlc.arg(id);
 
--- name: CardModelAllowed :one
--- Whether the cards Job may call the model for a saga (specs/2026-11-07-desktop-app.md, DA8.1): only a consent that is not paused.
-SELECT EXISTS (
-  SELECT 1 FROM card_build_permissions
-  WHERE project_id = sqlc.arg(project_id) AND state = 'allowed'
-)::boolean AS allowed;
-
--- name: UpsertCardBuildPermission :execrows
-INSERT INTO card_build_permissions (project_id, state, budget_usd_micros, budget_tokens, since, updated_at)
-SELECT project.id, sqlc.arg(state), sqlc.narg(budget_usd_micros), sqlc.narg(budget_tokens), sqlc.arg(since), sqlc.arg(updated_at)
-FROM projects AS project
-WHERE project.id = sqlc.arg(project_id) AND project.deleted_at IS NULL
-ON CONFLICT (project_id) DO UPDATE SET
-  state = EXCLUDED.state,
-  budget_usd_micros = EXCLUDED.budget_usd_micros,
-  budget_tokens = EXCLUDED.budget_tokens,
-  since = EXCLUDED.since,
-  updated_at = EXCLUDED.updated_at;
