@@ -92,7 +92,8 @@ describe('the reading of «что получится»', () => {
     const real = api.previewObsidianImport.bind(api);
     const previews = vi.spyOn(api, 'previewObsidianImport').mockImplementation((projectId, body) => new Promise((resolve) => { answer = () => resolve(real(projectId, body)); }));
     const view = await showPreview(api, saga);
-    const status = screen.getByRole('status');
+    // The line of the step is a status of its own (the part of the export under the step has its own).
+    const status = screen.getByText(words.readingNotes).closest('[role="status"]')!;
     expect(status.textContent).toContain(words.readingNotes);
     expect(status.textContent).toContain(words.readingLong);
     view.unmount();
@@ -324,7 +325,8 @@ describe('the bottom of «что получится»', () => {
     answerWith(api, (answer) => ({ ...answer, reading: { ...answer.reading, newChapters: 0, newCharacters: 0 } }));
     await showPreview(api, saga);
     await card('Застава');
-    expect(screen.queryByText(/помощник/iu)).toBeNull();
+    // The step says nothing of the reading; the part of the export under it is of the map, not of this load.
+    expect(within(screen.getByRole('region', { name: words.previewTitle })).queryByText(/помощник/iu)).toBeNull();
     expect(reasonOf(loadButton())).toBe(words.notUpdated('Застава'));
     cleanup();
 

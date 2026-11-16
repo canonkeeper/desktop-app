@@ -208,8 +208,9 @@
   padding: var(--ck-space-3) var(--ck-space-4);
 }
 
-.decision h3,
-.part h3 {
+.decision h4,
+.part h3,
+.part h4 {
   margin: 0;
   color: var(--ck-foreground-strong);
   font-size: var(--ck-font-size-body);
@@ -477,4 +478,74 @@
   margin: 0;
   font-size: var(--ck-font-size-body);
   font-weight: 600;
+}
+
+/*
+ * The page in two directions (specs/2026-11-16-desk-obsidian-export-web.md XW1.1; board 44·49, 44·59): the heading of each part —
+ * «Книги и записи из Obsidian» over its step, «Карта саги в Obsidian» under it with the line of the border of the parts above.
+ */
+.partTitle {
+  margin: 0;
+  color: var(--ck-foreground-strong);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.partTitle:focus {
+  outline: none;
+}
+
+/* The part of the export (board 44·59–44·65, `Pattern/Desktop/Obsidian Export`): its words, one button, its run or its result. */
+.exportPart {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ck-space-3);
+  border-top: 1px solid var(--ck-border);
+  padding-top: var(--ck-space-4);
+}
+
+/* The line of the state of the run: empty, it takes no gap of the part. */
+.exportState {
+  display: grid;
+  gap: var(--ck-space-2);
+  min-width: 0;
+}
+
+.exportState:empty {
+  margin-block-start: calc(-1 * var(--ck-space-3));
+}
+
+/* The note of «_Удалено» under its group, folded or not (board 44·61). */
+.exportNote {
+  margin: 0;
+  padding-inline-start: 26px;
+  color: var(--ck-muted-foreground);
+  font-size: var(--ck-font-size-meta);
+}
+
+.exportResult {
+  display: grid;
+  gap: var(--ck-space-2);
+  min-width: 0;
+}
+
+.exportGroup {
+  display: grid;
+  gap: 4px;
+}
+
+.exportGroup summary {
+  cursor: pointer;
+  color: var(--ck-foreground);
+  font-size: var(--ck-font-size-body-sm);
+  font-weight: 500;
+}
+
+.exportNames {
+  display: grid;
+  gap: 4px;
+  padding-inline-start: 26px;
+  overflow-wrap: anywhere;
 }

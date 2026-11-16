@@ -46,6 +46,7 @@ export function createMockApiClient() {
   const materials = createAuthorMaterialOperations(context);
   const books = createBookOperations(context);
   const importQueues = createImportQueueOperations(context);
+  const saga = createSagaOperations(context, materials.materialsOf);
 
   return {
     ...createSessionOperations(context),
@@ -59,7 +60,7 @@ export function createMockApiClient() {
     ...chat,
     ...createAgentTimelineOperations(context),
     ...createNotesOperations(context),
-    ...createSagaOperations(context, materials.materialsOf),
+    ...saga,
     ...materials,
     ...createAuthorMemoryOperations(context),
     ...createChapterDraftOperations(context, chat, jobs),
@@ -85,7 +86,7 @@ export function createMockApiClient() {
     ...createTierKeyOperations(context),
     ...createTrashOperations(context),
     ...createSagaFileOperations(context),
-    ...createObsidianOperations(context, books, importQueues, materials),
+    ...createObsidianOperations(context, books, importQueues, materials, saga),
   } satisfies CanonKeeperApiClient;
 }
 

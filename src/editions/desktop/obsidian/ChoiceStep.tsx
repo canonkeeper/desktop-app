@@ -45,6 +45,11 @@ interface ChoiceStepProps {
   previewReading: boolean;
   /** A write of «Загрузить» of the saga goes: it holds the vault, so a new preview waits for it (OW4.1). */
   loadGoing: boolean;
+  /**
+   * The export of the saga holds the vault (specs/2026-11-16-desk-obsidian-export-web.md XW2.3): why the look does not start by
+   * itself and why «Показать, что получится», «Прочитать папку заново» and «Связать» wait; null — nothing holds it.
+   */
+  fenced: string | null;
   queueLive: boolean;
 }
 
@@ -54,9 +59,9 @@ interface ChoiceStepProps {
  * return to the window —, the decisions the books of the saga wait for, the folders with their choices, and the way to «что
  * получится».
  */
-export function ChoiceStep({ api, loadGoing, memory, onChange, onMemory, onShow, previewReading, projectId, queueLive, vault }: ChoiceStepProps) {
+export function ChoiceStep({ api, fenced, loadGoing, memory, onChange, onMemory, onShow, previewReading, projectId, queueLive, vault }: ChoiceStepProps) {
   const client = useQueryClient();
-  const tree = useQuery(treeQueryOptions(api, projectId));
+  const tree = useQuery({ ...treeQueryOptions(api, projectId), enabled: !fenced });
   const folders = tree.data?.folders;
   // A folder the tree no longer has and its notes drop out of the remembered choice (OW2.6) — only by a whole look: a look cut
   // by its limits, or one whose folders of notes only in the cloud are not seen, does not show every folder there is.
@@ -83,32 +88,32 @@ export function ChoiceStep({ api, loadGoing, memory, onChange, onMemory, onShow,
 
   return (
     <section aria-labelledby="obsidian-step" className={styles.step}>
-      <h2 className={styles.stepTitle} data-step-heading="" id="obsidian-step" tabIndex={-1}>{words.choiceTitle(rootName)}</h2>
+      <h3 className={styles.stepTitle} data-step-heading="" id="obsidian-step" tabIndex={-1}>{words.choiceTitle(rootName)}</h3>
       <p className={styles.text}>{words.choiceExplain}</p>
       {tree.isFetching ? <WorkLine detail={long ? words.scanLong : undefined} error={tree.failureReason} failures={tree.failureCount} title={words.scanning} /> : null}
       {failed && !failed.reread ? (failed.failure
-        ? <ErrorBlock {...loadFailureWords(tree.error)} onRetry={rescan} title={words.scanFailed} />
+        ? <ErrorBlock {...loadFailureWords(tree.error)} onRetry={rescan} retryReason={fenced} title={words.scanFailed} />
         : (
           <Alert tone="error">
             <p className={styles.text}>{failed.text}</p>
-            <RefusalExits exits={failed.exits} on={{ retry: rescan, checkAgain: rescan, change: onChange }} />
+            <RefusalExits exits={failed.exits} on={{ retry: rescan, checkAgain: rescan, change: onChange }} reason={fenced} />
           </Alert>
         )) : null}
       {tree.data?.truncated ? (
         <Alert role="note" tone="info">
           <p className={styles.text}>{words.cut}</p>
-          <RefusalExits exits={['change']} on={{ change: onChange }} />
+          <RefusalExits exits={['change']} on={{ change: onChange }} reason={fenced} />
         </Alert>
       ) : null}
       {empty ? (
         <Alert role="note" tone="warning">
           <p className={styles.text}>{cloud ? words.cloudEmpty : words.noNotes}</p>
-          <RefusalExits exits={[cloud ? 'rescan' : 'change']} on={{ rescan, change: onChange }} />
+          <RefusalExits exits={[cloud ? 'rescan' : 'change']} on={{ rescan, change: onChange }} reason={fenced} />
         </Alert>
       ) : null}
       {state ? <>
         {cloud ? <p className={styles.warning}>{words.cloudNote}</p> : null}
-        <Decisions api={api} folders={folders!} projectId={projectId} queueLive={queueLive} vault={vault} />
+        <Decisions api={api} fenced={fenced} folders={folders!} projectId={projectId} queueLive={queueLive} vault={vault} />
         <FolderList onChoose={choose} state={state} />
       </> : null}
       {tree.data ? <Skipped of="files" skipped={tree.data.skipped} /> : null}
@@ -116,15 +121,15 @@ export function ChoiceStep({ api, loadGoing, memory, onChange, onMemory, onShow,
         <div className={styles.footer}>
           <span className={styles.muted}>{pickedLine(state.books, state.materials)}</span>
           <div className={styles.footerActions}>
-            <Button disabledReason={tree.isFetching ? words.scanning : null} onClick={rescan} size="sm" variant="ghost"><RotateCw aria-hidden="true" size={14} />{words.rescan}</Button>
-            <Button disabledReason={previewReading ? words.whyReading : loadGoing ? words.loadGoing : state.reason} onClick={() => onShow(state)} variant="primary">
+            <Button disabledReason={tree.isFetching ? words.scanning : fenced} onClick={rescan} size="sm" variant="ghost"><RotateCw aria-hidden="true" size={14} />{words.rescan}</Button>
+            <Button disabledReason={previewReading ? words.whyReading : loadGoing ? words.loadGoing : fenced ?? state.reason} onClick={() => onShow(state)} variant="primary">
               <Eye aria-hidden="true" size={16} />{words.show}
             </Button>
           </div>
         </div>
       ) : tree.data ? (
         <div className={styles.footerActions}>
-          <Button disabledReason={tree.isFetching ? words.scanning : null} onClick={rescan} size="sm" variant="ghost"><RotateCw aria-hidden="true" size={14} />{words.rescan}</Button>
+          <Button disabledReason={tree.isFetching ? words.scanning : fenced} onClick={rescan} size="sm" variant="ghost"><RotateCw aria-hidden="true" size={14} />{words.rescan}</Button>
         </div>
       ) : null}
     </section>
@@ -135,8 +140,9 @@ export function ChoiceStep({ api, loadGoing, memory, onChange, onMemory, onShow,
  * «Нужно ваше решение» over the folders (OW2.9): the books whose folder another book holds — named — and the books whose
  * folder is not in its place; each with «Связать с другой папкой…» and «Снять связь».
  */
-function Decisions({ api, folders, projectId, queueLive, vault }: {
+function Decisions({ api, fenced, folders, projectId, queueLive, vault }: {
   api: ObsidianClient;
+  fenced: string | null;
   folders: ObsidianTree['folders'];
   projectId: string;
   queueLive: boolean;
@@ -168,21 +174,21 @@ function Decisions({ api, folders, projectId, queueLive, vault }: {
   if (!decisions.length) return null;
   return (
     <section aria-label={words.decisionTitle} className={styles.decision}>
-      <h3>{words.decisionTitle}</h3>
+      <h4>{words.decisionTitle}</h4>
       <ul>
         {decisions.map(({ book, text }) => (
           <li className={styles.part} key={book.bookId}>
             <p className={styles.text}>{text}</p>
             <div className={styles.row}>
               <Button onClick={() => setLinking(book)} size="sm" variant="outline"><Link2 aria-hidden="true" size={14} />{words.linkOther}</Button>
-              <Button loading={unlink.isPending && unlink.variables?.bookId === book.bookId} onClick={() => unlink.mutate(book)} size="sm" variant="ghost">
+              <Button disabledReason={fenced} loading={unlink.isPending && unlink.variables?.bookId === book.bookId} onClick={() => unlink.mutate(book)} size="sm" variant="ghost">
                 <Unlink aria-hidden="true" size={14} />{words.unlinkBook}
               </Button>
             </div>
           </li>
         ))}
       </ul>
-      {linking ? <LinkWindow api={api} book={linking} books={books} folders={folders} onClose={() => setLinking(null)} projectId={projectId} queueLive={queueLive} /> : null}
+      {linking ? <LinkWindow api={api} book={linking} books={books} fenced={fenced} folders={folders} onClose={() => setLinking(null)} projectId={projectId} queueLive={queueLive} /> : null}
     </section>
   );
 }

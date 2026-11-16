@@ -2,19 +2,26 @@
 import { refusalWords as quotaWords } from '../../../entities/account-quota/refusal-words';
 import { isApiStatusFailure, loadFailureWords } from '../../../entities/api-errors';
 import { problemCode, problemField } from './obsidian-api';
-import { refusalReason, updateWords, vaultReasonWords, words } from './words';
+import { exportWords, refusalReason, updateWords, vaultReasonWords, words } from './words';
 
-/** Where a refusal came: a read of the vault, a write of «Загрузить», the link of a book, the choice of the folder. */
-export type RefusalPlace = 'scan' | 'preview' | 'materials' | 'books' | 'link' | 'choice';
+/**
+ * Where a refusal came: a read of the vault, a write of «Загрузить», the link of a book, the choice of the folder, the export of
+ * the map (specs/2026-11-16-desk-obsidian-export-web.md XW3.3).
+ */
+export type RefusalPlace = 'scan' | 'preview' | 'materials' | 'books' | 'link' | 'choice' | 'export';
 
 /** The way out a refusal offers (specs/2026-11-15-desk-obsidian-web.md, Data; specs/2026-11-10-ux2-patterns-refusals.md). */
 export type RefusalExit = 'retry' | 'change' | 'checkAgain' | 'rescan' | 'showAgain' | 'toBooks' | 'loadBooksAgain';
 
-/** What the page says of a refusal: its words and ways out; `reread` — the folder of the saga is read again; `failure` — the block of a failure. */
+/**
+ * What the page says of a refusal: its words and ways out; `reread` — the folder of the saga is read again; `map` — the map of
+ * the saga is read again, and its answer leads the button of the export (XW3.1); `failure` — the block of a failure.
+ */
 export interface Refusal {
   text: string;
   exits: RefusalExit[];
   reread?: true;
+  map?: true;
   failure?: true;
 }
 
@@ -40,7 +47,8 @@ function tooLarge(error: unknown) {
   return words.tooHeavy(megabytes(field('bytes')), megabytes(field('limitBytes')));
 }
 
-type Words = (error: unknown, place: RefusalPlace, bookTitle: (bookId: string) => string) => Refusal;
+/** The folder of the export of the saga, when the page knows it (`getObsidianVault.exportDir`). */
+type Words = (error: unknown, place: RefusalPlace, bookTitle: (bookId: string) => string, exportDir?: string) => Refusal;
 
 const failure: Words = () => ({ text: '', exits: ['retry'], failure: true });
 
@@ -50,13 +58,26 @@ const failure: Words = () => ({ text: '', exits: ['retry'], failure: true });
  */
 export const refusalTable: Readonly<Record<string, Words>> = {
   'obsidian.not_linked': () => ({ text: '', exits: [], reread: true }),
-  'obsidian.vault_missing': (error) => {
+  'obsidian.vault_missing': (error, place) => {
     const reason = problemField<'not_found' | 'not_folder' | 'unreadable'>(error, 'vaultReason') ?? 'not_found';
+    // The export has no ways out of its own: the line of the folder mends the folder (XW3.2), read again to say it.
+    if (place === 'export') return { text: vaultReasonWords[reason], exits: [], reread: true };
     const exits: RefusalExit[] = reason === 'not_found' ? ['checkAgain', 'change'] : reason === 'not_folder' ? ['change'] : ['retry', 'change'];
     return { text: vaultReasonWords[reason], exits };
   },
   'obsidian.busy': () => ({ text: words.busyEnd, exits: ['retry'] }),
-  'obsidian.slow': () => ({ text: words.slow, exits: ['retry'] }),
+  // Of the export — its own words: nothing written, the way out is the button of the part (XW3.2).
+  'obsidian.slow': (_error, place) => (place === 'export' ? { text: exportWords.slow, exits: [] } : { text: words.slow, exits: ['retry'] }),
+  // The export (XW3.1, XW3.2): the map is read again and leads the button; the folder of the export by its name when the page
+  // knows it — the folder of the saga read again first, the first step of a write may have kept it.
+  'obsidian.map_not_ready': () => ({ text: '', exits: [], map: true }),
+  'obsidian.export_dir_unsafe': (_error, _place, _bookTitle, exportDir) => ({
+    text: exportDir ? exportWords.unsafe(exportDir) : exportWords.unsafeNoName, exits: [], reread: true,
+  }),
+  // Only of the folder the saga keeps (a first export passes a folder it does not know, services/obsidian/export.go): without it
+  // in the folder of the saga read again, a failure.
+  'obsidian.export_manifest_unreadable': (error, place, bookTitle, exportDir) => (exportDir
+    ? { text: exportWords.manifest(exportDir), exits: [], reread: true } : failure(error, place, bookTitle)),
   'obsidian.too_large': (error, place) => ({ text: sentence(tooLarge(error), place === 'materials' || place === 'books'), exits: [] }),
   'obsidian.folders_overlap': (error, place) => {
     const [outer = '', inner = ''] = problemField<string[]>(error, 'folders') ?? [];
@@ -71,7 +92,7 @@ export const refusalTable: Readonly<Record<string, Words>> = {
   'obsidian.load_interrupted': () => ({ text: words.interrupted, exits: ['loadBooksAgain'] }),
   'request.validation': (_error, place) => place === 'preview' ? { text: words.gone, exits: ['rescan'] }
     : place === 'materials' || place === 'books' ? { text: words.validation, exits: ['showAgain'] } : failure(_error, place, () => ''),
-  'idempotency.conflict': () => ({ text: words.validation, exits: ['showAgain'] }),
+  'idempotency.conflict': (error, place, bookTitle) => (place === 'export' ? failure(error, place, bookTitle) : { text: words.validation, exits: ['showAgain'] }),
   conflict: (error, place, bookTitle) => place === 'materials' ? { text: words.conflict, exits: ['retry'] }
     : place === 'books' ? { text: words.interrupted, exits: ['loadBooksAgain'] } : failure(error, place, bookTitle),
   not_found: (error, place, bookTitle) => place === 'link' ? { text: words.bookGone, exits: [] } : failure(error, place, bookTitle),
@@ -89,13 +110,13 @@ export const refusalTable: Readonly<Record<string, Words>> = {
  * limit of books of the saga by the words of «Книги» for the code of the limit; any other refusal and a lost connection —
  * the block of a failure with «Повторить» (a write repeats with the same key).
  */
-export function refusalOf(error: unknown, place: RefusalPlace, bookTitle: (bookId: string) => string = () => ''): Refusal {
+export function refusalOf(error: unknown, place: RefusalPlace, bookTitle: (bookId: string) => string = () => '', exportDir?: string): Refusal {
   const code = problemCode(error);
   if (code?.startsWith('quota.')) {
     const said = quotaWords(code, undefined);
     if (said) return { text: sentence(said.ended, place === 'books'), exits: [] };
   }
-  if (code && Object.hasOwn(refusalTable, code)) return refusalTable[code]!(error, place, bookTitle);
+  if (code && Object.hasOwn(refusalTable, code)) return refusalTable[code]!(error, place, bookTitle, exportDir);
   if (isApiStatusFailure(error) && error.status >= 400 && error.status < 500 && place === 'books') return { text: words.interrupted, exits: ['loadBooksAgain'] };
   return { text: '', exits: ['retry'], failure: true };
 }

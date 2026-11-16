@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useMutationState } from '@tanstack/react-query';
-import { FolderInput } from 'lucide-react';
+import { FolderInput, Upload } from 'lucide-react';
 import { lazy, useMemo } from 'react';
 import type { EditionPage, EditionPageProps } from '../../../app/edition';
 import { openPages } from '../../../app/pages';
 import type { ShelfSlot } from '../../../features/manuscript/shelf/shelf-slot';
-import { SagaSlotProvider, type MaterialsImport, type SagaSlot } from '../../../features/saga/saga-slot';
+import { SagaSlotProvider, type MapMenuSlot, type MaterialsImport, type SagaSlot } from '../../../features/saga/saga-slot';
 import type { RouteNavigate } from '../../../shared/navigation/app-route';
 import { Button } from '../../../ui/controls/Button';
-import { obsidianAt } from './address';
+import type { MoreMenuItem } from '../../../ui/overlays/MoreMenu';
+import { obsidianAt, obsidianExportAt } from './address';
 import { obsidianKeys } from './obsidian-api';
 import type { LoadWrite } from './use-load';
-import { words } from './words';
+import { exportWords, words } from './words';
 
 const importObsidianPage = () => import('./ObsidianPage');
 const ObsidianPage = lazy(() => importObsidianPage().then((module) => ({ default: module.ObsidianPage })));
@@ -69,4 +70,27 @@ function DesktopMemoryPage(props: EditionPageProps) {
 export const desktopMemoryPage: EditionPage = {
   render: (props) => <DesktopMemoryPage {...props} />,
   preload: openPages.memory.preload,
+};
+
+/**
+ * «В Obsidian…» of «⋯» of the map of the app (specs/2026-11-16-desk-obsidian-export-web.md XW1.4; board 44·67): an editor goes to the
+ * part «Карта саги в Obsidian» of the page of the bridge — a saga without its folder chooses one there; a reader gets nothing.
+ */
+function useObsidianMapItems({ canEdit, navigate, projectId }: { canEdit: boolean; navigate: RouteNavigate; projectId: string }): MoreMenuItem[] {
+  return useMemo(() => (canEdit ? [{
+    label: exportWords.mapItem, icon: Upload,
+    run: () => { const at = obsidianExportAt(projectId); navigate(at.path, at.query, { from: { section: 'saga' } }); },
+  }] : []), [canEdit, navigate, projectId]);
+}
+
+const mapSlot: SagaSlot = { mapMenu: { useItems: useObsidianMapItems } satisfies MapMenuSlot };
+
+function DesktopSagaPage(props: EditionPageProps) {
+  return <SagaSlotProvider value={mapSlot}>{openPages.saga.render(props)}</SagaSlotProvider>;
+}
+
+/** «Карта» of the app: the open page with «В Obsidian…» in «⋯» of its panel (XW1.4). */
+export const desktopSagaPage: EditionPage = {
+  render: (props) => <DesktopSagaPage {...props} />,
+  preload: openPages.saga.preload,
 };

@@ -15,12 +15,14 @@ describe('the desktop edition', () => {
       '/', '/chat', '/notes', '/saga', '/memory', '/manuscript/books', '/manuscript/edit', '/manuscript/obsidian', '/manuscript/open',
       '/settings',
     ]);
-    // The open pages as they are: no page of the desktop provides a closed block to its section; «Книги» and «Что помнит
-    // помощник» give their open slots (the bridge with Obsidian, OW1.2), «Настройки» are the own page of the app.
+    // The open pages as they are: no page of the desktop provides a closed block to its section; «Книги», «Что помнит
+    // помощник» and «Карта» give their open slots (the bridge with Obsidian, OW1.2; specs/2026-11-16-desk-obsidian-export-web.md
+    // XW1.4), «Настройки» are the own page of the app.
     expect(Object.keys(edition.pages).sort()).toEqual(['chat', 'manuscript', 'memory', 'notes', 'saga', 'settings']);
-    for (const surface of ['chat', 'notes', 'saga'] as const) expect(edition.pages[surface]).toBe(openPages[surface]);
+    for (const surface of ['chat', 'notes'] as const) expect(edition.pages[surface]).toBe(openPages[surface]);
     expect(edition.pages.manuscript?.preload).toBe(openPages.manuscript.preload);
     expect(edition.pages.memory?.preload).toBe(openPages.memory.preload);
+    expect(edition.pages.saga?.preload).toBe(openPages.saga.preload);
   });
 
   it('names the open sections in its menu', () => {

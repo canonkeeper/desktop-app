@@ -147,6 +147,9 @@ function openedSaga(context: MockRepositoryContext, title: string): Project {
       prepared.published.push(chapter.id);
     }
   }
+  // The cards of the file come with its chapters, as the report says (`cards: 2`): each carries the card of the chapter it
+  // copies — the map of the opened saga is that of a saga the helper has read.
+  for (const chapter of chapters) context.state.cardsFromFile[chapter.id] = templateChapterId;
   Object.assign(project, { wordCount: book.wordCount });
   const port = chapterKey(1, 12);
   const bell = chapterKey(1, 14);

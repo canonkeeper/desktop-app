@@ -170,12 +170,15 @@ export interface MockScenarioControl {
    */
   obsidianWrite?: 'queue_busy' | 'load_interrupted' | 'notes_unread' | 'nothing_to_apply' | 'folder_missing' | 'conflict';
   /**
-   * How the export of the map and of the notes of the chapters answers (specs/2026-11-15-desk-obsidian-export.md, Data): the map
-   * is being updated or the helper has read no book, a link or a file on the way to the folder of the export, its manifest that
-   * does not read, a file the author changed — not updated without his word, moved into _Удалено/ with it —, a run that did not
-   * reach its end. By default the first export creates every reference, the next ones change none.
+   * How the export of the map and of the notes of the chapters answers (specs/2026-11-15-desk-obsidian-export.md, Data;
+   * specs/2026-11-16-desk-obsidian-export-web.md XW4): the map is being updated (`building` in getSagaMap too) or the helper has
+   * read no chapter (the map without cards), a link or a file on the way to the folder of the export, its manifest that does not
+   * read, a file the author changed — not updated without his word, moved into _Удалено/ with it —, a run that did not reach its
+   * end, and one that did not read four files of its folder — one by each reason — and did not end either. The export reads the
+   * map of the saga as getSagaMap does: a saga without cards is `no_cards` without the scenario. By default the first export
+   * creates every reference, the next ones change none.
    */
-  obsidianExport?: 'updating' | 'no_cards' | 'unsafe' | 'manifest_unreadable' | 'changed' | 'partial';
+  obsidianExport?: 'updating' | 'no_cards' | 'unsafe' | 'manifest_unreadable' | 'changed' | 'partial' | 'skipped';
 }
 
 /** What a refusal carries besides its code: fields of the problem and the Retry-After of a 429. */

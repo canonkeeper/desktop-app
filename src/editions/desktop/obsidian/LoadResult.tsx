@@ -19,6 +19,8 @@ export interface LoadResultProps {
   bookLimitBytes: number | null;
   /** The words of the live load of «Книги» of the saga; said only when the run did not send its new books (OW3.6). */
   queueNote: string | null;
+  /** The export of the saga holds the vault: why the ways out that write again wait (specs/2026-11-16-desk-obsidian-export-web.md XW2.3). */
+  fenced?: string | null;
   on: {
     showAgain: () => void;
     repeatMaterials: (write: MaterialsWrite) => void;
@@ -62,7 +64,7 @@ function bookLine(book: ObsidianBookPreview, answer: ObsidianBooksLoad | undefin
  * answer, the books by the outcome of each folder, each part apart, a part that did not pass with its words and its way out;
  * the books with changed notes named; «К книгам», «К вашим материалам», «Загрузить ещё».
  */
-export function LoadResult({ bookLimitBytes, books, materials, on, preview, queueNote }: LoadResultProps) {
+export function LoadResult({ bookLimitBytes, books, fenced = null, materials, on, preview, queueNote }: LoadResultProps) {
   const savingRecords = materials?.status === 'pending';
   const addingBooks = books?.status === 'pending';
   const recordsRefusal = materials?.status === 'error' ? refusalOf(materials.error, 'materials') : null;
@@ -79,7 +81,7 @@ export function LoadResult({ bookLimitBytes, books, materials, on, preview, queu
       showAgain: on.showAgain, toBooks: on.toBooks,
       retry: write === 'materials' ? (materials ? () => on.repeatMaterials(materials.write) : undefined) : books ? () => on.repeatBooks(books.write) : undefined,
       loadBooksAgain: books ? () => on.loadBooksAgain(books.write) : undefined,
-    }} />
+    }} reason={fenced} />
   );
   const bookLines = preview.answer.books.map((book) => ({ book, line: bookLine(book, books?.answer, bookLimitBytes) })).filter((each) => each.line);
   // «Книги сейчас не загрузить» only of new books this run did not send for a live load of another — its own load is not it.
@@ -98,7 +100,7 @@ export function LoadResult({ bookLimitBytes, books, materials, on, preview, queu
             {kept && kept.taken.count ? <p className={styles.text}>{words.keptTaken}{namesWords(kept.taken.names, kept.taken.count)}</p> : null}
             {kept && kept.edited.count ? <p className={styles.text}>{words.keptEdited}{namesWords(kept.edited.names, kept.edited.count)}</p> : null}
             {kept && kept.changed.count ? <p className={styles.text}>{words.keptChanged}{namesWords(kept.changed.names, kept.changed.count)}</p> : null}
-            {kept && (kept.taken.count || kept.edited.count || kept.changed.count) ? <RefusalExits exits={['showAgain']} on={{ showAgain: on.showAgain }} /> : null}
+            {kept && (kept.taken.count || kept.edited.count || kept.changed.count) ? <RefusalExits exits={['showAgain']} on={{ showAgain: on.showAgain }} reason={fenced} /> : null}
           </> : null}
           {recordsRefusal ? (
             <Alert tone="error">

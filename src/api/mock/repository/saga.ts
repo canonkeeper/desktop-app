@@ -172,7 +172,11 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
         key: chapterKey(book.order, chapter.order), label: chapterPlace(shelf + 1, placeInBook(context, chapter), chapter.title),
         chapterId: chapter.id, bookId: book.id, bookOrder: shelf + 1, bookTitle: book.title, title: chapter.title,
       })));
-    const chapterCards = chapters.map((chapter) => (carded.has(chapter.chapterId) ? cards[chapter.chapterId] : undefined));
+    // The scenario of the export `no_cards` (specs/2026-11-16-desk-obsidian-export-web.md XW4.1): a saga the helper has read no
+    // chapter of. A chapter of a saga opened from a file carries the card it brought.
+    const unread = context.getScenario().obsidianExport === 'no_cards';
+    const cardOf = (id: string) => cards[id] ?? cards[context.state.cardsFromFile[id] ?? ''];
+    const chapterCards = chapters.map((chapter) => (carded.has(chapter.chapterId) && !unread ? cardOf(chapter.chapterId) : undefined));
     const entries: Entry[] = [];
     const byName = new Map<string, Entry>();
     chapterCards.forEach((card, index) => {
@@ -410,8 +414,11 @@ export function createSagaOperations(context: MockRepositoryContext, materialsOf
       if (!hidesNode(projectId, node.key)) moved.set(index, moved.size);
     });
     const hero = graph.hero >= 0 && !hidesNode(projectId, graph.nodes[graph.hero]!.key) ? graph.nodes[graph.hero]!.key : null;
+    // The scenario of the export `updating` (XW4.1): the map lags behind the cards and is being built again.
+    const building = context.getScenario().obsidianExport === 'updating';
     return {
-      revision: `mock-${saga.chapters.length}-${saga.coverage.withCards}-${records.length}-${records.reduce((sum, record) => sum + record.revision, 0)}-${hiddenOf(projectId).map((item) => item.id).join(',')}`,
+      ...(building ? { building } : {}),
+      revision:`mock-${saga.chapters.length}-${saga.coverage.withCards}-${records.length}-${records.reduce((sum, record) => sum + record.revision, 0)}-${hiddenOf(projectId).map((item) => item.id).join(',')}`,
       coverage: saga.coverage,
       chapters: saga.chapters,
       hero,

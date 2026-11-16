@@ -11,25 +11,35 @@ import styles from './Obsidian.module.css';
  * the line of a work under the fence, the ways out of a refusal, what was skipped at a reading.
  */
 
-/** The line of a work under the fence (OW2.8, OW3.1, OW7.4): what goes, what it may take, or that the vault is read by another. */
-export function WorkLine({ detail, failures, error, title }: { detail?: string | undefined; error: unknown; failures: number; title: string }) {
+/**
+ * The line of a work under the fence (OW2.8, OW3.1, OW7.4): what goes, what it may take, or that the vault is read by another.
+ * `announced` — the line is its own status; false where the place around it is the status (the part of the export, XW2.2).
+ */
+export function WorkLine({ announced = true, detail, failures, error, title }: { announced?: boolean; detail?: string | undefined; error: unknown; failures: number; title: string }) {
   const waiting = failures > 0 && problemCode(error) === 'obsidian.busy';
   return (
-    <div role="status">
+    <div role={announced ? 'status' : undefined}>
       <LongWork detail={waiting ? undefined : detail} label={title} title={waiting ? words.busy(retryAfterOf(error)) : title} />
     </div>
   );
 }
 
-/** The ways out of a refusal as buttons (Data). */
-export function RefusalExits({ exits, on }: { exits: readonly RefusalExit[]; on: Partial<Record<RefusalExit, () => void>> }) {
+/**
+ * The ways out of a refusal as buttons (Data). `reason` — why the ways that start a work of the bridge wait now: the export of
+ * the saga holds the vault (specs/2026-11-16-desk-obsidian-export-web.md XW2.3); «К книгам» only leads away and never waits.
+ */
+export function RefusalExits({ exits, on, reason = null }: { exits: readonly RefusalExit[]; on: Partial<Record<RefusalExit, () => void>>; reason?: string | null }) {
   const labels: Record<RefusalExit, string> = {
     retry: words.retry, change: words.change, checkAgain: words.checkAgain, rescan: words.rescan, showAgain: words.showAgain,
     toBooks: words.toBooks, loadBooksAgain: words.loadBooksAgain,
   };
   const shown = exits.filter((exit) => on[exit]);
   if (!shown.length) return null;
-  return <div className={styles.row}>{shown.map((exit) => <Button key={exit} onClick={on[exit]} size="sm" variant="outline">{labels[exit]}</Button>)}</div>;
+  return (
+    <div className={styles.row}>
+      {shown.map((exit) => <Button disabledReason={exit === 'toBooks' ? null : reason} key={exit} onClick={on[exit]} size="sm" variant="outline">{labels[exit]}</Button>)}
+    </div>
+  );
 }
 
 /** «Пропущено при чтении: …» — opens into the lines «<причина> — N» (OW2.8, OW3.2). */

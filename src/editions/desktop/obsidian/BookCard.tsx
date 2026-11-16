@@ -24,8 +24,13 @@ export interface BookCardActions {
   bookLimitBytes: number | null;
   /** The action of this card that goes now: its button says it works, the other buttons stay open. */
   working: 'link' | 'unlink' | null;
-  /** Why «Связать с «…»» waits: a live load of books of the saga (the server would answer `queue_busy`). */
+  /**
+   * Why «Связать с «…»» waits: a live load of books of the saga (the server would answer `queue_busy`), the export of the saga
+   * (specs/2026-11-16-desk-obsidian-export-web.md XW2.3).
+   */
   linkReason: string | null;
+  /** Why «Снять связь» waits: the export of the saga holds the vault (XW2.3). */
+  unlinkReason?: string | null;
   /**
    * «Обновить из Obsidian…» of a book of the saga with changes in its notes (specs/2026-11-15-desk-obsidian-book-web.md OU2.8): the
    * window of the update of the book; null where the page has no such book.
@@ -104,7 +109,7 @@ export function BookCard({ actions, book }: { actions: BookCardActions; book: Ob
         <State tone="warning">{words.stTrash(title)}</State>
         <div className={styles.row}>
           <Button onClick={actions.onOpenTrash} size="sm" variant="outline"><ArchiveRestore aria-hidden="true" size={14} />{words.openTrash}</Button>
-          <Button loading={actions.working === 'unlink'} onClick={() => actions.onUnlink(state.bookId ?? '', title)} size="sm" variant="ghost">
+          <Button disabledReason={actions.unlinkReason} loading={actions.working === 'unlink'} onClick={() => actions.onUnlink(state.bookId ?? '', title)} size="sm" variant="ghost">
             <Unlink aria-hidden="true" size={14} />{words.unlinkBook}
           </Button>
         </div>

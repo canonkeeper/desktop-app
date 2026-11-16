@@ -9,6 +9,7 @@ import type { createImportQueueOperations } from './import-queues';
 import { digest, knownFields, overlapOf, ownerOf, within, type MockChoice } from './obsidian-choice';
 import { createObsidianExportOperations } from './obsidian-export';
 import { createObsidianMaterialsOperations, previewMaterials, tooManyRecords } from './obsidian-materials';
+import type { createSagaOperations } from './saga';
 
 type Operation = 'getObsidianVault' | 'beginObsidianVaultChoice' | 'unlinkObsidianVault' | 'scanObsidianVault' | 'previewObsidianImport'
   | 'importObsidianBooks' | 'updateBookFromObsidian' | 'linkBookToObsidianFolder' | 'unlinkBookFromObsidianFolder' | 'importObsidianMaterials'
@@ -173,6 +174,7 @@ export function createObsidianOperations(
   books: Pick<ReturnType<typeof createBookOperations>, 'importBookFile'>,
   queues: Pick<ReturnType<typeof createImportQueueOperations>, 'createImportQueue' | 'uploadImportQueueItem' | 'startImportQueue' | 'getImportQueue'>,
   materials: Pick<ReturnType<typeof createAuthorMaterialOperations>, 'obsidianRecords'>,
+  maps: Pick<ReturnType<typeof createSagaOperations>, 'getSagaMap'>,
 ) {
   function saga(operation: Operation, projectId: string, write: boolean) {
     context.applyOperation(operation);
@@ -239,6 +241,8 @@ export function createObsidianOperations(
     linked: (projectId) => linkedOf('exportObsidianSaga', projectId),
     free: () => free('exportObsidianSaga'),
     readable: () => readable('exportObsidianSaga'),
+    // XW4.1: the map by the same reading as getSagaMap — the published text, as the server exports it.
+    map: (projectId) => maps.getSagaMap(projectId, { sourceView: 'published' }),
   });
 
   return {
@@ -290,7 +294,14 @@ export function createObsidianOperations(
         context.state.obsidianChoices[projectId] = { request: null, refused: shell.refused };
       } else {
         const path = shell && typeof shell === 'object' ? shell.picked : examplePath;
-        context.state.obsidianVaults[projectId] = { path, name: path.split(/[\\/]/u).filter(Boolean).pop() ?? path };
+        // A change of the path keeps the folder of the export, the time of the last one only on the same path
+        // (repository/postgres/obsidian/vaults.go; specs/2026-11-16-desk-obsidian-export-web.md XW4.1).
+        const before = context.state.obsidianVaults[projectId];
+        context.state.obsidianVaults[projectId] = {
+          path, name: path.split(/[\\/]/u).filter(Boolean).pop() ?? path,
+          ...(before?.exportDir ? { exportDir: before.exportDir } : {}),
+          ...(before?.lastExportAt && before.path === path ? { lastExportAt: before.lastExportAt } : {}),
+        };
         context.state.obsidianChoices[projectId] = { request: null, refused: null };
       }
       return { request };

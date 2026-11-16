@@ -1,6 +1,7 @@
 import { CircleAlert, RotateCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Button } from '../controls/Button';
+import type { DisabledReasonValue } from '../controls/DisabledReason';
 import styles from './feedback.module.css';
 import { SupportReference } from './SupportReference';
 
@@ -17,6 +18,8 @@ export interface ErrorBlockProps {
   /** «Повторить»; without it the block offers `action`. */
   onRetry?: (() => void) | undefined;
   retrying?: boolean | undefined;
+  /** Why «Повторить» waits now: it stays in its place and says it by a press (PR1.1). */
+  retryReason?: DisabledReasonValue;
   /** The one way on of a page that is not there: «К книгам» (PR3.5). */
   action?: { label: string; onClick: () => void } | undefined;
   /** What stays safe, when the place says it closer: «Ваш текст на месте». */
@@ -31,7 +34,7 @@ export interface ErrorBlockProps {
  * support and «Написать нам». It takes the place of the content: the shell, the title of the section and the name of the
  * saga stay. It is announced as an error.
  */
-export function ErrorBlock({ action, cause, children, className, code, kept = keptWords, onRetry, retrying = false, title }: ErrorBlockProps) {
+export function ErrorBlock({ action, cause, children, className, code, kept = keptWords, onRetry, retrying = false, retryReason, title }: ErrorBlockProps) {
   return (
     <div aria-label={title} className={`${styles.errorBlock}${className ? ` ${className}` : ''}`} role="alert">
       <CircleAlert aria-hidden="true" className={styles.errorIcon} size={16} />
@@ -41,7 +44,7 @@ export function ErrorBlock({ action, cause, children, className, code, kept = ke
         {cause || kept ? <p>{cause ? `${cause} ` : ''}{kept}</p> : null}
         {children}
         <div className={styles.errorActions}>
-          {onRetry ? <Button loading={retrying} onClick={onRetry} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />Повторить</Button> : null}
+          {onRetry ? <Button disabledReason={retryReason} loading={retrying} onClick={onRetry} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />Повторить</Button> : null}
           {!onRetry && action ? <Button onClick={action.onClick} size="sm" variant="outline">{action.label}</Button> : null}
           {onRetry ? <SupportReference code={code} /> : null}
         </div>

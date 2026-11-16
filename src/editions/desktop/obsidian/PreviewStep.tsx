@@ -47,6 +47,11 @@ interface PreviewStepProps {
   notTaken: readonly string[];
   /** «Обновить из Obsidian…» of a book of the saga (OU2.8): the window of its update, and why it waits now. */
   update: { open: (book: Book) => void; reason: string | null; working: string | null };
+  /**
+   * The export of the saga holds the vault (specs/2026-11-16-desk-obsidian-export-web.md XW2.3): why «Загрузить», «Показать
+   * заново», the ways out of a refusal and the link of a card wait; null — nothing holds it. «Обновить из Obsidian…» waits as before.
+   */
+  fenced: string | null;
   onGiveBack: (path: string) => void;
   on: Partial<Record<RefusalExit, () => void>> & {
     showAgain: () => void;
@@ -72,7 +77,7 @@ function readingWords(reading: ObsidianPreview['answer']['reading']) {
  * made it old since — «Выбор изменён», «Книги изменились» — closes «Загрузить» until «Показать заново»; the word of the reading;
  * what «Загрузить» loads and what it does not; then the result of the load.
  */
-export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveBack, onSkipNote, preview, projectId, queueNote, sagaBooks, update, vault }: PreviewStepProps) {
+export function PreviewStep({ api, bookLimitBytes, choice, fenced, notTaken, on, onGiveBack, onSkipNote, preview, projectId, queueNote, sagaBooks, update, vault }: PreviewStepProps) {
   const client = useQueryClient();
   const toasts = useToasts();
   const [decisions, setDecisions] = useState<Decisions>(noDecisions);
@@ -107,7 +112,7 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
   });
 
   const acting = bookAction.isPending ? bookAction.variables : undefined;
-  const heading = <h2 className={styles.stepTitle} data-step-heading="" id="obsidian-step" tabIndex={-1}>{words.previewTitle}</h2>;
+  const heading = <h3 className={styles.stepTitle} data-step-heading="" id="obsidian-step" tabIndex={-1}>{words.previewTitle}</h3>;
   const back = <Button onClick={on.changeChoice} size="sm" variant="ghost"><ArrowLeft aria-hidden="true" size={14} />{words.changeChoice}</Button>;
   if (preview.isFetching) {
     return (
@@ -122,10 +127,10 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
     return (
       <section aria-labelledby="obsidian-step" className={styles.step}>
         {heading}
-        {refusal.failure ? <ErrorBlock {...loadFailureWords(preview.error)} onRetry={on.showAgain} title={words.previewFailed} /> : (
+        {refusal.failure ? <ErrorBlock {...loadFailureWords(preview.error)} onRetry={on.showAgain} retryReason={fenced} title={words.previewFailed} /> : (
           <Alert tone="error">
             <p className={styles.text}>{refusal.text}</p>
-            <RefusalExits exits={refusal.exits} on={{ ...on, retry: on.showAgain }} />
+            <RefusalExits exits={refusal.exits} on={{ ...on, retry: on.showAgain }} reason={fenced} />
           </Alert>
         )}
         <div className={styles.row}>{back}</div>
@@ -152,7 +157,7 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
   // The result of a load stands alone: no heading of the step and no word that the preview is old over it (board 44·53).
   if (started) {
     return (
-      <LoadResult bookLimitBytes={bookLimitBytes} books={writes.books} materials={writes.materials} preview={data} queueNote={queueNote}
+      <LoadResult bookLimitBytes={bookLimitBytes} books={writes.books} fenced={fenced} materials={writes.materials} preview={data} queueNote={queueNote}
         on={{ ...on, repeatMaterials: loading.repeatMaterials, repeatBooks: loading.repeatBooks, loadBooksAgain: loading.loadBooksAgain }} />
     );
   }
@@ -162,13 +167,13 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
       {stale ? (
         <div className={styles.row} role="status">
           <span className={styles.warning}>{stale}</span>
-          <Button onClick={on.showAgain} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />{words.showAgain}</Button>
+          <Button disabledReason={fenced} onClick={on.showAgain} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />{words.showAgain}</Button>
         </div>
       ) : null}
       <>
         {answer.books.length ? (
           <div className={styles.part}>
-            <h3>{words.books}</h3>
+            <h4>{words.books}</h4>
             {update.working ? <p className={styles.muted} role="status">{update.working}</p> : null}
             {queueNote ? (
               <Alert role="note" tone="warning">
@@ -189,7 +194,8 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
                   onToBooks: on.toBooks,
                   onSkipNote: book.state.kind === 'new' ? onSkipNote : null,
                   bookLimitBytes,
-                  linkReason: queueNote ? words.waitLoad : null,
+                  linkReason: queueNote ? words.waitLoad : fenced,
+                  unlinkReason: fenced,
                   onUpdate: (() => {
                     const ofSaga = sagaBooks.find((one) => one.id === book.state.bookId);
                     return ofSaga ? () => update.open(ofSaga) : null;
@@ -204,7 +210,7 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
         ) : null}
         {answer.materials.folders.length ? (
           <div className={styles.part}>
-            <h3>{words.records}</h3>
+            <h4>{words.records}</h4>
             <RecordsPart decisions={decisions} onDecisions={setDecisions} onSkip={onSkipNote} records={answer.materials.records} />
           </div>
         ) : null}
@@ -226,7 +232,7 @@ export function PreviewStep({ api, bookLimitBytes, choice, notTaken, on, onGiveB
           {will ? <p className={styles.text}>{will}</p> : null}
           {changed.map((book) => <p className={styles.muted} key={book.folder}>{words.notUpdated(book.state.title ?? book.title)}</p>)}
           <div className={styles.row}>
-            <Button disabledReason={stale ? words.whyStale : nothing} onClick={() => void loading.load(projectId, data, decisions, Boolean(queueNote))} variant="primary">
+            <Button disabledReason={stale ? words.whyStale : fenced ?? nothing} onClick={() => void loading.load(projectId, data, decisions, Boolean(queueNote))} variant="primary">
               <Download aria-hidden="true" size={16} />{words.load}
             </Button>
             {back}

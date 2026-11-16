@@ -52,10 +52,12 @@ export function linkReason(path: string, bookId: string, folders: readonly Obsid
  * waits while the saga loads books; a refusal is said in the window by its words. The page of the bridge opens it from the
  * block of the decisions; the menu of a book opens it in the second part.
  */
-export function LinkWindow({ api, book, books, folders, look, onClose, projectId, queueLive }: {
+export function LinkWindow({ api, book, books, fenced = null, folders, look, onClose, projectId, queueLive }: {
   api: Pick<ObsidianClient, 'linkBookToObsidianFolder'>;
   book: LinkedBook;
   books: readonly ObsidianVaultBook[];
+  /** The export of the saga holds the vault — the window of the page of the bridge waits for it (XW2.3); the menu of a book does not ask. */
+  fenced?: string | null;
   /** The folders of the look; null while it is read — from the menu of a book (specs/2026-11-15-desk-obsidian-book-web.md OU1.1). */
   folders: readonly ObsidianTreeFolder[] | null;
   /** The look read for the window: its repeats and its refusal. */
@@ -85,7 +87,7 @@ export function LinkWindow({ api, book, books, folders, look, onClose, projectId
   });
   const refusal = link.error ? refusalOf(link.error, 'link', (bookId) => titles.get(bookId) ?? '') : null;
   const lookRefusal = !folders && look?.error ? refusalOf(look.error, 'scan') : null;
-  const reason = queueLive ? words.waitLoad : !folders ? words.scanning : chosen === null ? words.pickFolder : null;
+  const reason = fenced ?? (queueLive ? words.waitLoad : !folders ? words.scanning : chosen === null ? words.pickFolder : null);
   return (
     <Dialog label={words.linkTitle} onDismiss={onClose} width={560}>
       <section className={styles.window}>

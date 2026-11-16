@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, type Mutation, type QueryClient } from '@tanstack/react-query';
 import { isApiStatusFailure } from '../../../entities/api-errors';
 import { manuscriptQueryKeys } from '../../../entities/manuscript/api';
 import { createIdempotencyKey, type CanonKeeperApiClient, type OperationRequest, type OperationResponse, type Schema } from '../../../shared/api';
@@ -13,7 +13,8 @@ import { createIdempotencyKey, type CanonKeeperApiClient, type OperationRequest,
  */
 export type ObsidianClient = Pick<CanonKeeperApiClient,
   'getObsidianVault' | 'beginObsidianVaultChoice' | 'unlinkObsidianVault' | 'scanObsidianVault' | 'previewObsidianImport'
-  | 'importObsidianMaterials' | 'importObsidianBooks' | 'linkBookToObsidianFolder' | 'unlinkBookFromObsidianFolder' | 'updateBookFromObsidian'>;
+  | 'importObsidianMaterials' | 'importObsidianBooks' | 'linkBookToObsidianFolder' | 'unlinkBookFromObsidianFolder' | 'updateBookFromObsidian'
+  | 'exportObsidianSaga'>;
 
 export type ObsidianVault = OperationResponse<'getObsidianVault', '200'>;
 export type ObsidianVaultBook = Schema<'ObsidianVaultBook'>;
@@ -27,6 +28,8 @@ export type ObsidianMaterialsLoad = OperationResponse<'importObsidianMaterials',
 export type ObsidianBooksLoad = OperationResponse<'importObsidianBooks', '200'>;
 /** The start of «Обновить из Obsidian»: the import Job of the update, and at a preview the fingerprint and the report of the folder. */
 export type ObsidianBookUpdate = OperationResponse<'updateBookFromObsidian', '202'>;
+/** The result of an export of the map of the saga into the vault (specs/2026-11-16-desk-obsidian-export-web.md XW2). */
+export type ObsidianExport = OperationResponse<'exportObsidianSaga', '200'>;
 
 /** Under the product root: a change of the author drops them. */
 export const obsidianKeys = {
@@ -45,6 +48,11 @@ export const obsidianKeys = {
    * server does not keep where an update came from, so the lines of its result know an update of this window from a folder by it.
    */
   update: ['canonkeeper', 'obsidian', 'update'] as const,
+  /**
+   * The export of the map of a saga in the cache of the mutations (specs/2026-11-16-desk-obsidian-export-web.md XW2.1, XW2.2): its
+   * run and result outlive the page, a page that comes back and the line of its end on another page see them.
+   */
+  export: ['canonkeeper', 'obsidian', 'export'] as const,
 };
 
 export function problemCode(error: unknown): string | null {
@@ -214,6 +222,29 @@ export function closeResults(client: QueryClient, projectId: string) {
     const queue = (mutation.state.data as { queue?: { id: string } | null } | undefined)?.queue?.id;
     const ours = key === JSON.stringify(obsidianKeys.loadMaterials) || key === JSON.stringify(obsidianKeys.loadBooks);
     if (ours && of === projectId && mutation.state.status !== 'pending' && !(queue && live.has(queue))) mutations.remove(mutation);
+  }
+}
+
+/** The exports closed while they went: the unlink or a new path came during them; their result is not shown when they end. */
+const closedRuns = new WeakSet<Mutation>();
+
+/** An export closed while it went (XW2.4): it fences the vault while it goes, its result is not shown. */
+export function isClosedRun(mutation: Mutation) {
+  return closedRuns.has(mutation);
+}
+
+/**
+ * The result of the export of the saga is closed (XW2.4): the unlink of the folder and a change of its path drop the exports of
+ * the saga that ended from the cache of the mutations, where they wait while the window is open, and close the one that goes —
+ * its result, of the folder before, is not shown when it ends. A new export closes the ones before it when it ends.
+ */
+export function closeExports(client: QueryClient, projectId: string) {
+  const mutations = client.getMutationCache();
+  for (const mutation of mutations.findAll({ mutationKey: obsidianKeys.export, exact: true })) {
+    const of = (mutation.state.variables as { projectId?: string } | undefined)?.projectId;
+    if (of !== projectId) continue;
+    if (mutation.state.status === 'pending') closedRuns.add(mutation);
+    else mutations.remove(mutation);
   }
 }
 

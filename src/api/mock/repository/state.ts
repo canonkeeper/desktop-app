@@ -86,6 +86,11 @@ export type MockState = {
   /** Главы каждой версии текста с актуальным текстовым индексом и с готовой карточкой. */
   indexedChapterIds: Record<SourceView, string[]>;
   cardedChapterIds: Record<SourceView, string[]>;
+  /**
+   * The card a chapter of a saga opened from a file brought with it (specs/2026-11-13-desk-sagafile.md SF2): the chapter whose
+   * card of the mock it carries — the opened chapters are copies of a chapter of the example.
+   */
+  cardsFromFile: Record<string, string>;
   jobs: Job[];
   importQueues: ImportQueue[];
   /** The place each volume of a queue was given at its start, after the books of the shelf (specs/2026-11-11-ux7-upload.md UP2.3). */
@@ -630,6 +635,7 @@ function createInitialState(): MockState {
       published: [bookOneChapter.id, foreignChapter.id],
       draft: [bookOneChapter.id, chapter.id, draftChapter.id, bookThreeChapter.id],
     },
+    cardsFromFile: {},
     jobs: [
       createJob({
         id: 'canon-text-index-job-1',

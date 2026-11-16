@@ -7,6 +7,7 @@ import { SearchField } from '../../ui/controls/SearchField';
 import { MoreMenu, type MoreMenuItem } from '../../ui/overlays/MoreMenu';
 import { Sheet } from '../../ui/overlays/Sheet';
 import { foundLine, mapCategories, searchNodes, type MapFilter } from './map-model';
+import { useSagaSlot, type MapMenuSlot } from './saga-slot';
 import styles from './SagaMap.module.css';
 
 const shownResults = 8;
@@ -208,15 +209,22 @@ function FiltersSheet(props: Pick<MapToolbarProps, 'counts' | 'hidden' | 'onTogg
   );
 }
 
+/** «⋯» of the map without items of an edition (the site). */
+const useNoMapItems: MapMenuSlot['useItems'] = () => [];
+
 /**
  * The panel of the map beside its heading: the search, the kinds with their counts, «Убранное с карты», «Что помнит
- * помощник» and «⋯» with «Как читать карту» (R3.3, R3.4, R6.3; specs/2026-11-11-ux8-map.md MP1.2, MP1.4). On a phone it is
- * one row with the heading.
+ * помощник» and «⋯» with «Как читать карту» and the items of the edition after it (R3.3, R3.4, R6.3; specs/2026-11-11-ux8-map.md
+ * MP1.2, MP1.4; specs/2026-11-16-desk-obsidian-export-web.md XW1.4). On a phone it is one row with the heading.
  */
 export function MapToolbar({ counts, hidden, navigate, onLegend, onOpenRemoved, onToggle, phone, removed, ...search }: MapToolbarProps) {
   const memory = memoryLink(navigate, search.projectId);
+  // The slot of an edition is given once over the page: the same hook runs at every render.
+  const useEditionItems = useSagaSlot()?.mapMenu?.useItems ?? useNoMapItems;
+  const editionItems = useEditionItems({ canEdit: search.canEdit, navigate, projectId: search.projectId });
   const items: MoreMenuItem[] = [
     { label: 'Как читать карту', icon: CircleHelp, run: onLegend },
+    ...editionItems,
     ...(phone && removed > 0 ? [{ label: `Убранное с карты · ${removed}`, icon: EyeOff, run: onOpenRemoved }] : []),
     ...(phone ? [{ label: 'Что помнит помощник', icon: Brain, run: () => navigate('/memory', { projectId: search.projectId, part: 'materials' }) }] : []),
   ];

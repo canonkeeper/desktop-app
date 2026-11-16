@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditionPageProps } from '../../../app/edition';
 import { loadFailureWords } from '../../../entities/api-errors';
@@ -16,17 +16,24 @@ import { useShellActions } from '../../../ui/shell/shell-actions';
 import { choiceState, emptyMemory, type ChoiceMemory, type ChoiceState } from './choice';
 import { forgetChoice, keepChoice, readChoice } from './choice-memory';
 import { ChoiceStep } from './ChoiceStep';
+import { ExportPart } from './ExportPart';
 import { Availability, FolderLine, useAvailability, useFolderChoice, VaultStart } from './FolderPart';
 import { LoadLine, useLoadGoing } from './LoadResult';
-import { closeResults, dropReads, liveBookIds, obsidianKeys, readPreview, treeQueryOptions, useObsidianVault, usePreview } from './obsidian-api';
+import {
+  closeExports, closeResults, dropReads, liveBookIds, obsidianKeys, readPreview, treeQueryOptions, useObsidianVault, usePreview,
+} from './obsidian-api';
 import { PreviewStep } from './PreviewStep';
 import { useObsidianBookUpdate } from './update-source';
-import { updateWords, words } from './words';
+import { useExportGoing } from './use-export';
+import { useSagaLoadGoing } from './use-load';
+import { exportWords, updateWords, words } from './words';
 import styles from './Obsidian.module.css';
 
 /**
- * «Книги и записи из Obsidian» (specs/2026-11-15-desk-obsidian-web.md OW1–OW4; board 44·48–44·53): the page of the bridge of the
- * saga of the address in «Книги» of the app. Only an author who may change the saga opens it; anyone else lands on «Книги».
+ * «Obsidian» (specs/2026-11-15-desk-obsidian-web.md OW1–OW4, specs/2026-11-16-desk-obsidian-export-web.md XW1; board 44·48–44·53,
+ * 44·59–44·65): the page of the bridge of the saga of the address in «Книги» of the app — under the line of the folder the part
+ * «Книги и записи из Obsidian» with its steps, and under it the part «Карта саги в Obsidian». Only an author who may change the
+ * saga opens it; anyone else lands on «Книги».
  */
 export function ObsidianPage({ api, navigate, route, user }: EditionPageProps) {
   const requested = route.query.get('projectId');
@@ -66,7 +73,11 @@ function Bridge({ api, author, books, navigate, project, route }: Omit<EditionPa
     setMemoryState(next);
     keepChoice(author, projectId, next);
   }, [author, projectId]);
-  const choice = useFolderChoice(api, projectId, () => dropReads(client, projectId));
+  // A new path of the folder drops the reads of the bridge and closes the result of the export (XW2.4).
+  const choice = useFolderChoice(api, projectId, () => {
+    dropReads(client, projectId);
+    closeExports(client, projectId);
+  });
   const { refetch: refetchVault } = vaultQuery;
   const rereadVault = useCallback(() => void refetchVault(), [refetchVault]);
   const availability = useAvailability(vault, rereadVault);
@@ -78,7 +89,18 @@ function Bridge({ api, author, books, navigate, project, route }: Omit<EditionPa
   const preview = usePreview(api, projectId);
   const loadGoing = useLoadGoing(preview.data?.id);
   // The look the choice step read, observed here without a read of its own: the preview of another choice is old (OW3.4).
-  const tree = useQuery({ ...treeQueryOptions(api, projectId), enabled: false }).data;
+  const look = useQuery({ ...treeQueryOptions(api, projectId), enabled: false });
+  const tree = look.data;
+  // The one fence of the bridge seen beforehand (XW2.3): while the export of the saga goes, the choice reads nothing and its
+  // buttons wait; while «Загрузить», a look or a preview of the saga goes, the button of the export waits.
+  const exporting = useExportGoing(projectId);
+  const fenced = exporting ? exportWords.going : null;
+  const loading = useSagaLoadGoing(projectId);
+  const scanning = useIsFetching({ queryKey: obsidianKeys.tree(projectId) }) > 0;
+  const exportWaits = loading ? words.loadGoing : scanning ? words.scanning : preview.isFetching ? words.whyReading : null;
+  // The part of the export stands in its place once the step above it shows what it read (XW1.3).
+  const stepRead = step === 'choice' ? (look.data !== undefined || look.isError) && !scanning : !preview.isFetching;
+  const exportSettled = availability === 'missing' || fenced !== null || stepRead;
 
   // The live load of «Книги» of the saga: it goes, or a book waits for the author (OW3.6, OW2.10).
   const live = [...(queues.data?.data ?? [])].filter((queue) => ['uploading', 'draft', 'running'].includes(queue.status))[0] ?? null;
@@ -126,10 +148,11 @@ function Bridge({ api, author, books, navigate, project, route }: Omit<EditionPa
     setUnlinking(true);
     try {
       await api.unlinkObsidianVault(projectId);
-      // The unlink drops the remembered choice and the reads of the bridge of the saga (OW1.6).
+      // The unlink drops the remembered choice and the reads of the bridge of the saga (OW1.6), and closes the result of the export (XW2.4).
       forgetChoice(author, projectId);
       setMemoryState(emptyMemory);
       dropReads(client, projectId);
+      closeExports(client, projectId);
       await client.invalidateQueries({ queryKey: obsidianKeys.vault(projectId) });
       setUnlinkAsked(false);
       toasts.push({ message: words.unlinked, tone: 'success' });
@@ -148,14 +171,16 @@ function Bridge({ api, author, books, navigate, project, route }: Omit<EditionPa
       {vaultQuery.isError && !vault ? <ErrorBlock {...loadFailureWords(vaultQuery.error)} onRetry={rereadVault} retrying={vaultQuery.isRefetching} title={words.scanFailed} /> : null}
       {vault && !vault.linked ? <VaultStart choice={choice} vault={vault} /> : null}
       {vault?.linked ? <>
-        <FolderLine choice={choice} onUnlink={() => setUnlinkAsked(true)} vault={vault} />
-        <Availability choice={choice} onCheck={rereadVault} state={availability} vault={vault} />
+        <FolderLine choice={choice} fenced={fenced} onUnlink={() => setUnlinkAsked(true)} vault={vault} />
+        <Availability choice={choice} fenced={fenced} onCheck={rereadVault} state={availability} vault={vault} />
+        {/* The part «Книги и записи из Obsidian» over any of its steps; without the folder in its place it has none (XW1.1). */}
+        {availability === 'missing' ? null : <h2 className={styles.partTitle}>{words.partTitle}</h2>}
         {availability === 'missing' ? null : step === 'choice' ? <>
           <LoadLine onOpen={() => goStep('preview')} previewId={preview.data?.id} />
-          <ChoiceStep api={api} loadGoing={loadGoing} memory={memory} onChange={() => void choice.choose(vault)} onMemory={setMemory} onShow={show}
+          <ChoiceStep api={api} fenced={fenced} loadGoing={loadGoing} memory={memory} onChange={() => void choice.choose(vault)} onMemory={setMemory} onShow={show}
             previewReading={preview.isFetching} projectId={projectId} queueLive={Boolean(live)} vault={vault} />
         </> : (
-          <PreviewStep api={api} bookLimitBytes={constraints?.maxFileSizeBytes ?? null} choice={choiceNow} notTaken={notTaken} onGiveBack={giveBack} onSkipNote={skipNote} preview={preview}
+          <PreviewStep api={api} bookLimitBytes={constraints?.maxFileSizeBytes ?? null} choice={choiceNow} fenced={fenced} notTaken={notTaken} onGiveBack={giveBack} onSkipNote={skipNote} preview={preview}
             projectId={projectId} queueNote={queueNote} sagaBooks={books} vault={vault}
             update={{
               open: (book) => bookUpdate.open(book, folderUpdate.source), working: bookUpdate.working,
@@ -172,11 +197,14 @@ function Bridge({ api, author, books, navigate, project, route }: Omit<EditionPa
               },
             }} />
         )}
+        <ExportPart api={api} focus={route.query.get('part') === 'export'} missing={availability === 'missing'} navigate={navigate} projectId={projectId}
+          settled={exportSettled} vault={vault} waits={exportWaits} />
       </> : null}
       {bookUpdate.element}
       {folderUpdate.overlay}
       {unlinkAsked && vault?.linked ? (
-        <Confirm action={words.unlink} busy={unlinking} onCancel={() => setUnlinkAsked(false)} onConfirm={() => void unlink()} title={words.unlinkTitle(project.title)}>
+        <Confirm action={words.unlink} also={exporting ? exportWords.unlinkGoing : undefined} busy={unlinking} onCancel={() => setUnlinkAsked(false)}
+          onConfirm={() => void unlink()} title={words.unlinkTitle(project.title)}>
           {words.unlinkText}
         </Confirm>
       ) : null}

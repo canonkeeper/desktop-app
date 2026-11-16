@@ -130,6 +130,17 @@ export function useLoadOf(previewId: string | undefined) {
   return { materials: previewId ? last(materials) : null, books: previewId ? last(books) : null };
 }
 
+/**
+ * A write of «Загрузить» of the saga goes now, of whichever preview (specs/2026-11-16-desk-obsidian-export-web.md XW2.3): it holds
+ * the vault of the saga, so the export waits for it.
+ */
+export function useSagaLoadGoing(projectId: string) {
+  const of = (mutation: Mutation) => (mutation.state.variables as LoadWrite<unknown> | undefined)?.projectId === projectId;
+  const materials = useMutationState({ filters: { mutationKey: obsidianKeys.loadMaterials, status: 'pending', predicate: of } });
+  const books = useMutationState({ filters: { mutationKey: obsidianKeys.loadBooks, status: 'pending', predicate: of } });
+  return materials.length + books.length > 0;
+}
+
 /** Every write of «Загрузить» of this window, for the line on another page (OW4.1). */
 export function useAllLoads() {
   const materials = useMutationState({ filters: { mutationKey: obsidianKeys.loadMaterials }, select: (mutation) => ({ id: mutation.mutationId, ...stateOf<MaterialsWrite, ObsidianMaterialsLoad>(mutation) }) });

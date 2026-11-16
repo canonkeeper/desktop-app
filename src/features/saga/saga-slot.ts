@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { SagaChapterRef, SourceView } from '../../entities/saga/api';
 import type { RouteNavigate } from '../../shared/navigation/app-route';
+import type { MoreMenuItem } from '../../ui/overlays/MoreMenu';
 
 export interface SagaDrawingsOptions {
   canEdit: boolean;
@@ -55,12 +56,21 @@ export interface MaterialsImportSlot {
 }
 
 /**
- * The closed blocks of the saga map and of «Что помнит помощник» (specs/2026-11-07-desktop-app.md DA16.4, DA13.2); an absent
- * one is not shown.
+ * The items an edition adds to «⋯» of the panel of the map, after «Как читать карту» — «В Obsidian…» of the app
+ * (specs/2026-11-16-desk-obsidian-export-web.md XW1.4). A hook, called at every render of the panel; a reader gets none.
+ */
+export interface MapMenuSlot {
+  useItems: (options: { canEdit: boolean; navigate: RouteNavigate; projectId: string }) => MoreMenuItem[];
+}
+
+/**
+ * The closed blocks of the saga map and of «Что помнит помощник» (specs/2026-11-07-desktop-app.md DA16.4, DA13.2) and the items
+ * of «⋯» of the map an edition adds; an absent one is not shown.
  */
 export interface SagaSlot {
   drawings?: SagaDrawingsSlot;
   materialsImport?: MaterialsImportSlot;
+  mapMenu?: MapMenuSlot;
 }
 
 const SagaSlotContext = createContext<SagaSlot | null>(null);

@@ -253,7 +253,8 @@ describe('the look over the folder', () => {
     const real = api.scanObsidianVault.bind(api);
     const scans = vi.spyOn(api, 'scanObsidianVault').mockImplementation((projectId) => new Promise((resolve) => { answer = () => resolve(real(projectId)); }));
     const view = renderAt(api, page(saga));
-    expect((await screen.findByRole('status', {}, { timeout: 10_000 })).textContent).toContain(words.scanning);
+    // The line of the step is a status of its own (the part of the export under the step has its own).
+    expect((await screen.findByText(words.scanning, undefined, { timeout: 10_000 })).closest('[role="status"]')).toBeTruthy();
     await until(() => expect(screen.getByText(words.scanLong)).toBeTruthy());
     view.unmount();
     answer();
@@ -330,10 +331,12 @@ describe('the look over the folder', () => {
 
   it('reads the folder of the saga again on `not_linked`, says the limit of requests and a failure by its block', async () => {
     const { api, saga } = await linkedApp();
-    vi.spyOn(api, 'scanObsidianVault').mockRejectedValueOnce(new MockApiError(409, 'not linked', 'scanObsidianVault', 'obsidian.not_linked'));
+    // The folder unlinked while the look went: the look is refused `not_linked` — the page reads the folder again, whenever.
+    vi.spyOn(api, 'scanObsidianVault').mockImplementationOnce(async () => {
+      await api.unlinkObsidianVault(saga);
+      throw new MockApiError(409, 'not linked', 'scanObsidianVault', 'obsidian.not_linked');
+    });
     renderAt(api, page(saga));
-    await heading();
-    await api.unlinkObsidianVault(saga);
     expect(await screen.findByText(words.startText, undefined, { timeout: 10_000 })).toBeTruthy();
     cleanup();
 

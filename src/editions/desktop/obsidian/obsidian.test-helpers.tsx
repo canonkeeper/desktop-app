@@ -8,6 +8,7 @@ import { createMockApiClient, type MockScenarioControl } from '../../../api/mock
 import { AppShell } from '../../../app/shell/AppShell';
 import type { CurrentUser } from '../../../entities/session/api';
 import type { FolderChoice } from '../../../shared/desktop/shell';
+import { bytesOf } from '../../../shared/files/zip';
 import { createAppRoute, parseRoute, type AppRoute, type RouteNavigate } from '../../../shared/navigation/app-route';
 import { ToastsProvider } from '../../../ui/feedback/Toast';
 import { SagaSectionsProvider } from '../../../ui/saga-sections';
@@ -48,7 +49,7 @@ export function withoutShell() {
 const user = { id: 'user-local' } as CurrentUser;
 
 /** A page of the edition at an address, which moves when the page navigates — as the router of the app. */
-export function renderAt(api: TheApp, address: string, options: { client?: QueryClient; page?: 'manuscript' | 'memory'; notices?: boolean } = {}) {
+export function renderAt(api: TheApp, address: string, options: { client?: QueryClient; page?: 'manuscript' | 'memory' | 'saga'; notices?: boolean } = {}) {
   const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const steps: Array<{ path: string; query: Record<string, string | undefined> | undefined; options: Parameters<RouteNavigate>[2] }> = [];
   let go: (route: AppRoute) => void = () => undefined;
@@ -119,6 +120,19 @@ export async function settle(api: TheApp, saga: string) {
     if (!live.length) return;
     for (const job of live) await api.getJob(job.id);
   }
+}
+
+/**
+ * A saga of the app the helper has read — opened from a saga file, its chapters with the cards they brought — linked with the
+ * example vault (specs/2026-11-16-desk-obsidian-export-web.md XW4.2); the saga it was saved from is deleted, so it keeps its name.
+ */
+export async function aSagaWithCards(scenario: Partial<MockScenarioControl> = {}) {
+  const { api, saga: first } = await theApp(scenario);
+  const archive = await api.getSagaArchive(first);
+  await api.deleteProject(first);
+  const opened = await api.openSagaArchive(new File([(await bytesOf(archive.blob)).slice()], archive.fileName), { idempotencyKey: 'idem-export-saga-file' });
+  await api.beginObsidianVaultChoice(opened.projectId);
+  return { api, saga: opened.projectId, folder: `CanonKeeper/${opened.name}` };
 }
 
 /** The books of folders of the example loaded from them, their load of «Книги» at its end. */

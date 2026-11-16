@@ -6,13 +6,16 @@ import { formatCount, pluralize } from '../../../ui/copy';
  * The one table of the words of the bridge with an Obsidian vault (specs/2026-11-15-desk-obsidian-web.md, Data; board 44·3,
  * 44·47–44·54): the page of the bridge, its windows, its lines in the area of the toasts and the entries of «Книги» and «Ваши
  * материалы». The name of the thing is «папка Obsidian»; «хранилище Obsidian» only where the author must know the word of
- * Obsidian itself (OW7.3).
+ * Obsidian itself (OW7.3). The page goes both ways — «Obsidian», its parts «Книги и записи из Obsidian» and «Карта саги в
+ * Obsidian» (specs/2026-11-16-desk-obsidian-export-web.md XW1.1; board 44·49, 44·59).
  */
 export const words = {
   from: 'Из Obsidian…',
   fromCaption: 'Пишете в Obsidian? Возьму книги и записи прямо из папки с заметками',
-  pageTitle: 'Книги и записи из Obsidian',
-  startText: 'Выберите папку хранилища Obsidian — ту, которую вы открываете в Obsidian. CanonKeeper читает в ней только заметки (.md) и ничего в ней не меняет.',
+  pageTitle: 'Obsidian',
+  startText: 'Выберите папку хранилища Obsidian — ту, которую вы открываете в Obsidian. Из неё CanonKeeper берёт книги и записи, а пишет только в свою папку «CanonKeeper» — когда вы выгружаете карту саги.',
+  /** The part of the page that takes books and records from the folder: over any of its steps. */
+  partTitle: 'Книги и записи из Obsidian',
   choose: 'Выбрать папку Obsidian…',
   windowOpen: 'Окно выбора папки открыто',
   expired: 'Папка не выбрана. Если окно выбора папки ещё открыто — закройте его и попробуйте ещё раз.',
@@ -256,6 +259,94 @@ export const updateWords = {
   },
   edits: { made: 'Правки, сделанные в приложении', mark: 'есть правки в приложении' },
 } as const;
+
+/**
+ * The words of the export of the map of the saga and of the notes of its chapters into the vault (specs/2026-11-16-desk-obsidian-
+ * export-web.md, Data; board 44·59–44·67): the part «Карта саги в Obsidian», its run, result and question, its refusals, the
+ * reasons its button waits, the line of its end on another page and the item of the map. The files of the export are «заметки
+ * CanonKeeper», the author's own — «ваши заметки». Numbers stand after a label — «Созданы: 124» —, so no word agrees with one.
+ */
+export const exportWords = {
+  title: 'Карта саги в Obsidian',
+  text: 'CanonKeeper запишет в хранилище Obsidian заметки о саге: по заметке на каждого героя, место, фракцию и предмет карты и на каждую главу, которую прочитал помощник, — со ссылками друг на друга. Они лягут в свою папку внутри «CanonKeeper»; другие ваши заметки CanonKeeper не трогает.',
+  edits: 'Эти заметки ведёт CanonKeeper: следующая выгрузка их обновит. Свои мысли пишите в своих заметках со ссылкой на заметку CanonKeeper. Заметку CanonKeeper, которую вы поправили, выгрузка без вашего слова не перепишет.',
+  first: 'Выгрузить в Obsidian',
+  again: 'Выгрузить снова',
+  last: (when: string, folder: string) => `Последняя выгрузка — ${when} · папка «${folder}»`,
+  /** The folder is known, the time of an export that ended is not: a first export that did not end, a new path of the vault. */
+  folder: (folder: string) => `Папка выгрузки — «${folder}»`,
+  working: 'Выгружаю карту саги в Obsidian…',
+  leave: 'Можно уйти со страницы: выгрузка продолжится.',
+  done: (folder: string) => `Выгружено в папку «${folder}»`,
+  created: 'Созданы',
+  updated: 'Обновлены',
+  moved: 'Убраны в «_Удалено»',
+  kept: 'Не обновлены — вы их правили',
+  skipped: 'Не прочитались — оставлены как есть',
+  /** «Созданы: 124» — a label and its number. */
+  group: (label: string, count: number) => `${label}: ${count.toLocaleString('ru-RU')}`,
+  movedNote: 'В «_Удалено» уходят заметки о героях и главах, которых больше нет на карте или в саге, и ваши заменённые версии. Ничего не удаляется.',
+  replace: 'Заменить изменённые…',
+  questionTitle: 'Заменить заметки, которые вы правили?',
+  question: (count: number, folder: string) => `Ваши версии (${count.toLocaleString('ru-RU')}) уйдут в папку «_Удалено» внутри «${folder}» — их можно открыть там же, в Obsidian. На место живых героев и глав лягут свежие заметки CanonKeeper.`,
+  confirm: 'Заменить',
+  partial: 'Выгрузка не закончилась — записано не всё. Выгрузите снова: записанное останется, лишнего не появится.',
+  updating: 'Карта саги обновляется — выгрузить можно, когда она будет готова',
+  noCards: 'Выгружать пока нечего: помощник ещё не прочитал ни одной главы',
+  noBooks: 'Выгружать пока нечего: в саге ещё нет книг',
+  unsafe: (folder: string) => `Папку «${folder}» записать нельзя: на пути к ней вместо папки стоит файл или ярлык. Переименуйте его в Obsidian и выгрузите снова.`,
+  unsafeNoName: 'Папку выгрузки внутри «CanonKeeper» записать нельзя: на пути к ней вместо папки стоит файл или ярлык. Переименуйте его в Obsidian и выгрузите снова.',
+  manifest: (folder: string) => `CanonKeeper не узнаёт свою папку «${folder}»: её служебный файл повреждён. Перенесите свои правки из неё, удалите папку в Obsidian и выгрузите снова — папка появится заново.`,
+  slow: 'Папка Obsidian отвечает слишком долго — ничего не записано. Если она на облачном диске, сохраните её на этом устройстве и выгрузите снова.',
+  /** Why the buttons of the part «Книги и записи из Obsidian» and «Сменить папку…» wait while an export goes (XW2.3). */
+  going: 'Идёт выгрузка в Obsidian…',
+  unlinkGoing: 'Выгрузка, которая идёт, не закончится.',
+  ended: (what: string) => `Выгрузка в Obsidian закончена: ${what}`,
+  notEnded: 'Выгрузка в Obsidian не закончилась',
+  mapItem: 'В Obsidian…',
+  /** The name of the line of the reading under the part, as «Книги» name it (board 44·64). */
+  reading: 'Чтение саги',
+} as const;
+
+/** Why a file of the folder of the export did not read (XW2.6): every reason of `ObsidianExportSkip`. */
+export const exportSkipWords: Readonly<Record<Schema<'ObsidianExportSkip'>['reason'], string>> = {
+  cloud_only: 'лежат только в облаке — сохраните папку на этом устройстве и выгрузите снова',
+  busy: 'открыты в другой программе — закройте их и выгрузите снова',
+  unreadable: 'не открылись: нет прав на чтение',
+  link: 'это ярлыки на другие файлы — по ним CanonKeeper не ходит',
+};
+
+type ExportCounts = Record<'created' | 'updated' | 'unchanged' | 'moved', { count: number }>;
+
+/**
+ * «Создано 124 · обновлено 14 · без изменений 602 · убрано в «_Удалено» 3» (XW2.4): the groups in this order, only those with
+ * files, the first word with a capital; what the author changed is said apart. Null when the run wrote and kept nothing.
+ */
+export function exportSummary(exported: ExportCounts) {
+  const parts = ([
+    ['создано', exported.created.count], ['обновлено', exported.updated.count], ['без изменений', exported.unchanged.count],
+    ['убрано в «_Удалено»', exported.moved.count],
+  ] as const).filter(([, count]) => count > 0).map(([label, count]) => `${label} ${count.toLocaleString('ru-RU')}`);
+  if (!parts.length) return null;
+  const line = parts.join(' · ');
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+/** The name of a file of the export (XW2.4): its path from the folder of the export without the last «.md». */
+export function exportName(path: string) {
+  return path.toLowerCase().endsWith('.md') ? path.slice(0, -3) : path;
+}
+
+/**
+ * The line of the end of an export on another page (XW2.8): an export that ended — what it created and updated, by «, », or what
+ * stayed unchanged when it did neither; one that did not end or was refused — «не закончилась».
+ */
+export function exportEndLine(exported: (ExportCounts & { complete: boolean }) | null) {
+  if (!exported?.complete) return exportWords.notEnded;
+  const parts = ([['создано', exported.created.count], ['обновлено', exported.updated.count]] as const)
+    .filter(([, count]) => count > 0).map(([label, count]) => `${label} ${count.toLocaleString('ru-RU')}`);
+  return exportWords.ended(parts.length ? parts.join(', ') : `без изменений ${exported.unchanged.count.toLocaleString('ru-RU')}`);
+}
 
 /** «А», «Б»: names in quotes, by a comma. */
 export function quoted(names: readonly string[]) {

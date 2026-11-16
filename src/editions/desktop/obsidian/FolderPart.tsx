@@ -88,7 +88,8 @@ export function VaultStart({ choice, vault }: { choice: FolderChoiceControl; vau
  * The line of the chosen folder (OW1.4; board 44·49): its name, its whole path — the one absolute path the page shows, never
  * kept —, «Сменить папку…» with its note, and «⋯» → «Отвязать папку…».
  */
-export function FolderLine({ choice, onUnlink, vault }: { choice: FolderChoiceControl; onUnlink: () => void; vault: ObsidianVault }) {
+/** `fenced` — why «Сменить папку…» waits: the export of the saga goes (specs/2026-11-16-desk-obsidian-export-web.md XW2.3). */
+export function FolderLine({ choice, fenced = null, onUnlink, vault }: { choice: FolderChoiceControl; fenced?: string | null; onUnlink: () => void; vault: ObsidianVault }) {
   return (
     <section aria-label={words.folderName(vault.name ?? '')} className={styles.folderLine}>
       <FolderOpen aria-hidden="true" size={18} />
@@ -99,7 +100,7 @@ export function FolderLine({ choice, onUnlink, vault }: { choice: FolderChoiceCo
       <div className={styles.folderSide}>
         <div className={styles.folderButtons}>
           {choice.available ? (
-            <Button disabledReason={choice.open ? words.windowOpen : null} onClick={() => void choice.choose(vault)} size="sm" variant="outline">
+            <Button disabledReason={choice.open ? words.windowOpen : fenced} onClick={() => void choice.choose(vault)} size="sm" variant="outline">
               <FolderSearch aria-hidden="true" size={14} />{words.change}
             </Button>
           ) : null}
@@ -137,8 +138,9 @@ export function useAvailability(vault: ObsidianVault | undefined, reread: () => 
   return unknown ? (rereads >= unknownRereads ? 'slow' : 'checking') : vault?.availability === 'missing' ? 'missing' : 'available';
 }
 
-export function Availability({ choice, onCheck, state, vault }: {
+export function Availability({ choice, fenced = null, onCheck, state, vault }: {
   choice: FolderChoiceControl;
+  fenced?: string | null;
   onCheck: () => void;
   state: ReturnType<typeof useAvailability>;
   vault: ObsidianVault;
@@ -152,7 +154,7 @@ export function Availability({ choice, onCheck, state, vault }: {
       <div className={styles.row}>
         <Button onClick={onCheck} size="sm" variant="outline"><RotateCw aria-hidden="true" size={14} />{words.checkAgain}</Button>
         {choice.available ? (
-          <Button disabledReason={choice.open ? words.windowOpen : null} onClick={() => void choice.choose(vault)} size="sm" variant="ghost">
+          <Button disabledReason={choice.open ? words.windowOpen : fenced} onClick={() => void choice.choose(vault)} size="sm" variant="ghost">
             <FolderSearch aria-hidden="true" size={14} />{words.change}
           </Button>
         ) : null}

@@ -231,7 +231,8 @@ describe('the result of «Загрузить»', () => {
     }));
     const view = await previewed(api, saga, { notices: true });
     load();
-    expect((await screen.findByRole('status')).textContent).toContain(words.saving);
+    // The line of the load is a status of its own (the part of the export under the step has its own, XW2.2).
+    expect((await screen.findByText(words.saving)).closest('[role="status"]')).toBeTruthy();
     act(() => view.go(`/manuscript/books?projectId=${saga}`));
     const reads = vi.spyOn(view.client, 'invalidateQueries');
     answerRecords();
@@ -270,6 +271,8 @@ describe('the result of «Загрузить»', () => {
     }
     act(() => view.go(`/manuscript/obsidian?projectId=${saga}&step=preview`));
     expect(await screen.findByText(/^Создано 2/u, undefined, { timeout: 10_000 })).toBeTruthy();
+    // The result stands without the heading of its step: its parts are h3 under the h2 of the part (no h2 → h4).
+    expect(screen.getByRole('heading', { level: 3, name: words.records })).toBeTruthy();
     expect(screen.queryByRole('button', { name: words.load })).toBeNull();
     // No heading «Что получится» over the result (board 44·53).
     expect(screen.queryByRole('heading', { name: words.previewTitle })).toBeNull();
@@ -307,7 +310,8 @@ describe('the result of «Загрузить»', () => {
     }));
     const view = await previewed(api, saga, { notices: true });
     load();
-    expect((await screen.findByRole('status')).textContent).toContain(words.saving);
+    // The line of the load is a status of its own (the part of the export under the step has its own, XW2.2).
+    expect((await screen.findByText(words.saving)).closest('[role="status"]')).toBeTruthy();
     // «Из Obsidian…» leads to the choice of the folders: it says the load that goes, and «Показать, что получится» waits for it.
     act(() => view.go(`/manuscript/obsidian?projectId=${saga}`));
     await screen.findByRole('heading', { name: words.choiceTitle('Северный предел') }, { timeout: 10_000 });

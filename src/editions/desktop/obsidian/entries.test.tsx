@@ -8,8 +8,8 @@ import { createAppRoute } from '../../../shared/navigation/app-route';
 import { FakeWebSocket } from '../../../test/FakeWebSocket';
 import { reasonOf } from '../../../test/disabled-reason';
 import { ToastsProvider } from '../../../ui/feedback/Toast';
-import { renderAt, theApp, withoutShell, type TheApp } from './obsidian.test-helpers';
-import { words } from './words';
+import { aSagaWithCards, renderAt, theApp, withoutShell, type TheApp } from './obsidian.test-helpers';
+import { exportWords, words } from './words';
 
 beforeEach(() => vi.stubGlobal('WebSocket', FakeWebSocket));
 afterEach(() => {
@@ -125,5 +125,32 @@ describe('the entries of the bridge with Obsidian', () => {
     render(<QueryClientProvider client={new QueryClient()}><InShell api={api} route={createAppRoute('/manuscript/obsidian', { projectId: saga })}><p>Страница моста</p></InShell></QueryClientProvider>);
     await screen.findByText('Страница моста');
     expect(screen.queryByRole('navigation', { name: 'Возврат' })).toBeNull();
+  });
+});
+
+// specs/2026-11-16-desk-obsidian-export-web.md XW1.4 (board 44·67): «В Obsidian…» in «⋯» of the panel of the map, after «Как читать
+// карту», for an editor of the saga — it leads to the part of the export with the way back to the map; a reader has none.
+describe('«В Obsidian…» of the map', () => {
+  it('stands after «Как читать карту» for an editor and leads to the part of the export, the way back «К карте»', { timeout: 20_000 }, async () => {
+    const { api, saga } = await aSagaWithCards();
+    const { steps } = renderAt(api, `/saga?projectId=${saga}`, { page: 'saga' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Ещё' }, { timeout: 15_000 }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Как читать карту', exportWords.mapItem]);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: exportWords.mapItem }));
+    expect(steps.at(-1)).toEqual({ path: '/manuscript/obsidian', query: { projectId: saga, part: 'export' }, options: { from: { section: 'saga' } } });
+    cleanup();
+    const route = { ...createAppRoute('/manuscript/obsidian', { projectId: saga, part: 'export' }), from: { section: 'saga' as const } };
+    render(<QueryClientProvider client={new QueryClient()}><InShell api={api} route={route}><p>Страница моста</p></InShell></QueryClientProvider>);
+    expect(within(await screen.findByRole('navigation', { name: 'Возврат' })).getByRole('button').textContent).toBe('К карте');
+  });
+
+  it('is not given to a reader of the saga', { timeout: 20_000 }, async () => {
+    const { api, saga } = await aSagaWithCards();
+    api.setScenario({ ...api.getScenario(), actorRole: 'viewer' });
+    renderAt(api, `/saga?projectId=${saga}`, { page: 'saga' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Ещё' }, { timeout: 15_000 }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Как читать карту']);
   });
 });

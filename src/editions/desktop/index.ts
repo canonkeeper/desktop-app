@@ -15,7 +15,8 @@ import { LaunchNotes } from './launch-notes';
 import { obsidianPath } from './obsidian/address';
 import { LinkVisits } from './open-place/link-visits';
 import { openPlacePath } from './open-place/OpenPlace';
-import { desktopMemoryPage } from './obsidian/entries';
+import { desktopMemoryPage, desktopSagaPage } from './obsidian/entries';
+import { ExportOutcome } from './obsidian/ExportOutcome';
 import { LoadOutcome } from './obsidian/LoadOutcome';
 import { AppBookUpdateWords } from './obsidian/update-words';
 import { ReadingClientProvider } from './reading/reading-api';
@@ -63,10 +64,11 @@ function desktopAccount({ api, navigate, route }: EditionAccountInput): EditionA
     ))),
     // The lines and windows that open by themselves wait for «Добро пожаловать» (specs/2026-11-15-desk-updates-web.md UW1.4).
     // The end of a load from an Obsidian folder on another page, and the read of the folder of the saga once its books are in
-    // (specs/2026-11-15-desk-obsidian-web.md OW4.1, OW4.5).
+    // (specs/2026-11-15-desk-obsidian-web.md OW4.1, OW4.5); the end of an export to Obsidian on another page
+    // (specs/2026-11-16-desk-obsidian-export-web.md XW2.8).
     notices: createElement(Fragment, null,
       createElement(AfterWelcome, { api }, createElement(LaunchNotes, { api }), createElement(SagaOpened, { navigate })),
-      createElement(LoadOutcome, { api, navigate, route })),
+      createElement(LoadOutcome, { api, navigate, route }), createElement(ExportOutcome, { navigate, route })),
     overlay: createElement(Welcome, { api }),
   };
 }
@@ -81,12 +83,15 @@ const editorRoute: EditionRoute = {
 };
 
 /**
- * The page of the bridge with Obsidian of a saga (specs/2026-11-15-desk-obsidian-web.md OW1.1): «Книги и записи из Obsidian», its
- * step in the address. The site has no such route.
+ * The page of the bridge with Obsidian of a saga (specs/2026-11-15-desk-obsidian-web.md OW1.1): «Obsidian», its step in the
+ * address, and its part «Карта саги в Obsidian» (`part=export`, specs/2026-11-16-desk-obsidian-export-web.md XW1.3). The site has no
+ * such route.
  */
 const obsidianRoute: EditionRoute = {
   path: obsidianPath,
-  validateSearch: z.object({ projectId: searchValue, step: z.enum(['preview']).optional().catch(undefined) }).catch({}).parse,
+  validateSearch: z.object({
+    projectId: searchValue, step: z.enum(['preview']).optional().catch(undefined), part: z.enum(['export']).optional().catch(undefined),
+  }).catch({}).parse,
 };
 
 /**
@@ -104,12 +109,13 @@ const openPlaceRoute: EditionRoute = {
  * The desktop app (specs/2026-11-07-desktop-app.md DA16.4): only the open sections, their pages without closed blocks; «Книги»
  * with the editor of a chapter without the helper (specs/2026-11-13-desk-editor.md), the page a link `canonkeeper://` opens
  * (specs/2026-11-16-desk-app-links.md) and the page of the bridge with Obsidian,
- * «Ваши материалы» with its entry (specs/2026-11-15-desk-obsidian-web.md), and «Настройки» in the place of the account menu
+ * «Ваши материалы» with its entry (specs/2026-11-15-desk-obsidian-web.md), «Карта» with «В Obsidian…» in its «⋯»
+ * (specs/2026-11-16-desk-obsidian-export-web.md XW1.4), and «Настройки» in the place of the account menu
  * (specs/2026-11-13-desk-settings.md ST1).
  */
 export const edition: Edition = {
   routes: [...openRoutes, editorRoute, obsidianRoute, openPlaceRoute, settingsRoute],
-  pages: { ...openPages, manuscript: desktopManuscriptPage, memory: desktopMemoryPage, settings: settingsPage },
+  pages: { ...openPages, manuscript: desktopManuscriptPage, memory: desktopMemoryPage, saga: desktopSagaPage, settings: settingsPage },
   sections: desktopSections,
   useAccount: desktopAccount,
 };
