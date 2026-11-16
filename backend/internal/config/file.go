@@ -27,6 +27,14 @@ type fileConfig struct {
 	Mail                 *fileMail         `json:"mail"`
 	OperatorSocket       string            `json:"operator_socket"`
 	Illustrations        fileIllustrations `json:"illustrations"`
+	AppMirror            *fileAppMirror    `json:"app_mirror"`
+}
+
+// fileAppMirror is the mirror of the releases of the app (specs/2026-11-16-desk-app-mirror.md AM4.1); an absent section
+// keeps it off.
+type fileAppMirror struct {
+	Dir        string `json:"dir"`
+	Repository string `json:"repository"`
 }
 
 // fileIllustrations are the switches of the saga gallery; an absent section keeps them off.
@@ -124,7 +132,15 @@ func LoadFile(path string) (Config, error) {
 		Mail:           mailConfig,
 		OperatorSocket: strings.TrimSpace(input.OperatorSocket),
 		Illustrations:  Illustrations{UploadsEnabled: input.Illustrations.UploadsEnabled},
+		AppMirror:      input.AppMirror.appMirror(),
 	}), nil
+}
+
+func (input *fileAppMirror) appMirror() AppMirror {
+	if input == nil {
+		return AppMirror{}
+	}
+	return AppMirror{Dir: strings.TrimSpace(input.Dir), Repository: strings.TrimSpace(input.Repository)}
 }
 
 func (input fileConfig) validate() error {
@@ -139,6 +155,9 @@ func (input fileConfig) validate() error {
 	}
 	if strings.EqualFold(input.Environment, "production") && !input.SecureCookies {
 		return errors.New("config: production file requires secure cookies")
+	}
+	if input.AppMirror != nil && (input.AppMirror.appMirror() == AppMirror{} || input.AppMirror.appMirror().validate() != nil) {
+		return errors.New("config: the mirror of the app needs an absolute directory and a repository")
 	}
 	return nil
 }

@@ -17,8 +17,13 @@ use super::manifest::Keys;
 pub const SITE_MANIFEST: &str = "https://canonkeeper.ru/app/open/latest.json";
 pub const RELEASES_MANIFEST: &str = "https://github.com/canonkeeper/desktop-app/releases/latest/download/latest.json";
 
+/// Where the site serves the files of a release it mirrors (specs/2026-11-16-desk-app-mirror.md AM1.1): the file of a
+/// version is `SITE_FILES` + version + `/` + its name, as the manifest of the site a release signs names it.
+pub const SITE_FILES: &str = "https://canonkeeper.ru/app/open/";
+
 /// The hosts a request of an update may reach (UB1.6): the site, GitHub, and the host GitHub serves the files of
-/// releases from after its redirect. «Настройки» name them too (backend/internal/app/desktop/state.go).
+/// releases from after its redirect. «Настройки» name them too: backend/internal/app/desktop/state.go owns the list of
+/// the network (`networkUses`), backend/internal/app/desktop/updates.go its lines of these hosts.
 pub const HOSTS: [&str; 3] = ["canonkeeper.ru", "github.com", "release-assets.githubusercontent.com"];
 
 /// The keys of the app (UB3.4): the main key signs every release; the spare one signs the version after a loss or a leak

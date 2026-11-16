@@ -3,14 +3,18 @@
 //! The signer and the check of a release (specs/2026-11-13-desk-updates.md UB3.2–UB3.4) on made-up installers and the
 //! keys of a test, made here on the fly: the signatures carry the version, `latest.json` names a file for each kind and
 //! passes the reading and the verification of the app — the same code —, and a signature without the version, versions
-//! that differ, a key of development or a key out of tune fail the release.
+//! that differ, a key of development or a key out of tune fail the release. A released policy signs the manifest of the
+//! site too, `latest-site.json`, with every file at its address of the site; the check requires it exactly so
+//! (specs/2026-11-16-desk-app-mirror.md AM1.1, AM1.2).
 
 use std::fs;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use canonkeeper_desktop_core::update::manifest::{self, Keys};
-use canonkeeper_desktop_core::update::policy::{Limits, Policy, HOSTS, MAIN_KEY, SMOKE_MARK, SPARE_KEY};
+use canonkeeper_desktop_core::update::policy::{Limits, Policy, HOSTS, MAIN_KEY, SITE_FILES, SMOKE_MARK, SPARE_KEY};
 use canonkeeper_desktop_core::update::release::{
-    check, installers, kind_of, marks, programs, rfc3339, sign, Expected, MANIFEST,
+    check, installers, kind_of, marks, programs, rfc3339, sign, Expected, MANIFEST, SITE_LATEST, SUMS,
 };
 use canonkeeper_desktop_core::update::sign::{generate, trusted, SecretKey};
 use canonkeeper_desktop_core::update::Kind;
@@ -75,11 +79,16 @@ fn a_release_signed_by_the_main_key_is_what_the_app_reads_and_installs() {
     let version = Version::new(1, 3, 0);
     let written =
         sign(&release.dir, &version, &base(), "Что нового:\n— быстрее", &key, &policy, 1_789_000_000).unwrap();
-    assert_eq!(written.len(), 8);
+    // Four signatures of the installers, the two manifests and the sums, each with its signature (AM1.1).
+    assert_eq!(written.len(), 10, "{written:?}");
+    assert!(written.contains(&SITE_LATEST.to_string()) && written.contains(&format!("{SITE_LATEST}.sig")));
     assert_eq!(check(&release.dir, &expected(&policy), &policy), Vec::<String>::new());
-    // latest.json is what the app reads, with its signature, by the keys of the app — for each kind its file.
+    // latest.json is what the app reads, with its signature, by the keys of the app — for each kind its file; the manifest
+    // of the site the same with the file at its address of the site.
     let body = fs::read(release.dir.join(MANIFEST)).unwrap();
     let signature = fs::read_to_string(release.dir.join("latest.json.sig")).unwrap();
+    let site_body = fs::read(release.dir.join(SITE_LATEST)).unwrap();
+    let site_signature = fs::read_to_string(release.dir.join(format!("{SITE_LATEST}.sig"))).unwrap();
     for (kind, file) in KINDS.iter().zip(ALL) {
         let read = manifest::read(&body, &signature, &policy.keys, *kind).unwrap();
         assert_eq!(read.version, version);
@@ -87,9 +96,24 @@ fn a_release_signed_by_the_main_key_is_what_the_app_reads_and_installs() {
         assert_eq!(read.url.as_str(), format!("{}{file}", base()));
         let bytes = fs::read(release.dir.join(file)).unwrap();
         assert_eq!(manifest::verify_file(&bytes, &read.signature, &policy.keys, &version), Ok(manifest::Signer::Main));
+        let of_site = manifest::read(&site_body, &site_signature, &policy.keys, *kind).unwrap();
+        assert_eq!(of_site.url.as_str(), format!("https://canonkeeper.ru/app/open/1.3.0/{file}"));
+        assert_eq!(of_site.url.as_str(), format!("{SITE_FILES}1.3.0/{file}"));
+        assert_eq!(
+            (&of_site.version, &of_site.notes, &of_site.signature),
+            (&read.version, &read.notes, &read.signature)
+        );
     }
     let raw: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(raw["pub_date"], "2026-09-10T00:26:40Z");
+    let site_raw: Value = serde_json::from_slice(&site_body).unwrap();
+    assert_eq!(site_raw["pub_date"], raw["pub_date"]);
+    // The manifest of the site is signed as its own file, and the sums name both.
+    assert!(trusted_comment(&site_signature).contains(&format!("file:{SITE_LATEST}\tversion:1.3.0")));
+    let sums = fs::read_to_string(release.dir.join(SUMS)).unwrap();
+    for name in [SITE_LATEST.to_string(), format!("{SITE_LATEST}.sig")] {
+        assert!(sums.lines().any(|line| line.ends_with(&format!("  {name}"))), "{sums}");
+    }
     // A second signature into the same directory overwrites nothing.
     assert!(sign(&release.dir, &version, &base(), "", &key, &policy, 2).is_err());
 }
@@ -228,13 +252,89 @@ fn the_smoke_build_signs_and_checks_its_release_on_the_loopback_with_the_key_of_
     let key = SecretKey::read(&run.secret).unwrap();
     let release = stand("smoke", &ALL[1..]);
     let base = Url::parse("http://127.0.0.1:47613/").unwrap();
-    sign(&release.dir, &Version::new(1, 3, 0), &base, "", &key, &policy, 1).unwrap();
+    let written = sign(&release.dir, &Version::new(1, 3, 0), &base, "", &key, &policy, 1).unwrap();
+    // The loopback has no site: no manifest of the site is written, none is required (AM1.1, AM1.2).
+    assert!(!written.iter().any(|name| name.starts_with(SITE_LATEST)), "{written:?}");
+    assert!(!release.dir.join(SITE_LATEST).exists());
     let linux = Expected { tag: "v1.3.0", shell_version: "1.3.0", configured_key: &run.public, kinds: &KINDS[1..] };
     assert_eq!(check(&release.dir, &linux, &policy), Vec::<String>::new());
-    // A released app takes no file from the loopback.
+    // A released app takes no file from the loopback, and its release carries the manifest of the site.
     let released = released(&run.public, &generate().public);
     let problems = check(&release.dir, &linux, &released);
     assert!(problems.iter().any(|problem| problem.contains("takes no file")), "{problems:?}");
+    assert!(problems.contains(&format!("no {SITE_LATEST}")), "{problems:?}");
+    // A manifest of the site in a release on the loopback is refused.
+    fs::write(release.dir.join(SITE_LATEST), "{}").unwrap();
+    let problems = check(&release.dir, &linux, &policy);
+    assert!(problems.iter().any(|problem| problem.contains("carries no latest-site.json")), "{problems:?}");
+}
+
+/// The trusted comment of a signature, the base64 of its text.
+fn trusted_comment(signature: &str) -> String {
+    let text = String::from_utf8(STANDARD.decode(signature.trim()).unwrap()).unwrap();
+    text.lines().find_map(|line| line.strip_prefix("trusted comment: ")).unwrap().to_string()
+}
+
+/// Rewrites the manifest of the site of `release` by `change` and signs it again by `key` for `signed` — a manifest the
+/// main key signed, which only its addresses or its version can refuse.
+fn resign_site(release: &Stand, key: &SecretKey, signed: &str, change: impl Fn(&mut Value)) {
+    let mut raw: Value = serde_json::from_slice(&fs::read(release.dir.join(SITE_LATEST)).unwrap()).unwrap();
+    change(&mut raw);
+    let body = serde_json::to_vec_pretty(&raw).unwrap();
+    fs::write(release.dir.join(format!("{SITE_LATEST}.sig")), key.sign(&body, &trusted(SITE_LATEST, signed, 1)))
+        .unwrap();
+    fs::write(release.dir.join(SITE_LATEST), body).unwrap();
+}
+
+#[test]
+fn the_manifest_of_the_site_names_every_file_exactly_at_its_address_of_the_site() {
+    // AM1.2: a manifest of the site signed by the main key is still refused when a file is not exactly at
+    // SITE_FILES + version + "/" + its name — another path, another host, another version —, and a release without it.
+    let (main, spare) = (generate(), generate());
+    let policy = released(&main.public, &spare.public);
+    let key = SecretKey::read(&main.secret).unwrap();
+    let cases = [
+        ("another path", "https://canonkeeper.ru/app/open/1.3.0/x/CanonKeeper_1.3.0_amd64.deb"),
+        (
+            "the address of GitHub",
+            "https://github.com/canonkeeper/desktop-app/releases/download/v1.3.0/CanonKeeper_1.3.0_amd64.deb",
+        ),
+        ("another host", "https://mirror.example.test/app/open/1.3.0/CanonKeeper_1.3.0_amd64.deb"),
+        ("a query", "https://canonkeeper.ru/app/open/1.3.0/CanonKeeper_1.3.0_amd64.deb?v=2"),
+        ("another version", "https://canonkeeper.ru/app/open/1.2.0/CanonKeeper_1.3.0_amd64.deb"),
+    ];
+    for (what, url) in cases {
+        let release = stand(&format!("site-{}", what.replace(' ', "-")), &ALL);
+        sign(&release.dir, &Version::new(1, 3, 0), &base(), "", &key, &policy, 1).unwrap();
+        resign_site(&release, &key, "1.3.0", |raw| raw["platforms"]["linux-x86_64-deb"]["url"] = url.into());
+        let problems = check(&release.dir, &expected(&policy), &policy);
+        let at = format!("{SITE_LATEST}: the file of deb is not at {SITE_FILES}1.3.0/CanonKeeper_1.3.0_amd64.deb");
+        assert!(problems.contains(&at), "{what}: {problems:?}");
+    }
+    // The manifest of the site carries for deb the signature of another installer: the signatures of the kinds are those of
+    // their .sig, as in latest.json.
+    let release = stand("site-other-signature", &ALL);
+    sign(&release.dir, &Version::new(1, 3, 0), &base(), "", &key, &policy, 1).unwrap();
+    resign_site(&release, &key, "1.3.0", |raw| {
+        raw["platforms"]["linux-x86_64-deb"]["signature"] = raw["platforms"]["linux-x86_64-rpm"]["signature"].clone()
+    });
+    let problems = check(&release.dir, &expected(&policy), &policy);
+    let other = format!("{SITE_LATEST}: the signature of deb is not CanonKeeper_1.3.0_amd64.deb.sig");
+    assert!(problems.contains(&other), "{problems:?}");
+    // The manifest of the site names another version, signed for it.
+    let release = stand("site-other-version", &ALL);
+    sign(&release.dir, &Version::new(1, 3, 0), &base(), "", &key, &policy, 1).unwrap();
+    resign_site(&release, &key, "1.2.0", |raw| raw["version"] = "1.2.0".into());
+    let problems = check(&release.dir, &expected(&policy), &policy);
+    assert!(problems.contains(&format!("{SITE_LATEST} names 1.2.0, not 1.3.0")), "{problems:?}");
+    // The check names the manifest of the site in its every word, never latest.json.
+    assert!(problems.iter().all(|problem| !problem.starts_with(MANIFEST)), "{problems:?}");
+    // No manifest of the site: the release is refused.
+    let release = stand("site-missing", &ALL);
+    sign(&release.dir, &Version::new(1, 3, 0), &base(), "", &key, &policy, 1).unwrap();
+    fs::remove_file(release.dir.join(SITE_LATEST)).unwrap();
+    let problems = check(&release.dir, &expected(&policy), &policy);
+    assert!(problems.contains(&format!("no {SITE_LATEST}")), "{problems:?}");
 }
 
 /// A package of `kind` as the step of the marks unpacks it (UB3.3; specs/2026-11-15-desk-ci-shell.md CS2): the shell, the

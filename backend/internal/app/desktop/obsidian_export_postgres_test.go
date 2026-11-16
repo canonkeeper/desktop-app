@@ -276,11 +276,20 @@ func TestAnExportWritesTheMapAndKeepsTheAuthorPostgres(t *testing.T) {
 	if !slices.Equal(names, want) || first.Created.Count != len(want) || first.Folder != "CanonKeeper/Северный предел" {
 		t.Fatalf("the first export = %+v, files %q", first, names)
 	}
+	// specs/2026-11-16-desk-links-writer.md LW1.1, LW1.2: a place is a link that opens the app at its paragraph, the reference of
+	// a chapter opens the chapter — by the ids of the saga and of the chapter the database gave.
+	chapter := core.read("Главы/Туманный берег/1 Застава.md")
+	header, skip := obsidian.ReadNote("1 Застава.md", []byte(chapter))
+	chapterID, _ := header.Front.Get("canonkeeper-key")
+	if skip != "" || chapterID.Text == "" {
+		t.Fatalf("the reference of a chapter has no key:\n%s", chapter)
+	}
+	open := "canonkeeper://open?saga=" + core.bridgeCore.saga + "&chapter=" + chapterID.Text
 	mara := core.read("Герои/Мара.md")
 	for _, word := range []string{
 		"canonkeeper-saga: \"" + core.bridgeCore.saga + "\"", "canonkeeper-key: \"мара\"", "canonkeeper-kind: \"node\"",
 		"Эту заметку ведёт CanonKeeper", "[[CanonKeeper/Северный предел/Герои/Сава|Сава]] — Вместе в",
-		"[[CanonKeeper/Северный предел/Главы/Туманный берег/1 Застава|Книга 1, гл. 1 „Застава“]], абзац 1",
+		"[[CanonKeeper/Северный предел/Главы/Туманный берег/1 Застава|Книга 1, гл. 1 „Застава“]], [абзац 1](" + open + "&p=1)",
 	} {
 		if !strings.Contains(mara, word) {
 			t.Fatalf("the reference of Мара has no %q:\n%s", word, mara)
@@ -289,7 +298,7 @@ func TestAnExportWritesTheMapAndKeepsTheAuthorPostgres(t *testing.T) {
 	if strings.Contains(mara, "Герои/Глеб|Глеб]] — ") || strings.Contains(mara, "Вера|") {
 		t.Fatalf("the reference of Мара has what the author took off the map:\n%s", mara)
 	}
-	if chapter := core.read("Главы/Туманный берег/1 Застава.md"); !strings.Contains(chapter, "## Кто в главе") ||
+	if !strings.Contains(chapter, "## Кто в главе") || !strings.Contains(chapter, "\n[Открыть главу в CanonKeeper]("+open+")\n") ||
 		!strings.Contains(chapter, "[[CanonKeeper/Северный предел/Места/Белый порт|Белый порт]]") || !strings.Contains(chapter, "- Вера") {
 		t.Fatalf("the reference of a chapter:\n%s", chapter)
 	}

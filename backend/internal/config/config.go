@@ -47,6 +47,26 @@ type Config struct {
 	OperatorSocket string
 	// Illustrations switches the parts of the saga gallery a rollback may turn off.
 	Illustrations Illustrations
+	// AppMirror is the mirror of the releases of the app on the site; off without its section.
+	AppMirror AppMirror
+}
+
+// AppMirror is the mirror of the releases of the app the site keeps (specs/2026-11-16-desk-app-mirror.md AM3, AM4): the
+// directory of its files and the repository on GitHub it follows. Without a directory it is off: the desktop build makes
+// its configuration itself and never sets it.
+type AppMirror struct {
+	Dir        string
+	Repository string
+}
+
+// Enabled reports whether the site keeps the mirror.
+func (mirror AppMirror) Enabled() bool { return mirror.Dir != "" }
+
+func (mirror AppMirror) validate() error {
+	if (mirror.Dir != "" || mirror.Repository != "") && (!filepath.IsAbs(mirror.Dir) || strings.TrimSpace(mirror.Repository) == "") {
+		return errors.New("config: the mirror of the app needs an absolute directory and a repository")
+	}
+	return nil
 }
 
 // Illustrations are the switches of the saga gallery (specs/2026-10-29-saga-illustrations.md).
@@ -132,6 +152,7 @@ type settings struct {
 	Mail                 Mail
 	OperatorSocket       string
 	Illustrations        Illustrations
+	AppMirror            AppMirror
 }
 
 func Load() Config {
@@ -255,6 +276,7 @@ func newConfig(input settings) Config {
 		Mail:                 input.Mail,
 		OperatorSocket:       input.OperatorSocket,
 		Illustrations:        input.Illustrations,
+		AppMirror:            input.AppMirror,
 	}
 }
 
@@ -268,6 +290,9 @@ func (config Config) Validate() error {
 		return err
 	}
 	if err := config.ModelAPI.validate(); err != nil {
+		return err
+	}
+	if err := config.AppMirror.validate(); err != nil {
 		return err
 	}
 	// The turns of apps run the model and effort of the chat of the site (specs/2026-11-13-desk-proxy.md PX1.3).

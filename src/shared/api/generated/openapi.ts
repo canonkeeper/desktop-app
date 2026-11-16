@@ -1518,6 +1518,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/writers/{userId}/apps/{deviceId}/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlink an app of a writer
+         * @description specs/2026-11-16-desk-admin-apps.md AA1.2: «Отвязать» in the card of the writer — the live app is unlinked with the reason admin and its live permits are closed in the same transaction; the app stops using the tier of the writer, and the writer sees it in «Аккаунт». The administrator may unlink his own apps too. Another writer's app, an unknown one and one unlinked already are 404, so a repeat writes nothing. Writes app_unlinked with the account, the app, the reason admin, the administrator's id and via admin to the backend journal, without the name of the computer. Cache-Control: no-store.
+         */
+        post: operations["unlinkAdminWriterApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/days": {
         parameters: {
             query?: never;
@@ -1527,7 +1547,7 @@ export interface paths {
         };
         /**
          * Read the service by Moscow day
-         * @description The last N Moscow days up to today (1 ≤ N ≤ 366, 14 by default) and the period's total: registrations, confirmations, first uploads and questions, active writers, questions and uploads by outcome, model spend. Service accounts (.test) are not writers; model spend is all of it. The same use case prints the operator command stats. Cache-Control: no-store.
+         * @description The last N Moscow days up to today (1 ≤ N ≤ 366, 14 by default) and the period's total: registrations, confirmations, first uploads and questions, active writers, questions and uploads by outcome, the model spend of the site and the work and spend of the linked apps apart. Service accounts (.test) are not writers; their model spend is not cut off. The same use case prints the operator command stats. Cache-Control: no-store.
          */
         get: operations["listAdminDays"];
         put?: never;
@@ -7355,13 +7375,15 @@ export interface components {
             revokedBy: ("account_blocked" | "account_deleted") | null;
             administratorEmail: string | null;
         };
-        /** @description One writer, the limits, the impersonation journal of the last 30 days, newest first, the state of the right to draw and the tier of the writer. */
+        /** @description One writer, the limits, the impersonation journal of the last 30 days, newest first, the state of the right to draw, the tier of the writer and his live apps, newest first. */
         AdminWriterCard: {
             writer: components["schemas"]["AdminWriter"];
             quota: components["schemas"]["AdminWriterQuota"];
             impersonations: components["schemas"]["AdminImpersonation"][];
             illustrations: components["schemas"]["AdminWriterDrawing"];
             plan: components["schemas"]["AccountPlan"];
+            /** @description specs/2026-11-16-desk-admin-apps.md AA1.1: the live apps linked with the account, newest first; no hash, code or sign of a pass. */
+            apps: components["schemas"]["LinkedApp"][];
         };
         /** @description The state of the writer's right to draw (specs/2026-11-08-admin-redesign.md AR4.8): the trials are in the plan, the drawings of a day in the limits. */
         AdminWriterDrawing: {
@@ -7449,7 +7471,7 @@ export interface components {
         AdminUnblockResult: {
             changed: boolean;
         };
-        /** @description Counters of one Moscow day or of the period; active of the period counts distinct writers. */
+        /** @description Counters of one Moscow day or of the period; active of the period counts distinct writers. questions and imports are the units of the tier of the site and of the linked apps alike, and the funnel (firstImport, firstQuestion, active) counts the work of the apps too; the model spend is the site's, the spend and the work of the apps are apps (specs/2026-11-16-desk-admin-apps.md AA3.2, AA3.3). */
         AdminDayCounts: {
             registered: number;
             verified: number;
@@ -7464,6 +7486,17 @@ export interface components {
             importsSucceeded: number;
             importsFailed: number;
             importsInterrupted: number;
+            modelCalls: number;
+            inputTokens: number;
+            cachedInputTokens: number;
+            outputTokens: number;
+            apps: components["schemas"]["AdminDayApps"];
+        };
+        /** @description specs/2026-11-16-desk-admin-apps.md AA3.3: the work of the linked apps of a day or of the period — the turns of their chats with the corrections and the uploads of materials they took of the units of the writers, and the readings of books they began (a reading has no unit of the tier); counted by the site from the day of this release, the days before it are zero — and the spend of the models of the site for them (the sources app_*). Only the helper «Аккаунт CanonKeeper» of an app reaches the site; «Свой ИИ» does not. */
+        AdminDayApps: {
+            turns: number;
+            readings: number;
+            materialImports: number;
             modelCalls: number;
             inputTokens: number;
             cachedInputTokens: number;
@@ -14030,6 +14063,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminUnblockResult"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    unlinkAdminWriterApp: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path: {
+                /** @description Account id from listAdminWriters. */
+                userId: string;
+                /** @description An app from the card of the writer (getAdminWriter.apps). */
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The app is unlinked. */
+            204: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["AdminForbidden"];

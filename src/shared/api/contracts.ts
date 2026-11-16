@@ -235,6 +235,8 @@ export interface CanonKeeperApiClient {
   setAdminWriterQuota(userId: string, body: OperationRequest<'setAdminWriterQuota'>): Promise<OperationResponse<'setAdminWriterQuota', '200'>>;
   blockAdminWriter(userId: string): Promise<OperationResponse<'blockAdminWriter', '200'>>;
   unblockAdminWriter(userId: string): Promise<OperationResponse<'unblockAdminWriter', '200'>>;
+  /** «Отвязать» an app of a writer in his card (specs/2026-11-16-desk-admin-apps.md AA1.2). */
+  unlinkAdminWriterApp(userId: string, deviceId: string): Promise<void>;
   listAdminDays(options?: ListAdminDaysOptions): Promise<OperationResponse<'listAdminDays', '200'>>;
   getAdminServiceStatus(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminServiceStatus', '200'>>;
   setAdminWriterIllustrations(userId: string, body: OperationRequest<'setAdminWriterIllustrations'>): Promise<OperationResponse<'setAdminWriterIllustrations', '200'>>;

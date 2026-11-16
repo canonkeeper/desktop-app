@@ -263,6 +263,7 @@ export const operationManifest = {
   "takeReadingTestPair": { method: "POST", path: "/reading-tests/{slug}/next", pathParams: ["slug"] },
   "unblockAdminWriter": { method: "POST", path: "/admin/writers/{userId}/unblock", pathParams: ["userId"] },
   "unlinkAccount": { method: "DELETE", path: "/desktop/account", pathParams: [] },
+  "unlinkAdminWriterApp": { method: "POST", path: "/admin/writers/{userId}/apps/{deviceId}/unlink", pathParams: ["userId", "deviceId"] },
   "unlinkApp": { method: "DELETE", path: "/app/device", pathParams: [] },
   "unlinkBookFromObsidianFolder": { method: "DELETE", path: "/projects/{projectId}/obsidian/books/{bookId}", pathParams: ["projectId", "bookId"] },
   "unlinkObsidianVault": { method: "DELETE", path: "/projects/{projectId}/obsidian", pathParams: ["projectId"] },

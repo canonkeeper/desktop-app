@@ -38,7 +38,6 @@ type AppDevice struct {
 	UserID        pgtype.UUID        `json:"user_id"`
 	LinkCodeID    pgtype.UUID        `json:"link_code_id"`
 	PassHash      string             `json:"pass_hash"`
-	PassPrefix    string             `json:"pass_prefix"`
 	Name          string             `json:"name"`
 	Platform      string             `json:"platform"`
 	AppVersion    string             `json:"app_version"`
@@ -1540,4 +1539,7 @@ type WriterUsageDay struct {
 	DraftRewrites      int32       `json:"draft_rewrites"`
 	VoiceSeconds       int32       `json:"voice_seconds"`
 	AppReturns         int32       `json:"app_returns"`
+	AppTurns           int64       `json:"app_turns"`
+	AppReadings        int64       `json:"app_readings"`
+	AppMaterialImports int64       `json:"app_material_imports"`
 }

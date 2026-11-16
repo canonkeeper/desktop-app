@@ -33,6 +33,7 @@ type exportWords struct {
 	Files      struct {
 		Lead, Part, NoName, Index, Chapters, Deleted string
 		Happens, Who, Where, Named, Paragraph        string
+		OpenChapter                                  string
 	} `json:"files"`
 }
 
@@ -59,6 +60,7 @@ func TestTheWordsOfTheFilesAreTheTableTheTestOfThePageReads(t *testing.T) {
 		"index": {wordIndex, table.Files.Index}, "chapters": {wordChapters, table.Files.Chapters}, "deleted": {wordDeleted, table.Files.Deleted},
 		"happens": {wordHappens, table.Files.Happens}, "who": {wordWho, table.Files.Who}, "where": {wordWhere, table.Files.Where},
 		"named": {wordNamed, table.Files.Named}, "paragraph": {wordParagraph, table.Files.Paragraph},
+		"openChapter": {wordOpenChapter, table.Files.OpenChapter},
 	}
 	for name, pair := range pairs {
 		if pair[0] == "" || pair[0] != pair[1] {
@@ -77,13 +79,21 @@ func TestTheWordsOfTheFilesAreTheTableTheTestOfThePageReads(t *testing.T) {
 	}
 }
 
+// The ids of the fixture are canonical, as the database gives them: its places are links that open the app (LW1).
+const (
+	sagaID = "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44"
+	ch1ID  = "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45"
+	ch2ID  = "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d46"
+	ch3ID  = "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d47"
+)
+
 // exportFixture is a saga of the boards, «Северный предел»: two books, three chapters — the second without a fresh card —,
 // a map of five nodes and a record of the author the book does not know; «Призрак» the author took off the map.
 func exportFixture() ExportSaga {
-	version := sagamemory.NewVersion("saga-1", "published", "fp", []sagamemory.Chapter{
-		{ID: "ch-1", BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 1, Title: "Глава 1. Застава"},
-		{ID: "ch-2", BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 2, Title: "Белый порт"},
-		{ID: "ch-3", BookID: "book-2", BookOrder: 2, BookKeyNumber: 2, BookTitle: "Перевал", Order: 1, Title: "Глава 3. Перевал"},
+	version := sagamemory.NewVersion(sagaID, "published", "fp", []sagamemory.Chapter{
+		{ID: ch1ID, BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 1, Title: "Глава 1. Застава"},
+		{ID: ch2ID, BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 2, Title: "Белый порт"},
+		{ID: ch3ID, BookID: "book-2", BookOrder: 2, BookKeyNumber: 2, BookTitle: "Перевал", Order: 1, Title: "Глава 3. Перевал"},
 	})
 	ref := func(index int) sagamemory.MapChapterRef {
 		chapter := version.Chapters[index]
@@ -147,7 +157,7 @@ func exportFixture() ExportSaga {
 	// The names of the cards lead to the nodes by the glossary, a record the book does not know by the names of the map.
 	keys := map[string]string{"мара": "мара", "сава": "сава", "белый порт": "белый порт", "кинжал": "кинжал", "ледяной трон": "ледяной трон"}
 	return ExportSaga{
-		ID: "saga-1", Title: "Северный предел", Map: sagamemory.MapDocument{Nodes: nodes, Chapters: []sagamemory.MapChapterRef{ref(0), ref(1), ref(2)}},
+		ID: sagaID, Title: "Северный предел", Map: sagamemory.MapDocument{Nodes: nodes, Chapters: []sagamemory.MapChapterRef{ref(0), ref(1), ref(2)}},
 		Nodes:   map[string]sagamemory.MapCardDocument{"мара": hero, "ледяной трон": throne, "сава": {Key: "сава", Name: "Сава", Mentions: 1}},
 		Version: version, Cards: cards,
 		NodeOf: func(name string) (string, bool) {
@@ -167,8 +177,8 @@ func exportFixturePaths() ExportPaths {
 		{Kind: ExportNode, Key: "гильдия смотрителей"}: "Фракции/Гильдия смотрителей.md",
 		{Kind: ExportNode, Key: "кинжал"}:              "Предметы/Кинжал.md",
 		{Kind: ExportNode, Key: "ледяной трон"}:        "Предметы/Ледяной трон.md",
-		{Kind: ExportChapter, Key: "ch-1"}:             "Главы/Туманный берег/1 Застава.md",
-		{Kind: ExportChapter, Key: "ch-3"}:             "Главы/Перевал/3 Перевал.md",
+		{Kind: ExportChapter, Key: ch1ID}:              "Главы/Туманный берег/1 Застава.md",
+		{Kind: ExportChapter, Key: ch3ID}:              "Главы/Перевал/3 Перевал.md",
 	}}
 }
 
@@ -180,35 +190,50 @@ const (
 	savaLink = "[[CanonKeeper/Северный предел/Герои/Сава|Сава]]"
 )
 
-// OE2.1–OE2.4: the reference of a node says what its card on the page of the map shows, in its words: a place as a link to
-// the reference of its chapter with «абзац N», a node without a reference — taken off the map — as its name alone, a list the
-// card cuts with the line that says so; no key of a chapter and no «¶».
+// paragraphLink is «абзац N» of a chapter of the fixture: the link of AL1.1 that opens the app at that paragraph (LW1.1).
+func paragraphLink(chapter string, paragraph int) string {
+	return fmt.Sprintf("[абзац %d](canonkeeper://open?saga=%s&chapter=%s&p=%d)", paragraph, sagaID, chapter, paragraph)
+}
+
+// everyParagraphALink says each «абзац N» of a text is a link (LW1.1).
+func everyParagraphALink(t *testing.T, text string) {
+	t.Helper()
+	if words, links := strings.Count(text, wordParagraph+" "), strings.Count(text, "["+wordParagraph+" "); words == 0 || words != links {
+		t.Fatalf("%d of %d «абзац N» are links:\n%s", links, words, text)
+	}
+}
+
+// OE2.1–OE2.4, LW1.1: the reference of a node says what its card on the page of the map shows, in its words: a place as a link
+// to the reference of its chapter with «абзац N» — a link that opens the app at that paragraph, a chapter without a reference
+// too —, a node without a reference — taken off the map — as its name alone, a list the card cuts with the line that says so;
+// no key of a chapter and no «¶».
 func TestTheReferenceOfANodeSaysItsCard(t *testing.T) {
 	saga := exportFixture()
 	got := string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
 	want := "---\n" +
-		"canonkeeper-saga: \"saga-1\"\ncanonkeeper-key: \"мара\"\ncanonkeeper-kind: \"node\"\naliases:\n  - \"Марка\"\n" +
+		"canonkeeper-saga: \"" + sagaID + "\"\ncanonkeeper-key: \"мара\"\ncanonkeeper-kind: \"node\"\naliases:\n  - \"Марка\"\n" +
 		"---\n" + leadLine +
 		"\n# Мара\n\nгероиня\n\nТакже: Марка\n\nдозорная у ворот\n\n" +
-		"- Впервые: " + ch1Link + ", абзац 3\n" +
+		"- Впервые: " + ch1Link + ", [абзац 3](canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=3)\n" +
 		"- Встречается: в 2 главах\n" +
 		"\n## По вашим материалам\n\nЗапись автора; при расхождении прав текст книги · Герой\n\nМара родом с севера.\n\n- Возраст: 24\n\n" +
 		"Запись из Obsidian: Персонажи/Мара.md\n" +
 		"\n## Связи\n\n" +
 		"- " + savaLink + " — Вместе в 2 событиях\n" +
-		"  - " + ch1Link + ", абзац 5 — Мара и Сава держат ворота\n" +
+		"  - " + ch1Link + ", " + paragraphLink(ch1ID, 5) + " — Мара и Сава держат ворота\n" +
 		"- [[CanonKeeper/Северный предел/Предметы/Ледяной трон|Ледяной трон]] — в ваших материалах\n" +
 		"- Призрак — Оба названы, когда что-то изменилось\n" +
-		"  - Книга 1, гл. 2 „Белый порт“, абзац 2 — Призрак — исчез\n" +
+		"  - Книга 1, гл. 2 „Белый порт“, " + paragraphLink(ch2ID, 2) + " — Призрак — исчез\n" +
 		"\nУпоминаются в одних главах: Глеб\n" +
 		"\n## В ваших материалах\n\n- [[CanonKeeper/Северный предел/Предметы/Ледяной трон|Ледяной трон]] · Предмет\n" +
-		"\n## События (41)\n\n- " + ch1Link + ", абзац 5 — Мара и Сава держат ворота\n" +
+		"\n## События (41)\n\n- " + ch1Link + ", " + paragraphLink(ch1ID, 5) + " — Мара и Сава держат ворота\n" +
 		"\nПоказана часть: полный список — на карте саги в CanonKeeper\n" +
-		"\n## Что изменилось (1)\n\n- " + ch3Link + ", абзац 15 — Мара — стала капитаном\n"
+		"\n## Что изменилось (1)\n\n- " + ch3Link + ", " + paragraphLink(ch3ID, 15) + " — Мара — стала капитаном\n"
 	if got != want {
 		t.Fatalf("the reference of a node:\n%s\nwant:\n%s", got, want)
 	}
 	noDevice(t, got)
+	everyParagraphALink(t, got)
 	// A record of the author the book does not know: the plan of the author, no line of the book.
 	throne := string(saga.Text(FileID{Kind: ExportNode, Key: "ледяной трон"}, exportFixturePaths()))
 	if !strings.Contains(throne, "План автора, в книге ещё нет · Предмет") || strings.Contains(throne, "Встречается") || strings.Contains(throne, "Впервые") {
@@ -216,30 +241,60 @@ func TestTheReferenceOfANodeSaysItsCard(t *testing.T) {
 	}
 }
 
-// Data «справка главы»: what happens with its events and who, who is in the chapter, where, what else is named — the nodes
-// as links, the rest as text —, what changed; the parts the table does not name are not written.
+// Data «справка главы», LW1.1, LW1.2: under the first line «Открыть главу в CanonKeeper», a link that opens the app at the
+// chapter; what happens with its events and who — «абзац N» a link that opens it at the paragraph, an event without one without
+// it —, who is in the chapter, where, what else is named — the nodes as links, the rest as text —, what changed; the parts the
+// table does not name are not written.
 func TestTheReferenceOfAChapterSaysItsCardByTheTable(t *testing.T) {
 	saga := exportFixture()
-	got := string(saga.Text(FileID{Kind: ExportChapter, Key: "ch-1"}, exportFixturePaths()))
+	got := string(saga.Text(FileID{Kind: ExportChapter, Key: ch1ID}, exportFixturePaths()))
 	want := "---\n" +
-		"canonkeeper-saga: \"saga-1\"\ncanonkeeper-key: \"ch-1\"\ncanonkeeper-kind: \"chapter\"\naliases:\n  - \"Книга 1, гл. 1 „Застава“\"\n" +
+		"canonkeeper-saga: \"" + sagaID + "\"\ncanonkeeper-key: \"" + ch1ID + "\"\ncanonkeeper-kind: \"chapter\"\naliases:\n  - \"Книга 1, гл. 1 „Застава“\"\n" +
 		"---\n" + leadLine +
+		"\n[Открыть главу в CanonKeeper](canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45)\n" +
 		"\n# Книга 1, гл. 1 „Застава“\n" +
 		"\n## Что происходит\n\nМара встречает Саву у ворот заставы.\n\n" +
-		"- Мара и Сава держат ворота — " + maraLink + ", " + savaLink + ", Незнакомец · абзац 5\n" +
+		"- Мара и Сава держат ворота — " + maraLink + ", " + savaLink + ", Незнакомец · [абзац 5](canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=5)\n" +
 		"- Колокол бьёт тревогу\n" +
 		"\n## Кто в главе\n\n- " + maraLink + " — дозорная\n- Незнакомец\n" +
 		"\n## Где\n\n- [[CanonKeeper/Северный предел/Места/Белый порт|Белый порт]] — виден с холма\n" +
 		"\n## Что ещё названо\n\n- [[CanonKeeper/Северный предел/Предметы/Кинжал|Кинжал]]\n- Песня ветра\n" +
-		"\n## Что изменилось\n\n- " + maraLink + " — стала капитаном · абзац 15\n"
+		"\n## Что изменилось\n\n- " + maraLink + " — стала капитаном · " + paragraphLink(ch1ID, 15) + "\n"
 	if got != want {
 		t.Fatalf("the reference of a chapter:\n%s\nwant:\n%s", got, want)
 	}
 	noDevice(t, got)
+	everyParagraphALink(t, got)
 	for _, left := range []string{"колокол?", "возраст", "рассвете", "утро", "полудню", "в полдень", "ключ от ворот", "скрывает"} {
 		if strings.Contains(got, left) {
 			t.Fatalf("%q of a field the table does not name is in the reference", left)
 		}
+	}
+}
+
+// LW1.1, LW1.3: a place whose values the shell does not take — a number past its last paragraph, an id of a saga that is not
+// canonical — says «абзац N» as words, and the reference of a chapter of such a saga has no line that opens it; the place
+// beside it stays a link of the wiki to the reference of its chapter.
+func TestAPlaceWhoseValuesAreNoLinkIsItsWords(t *testing.T) {
+	saga := exportFixture()
+	hero := saga.Nodes["мара"]
+	hero.First = &sagamemory.CardMention{Chapter: hero.First.Chapter, Paragraph: lastParagraph + 1}
+	saga.Nodes["мара"] = hero
+	node := string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
+	if !strings.Contains(node, "- Впервые: "+ch1Link+", абзац 100000\n") || !strings.Contains(node, ch1Link+", "+paragraphLink(ch1ID, 5)+" — Мара") {
+		t.Fatalf("a number past the last paragraph:\n%s", node)
+	}
+	saga.ID = "saga-1"
+	node = string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
+	chapter := string(saga.Text(FileID{Kind: ExportChapter, Key: ch1ID}, exportFixturePaths()))
+	for _, text := range []string{node, chapter} {
+		if strings.Contains(text, "canonkeeper://") || strings.Contains(text, wordOpenChapter) || strings.Contains(text, "["+wordParagraph) {
+			t.Fatalf("a place of a saga whose id is not canonical is a link:\n%s", text)
+		}
+	}
+	if !strings.Contains(node, "- "+ch1Link+", абзац 5 — Мара и Сава держат ворота\n") ||
+		!strings.Contains(chapter, "---\n"+leadLine+"\n# Книга 1, гл. 1 „Застава“\n") || !strings.Contains(chapter, "Незнакомец · абзац 5\n") {
+		t.Fatalf("the places of a saga whose id is not canonical:\n%s\n%s", node, chapter)
 	}
 }
 
@@ -249,7 +304,7 @@ func TestTheIndexListsTheBooksAndTheCategories(t *testing.T) {
 	saga := exportFixture()
 	got := string(saga.Text(FileID{Kind: ExportIndex, Key: ExportIndexKey}, exportFixturePaths()))
 	want := "---\n" +
-		"canonkeeper-saga: \"saga-1\"\ncanonkeeper-key: \"saga\"\ncanonkeeper-kind: \"index\"\n---\n" + leadLine +
+		"canonkeeper-saga: \"" + sagaID + "\"\ncanonkeeper-key: \"saga\"\ncanonkeeper-kind: \"index\"\n---\n" + leadLine +
 		"\n# Северный предел\n" +
 		"\n## Туманный берег\n\n- " + ch1Link + "\n- Книга 1, гл. 2 „Белый порт“\n" +
 		"\n## Перевал\n\n- " + ch3Link + "\n" +
@@ -277,7 +332,7 @@ func TestTheFilesOfASagaAreItsNodesAndItsChaptersWithCards(t *testing.T) {
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("Files = %q", names)
 	}
-	if stay := saga.Stay(); !reflect.DeepEqual(stay, []FileID{{Kind: ExportChapter, Key: "ch-2"}}) {
+	if stay := saga.Stay(); !reflect.DeepEqual(stay, []FileID{{Kind: ExportChapter, Key: ch2ID}}) {
 		t.Fatalf("Stay = %v", stay)
 	}
 }
@@ -295,7 +350,7 @@ func TestTheValuesOfTheHeaderAreQuoted(t *testing.T) {
 	key, _ := note.Front.Get("canonkeeper-key")
 	saga1, _ := note.Front.Get("canonkeeper-saga")
 	aliases, _ := note.Front.Get("aliases")
-	if key.Text != weird || saga1.Text != "saga-1" || !reflect.DeepEqual(aliases.List, []string{`Марка: "Север"`, "[[x]]"}) {
+	if key.Text != weird || saga1.Text != sagaID || !reflect.DeepEqual(aliases.List, []string{`Марка: "Север"`, "[[x]]"}) {
 		t.Fatalf("the header reads back as %+v %+v %+v", key, saga1, aliases)
 	}
 }
@@ -349,7 +404,7 @@ func TestATextOfACardReadsAsItselfInObsidian(t *testing.T) {
 	got := string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
 	for _, want := range []string{
 		"\n\nРог из кости кита.\n\nТрубят в него только при осаде.\n\\- первая примета\n\\# вторая примета\n\n- Возраст: 24\n",
-		", абзац 5 — Мара прячет \\#ключ в \\[\\[тайник\\]\\]\n",
+		", " + paragraphLink(ch1ID, 5) + " — Мара прячет \\#ключ в \\[\\[тайник\\]\\]\n",
 		"\n- Песня \\#ветра — Оба названы, когда что-то изменилось\n  - " + ch1Link + " — Песня — \\%\\%смолкла\\%\\%\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -378,7 +433,7 @@ func TestAListTheCardCutsSaysItIsAPart(t *testing.T) {
 	saga.Nodes["мара"] = hero
 	got = string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
 	for _, want := range []string{
-		"  - Книга 1, гл. 2 „Белый порт“, абзац 2 — Призрак — исчез\n\n" + wordPart + "\n\nУпоминаются в одних главах: Глеб,",
+		"  - Книга 1, гл. 2 „Белый порт“, " + paragraphLink(ch2ID, 2) + " — Призрак — исчез\n\n" + wordPart + "\n\nУпоминаются в одних главах: Глеб,",
 		", Ждан\n\n" + wordPart + "\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -417,7 +472,7 @@ func TestTheHeaderIsExactYAMLForHardNames(t *testing.T) {
 	}}
 	text := string(saga.Text(FileID{Kind: ExportNode, Key: key}, exportFixturePaths()))
 	want := "---\n" +
-		"canonkeeper-saga: \"saga-1\"\n" +
+		"canonkeeper-saga: \"" + sagaID + "\"\n" +
 		"canonkeeper-key: \"мара: \\\"дочь\\\"\\n#1\"\n" +
 		"canonkeeper-kind: \"node\"\n" +
 		"aliases:\n" +
@@ -464,7 +519,7 @@ func TestTheChangesTheCardCutsSayTheyAreAPart(t *testing.T) {
 	hero.ChangesTotal = 31
 	saga.Nodes["мара"] = hero
 	got := string(saga.Text(FileID{Kind: ExportNode, Key: "мара"}, exportFixturePaths()))
-	if want := "\n## Что изменилось (31)\n\n- " + ch3Link + ", абзац 15 — Мара — стала капитаном\n\n" + wordPart + "\n"; !strings.HasSuffix(got, want) {
+	if want := "\n## Что изменилось (31)\n\n- " + ch3Link + ", " + paragraphLink(ch3ID, 15) + " — Мара — стала капитаном\n\n" + wordPart + "\n"; !strings.HasSuffix(got, want) {
 		t.Fatalf("the reference:\n%s\nwant the end:\n%s", got, want)
 	}
 }
@@ -496,9 +551,9 @@ func TestTheNameOfANodeIsAnAliasWhenItsFileIsNamedOtherwise(t *testing.T) {
 // OE2.1: Сага.md names two books of one title as their folders do — the second with « (2)».
 func TestTheIndexNamesBooksOfOneTitleAsTheirFolders(t *testing.T) {
 	saga := exportFixture()
-	saga.Version = sagamemory.NewVersion("saga-1", "published", "fp", []sagamemory.Chapter{
-		{ID: "ch-1", BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 1, Title: "Глава 1. Застава"},
-		{ID: "ch-3", BookID: "book-2", BookOrder: 2, BookKeyNumber: 2, BookTitle: "туманный берег", Order: 1, Title: "Глава 3. Перевал"},
+	saga.Version = sagamemory.NewVersion(sagaID, "published", "fp", []sagamemory.Chapter{
+		{ID: ch1ID, BookID: "book-1", BookOrder: 1, BookKeyNumber: 1, BookTitle: "Туманный берег", Order: 1, Title: "Глава 1. Застава"},
+		{ID: ch3ID, BookID: "book-2", BookOrder: 2, BookKeyNumber: 2, BookTitle: "туманный берег", Order: 1, Title: "Глава 3. Перевал"},
 	})
 	index := string(saga.Text(FileID{Kind: ExportIndex, Key: ExportIndexKey}, exportFixturePaths()))
 	if !strings.Contains(index, "\n## Туманный берег\n") || !strings.Contains(index, "\n## туманный берег (2)\n") {

@@ -157,6 +157,8 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "setAdminWriterQuota", Method: "put", Path: "/admin/writers/{userId}/quota"},
 		{OperationID: "blockAdminWriter", Method: "post", Path: "/admin/writers/{userId}/block"},
 		{OperationID: "unblockAdminWriter", Method: "post", Path: "/admin/writers/{userId}/unblock"},
+		// The apps of a writer in his card (specs/2026-11-16-desk-admin-apps.md AA1.2).
+		{OperationID: "unlinkAdminWriterApp", Method: "post", Path: "/admin/writers/{userId}/apps/{deviceId}/unlink"},
 		{OperationID: "listAdminDays", Method: "get", Path: "/admin/days"},
 		{OperationID: "getAdminServiceStatus", Method: "get", Path: "/admin/service"},
 		{OperationID: "setAdminWriterIllustrations", Method: "put", Path: "/admin/writers/{userId}/illustrations"},

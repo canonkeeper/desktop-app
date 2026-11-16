@@ -320,6 +320,12 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 	assertFunctionPrivilege(t, db.Pool, "canonkeeper_product_runtime", deletionProjectionFunction, true)
 	assertFunctionPrivilege(t, db.Pool, "canonkeeper_worker_discovery", deletionProjectionFunction, false)
 	assertFunctionPublicPrivilege(t, db.Pool, deletionProjectionFunction, false)
+	// The owner's days, made again by 0158 (specs/2026-11-16-desk-admin-apps.md AA3.2), keep the grants of 0059: «Сводка» and
+	// stats read them as the runtime role.
+	ownerDays := fmt.Sprintf("%s.ck_owner_days(date,date)", quoteIdentifier(schema))
+	assertFunctionPrivilege(t, db.Pool, "canonkeeper_product_runtime", ownerDays, true)
+	assertFunctionPrivilege(t, db.Pool, "canonkeeper_worker_discovery", ownerDays, false)
+	assertFunctionPublicPrivilege(t, db.Pool, ownerDays, false)
 }
 
 func TestMigrationACLCheckRejectsDefaultPublicFunction(t *testing.T) {

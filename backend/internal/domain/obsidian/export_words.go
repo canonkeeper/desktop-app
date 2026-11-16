@@ -45,6 +45,9 @@ const (
 	wordWhere     = "Где"
 	wordNamed     = "Что ещё названо"
 	wordParagraph = "абзац"
+	// wordOpenChapter is the line under the first one of the reference of a chapter, a link that opens the chapter in the app
+	// (specs/2026-11-16-desk-links-writer.md LW1.2).
+	wordOpenChapter = "Открыть главу в CanonKeeper"
 )
 
 // The forms of the words after a number, as the page counts them: one, a few, many.

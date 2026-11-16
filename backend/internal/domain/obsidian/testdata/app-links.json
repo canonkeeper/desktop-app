@@ -1,0 +1,24 @@
+{
+  "comment": "The links canonkeeper:// the export to Obsidian writes (specs/2026-11-16-desk-links-writer.md LW1.3) by the values the domain holds: the id of the saga, the id of the chapter and the number of the paragraph — no p is the chapter itself. link is what the writer writes, \"\" for no link: the caption stays text. The test of domain/obsidian holds the writer to this table; the test of the core of the shell (desktop/src-tauri/crates/core/src/link.rs) parses every link by AL1.1 (specs/2026-11-16-desk-app-links.md) to the same place, in the form it gives the page, and refuses the link built of the values of a row without one. p is never 0: to the writer 0 is no paragraph.",
+  "examples": [
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 15, "link": "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=15" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 1, "link": "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=1" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 99999, "link": "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=99999" },
+    { "saga": "0B7C1A52-5D1E-4F43-9F6B-2A8C1E0B9D44", "chapter": "7C3F0A52-5D1E-4F43-9F6B-2A8C1E0B9D45", "p": 3, "link": "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=3" },
+    { "saga": "saga-1", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 3, "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "ch-1", "link": "" },
+    { "saga": "", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 3, "link": "" },
+    { "saga": "0b7c1a525d1e4f439f6b2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d4g", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d440", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a525-d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a52_5d1e_4f43_9f6b_2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d4/", "p": 15, "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&p=2", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 15, "link": "" },
+    { "saga": " 0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d4", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "javascript:alert(1)", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": -1, "link": "" },
+    { "saga": "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44", "chapter": "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45", "p": 100000, "link": "" }
+  ]
+}

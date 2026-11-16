@@ -587,6 +587,9 @@ test('the jobs of the workflow and their rights are the table of a release', () 
   const signing = sign.steps.find((step) => step.name === 'Sign by the main key of the environment release');
   assert.deepEqual(Object.keys(signing.env), ['CANONKEEPER_UPDATE_KEY']);
   assert.match(signing.run, /canonkeeper-release" sign --version/u);
+  // specs/2026-11-16-desk-app-mirror.md AM1.1: the manifest of the site comes from the constant of the policy, not from an
+  // option of the step — the step signs with the options it always had.
+  assert.deepEqual(signing.run.match(/--[a-z-]+/gu), ['--version', '--base-url', '--notes', '--key-env']);
   const checked = sign.steps.findIndex((step) => /sha256sum -c/u.test(step.run ?? ''));
   assert.ok(checked >= 0 && checked < sign.steps.indexOf(signing), 'the tool is used before its sum is checked');
   const proved = sign.steps.findIndex((step) => /canonkeeper-release" check --tag "\$GITHUB_REF_NAME"/u.test(step.run ?? ''));
@@ -955,6 +958,23 @@ test('the draft of a release says how to go back and the README the steps of the
   assert.ok(!/^## (?!Вернуться)/mu.test(body.slice(body.indexOf(BACK) + BACK.length)), 'the body runs into the next section');
   for (const step of ['CANONKEEPER_UPDATE_KEY', 'canonkeeper-release keygen', 'release', 'v*', 'запасн']) assert.ok(readme.includes(step), step);
   assert.throws(() => releaseBody('x', '# README\n'), /Вернуться/u);
+});
+
+// specs/2026-11-16-desk-app-mirror.md AM1.3: the README names the 14 files of a release — the installers and their
+// signatures, both manifests and the sums, each with its signature, by the names the signer writes — and that the site
+// serves the manifest of the site as its /app/open/latest.json.
+test('the README names the 14 files of a release and what the mirror of the site serves', () => {
+  const release = readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'crates', 'core', 'src', 'update', 'release.rs'), 'utf8');
+  const constant = (name) => release.match(new RegExp(`pub const ${name}: &str = "([^"]+)";`, 'u'))?.[1];
+  const installers = ['CanonKeeper_<версия>_x64-setup.exe', 'CanonKeeper_<версия>_amd64.deb', 'CanonKeeper-<версия>-1.x86_64.rpm', 'CanonKeeper_<версия>_amd64.AppImage'];
+  const written = [...installers, constant('MANIFEST'), constant('SITE_LATEST'), constant('SUMS')];
+  assert.ok(written.every(Boolean), 'release.rs names no manifest, manifest of the site or sums');
+  const expected = [...written, ...written.map((name) => `${name}.sig`)].toSorted();
+  const readme = readFileSync(path.join(repositoryRoot, 'desktop', 'README.md'), 'utf8');
+  const section = readme.split('Файлы выпуска — 14:')[1]?.split('\n\n')[1] ?? '';
+  const named = [...new Set([...section.matchAll(/`([^`\s]+)`/gu)].map((match) => match[1]).filter((name) => !name.startsWith('https://')))].toSorted();
+  assert.deepEqual(named, expected);
+  assert.match(section.replace(/\s+/gu, ' '), /отдаёт этот файл как `https:\/\/canonkeeper\.ru\/app\/open\/latest\.json`/u);
 });
 
 // specs/2026-11-15-desk-updates-web.md UW2.3: «Открыть страницу выпусков» of the pages of the app and the page of the start

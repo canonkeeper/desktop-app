@@ -230,7 +230,7 @@ const protectedOperations = new Set<OperationId>([
   'getCurrentUser',
   'getAccountQuota',
   'listRecentlyDeleted',
-  'listAdminWriters', 'getAdminWriter', 'setAdminWriterQuota', 'blockAdminWriter', 'unblockAdminWriter', 'listAdminDays', 'getAdminServiceStatus',
+  'listAdminWriters', 'getAdminWriter', 'setAdminWriterQuota', 'blockAdminWriter', 'unblockAdminWriter', 'unlinkAdminWriterApp', 'listAdminDays', 'getAdminServiceStatus',
   'getAdminQuotaDefaults', 'setAdminQuotaDefaults',
   // «Связаться с нами» (specs/2026-11-07-contacts.md): the reads of an author and the admin part; a guest writes.
   'getAdminContacts', 'setAdminContacts', 'listFeedbackThreads', 'getFeedbackThread', 'addFeedbackMessage', 'getFeedbackImage',

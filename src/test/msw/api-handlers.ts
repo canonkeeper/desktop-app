@@ -76,6 +76,9 @@ function createAdminHandlers(repository: MockRepository, csrfState: MswCsrfState
       jsonResponse(() => repository.blockAdminWriter(oneParam(params.userId)), undefined, security('blockAdminWriter', request))),
     http.post(mswPath('unblockAdminWriter'), ({ params, request }) =>
       jsonResponse(() => repository.unblockAdminWriter(oneParam(params.userId)), undefined, security('unblockAdminWriter', request))),
+    http.post(mswPath('unlinkAdminWriterApp'), ({ params, request }) => emptyResponse(
+      () => repository.unlinkAdminWriterApp(oneParam(params.userId), oneParam(params.deviceId)), security('unlinkAdminWriterApp', request),
+    )),
     http.get(mswPath('listAdminDays'), ({ request }) => {
       const days = new URL(request.url).searchParams.get('days');
       return jsonResponse(() => repository.listAdminDays(days === null ? {} : { days: Number(days) }), undefined, security('listAdminDays', request));

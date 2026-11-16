@@ -308,3 +308,46 @@ func TestIllustrationUploadsAreOffUnlessSwitchedOn(t *testing.T) {
 		t.Fatal("the environment did not switch uploads on")
 	}
 }
+
+// specs/2026-11-16-desk-app-mirror.md AM4.1: the section app_mirror of the file names the directory of the mirror and the
+// repository it follows; without it the mirror is off, and a section without an absolute directory or a repository is
+// refused.
+func TestTheMirrorOfTheAppIsTheSectionOfTheFileOrOff(t *testing.T) {
+	base := `"http_addr":"127.0.0.1:8789","environment":"test","database_url":"postgres://product",
+		"allowed_origins":["http://test.localhost:3334"],"file_storage_dir":"data/files",
+		"mail":{"mode":"outbox","public_url":"http://test.localhost:3334","from":"support@canonkeeper.ru","outbox_dir":"/srv/mail-outbox"}`
+	load := func(payload string) (Config, error) {
+		path := filepath.Join(t.TempDir(), "config.json")
+		if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return LoadFile(path)
+	}
+	off, err := load(`{` + base + `}`)
+	if err != nil || off.AppMirror.Enabled() || off.AppMirror != (AppMirror{}) {
+		t.Fatalf("without the section: %+v, %v", off.AppMirror, err)
+	}
+	on, err := load(`{` + base + `,"app_mirror":{"dir":"/srv/state/app-mirror","repository":"canonkeeper/desktop-app"}}`)
+	if err != nil || !on.AppMirror.Enabled() || on.AppMirror != (AppMirror{Dir: "/srv/state/app-mirror", Repository: "canonkeeper/desktop-app"}) {
+		t.Fatalf("the section: %+v, %v", on.AppMirror, err)
+	}
+	for name, section := range map[string]string{
+		"empty":         `{}`,
+		"relative":      `{"dir":"app-mirror","repository":"canonkeeper/desktop-app"}`,
+		"no repository": `{"dir":"/srv/state/app-mirror"}`,
+		"unknown field": `{"dir":"/srv/state/app-mirror","repository":"canonkeeper/desktop-app","keys":"x"}`,
+	} {
+		if _, err := load(`{` + base + `,"app_mirror":` + section + `}`); err == nil {
+			t.Errorf("%s section was taken", name)
+		}
+	}
+	config := validConfig()
+	config.AppMirror = AppMirror{Dir: "relative", Repository: "canonkeeper/desktop-app"}
+	if err := config.Validate(); err == nil {
+		t.Fatal("the site took a relative directory of the mirror")
+	}
+	config.AppMirror = AppMirror{Dir: "/srv/state/app-mirror", Repository: "canonkeeper/desktop-app"}
+	if err := config.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

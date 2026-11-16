@@ -1453,6 +1453,11 @@ async function prepareRepositoryForOperation(
       await repository.checkAppUpdate();
       await repository.installAppUpdate();
       return {};
+    case 'unlinkAdminWriterApp': {
+      // An app of the administrator himself: he unlinks his own as any writer's (specs/2026-11-16-desk-admin-apps.md AA1.2).
+      await repository.startAppLink({ challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'windows' });
+      return { userId: (await repository.getCurrentUser()).id, deviceId: (await repository.listLinkedApps()).apps[0]!.id };
+    }
     case 'revokeLinkedApp': {
       // The mock links the app at the confirmation of the page /link (specs/2026-11-13-desk-link.md LK1, LK4.2).
       await repository.startAppLink({ challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'linux' });
@@ -1767,6 +1772,7 @@ const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
   createChapterDraft: 201,
   deleteChapterDraft: 204,
   revokeLinkedApp: 204,
+  unlinkAdminWriterApp: 204,
   setAiKey: 204,
   deleteAiKey: 204,
   startAiCheck: 202,

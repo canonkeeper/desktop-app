@@ -5,6 +5,7 @@ package quota
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -393,6 +394,32 @@ const (
 	UsageAppNames     UsageSource = "app_names"
 	UsageAppLayer     UsageSource = "app_layer"
 	UsageAppMaterials UsageSource = "app_materials"
+)
+
+// UsageSources is every source of the spend of the models, in the order of the report of the operator: the table
+// model_usage_days takes these and no other (specs/2026-11-16-desk-admin-apps.md AA3.5).
+func UsageSources() []UsageSource {
+	return []UsageSource{
+		UsageChat, UsageScan, UsageCards, UsageImages, UsageLayer, UsageDraft, UsageDrawing, UsageDraftHelper, UsageVoice,
+		UsageAuthorMaterials, UsageAppChat, UsageAppScan, UsageAppCards, UsageAppNames, UsageAppLayer, UsageAppMaterials,
+	}
+}
+
+// OfApps says whether the spend is of the work of a linked app on the models of the site (PX3.4): the reports of the owner
+// show it apart from the spend of the site (AA3.2, AA3.5).
+func (source UsageSource) OfApps() bool {
+	return strings.HasPrefix(string(source), "app_")
+}
+
+// AppWork is the work of a linked app the site counts apart in the days of the writer (specs/2026-11-16-desk-admin-apps.md
+// AA3.1): the turns of its chat with their corrections and the uploads of materials — the units of the tier of the site the
+// apps took —, and the readings of the books they began, which have no unit of the tier.
+type AppWork string
+
+const (
+	AppTurns           AppWork = "turns"
+	AppReadings        AppWork = "readings"
+	AppMaterialImports AppWork = "material_imports"
 )
 
 // ModelUsage is what model calls cost: calls (HTTP attempts answered, or model responses of a

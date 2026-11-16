@@ -534,6 +534,51 @@ mod tests {
         }
     }
 
+    // specs/2026-11-16-desk-links-writer.md LW1.3: every link the export to Obsidian writes is one this check takes, to the
+    // place the writer meant and in the form the page gets; the values the writer gives no link are values this check refuses.
+    // One table with the test of the writer (backend/internal/domain/obsidian).
+    #[test]
+    fn the_links_the_export_to_obsidian_writes_open_their_place() {
+        #[derive(serde::Deserialize)]
+        struct Example {
+            saga: String,
+            chapter: String,
+            p: Option<i64>,
+            link: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Table {
+            examples: Vec<Example>,
+        }
+        let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../backend/internal/domain/obsidian/testdata/app-links.json");
+        let text = fs::read_to_string(&file).unwrap_or_else(|error| panic!("{}: {error}", file.display()));
+        let table: Table = serde_json::from_str(&text).unwrap();
+        assert!(table.examples.iter().any(|example| example.link.is_empty()));
+        assert!(table.examples.iter().any(|example| !example.link.is_empty()));
+        for example in &table.examples {
+            let mut raw = format!("canonkeeper://open?saga={}&chapter={}", example.saga, example.chapter);
+            if let Some(paragraph) = example.p {
+                raw.push_str(&format!("&p={paragraph}"));
+            }
+            if example.link.is_empty() {
+                assert!(parse(&raw).is_err(), "{raw}");
+                continue;
+            }
+            let want = Place {
+                saga: example.saga.to_ascii_lowercase(),
+                chapter: example.chapter.to_ascii_lowercase(),
+                paragraph: example.p.map(|paragraph| u32::try_from(paragraph).unwrap()),
+                revision: None,
+            };
+            assert_eq!(parse(&example.link), Ok(want.clone()), "{}", example.link);
+            assert_eq!(parse(&raw), Ok(want.clone()), "{raw}");
+            // The writer writes what the page gets: the ids in the lower case, the parameters in their order, no revision.
+            let path = Target::Place(want).path();
+            assert_eq!(example.link.strip_prefix("canonkeeper://open"), path.strip_prefix(PAGE), "{}", example.link);
+        }
+    }
+
     // AL1.4: the address of the page is built only of the checked values; a refused link leads to the page that says so.
     #[test]
     fn the_target_is_the_page_of_the_edition_built_of_the_checked_values() {

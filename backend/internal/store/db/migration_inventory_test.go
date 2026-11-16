@@ -19,8 +19,8 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 158 {
-		t.Fatalf("migration inventory length = %d, want 158", len(inventory))
+	if len(inventory) != 159 {
+		t.Fatalf("migration inventory length = %d, want 159", len(inventory))
 	}
 	if inventory[0].Version != 0 || inventory[0].Name != "0000_schema_migrations.sql" {
 		t.Fatalf("first migration = %+v", inventory[0])
@@ -438,6 +438,9 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	}
 	if inventory[157].Version != 157 || inventory[157].Name != "0157_obsidian_export.sql" {
 		t.Fatalf("the export to Obsidian without a Job migration = %+v", inventory[157])
+	}
+	if inventory[158].Version != 158 || inventory[158].Name != "0158_app_work_counts.sql" {
+		t.Fatalf("the work of the apps apart in the reports migration = %+v", inventory[158])
 	}
 	if inventory[64].Version != 64 || inventory[64].Name != "0064_illustration_checks.sql" {
 		t.Fatalf("illustration checks migration = %+v", inventory[64])

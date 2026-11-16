@@ -46,6 +46,7 @@
     "who": "Кто в главе",
     "where": "Где",
     "named": "Что ещё названо",
-    "paragraph": "абзац"
+    "paragraph": "абзац",
+    "openChapter": "Открыть главу в CanonKeeper"
   }
 }

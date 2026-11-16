@@ -129,6 +129,8 @@ export function createAdminOperations(context: MockRepositoryContext) {
       impersonations: [],
       illustrations: illustrationsOf(userId),
       plan: mockAccountPlan(context.state, userId),
+      apps: context.state.linkedApps.filter((app) => app.userId === userId).reverse()
+        .map(({ id, name, platform, appVersion, linkedAt, seenAt }) => ({ id, name, platform, appVersion, linkedAt, seenAt })),
     });
   }
 
@@ -171,23 +173,33 @@ export function createAdminOperations(context: MockRepositoryContext) {
     return { changed };
   }
 
+  /** «Отвязать» an app of a writer in his card (specs/2026-11-16-desk-admin-apps.md AA1.2): another's, unknown or gone — 404. */
+  async function unlinkAdminWriterApp(userId: string, deviceId: string): Promise<void> {
+    adminOperation('unlinkAdminWriterApp');
+    if (!context.state.linkedApps.some((app) => app.userId === userId && app.id === deviceId)) {
+      throw new MockApiError(404, 'Resource not found', 'unlinkAdminWriterApp', 'not_found');
+    }
+    context.state.linkedApps = context.state.linkedApps.filter((app) => app.id !== deviceId);
+  }
+
   async function listAdminDays(options: { days?: number } = {}): Promise<OperationResponse<'listAdminDays', '200'>> {
     adminOperation('listAdminDays');
     const days = options.days ?? 14;
     if (!Number.isInteger(days) || days < 1 || days > 366) {
       throw new MockApiError(400, 'validation failed', 'listAdminDays', 'request.validation');
     }
-    const counts = {
+    const counts = () => ({
       registered: 0, verified: 0, firstImport: 0, firstQuestion: 0, active: 0, questions: 0, answered: 0, failed: 0,
       interrupted: 0, imports: 0, importsSucceeded: 0, importsFailed: 0, importsInterrupted: 0, modelCalls: 0,
       inputTokens: 0, cachedInputTokens: 0, outputTokens: 0,
-    };
+      apps: { turns: 0, readings: 0, materialImports: 0, modelCalls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+    });
     const last = Date.parse(`${now.slice(0, 10)}T00:00:00Z`);
     const list = Array.from({ length: days }, (_, index) => ({
       day: new Date(last - (days - 1 - index) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      counts: { ...counts },
+      counts: counts(),
     }));
-    return { first: list[0]!.day, last: list[list.length - 1]!.day, days: list, total: { ...counts } };
+    return { first: list[0]!.day, last: list[list.length - 1]!.day, days: list, total: counts() };
   }
 
   async function getAdminServiceStatus(): Promise<OperationResponse<'getAdminServiceStatus', '200'>> {
@@ -253,7 +265,7 @@ export function createAdminOperations(context: MockRepositoryContext) {
   }
 
   return {
-    listAdminWriters, getAdminWriter, setAdminWriterQuota, blockAdminWriter, unblockAdminWriter, listAdminDays, getAdminServiceStatus,
+    listAdminWriters, getAdminWriter, setAdminWriterQuota, blockAdminWriter, unblockAdminWriter, unlinkAdminWriterApp, listAdminDays, getAdminServiceStatus,
     setAdminWriterIllustrations, getAdminQuotaDefaults, setAdminQuotaDefaults,
   };
 }

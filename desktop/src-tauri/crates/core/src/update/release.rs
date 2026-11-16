@@ -4,11 +4,14 @@
 //! the signature and the smoke run of an update call through `canonkeeper-release`. The signer signs every installer with
 //! its version in the trusted comment, writes `latest.json` with one file for each kind of installation and its own
 //! signature, and `SHA256SUMS` with its signature — only by the main key the app trusts: another key is refused before
-//! anything is signed. The check proves a release before its draft: the tag is the version of the shell, of `latest.json`
-//! and of every signature; every signature holds by the main key of the tree — the one of the code and the one of
-//! `tauri.conf.json` — through the reading and the verification the app makes (`manifest`); one file for each kind and no
-//! key of `latest.json` without its kind; a key of development refuses the release. The marks of the bundler in the
-//! program of each package are checked where the package is unpacked (`marks`).
+//! anything is signed. A released policy — not the loopback of the smoke build — also signs `latest-site.json`, the same
+//! manifest with the files at the address the site mirrors them at (`policy::SITE_FILES`), which the site serves as its
+//! `/app/open/latest.json` (specs/2026-11-16-desk-app-mirror.md AM1). The check proves a release before its draft: the tag
+//! is the version of the shell, of both manifests and of every signature; every signature holds by the main key of the
+//! tree — the one of the code and the one of `tauri.conf.json` — through the reading and the verification the app makes
+//! (`manifest`); one file for each kind and no key of a manifest without its kind; every file of the manifest of the site is
+//! exactly at its address of the site; a key of development refuses the release. The marks of the bundler in the program
+//! of each package are checked where the package is unpacked (`marks`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
@@ -21,13 +24,20 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 use super::manifest::{self, key_id, plain_notes, Keys};
-use super::policy::{Policy, DEVELOPMENT_KEYS, SMOKE_MARK};
+use super::policy::{Policy, DEVELOPMENT_KEYS, SITE_FILES, SMOKE_MARK};
 use super::sign::{trusted, SecretKey};
 use super::Kind;
 
-/// The names of the files the signer writes besides the signatures of the installers.
+/// The names of the files the signer writes besides the signatures of the installers: the manifest of GitHub, the
+/// manifest of the site — a released policy alone writes it (AM1.1) —, the sums.
 pub const MANIFEST: &str = "latest.json";
+pub const SITE_LATEST: &str = "latest-site.json";
 pub const SUMS: &str = "SHA256SUMS";
+
+/// The address of the file `name` of `version` on the site (AM1.1): exactly this string, nothing around it.
+pub fn site_file(version: &Version, name: &str) -> String {
+    format!("{SITE_FILES}{version}/{name}")
+}
 
 /// The kind of an installer by the end of its name, as the bundler names its files.
 pub fn kind_of(name: &str) -> Option<Kind> {
@@ -111,7 +121,8 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 /// Signs the installers of `dir` as the release `version` (UB3.2): `<installer>.sig` with the version, `latest.json` with
-/// the file of each kind at `base` and its signature, `SHA256SUMS` of every file and its signature — and answers the names
+/// the file of each kind at `base` and its signature, on a released policy `latest-site.json` with the file of each kind at
+/// its address of the site and its signature (AM1.1), `SHA256SUMS` of every file and its signature — and answers the names
 /// it wrote. `key` must be the main key of `policy`; `base` must be an address the app would take a file from; the notes
 /// must be what the app shows. Nothing is written when one of these does not hold.
 pub fn sign(
@@ -137,28 +148,40 @@ pub fn sign(
         return Err("no installer to sign".into());
     }
     let mut platforms = Map::new();
+    // The manifest of the site: the same signature of each file at its address of the site (AM1.1).
+    let mut site_platforms = Map::new();
     let mut prepared = Vec::new();
     for installer in &installers {
         let url = base.join(&installer.name).map_err(|error| error.to_string())?;
-        if !policy.allowed(&url) {
-            return Err(format!("the app takes no file from {url}"));
+        let site_url = Url::parse(&site_file(version, &installer.name)).map_err(|error| error.to_string())?;
+        for url in [Some(&url), (!policy.loopback).then_some(&site_url)].into_iter().flatten() {
+            if !policy.allowed(url) {
+                return Err(format!("the app takes no file from {url}"));
+            }
         }
         let bytes = fs::read(dir.join(&installer.name)).map_err(|error| format!("{}: {error}", installer.name))?;
         let signature = key.sign(&bytes, &trusted(&installer.name, &version.to_string(), timestamp));
         let platform = installer.kind.platform().expect("an installer has a platform");
         platforms.insert(platform.to_string(), json!({"signature": signature, "url": url.as_str()}));
+        site_platforms.insert(platform.to_string(), json!({"signature": signature, "url": site_url.as_str()}));
         prepared.push((format!("{}.sig", installer.name), signature.into_bytes()));
     }
-    let manifest = serde_json::to_vec_pretty(&json!({
-        "version": version.to_string(),
-        "notes": notes,
-        "pub_date": rfc3339(timestamp),
-        "platforms": Value::Object(platforms),
-    }))
-    .map_err(|error| error.to_string())?;
-    let manifest_signature = key.sign(&manifest, &trusted(MANIFEST, &version.to_string(), timestamp));
-    prepared.push((MANIFEST.to_string(), manifest));
-    prepared.push((format!("{MANIFEST}.sig"), manifest_signature.into_bytes()));
+    let mut manifests = vec![(MANIFEST, platforms)];
+    if !policy.loopback {
+        manifests.push((SITE_LATEST, site_platforms));
+    }
+    for (name, platforms) in manifests {
+        let manifest = serde_json::to_vec_pretty(&json!({
+            "version": version.to_string(),
+            "notes": notes,
+            "pub_date": rfc3339(timestamp),
+            "platforms": Value::Object(platforms),
+        }))
+        .map_err(|error| error.to_string())?;
+        let manifest_signature = key.sign(&manifest, &trusted(name, &version.to_string(), timestamp));
+        prepared.push((name.to_string(), manifest));
+        prepared.push((format!("{name}.sig"), manifest_signature.into_bytes()));
+    }
     for (name, _) in &prepared {
         if dir.join(name).symlink_metadata().is_ok() {
             return Err(format!(
@@ -263,21 +286,41 @@ pub fn check(dir: &Path, expected: &Expected, policy: &Policy) -> Vec<String> {
         }
         signatures.insert(installer.kind.name(), signature);
     }
-    if let (Ok(body), Some(signature)) =
-        (fs::read(dir.join(MANIFEST)), read_text(dir, &format!("{MANIFEST}.sig"), &mut problems))
-    {
-        check_manifest(&body, &signature, &installers, &signatures, &only_main, &version, policy, &mut problems);
-    } else if !dir.join(MANIFEST).is_file() {
-        problems.push(format!("no {MANIFEST}"));
+    // The manifest of GitHub, and on a released policy the manifest of the site with every file exactly at its address of
+    // the site (AM1.2); the smoke build of an update carries no manifest of the site.
+    let mut manifests = vec![(MANIFEST, false)];
+    if policy.loopback {
+        if dir.join(SITE_LATEST).symlink_metadata().is_ok() {
+            problems.push(format!("a release on the loopback carries no {SITE_LATEST}"));
+        }
+    } else {
+        manifests.push((SITE_LATEST, true));
+    }
+    for (name, of_site) in manifests {
+        if let (Ok(body), Some(signature)) =
+            (fs::read(dir.join(name)), read_text(dir, &format!("{name}.sig"), &mut problems))
+        {
+            let manifest = Manifest { name, body: &body, signature: &signature, of_site };
+            check_manifest(&manifest, &installers, &signatures, &only_main, &version, policy, &mut problems);
+        } else if !dir.join(name).is_file() {
+            problems.push(format!("no {name}"));
+        }
     }
     check_sums(dir, &only_main, &version, &mut problems);
     problems
 }
 
-#[allow(clippy::too_many_arguments)]
+/// A manifest of a release as the check reads it: its name, its bytes and its signature, and whether it is the manifest
+/// of the site, whose files are at their addresses of the site.
+struct Manifest<'a> {
+    name: &'a str,
+    body: &'a [u8],
+    signature: &'a str,
+    of_site: bool,
+}
+
 fn check_manifest(
-    body: &[u8],
-    signature: &str,
+    manifest: &Manifest,
     installers: &[Installer],
     signatures: &BTreeMap<&str, String>,
     keys: &Keys,
@@ -285,40 +328,41 @@ fn check_manifest(
     policy: &Policy,
     problems: &mut Vec<String>,
 ) {
-    let platforms: BTreeSet<String> = serde_json::from_slice::<Value>(body)
+    let name = manifest.name;
+    let platforms: BTreeSet<String> = serde_json::from_slice::<Value>(manifest.body)
         .ok()
         .and_then(|raw| raw.get("platforms").and_then(Value::as_object).map(|map| map.keys().cloned().collect()))
         .unwrap_or_default();
     let carried: BTreeSet<String> =
         installers.iter().filter_map(|installer| installer.kind.platform()).map(str::to_string).collect();
     if platforms != carried {
-        problems.push(format!("{MANIFEST} names the files of {platforms:?}; the release carries {carried:?}"));
+        problems.push(format!("{name} names the files of {platforms:?}; the release carries {carried:?}"));
     }
     for installer in installers {
-        match manifest::read(body, signature, keys, installer.kind) {
+        match manifest::read(manifest.body, manifest.signature, keys, installer.kind) {
             Ok(release) => {
                 if &release.version != version {
-                    problems.push(format!("{MANIFEST} names {}, not {version}", release.version));
+                    problems.push(format!("{name} names {}, not {version}", release.version));
                 }
                 if !policy.allowed(&release.url) {
-                    problems.push(format!("{MANIFEST}: the app takes no file from {}", release.url));
+                    problems.push(format!("{name}: the app takes no file from {}", release.url));
                 }
                 if release.url.path_segments().and_then(|mut segments| segments.next_back()) != Some(&installer.name) {
-                    problems.push(format!(
-                        "{MANIFEST}: the file of {} is not {}",
-                        installer.kind.name(),
-                        installer.name
-                    ));
+                    problems.push(format!("{name}: the file of {} is not {}", installer.kind.name(), installer.name));
+                }
+                let at = site_file(version, &installer.name);
+                if manifest.of_site && release.url.as_str() != at {
+                    problems.push(format!("{name}: the file of {} is not at {at}", installer.kind.name()));
                 }
                 if signatures.get(installer.kind.name()) != Some(&release.signature) {
                     problems.push(format!(
-                        "{MANIFEST}: the signature of {} is not {}.sig",
+                        "{name}: the signature of {} is not {}.sig",
                         installer.kind.name(),
                         installer.name
                     ));
                 }
             }
-            Err(unread) => problems.push(format!("{MANIFEST} for {}: {unread:?}", installer.kind.name())),
+            Err(unread) => problems.push(format!("{name} for {}: {unread:?}", installer.kind.name())),
         }
     }
 }

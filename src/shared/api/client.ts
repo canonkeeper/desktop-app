@@ -157,6 +157,10 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'unblockAdminWriter', '200'>('unblockAdminWriter', { params: { path: { userId } } });
   }
 
+  async unlinkAdminWriterApp(userId: string, deviceId: string) {
+    await this.request<'unlinkAdminWriterApp', '204'>('unlinkAdminWriterApp', { params: { path: { userId, deviceId } } });
+  }
+
   listAdminDays(options: ListAdminDaysOptions = {}) {
     const { signal, ...query } = options;
     return this.request<'listAdminDays', '200'>('listAdminDays', { params: { query }, signal });

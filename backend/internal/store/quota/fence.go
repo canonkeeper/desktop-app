@@ -239,6 +239,43 @@ func (fence Fence) ReleaseDailyInTx(ctx context.Context, tx pgx.Tx, actorUserID 
 	return err
 }
 
+// appColumns are the columns of writer_usage_days that count the work of the linked apps apart from the units of the tier
+// (specs/2026-11-16-desk-admin-apps.md AA3.1). The columns are named here only, so they are safe to splice.
+var appColumns = map[quota.AppWork]string{
+	quota.AppTurns:           "app_turns",
+	quota.AppReadings:        "app_readings",
+	quota.AppMaterialImports: "app_material_imports",
+}
+
+// ErrNotAppWork means a work no column of the apps counts: a caller's mistake.
+var ErrNotAppWork = errors.New("quota: not a work of the apps")
+
+// CountAppWorkInTx moves a counter of the work of the linked apps of the writer's Moscow day of at by count — up for a
+// work counted, down and never below zero for a unit given back — in the caller's transaction: the transaction in which
+// the fence counts or gives back the unit of the tier of that work (AA3.1). The reports of the owner tell the work of the
+// apps apart by it; the counters live in the day row, so the deletion of an account moves them to its pseudonym.
+func CountAppWorkInTx(ctx context.Context, tx pgx.Tx, actorUserID string, work quota.AppWork, count int64, at time.Time) error {
+	column, known := appColumns[work]
+	switch {
+	case !known:
+		return ErrNotAppWork
+	case count == 0:
+		return nil
+	case count < 0:
+		_, err := tx.Exec(ctx, `
+			UPDATE writer_usage_days SET `+column+` = GREATEST(`+column+` + $3, 0)
+			WHERE user_id = $1::uuid AND day = $2::date AND `+column+` > 0
+		`, actorUserID, moscowDate(at), count)
+		return err
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO writer_usage_days AS usage (user_id, day, `+column+`)
+		VALUES ($1::uuid, $2::date, $3)
+		ON CONFLICT (user_id, day) DO UPDATE SET `+column+` = usage.`+column+` + EXCLUDED.`+column+`
+	`, actorUserID, moscowDate(at), count)
+	return err
+}
+
 // activeTurnsInTx is the one count of active_turns (specs/2026-11-13-desk-permits.md PM1.4, PM3.2): the writer's turns of
 // the chat and of the helpers that are not over, and his turns elsewhere.
 func (fence Fence) activeTurnsInTx(ctx context.Context, db Querier, userID string, at time.Time) (int64, error) {

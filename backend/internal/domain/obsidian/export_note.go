@@ -184,9 +184,19 @@ func (note *noteText) nameLink(name string) string {
 func (note *noteText) place(chapter sagamemory.MapChapterRef, paragraph int) string {
 	place := note.link(FileID{Kind: ExportChapter, Key: chapter.ChapterID}, chapter.Label)
 	if paragraph > 0 {
-		place += fmt.Sprintf(", %s %d", wordParagraph, paragraph)
+		place += ", " + note.paragraph(chapter.ChapterID, paragraph)
 	}
 	return place
+}
+
+// paragraph is «абзац N» of a chapter: a link that opens the app at that paragraph (LW1.1), the words alone for values that
+// are not of a link.
+func (note *noteText) paragraph(chapter string, paragraph int) string {
+	words := fmt.Sprintf("%s %d", wordParagraph, paragraph)
+	if link, ok := openLink(note.saga.ID, chapter, paragraph); ok {
+		return "[" + words + "](" + link + ")"
+	}
+	return words
 }
 
 // index writes Сага.md (OE2.1): the books and their chapters in their order, the categories of the map and their nodes.
@@ -424,6 +434,12 @@ func (note *noteText) chapter(id string) {
 	chapter, card := &version.Chapters[index], note.saga.Cards[index]
 	place := chapter.Place()
 	note.front(FileID{Kind: ExportChapter, Key: id}, []string{place})
+	// Under the first line, a link that opens the chapter in the app (LW1.2); a chapter whose values are not of a link has no
+	// such line — its words alone would open nothing.
+	if link, ok := openLink(note.saga.ID, id, 0); ok {
+		note.blank()
+		note.line("[" + wordOpenChapter + "](" + link + ")")
+	}
 	note.heading(1, place)
 	if summary := paragraphs(card.Summary); summary != "" || len(card.Events) > 0 {
 		note.heading(2, wordHappens)
@@ -440,7 +456,7 @@ func (note *noteText) chapter(id string) {
 				}
 				text += " — " + strings.Join(who, ", ")
 			}
-			note.line("- " + text + atParagraph(event.P))
+			note.line("- " + text + note.atParagraph(id, event.P))
 		}
 	}
 	note.mentions(wordWho, card.Characters)
@@ -457,7 +473,7 @@ func (note *noteText) chapter(id string) {
 	if len(card.Changes) > 0 {
 		note.heading(2, wordChanges)
 		for _, change := range card.Changes {
-			note.line("- " + note.nameLink(change.Subject) + " — " + plain(change.Change) + atParagraph(change.P))
+			note.line("- " + note.nameLink(change.Subject) + " — " + plain(change.Change) + note.atParagraph(id, change.P))
 		}
 	}
 }
@@ -478,11 +494,11 @@ func (note *noteText) mentions(heading string, mentions []sagamemory.Mention) {
 }
 
 // atParagraph is « · абзац N» of an item of a chapter, nothing for no paragraph.
-func atParagraph(paragraph int) string {
+func (note *noteText) atParagraph(chapter string, paragraph int) string {
 	if paragraph <= 0 {
 		return ""
 	}
-	return fmt.Sprintf(" · %s %d", wordParagraph, paragraph)
+	return " · " + note.paragraph(chapter, paragraph)
 }
 
 // kindWord is the word of a kind of a record, the kind itself for one the page does not name.
