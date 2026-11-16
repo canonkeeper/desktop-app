@@ -13,7 +13,7 @@ import { App } from '../App';
 import { ClientErrorScreen } from '../app/ClientErrorScreen';
 import { currentUserQueryOptions } from '../entities/session/api';
 import type { CanonKeeperApiClient } from '../shared/api';
-import { createAppRoute, isBackFrom, isReturnPlace, toHref, type AppRoute, type BackFrom, type RouteNavigate, type Surface } from '../shared/navigation/app-route';
+import { backFromRoute, createAppRoute, isBackFrom, isReturnPlace, toHref, type AppRoute, type BackFrom, type RouteNavigate, type Surface } from '../shared/navigation/app-route';
 import { notesNavigationQuery } from '../shared/navigation/notes-route';
 import { holdOverlaySteps, stepBackPastOverlays } from '../ui/overlays/overlay-history';
 
@@ -103,11 +103,16 @@ function routeOfEdition(route: AppRoute): AppRoute {
 
 /**
  * The way back a step carries (specs/2026-11-10-ux2-patterns-states.md PS4.1–PS4.3): the section it comes from; a page that
- * only replaces its own address keeps the one it had; a step of the menu and any other step start without one.
+ * only replaces its own address keeps the one it had; a step of the menu and any other step start without one. «Настройки»
+ * of the app are reached from the top bar, a strip or a line of any page, and a new app has no saga, so no column of
+ * sections to leave them by: a step into them carries the section it leaves, a step inside them keeps the way they had.
  */
-export function backFromOfStep(options: Parameters<RouteNavigate>[2], current: BackFrom | undefined) {
+export function backFromOfStep(path: string, options: Parameters<RouteNavigate>[2], route: Pick<AppRoute, 'from' | 'query' | 'surface'>): BackFrom | undefined {
   if (options?.from === null) return undefined;
-  return options?.from ?? (options?.replace ? current : undefined);
+  if (options?.from) return options.from;
+  if (options?.replace) return route.from;
+  if (path === '/settings') return route.surface === 'settings' ? route.from : backFromRoute(route);
+  return undefined;
 }
 
 function RouterAppHost() {
@@ -130,7 +135,7 @@ function RouterAppHost() {
           : options?.drawingIdea ? { drawingIdea: options.drawingIdea }
             : options?.chatQuestion ? { chatQuestion: options.chatQuestion }
               : options?.returnPlace ? { returnPlace: options.returnPlace } : {};
-    const from = backFromOfStep(options, route.from);
+    const from = backFromOfStep(path, options, route);
     // The list a drawing was opened from stays with the steps that only replace the address of a drawing (DS1.9).
     const drawingList = path === '/drawing' && query?.drawing ? options?.drawingList ?? (options?.replace ? route.drawingList : undefined) : undefined;
     const state = { ...sourceState, ...(from ? { from } : {}), ...(drawingList !== undefined ? { drawingList } : {}) };

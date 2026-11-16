@@ -40,8 +40,8 @@ func laneOf(request call) lane {
 // or freed, so a change of the settings holds from the next request. A freed place goes to the chat before the reading
 // of the books — the author waits for an answer, nobody waits for a card —, then to the pass of a chapter whose card came
 // before a new card, and in turn within a lane. The reading may hold at most readingLimit places when it names one
-// (specs/2026-11-13-desk-account-ai.md AI3.3: of the two places of the helper of the account the reading holds one, and the
-// other is always free for a turn and its scan); zero is no bound of its own.
+// (specs/2026-11-13-desk-account-ai.md AI3.3: the reading holds all the places of the helper of the account but one, and
+// that one is always free for a turn and its scan); zero is no bound of its own.
 type gate struct {
 	mu           sync.Mutex
 	busy         int

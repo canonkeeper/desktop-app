@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"canonkeeper/backend/internal/domain/appwork"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -177,8 +178,8 @@ func TestTheReadingOfTheAccountGoesOnOnceTheAppIsLinkedAgain(t *testing.T) {
 }
 
 // specs/2026-11-13-desk-account-ai.md AI3.5, AI3.6, AI3.7 (the refusals of the site to the reading): ai.provider_failed — the
-// site already repeated it — pauses the reading «чтение на сервере недоступно» at the first refusal, one request and not one
-// for each chapter; the pause goes on by itself at the check once the site answers, and ai.reading_fence then pauses it at
+// site already repeated it — pauses the reading «чтение на сервере недоступно» at the first refusal: only the chapters
+// already on their way go, no more than the reading holds at once (appwork.ReadingPlaces), not one for each chapter; the pause goes on by itself at the check once the site answers, and ai.reading_fence then pauses it at
 // the fence of the work of the reading with both limits of the tier in the status.
 func TestTheRefusalsOfTheSitePauseTheReadingOfTheAccount(t *testing.T) {
 	resources := processResources(t)
@@ -194,18 +195,19 @@ func TestTheRefusalsOfTheSitePauseTheReadingOfTheAccount(t *testing.T) {
 	site.stepRefusal[string(coresteps.Card)] = &siteRefusal{status: http.StatusBadGateway, code: "ai.provider_failed"}
 	site.mu.Unlock()
 	saga.setConsent(map[string]any{"state": "allowed"})
-	if paused := saga.pausedAt(3 * time.Minute); paused.Pause == nil || *paused.Pause != "unavailable" || site.stepsOf(coresteps.Card) != 1 {
+	if paused := saga.pausedAt(3 * time.Minute); paused.Pause == nil || *paused.Pause != "unavailable" || site.stepsOf(coresteps.Card) < 1 || site.stepsOf(coresteps.Card) > appwork.ReadingPlaces {
 		t.Fatalf("the pause of a failed provider = %+v after %d cards%s", paused, site.stepsOf(coresteps.Card), saga.journey())
 	}
 
 	site.mu.Lock()
 	site.stepRefusal[string(coresteps.Card)] = &siteRefusal{status: http.StatusForbidden, code: "ai.reading_fence"}
 	site.mu.Unlock()
+	before := site.stepsOf(coresteps.Card)
 	awaitTrue(t, "the pause at the fence of the reading", 3*time.Minute, func() bool {
 		consent := saga.consent()
 		return consent.Pause != nil && *consent.Pause == "reading_fence"
 	})
-	if cards := site.stepsOf(coresteps.Card); cards != 2 {
+	if cards := site.stepsOf(coresteps.Card) - before; cards < 1 || cards > appwork.ReadingPlaces {
 		t.Fatalf("the fence of the reading after %d cards%s", cards, saga.journey())
 	}
 	var status struct {

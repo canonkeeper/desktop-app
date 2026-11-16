@@ -79,10 +79,10 @@ func (gateway *Gateway) UseAccount(account Account) {
 
 type accountBox struct{ account Account }
 
-// The places of the helper of the account (AI3.3): the two the site keeps for a device; the reading holds at most one.
+// The places of the helper of the account (AI3.3): those the site keeps for an app; the reading holds all but one.
 const (
-	accountPlaces        = 2
-	accountReadingPlaces = 1
+	accountPlaces        = appwork.PlacesPerApp
+	accountReadingPlaces = appwork.ReadingPlaces
 )
 
 // codeNoTurn refuses a request of Codex outside a turn of the account: it has no permit, and the gateway sends nothing to

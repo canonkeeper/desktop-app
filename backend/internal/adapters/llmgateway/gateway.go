@@ -131,7 +131,7 @@ func (gateway *Gateway) Close() error {
 }
 
 // parallel is «Запросов одновременно» of the author, read whenever a place is taken or freed (GW1.5); the helper of the
-// account has the two places the site keeps for a device (specs/2026-11-13-desk-account-ai.md AI3.3).
+// account has the places the site keeps for an app (specs/2026-11-13-desk-account-ai.md AI3.3).
 func (gateway *Gateway) parallel() int {
 	settings := gateway.settings.AI()
 	if settings.Source == aisettings.SourceAccount {
@@ -143,8 +143,8 @@ func (gateway *Gateway) parallel() int {
 	return 1
 }
 
-// readingPlaces bounds the places the reading of the books holds: one of the two of the helper of the account, so the other
-// is always free for a turn and its scan (AI3.3); «Свой ИИ» has no bound of its own.
+// readingPlaces bounds the places the reading of the books holds: all of the helper of the account but one, so that one is
+// always free for a turn and its scan (AI3.3); «Свой ИИ» has no bound of its own.
 func (gateway *Gateway) readingPlaces() int {
 	if gateway.settings.AI().Source == aisettings.SourceAccount {
 		return accountReadingPlaces

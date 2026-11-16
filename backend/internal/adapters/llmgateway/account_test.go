@@ -606,23 +606,23 @@ func TestAStepOfTheReadingWaitsForTheConsent(t *testing.T) {
 	}
 }
 
-// AI3.3, AI2.10: of the two places of the account the reading holds at most one — the site never has two steps of the
-// reading at once —, and a turn and the scan of a turn get the other while a card holds its place.
-func TestTheReadingHoldsOneOfTheTwoPlaces(t *testing.T) {
+// AI3.3, AI2.10: the reading holds at most all the places of the account but one, and a turn and the scan of a turn get
+// that one while the cards hold theirs.
+func TestTheReadingHoldsAllThePlacesButOne(t *testing.T) {
 	stand, account := accountStand(t)
 	account.hold = make(chan struct{})
 	var done sync.WaitGroup
-	for range 3 {
+	for range accountReadingPlaces + 2 {
 		done.Add(1)
 		go func() {
 			defer done.Done()
 			stand.post(t, coreBody(t, coresteps.Card), map[string]string{modelapi.JobHeader: "job-cards"})
 		}()
 	}
-	waitFor(t, func() bool { return account.readingAt.Load() == 1 })
+	waitFor(t, func() bool { return account.readingAt.Load() == accountReadingPlaces })
 	time.Sleep(50 * time.Millisecond)
-	if account.readingAt.Load() != 1 {
-		t.Fatal("the reading took both places")
+	if account.readingAt.Load() != accountReadingPlaces {
+		t.Fatal("the reading took the place of the chat")
 	}
 	account.mu.Lock()
 	held := account.hold
@@ -643,7 +643,7 @@ func TestTheReadingHoldsOneOfTheTwoPlaces(t *testing.T) {
 	}
 	close(held)
 	done.Wait()
-	if account.readMost.Load() != 1 || account.most.Load() > accountPlaces {
+	if account.readMost.Load() != accountReadingPlaces || account.most.Load() > accountPlaces {
 		t.Fatalf("at once: reading %d, all %d", account.readMost.Load(), account.most.Load())
 	}
 }

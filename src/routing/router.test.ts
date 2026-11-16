@@ -195,11 +195,24 @@ describe('CanonKeeper TanStack Router', () => {
   // PS4.1, PS4.3: a step from a section carries it; a page that replaces its own address keeps it; the menu drops it.
   it('keeps the way back on a replace of the address and drops it on a step of the menu', () => {
     const chat = { section: 'chat' as const, name: 'Кто такой Сава?' };
-    expect(backFromOfStep({ from: chat }, undefined)).toEqual(chat);
-    expect(backFromOfStep({ replace: true }, chat)).toEqual(chat);
-    expect(backFromOfStep(undefined, chat)).toBeUndefined();
-    expect(backFromOfStep({ replace: true, from: null }, chat)).toBeUndefined();
-    expect(backFromOfStep({ from: null }, chat)).toBeUndefined();
+    const fromChat = { ...createAppRoute('/notes'), from: chat };
+    expect(backFromOfStep('/chat', { from: chat }, createAppRoute('/notes'))).toEqual(chat);
+    expect(backFromOfStep('/notes', { replace: true }, fromChat)).toEqual(chat);
+    expect(backFromOfStep('/notes', undefined, fromChat)).toBeUndefined();
+    expect(backFromOfStep('/notes', { replace: true, from: null }, fromChat)).toBeUndefined();
+    expect(backFromOfStep('/notes', { from: null }, fromChat)).toBeUndefined();
+  });
+
+  // «Настройки» of the app are reached from the top bar, a strip or a line of any page, and a new app has no saga, so no
+  // column of sections to leave them by: a step into them carries the section it leaves, a step inside them keeps it.
+  it('a step into «Настройки» carries the section it leaves and a step inside them keeps it', () => {
+    const shelf = createAppRoute('/manuscript/books');
+    expect(backFromOfStep('/settings', undefined, shelf)).toEqual({ section: 'books' });
+    expect(backFromOfStep('/settings', undefined, createAppRoute('/chat', { projectId: 'p' }))).toEqual({ section: 'chat' });
+    const inSettings = { ...createAppRoute('/settings', { part: 'data' }), from: { section: 'books' as const } };
+    expect(backFromOfStep('/settings', undefined, inSettings)).toEqual({ section: 'books' });
+    expect(backFromOfStep('/settings', { from: null }, shelf)).toBeUndefined();
+    expect(backFromOfStep('/chat', undefined, shelf)).toBeUndefined();
   });
 
   it('отбрасывает версию текста из маршрута рукописи', () => {

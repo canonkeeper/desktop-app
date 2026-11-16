@@ -3,6 +3,7 @@
 package readingconsent
 
 import (
+	"canonkeeper/backend/internal/domain/appwork"
 	"context"
 	"time"
 
@@ -46,12 +47,12 @@ func (policy Policy) ReadingAllowed(ctx context.Context, projectID string, sampl
 }
 
 // ChaptersAtOnce is «Запросов одновременно» of the author (CN3.5): the builder of the cards takes as many chapters at once, so
-// a stop finds no more chapters with a paid card and no pass. The helper of the account reads with one place of its two
+// a stop finds no more chapters with a paid card and no pass. The helper of the account reads with all its places but one
 // (specs/2026-11-13-desk-account-ai.md AI3.3).
 func (policy Policy) ChaptersAtOnce(context.Context) int {
 	ai := policy.Settings.AI()
 	if ai.Source == aisettings.SourceAccount {
-		return 1
+		return appwork.ReadingPlaces
 	}
 	if own := ai.Own; own != nil {
 		return own.Advanced.Parallel

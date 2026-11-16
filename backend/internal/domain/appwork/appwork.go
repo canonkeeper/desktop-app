@@ -15,6 +15,15 @@ import (
 	"time"
 )
 
+// The places of a linked app on the models of the site (specs/2026-11-13-desk-account-ai.md AI3.3,
+// specs/2026-11-13-desk-proxy.md PX1.5; the owner's word of 16.11): the site keeps PlacesPerApp requests of one app at
+// once, and the reading of the books holds at most ReadingPlaces of them — so many chapters at once —, so a question of
+// the chat always has its place. The site's gate and the app's gateway and policy of the reading read these two numbers.
+const (
+	PlacesPerApp  = 6
+	ReadingPlaces = PlacesPerApp - 1
+)
+
 // Kind is the work a permit of the site lets the app do (the site's modelpermits.Kind, coresteps.Permit).
 type Kind string
 

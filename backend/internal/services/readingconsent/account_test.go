@@ -3,6 +3,7 @@
 package readingconsent
 
 import (
+	"canonkeeper/backend/internal/domain/appwork"
 	"context"
 	"errors"
 	"testing"
@@ -79,8 +80,8 @@ func TestTheConsentOfTheAccountIsItsOwn(t *testing.T) {
 	if allowed, _ := (Policy{Settings: account, Consents: store}).ReadingAllowed(context.Background(), "saga", false); allowed {
 		t.Fatal("the consent of «Свой ИИ» reads for the account")
 	}
-	if (Policy{Settings: account}).ChaptersAtOnce(context.Background()) != 1 {
-		t.Fatal("the account reads more than one chapter at once")
+	if (Policy{Settings: account}).ChaptersAtOnce(context.Background()) != appwork.ReadingPlaces {
+		t.Fatal("the account reads other than all its places but one at once")
 	}
 	if _, err := (Samples{Settings: account, Owners: ownersFake{}}).Start(context.Background(), "author", "saga", "key"); !isConflict(err, CodeNoSample) {
 		t.Fatalf("a sample of the account = %v", err)

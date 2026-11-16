@@ -4,6 +4,7 @@ package desktop
 
 import (
 	"bytes"
+	"canonkeeper/backend/internal/domain/appwork"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -751,7 +752,8 @@ func TestTheReadingOfTheAccountGoesUnderItsConsent(t *testing.T) {
 	cards := site.stepsOf(coresteps.Card)
 	run.window.importFileAs(saga.project, "Второй том.md", bookOf("Глава 3. Ледяной перевал", "Глава 4. Застава", "Глава 5. Огни"), "import-of-the-second-book")
 	paused := saga.pausedAt(3 * time.Minute)
-	if paused.Pause == nil || *paused.Pause != "characters" || site.stepsOf(coresteps.Card)-cards != 1 {
+	// Only the chapters already on their way go before the pause: no more than the reading holds at once (AI3.5).
+	if read := site.stepsOf(coresteps.Card) - cards; paused.Pause == nil || *paused.Pause != "characters" || read < 1 || read > appwork.ReadingPlaces {
 		t.Fatalf("the pause = %+v after %d cards%s", paused, site.stepsOf(coresteps.Card)-cards, saga.journey())
 	}
 	var status struct {
