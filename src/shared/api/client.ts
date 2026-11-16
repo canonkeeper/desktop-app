@@ -253,6 +253,18 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'setAdminContacts', '200'>('setAdminContacts', { body });
   }
 
+  getDesktopApp(options: ApiRequestOptions = {}) {
+    return this.request<'getDesktopApp', '200'>('getDesktopApp', { signal: options.signal });
+  }
+
+  getAdminDesktopApp(options: ApiRequestOptions = {}) {
+    return this.request<'getAdminDesktopApp', '200'>('getAdminDesktopApp', { signal: options.signal });
+  }
+
+  setAdminDesktopApp(body: OperationRequest<'setAdminDesktopApp'>) {
+    return this.request<'setAdminDesktopApp', '200'>('setAdminDesktopApp', { body });
+  }
+
   uploadFeedbackImage(input: FeedbackImageUploadInput, options: FeedbackImageUploadOptions = {}) {
     const form = new FormData();
     form.append('draftKey', input.draftKey);

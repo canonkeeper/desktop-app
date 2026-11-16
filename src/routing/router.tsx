@@ -13,7 +13,7 @@ import { App } from '../App';
 import { ClientErrorScreen } from '../app/ClientErrorScreen';
 import { currentUserQueryOptions } from '../entities/session/api';
 import type { CanonKeeperApiClient } from '../shared/api';
-import { createAppRoute, isBackFrom, isReturnPlace, toHref, type AppRoute, type BackFrom, type RouteNavigate } from '../shared/navigation/app-route';
+import { createAppRoute, isBackFrom, isReturnPlace, toHref, type AppRoute, type BackFrom, type RouteNavigate, type Surface } from '../shared/navigation/app-route';
 import { notesNavigationQuery } from '../shared/navigation/notes-route';
 import { holdOverlaySteps, stepBackPastOverlays } from '../ui/overlays/overlay-history';
 
@@ -88,12 +88,16 @@ export function routeOfLocation(location: { pathname: string; searchStr: string;
   };
 }
 
+/** The surfaces of the pages one edition has and the other has not. */
+const pagesOfOneEdition: ReadonlySet<Surface> = new Set<Surface>(['settings', 'app-page']);
+
 /**
- * «Настройки» are a page of the desktop app alone (specs/2026-11-13-desk-settings.md ST1.2): in an edition without their
- * page their address is the route of no page, as before them — the tab, the guest and the shell read it so.
+ * «Настройки» are a page of the desktop app alone (specs/2026-11-13-desk-settings.md ST1.2), «CanonKeeper на компьютере» a
+ * page of the site alone (specs/2026-11-16-desk-app-page.md AP2.1): in an edition without the page its address is the route
+ * of no page, as before it — the tab, the guest and the shell read it so.
  */
 function routeOfEdition(route: AppRoute): AppRoute {
-  if (route.surface !== 'settings' || edition.pages.settings) return route;
+  if (!pagesOfOneEdition.has(route.surface) || edition.pages[route.surface]) return route;
   return { invalidQuery: false, path: route.path, surface: 'unknown', query: new URLSearchParams(), overlay: undefined };
 }
 

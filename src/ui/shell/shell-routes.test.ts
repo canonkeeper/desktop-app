@@ -12,8 +12,9 @@ describe('the table of the shell', () => {
 
   it('puts every page of a signed-in author in the shell and the pages before the product apart', () => {
     const shelled = surfaces.filter((surface) => shellOfSurface[surface]);
-    // «Настройки» of the desktop app stand in the shell too (specs/2026-11-13-desk-settings.md ST1.2).
-    expect(shelled.sort()).toEqual(['account', 'chat', 'drawing', 'legal', 'link', 'manuscript', 'memory', 'notes',
+    // «Настройки» of the desktop app stand in the shell too (specs/2026-11-13-desk-settings.md ST1.2), and the page of the app
+    // of the site (specs/2026-11-16-desk-app-page.md AP2.1).
+    expect(shelled.sort()).toEqual(['account', 'app-page', 'chat', 'drawing', 'legal', 'link', 'manuscript', 'memory', 'notes',
       'promo', 'saga', 'settings', 'tariff', 'unknown', 'writing']);
   });
 
@@ -38,7 +39,7 @@ describe('the table of the shell', () => {
   // specs/2026-11-10-ux2-patterns-states.md PS1.2: two widths, by the surface.
   it('gives the reading and the forms 720 px and the lists and the workplaces the whole width', () => {
     const reading = surfaces.filter((surface) => shellOfSurface[surface] && contentWidth({ surface }) === 'reading');
-    expect(reading.sort()).toEqual(['account', 'legal', 'link', 'promo', 'tariff', 'unknown']);
+    expect(reading.sort()).toEqual(['account', 'app-page', 'legal', 'link', 'promo', 'tariff', 'unknown']);
     for (const surface of ['manuscript', 'saga', 'memory', 'chat', 'writing', 'drawing', 'notes'] as const) {
       expect(contentWidth({ surface })).toBe('wide');
     }

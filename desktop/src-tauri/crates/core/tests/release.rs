@@ -12,7 +12,9 @@ use std::fs;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use canonkeeper_desktop_core::update::manifest::{self, Keys};
-use canonkeeper_desktop_core::update::policy::{Limits, Policy, HOSTS, MAIN_KEY, SITE_FILES, SMOKE_MARK, SPARE_KEY};
+use canonkeeper_desktop_core::update::policy::{
+    Limits, Policy, DEVELOPMENT_KEYS, HOSTS, MAIN_KEY, SITE_FILES, SMOKE_MARK, SPARE_KEY,
+};
 use canonkeeper_desktop_core::update::release::{
     check, installers, kind_of, marks, programs, rfc3339, sign, Expected, MANIFEST, SITE_LATEST, SUMS,
 };
@@ -190,8 +192,10 @@ fn a_release_without_a_kind_or_with_a_file_for_no_kind_fails() {
 #[test]
 fn the_keys_of_development_and_a_key_out_of_tune_fail_the_release() {
     let release = stand("development", &ALL);
-    // The tree as it is: its main key is a key of development, whose secret half is nowhere.
-    let tree = released(MAIN_KEY, SPARE_KEY);
+    // The keys of the tree are the owner's, not the keys of development.
+    assert!(!DEVELOPMENT_KEYS.contains(&MAIN_KEY) && !DEVELOPMENT_KEYS.contains(&SPARE_KEY));
+    // A tree whose main key is a key of development, whose secret half is nowhere.
+    let tree = released(DEVELOPMENT_KEYS[0], DEVELOPMENT_KEYS[1]);
     let problems = check(&release.dir, &expected(&tree), &tree);
     assert!(problems.iter().any(|problem| problem.contains("key of development")), "{problems:?}");
     // The key of tauri.conf.json is not the one of the code; the spare key is the main one or not a key.

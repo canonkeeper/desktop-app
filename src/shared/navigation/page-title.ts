@@ -27,6 +27,8 @@ export function formatPageTitle({ mark, object, saga, section }: TitleParts) {
 export const sectionTitles: Readonly<Record<Surface, string | null>> = {
   account: 'Аккаунт',
   admin: 'Админка',
+  // The page of the app of the site (specs/2026-11-16-desk-app-page.md AP2.3).
+  'app-page': 'CanonKeeper на компьютере',
   auth: 'Вход',
   chat: 'Чат',
   compare: 'Какой текст приятнее читать',

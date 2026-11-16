@@ -28,10 +28,10 @@ pub const HOSTS: [&str; 3] = ["canonkeeper.ru", "github.com", "release-assets.gi
 
 /// The keys of the app (UB3.4): the main key signs every release; the spare one signs the version after a loss or a leak
 /// of the main one, which then names a new spare key. Both are the base64 of the text of a minisign public key; the main
-/// one is also `plugins.updater.pubkey` of tauri.conf.json. Until the owner gives the keys of the app, these are the keys
-/// of development.
-pub const MAIN_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1NUMxREVCMUI0ODQzMkMKUldRc1EwZ2I2eDFjTllJb2FLTTRCT3UwZHNtMkFxODlJTTNzTDFQTXVQUlhTZi84ek16Z1lHWS8K";
-pub const SPARE_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3NEY4MERFRTFGMzhFOTIKUldTU2p2UGgzb0JQaC8waTlnZ3FKS0lGOWFHektXWC9mRVJPOVRDbzVhd1I1MFJqQ0RrK3RVSjUK";
+/// one is also `plugins.updater.pubkey` of tauri.conf.json. These are the owner's keys (main AB76BE2033FDF3BD, spare
+/// 7C58C3FAE72B4090), made by `canonkeeper-release keygen`; their secret halves are only the owner's.
+pub const MAIN_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCNzZCRTIwMzNGREYzQkQKUldTOTgvMHpJTDUycTlZZUxXOHpwb2VCU2dIcFBlM21tQXFhdkpZTFpIKzAxR3VLZGJjTklNeisK";
+pub const SPARE_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdDNThDM0ZBRTcyQjQwOTAKUldTUVFDdm4rc05ZZkprUlpkNkxGMkNQUWRVRW9VSmVjN0xoN3pEeUF6czM3N2Qra0dMTmhkOUUK";
 
 /// The keys of development: their pairs were made by `update::sign::generate` and the secret halves dropped at once, kept
 /// nowhere, so no release can be signed for them; the

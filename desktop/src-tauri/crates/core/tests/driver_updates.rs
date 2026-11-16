@@ -555,7 +555,9 @@ serve
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let received = stand.received();
-        let restarted = received.iter().rposition(|line| line.starts_with("start ")).filter(|_| stand.starts() == 2);
+        // The second start counts once its own line has arrived: the count of the starts of the stand can run ahead of it.
+        let started = received.iter().filter(|line| line.starts_with("start ")).count();
+        let restarted = received.iter().rposition(|line| line.starts_with("start ")).filter(|_| started == 2);
         if let Some(first) =
             restarted.and_then(|at| received[at..].iter().find(|line| line.starts_with("update-state")))
         {

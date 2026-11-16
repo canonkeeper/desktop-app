@@ -81,6 +81,9 @@ var productRuntimeTableContract = roleTableContract{
 				// The batches and the keys of a tier (0118, specs/2026-11-08-subscription-tiers.md TR10.3): a key is
 				// redeemed or revoked, never deleted.
 				"subscription_key_batches", "subscription_keys",
+				// Whether the page of the app on the site is shown (0159, specs/2026-11-16-desk-app-page.md AP1.2): one row the
+				// administrator sets, never deleted.
+				"platform_desktop_app",
 			},
 		},
 		{

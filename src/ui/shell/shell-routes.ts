@@ -8,6 +8,7 @@ import { sectionEntry, type SagaSection } from '../saga-sections';
 export const shellOfSurface: Readonly<Record<Surface, boolean>> = {
   account: true,
   admin: false,
+  'app-page': true,
   auth: false,
   chat: true,
   compare: false,
@@ -68,7 +69,7 @@ export function narrowColumn(route: Pick<AppRoute, 'query' | 'surface'>) {
  */
 export type ContentWidth = 'reading' | 'wide';
 
-const readingSurfaces: ReadonlySet<Surface> = new Set<Surface>(['account', 'legal', 'link', 'promo', 'tariff', 'unknown']);
+const readingSurfaces: ReadonlySet<Surface> = new Set<Surface>(['account', 'app-page', 'legal', 'link', 'promo', 'tariff', 'unknown']);
 
 export function contentWidth(route: Pick<AppRoute, 'surface'>): ContentWidth {
   return readingSurfaces.has(route.surface) ? 'reading' : 'wide';

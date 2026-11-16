@@ -14,6 +14,12 @@ export function createContactHandlers(repository: MockRepository, csrfState: Msw
     http.put(mswPath('setAdminContacts'), ({ request }) => jsonResponse(
       async () => repository.setAdminContacts(await body<'setAdminContacts'>(request)), undefined, security('setAdminContacts', request),
     )),
+    // The page «CanonKeeper на компьютере» and its switch (specs/2026-11-16-desk-app-page.md AP1).
+    http.get(mswPath('getDesktopApp'), ({ request }) => jsonResponse(() => repository.getDesktopApp(), undefined, security('getDesktopApp', request))),
+    http.get(mswPath('getAdminDesktopApp'), ({ request }) => jsonResponse(() => repository.getAdminDesktopApp(), undefined, security('getAdminDesktopApp', request))),
+    http.put(mswPath('setAdminDesktopApp'), ({ request }) => jsonResponse(
+      async () => repository.setAdminDesktopApp(await body<'setAdminDesktopApp'>(request)), undefined, security('setAdminDesktopApp', request),
+    )),
     http.post(mswPath('uploadFeedbackImage'), ({ request }) => jsonResponse(
       async () => repository.uploadFeedbackImage(await readFeedbackImageForm(request)), { status: 201 }, security('uploadFeedbackImage', request),
     )),

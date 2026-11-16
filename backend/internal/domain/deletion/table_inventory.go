@@ -87,6 +87,9 @@ func DeletionTableInventory() []TableDisposition {
 		// «Как с нами связаться» and the feedback of authors and guests (specs/2026-11-07-contacts.md): account data,
 		// removed with the account and, for a guest, after its term (F4).
 		{"platform_contacts", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// Whether the page «CanonKeeper на компьютере» of the site is shown (specs/2026-11-16-desk-app-page.md AP1.2): a setting
+		// of the platform, not account data.
+		{"platform_desktop_app", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"feedback_threads", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"feedback_messages", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"feedback_images", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},

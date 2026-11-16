@@ -244,6 +244,10 @@ export interface CanonKeeperApiClient {
   getContacts(options?: ApiRequestOptions): Promise<OperationResponse<'getContacts', '200'>>;
   getAdminContacts(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminContacts', '200'>>;
   setAdminContacts(body: OperationRequest<'setAdminContacts'>): Promise<OperationResponse<'setAdminContacts', '200'>>;
+  // The page «CanonKeeper на компьютере» of the site and its switch (specs/2026-11-16-desk-app-page.md AP1).
+  getDesktopApp(options?: ApiRequestOptions): Promise<OperationResponse<'getDesktopApp', '200'>>;
+  getAdminDesktopApp(options?: ApiRequestOptions): Promise<OperationResponse<'getAdminDesktopApp', '200'>>;
+  setAdminDesktopApp(body: OperationRequest<'setAdminDesktopApp'>): Promise<OperationResponse<'setAdminDesktopApp', '200'>>;
   uploadFeedbackImage(input: FeedbackImageUploadInput, options?: FeedbackImageUploadOptions): Promise<OperationResponse<'uploadFeedbackImage', '201'>>;
   createFeedbackThread(body: OperationRequest<'createFeedbackThread'>): Promise<OperationResponse<'createFeedbackThread', '201'>>;
   listFeedbackThreads(options?: ApiRequestOptions): Promise<OperationResponse<'listFeedbackThreads', '200'>>;

@@ -316,6 +316,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/desktop-app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the page «CanonKeeper на компьютере»
+         * @description Whether the page of the app on the site is shown: the administrator's switch is on and the site serves an open version of the app with all four installers. Shown, the answer names that version and its installers — the kind, the address on this site and the length in bytes; hidden, only shown false. No sign-in is needed: the home page of a guest and the menu of an author show the entries of the page. Cache-Control: public, max-age=60.
+         */
+        get: operations["getDesktopApp"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/desktop-app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the switch of the page «Приложение»
+         * @description The administrator's switch of the page «CanonKeeper на компьютере» and the open version of the mirror of the releases of the app on this site with the length of each installer; mirror null — the site serves no version, and the page stays hidden whatever the switch. Cache-Control: no-store.
+         */
+        get: operations["getAdminDesktopApp"];
+        /**
+         * Show or hide the page «Приложение»
+         * @description Sets the switch of the page «CanonKeeper на компьютере» and of its entries: the home page of a guest, the menu of an author, the empty part «Приложения на компьютере» and «Скачать сагу файлом…». One row; a repeat changes nothing and writes nothing, a change is one desktop_page_shown or desktop_page_hidden line of the backend journal with the administrator's id. Authors see the change within a minute: getDesktopApp is cached that long. Cache-Control: no-store.
+         */
+        put: operations["setAdminDesktopApp"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feedback/images": {
         parameters: {
             query?: never;
@@ -5286,6 +5330,57 @@ export interface components {
             telegram?: string | null;
             email?: string | null;
             note?: string | null;
+        };
+        /** @description The page «CanonKeeper на компьютере» of the site (specs/2026-11-16-desk-app-page.md AP1.1): hidden, or shown with the version it offers. */
+        DesktopApp: components["schemas"]["DesktopAppHidden"] | components["schemas"]["DesktopAppShown"];
+        /** @description The page and its entries are hidden. */
+        DesktopAppHidden: {
+            /** @constant */
+            shown: false;
+        };
+        /** @description The page is shown: the version the site serves and its four installers, one of each kind. */
+        DesktopAppShown: {
+            /** @constant */
+            shown: true;
+            /** @description The version of the app, three numbers. */
+            version: string;
+            files: components["schemas"]["DesktopAppFile"][];
+        };
+        /** @description An installer of the version the page offers. */
+        DesktopAppFile: {
+            /**
+             * @description The kind of the installer: windows — the installer of Windows; deb, rpm — the packages of Linux; appimage — the AppImage of any Linux.
+             * @enum {string}
+             */
+            kind: "windows" | "deb" | "rpm" | "appimage";
+            /** @description The address of the installer on this site, without its origin: /app/open/<version>/<name>. */
+            url: string;
+            /** @description The length of the installer in bytes. */
+            bytes: number;
+        };
+        /** @description The block «Приложение» of the settings of the administrator: the switch and the open version of the mirror, null when the site serves none. */
+        AdminDesktopApp: {
+            /** @description Whether the administrator shows the page. */
+            shown: boolean;
+            mirror: components["schemas"]["AdminDesktopAppMirror"] | null;
+        };
+        /** @description The open version of the mirror and the length of each of its installers. */
+        AdminDesktopAppMirror: {
+            /** @description The version of the app, three numbers. */
+            version: string;
+            files: {
+                /**
+                 * @description The kind of the installer: windows — the installer of Windows; deb, rpm — the packages of Linux; appimage — the AppImage of any Linux.
+                 * @enum {string}
+                 */
+                kind: "windows" | "deb" | "rpm" | "appimage";
+                /** @description The length of the installer in bytes. */
+                bytes: number;
+            }[];
+        };
+        /** @description Show or hide the page «CanonKeeper на компьютере». */
+        SetAdminDesktopAppRequest: {
+            shown: boolean;
         };
         /** @description The limits of a tier (TR1.2; specs/2026-11-11-tier-limits.md TL2.1): what it promises, then the guards of what spends the model or holds text. Each but trialImages, trialChapters, trialVoiceCalls and trialVoiceCallMinutes is the writer's limit of its key unless he has his own; accountCharacters and accountChapters hold one saga alike. image_uploads_per_day is no tier's. */
         TierLimits: {
@@ -11986,6 +12081,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminContacts"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getDesktopApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether the page is shown and what it offers. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "public, max-age=60";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopApp"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getAdminDesktopApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The switch and the mirror. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDesktopApp"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AdminForbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    setAdminDesktopApp: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAdminDesktopAppRequest"];
+            };
+        };
+        responses: {
+            /** @description The switch and the mirror as stored. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDesktopApp"];
                 };
             };
             400: components["responses"]["BadRequest"];

@@ -21,7 +21,7 @@ const files = sources(root).map((file) => ({ file: path.relative(root, file).spl
 /**
  * The pages that stand without the shell, or before the product, keep their <main>: the shell itself, sign-in, the guest
  * home, the comparison, the letter link of a permission, the admin panel, the screens of an outage and of a client error,
- * the change of the identity, and the guest «Тариф», documents and «Такой страницы нет» (S1.1).
+ * the change of the identity, and the guest «Тариф», documents, «CanonKeeper на компьютере» and «Такой страницы нет» (S1.1).
  */
 const ownMain = new Set([
   'ui/shell/Shell.tsx',
@@ -37,6 +37,8 @@ const ownMain = new Set([
   'features/legal/LegalDocumentPage.tsx',
   // A guest on an address of no page (specs/2026-11-11-ux9-account.md AC1.5).
   'features/auth/GuestNotFound.tsx',
+  // The guest «CanonKeeper на компьютере» (specs/2026-11-16-desk-app-page.md AP2.1).
+  'features/desktop-app/DesktopAppPage.tsx',
 ]);
 
 describe('one shell in the tree of a page', () => {

@@ -1006,6 +1006,13 @@ type PlatformContact struct {
 	UpdatedBy pgtype.UUID        `json:"updated_by"`
 }
 
+type PlatformDesktopApp struct {
+	Singleton bool               `json:"singleton"`
+	Shown     bool               `json:"shown"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
+}
+
 type PlatformQuotaDefault struct {
 	Singleton                    bool               `json:"singleton"`
 	ChatTurnsPerDay              pgtype.Int4        `json:"chat_turns_per_day"`

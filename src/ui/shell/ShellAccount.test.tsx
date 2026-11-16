@@ -114,6 +114,18 @@ describe('the account of the top bar', () => {
     expect(onOpenTariff).toHaveBeenCalledOnce();
   });
 
+  // specs/2026-11-16-desk-app-page.md AP3.1: the line of the page of the app after «Аккаунт» is named by the build that gives
+  // it — the open menu holds no word of it.
+  it('names the line of the page of the app by the words of its build, after «Аккаунт»', () => {
+    const onOpen = vi.fn();
+    renderAccount({ busy: false, onOpenAccount: vi.fn(), desktopApp: { label: 'Страница приложения', onOpen } });
+    fireEvent.click(screen.getByRole('button', { name: 'Аккаунт' }));
+    const menu = screen.getByRole('dialog', { name: 'Меню аккаунта' });
+    expect(within(menu).getAllByRole('button').map((item) => item.textContent)).toEqual(['Аккаунт', 'Страница приложения', 'Выйти']);
+    fireEvent.click(within(menu).getByRole('button', { name: 'Страница приложения' }));
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   // TA1.2: the line of the administrator working as the author and the line of an unverified address name the address.
   it('names the address once, in the line of the work as the author or of an unverified address', () => {
     renderAccount({

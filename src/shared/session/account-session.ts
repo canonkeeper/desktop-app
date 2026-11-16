@@ -110,6 +110,11 @@ export interface AccountSession {
   /** Opens «Аккаунт», where a build has one (TA1.1). */
   onOpenAccount?: () => void;
   /**
+   * The page of the app of a build that has one (specs/2026-11-16-desk-app-page.md AP3.1): the item after «Аккаунт» in the
+   * words the build gives, only while the server shows the page; absent in a build without it.
+   */
+  desktopApp?: { label: string; onOpen: () => void };
+  /**
    * The tier in force once the plan is read, where a build has plans (TR9.9, TA1.3): the badge next to the account button
    * of a top bar and the line «Тариф · …» of the account menu in the same words, in the tone of a warning when the tier
    * ends within 3 days. Absent while the plan loads or fails: the tier is not guessed.

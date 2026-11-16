@@ -118,6 +118,11 @@ export type MockState = {
   readingTestVotes: MockReadingTestVote[];
   /** «Как с нами связаться» и обратная связь (specs/2026-11-07-contacts.md). */
   contacts: MockContacts;
+  /**
+   * Переключатель страницы «CanonKeeper на компьютере» (specs/2026-11-16-desk-app-page.md AP1): по умолчанию страница скрыта;
+   * версию зеркала сайта мок держит всегда, «зеркала нет» — сценарий.
+   */
+  desktopAppShown: boolean;
   feedbackThreads: MockFeedbackThread[];
   feedbackImages: MockFeedbackImage[];
   /** Тарифы сайта и периоды тарифа писателей (specs/2026-11-08-subscription-tiers.md). */
@@ -670,6 +675,7 @@ function createInitialState(): MockState {
     promoPermissions: createInitialPromoPermissions(user, projectId, project.title),
     readingTestVotes: [],
     contacts: { telegram: null, email: null, note: null, updatedAt: null },
+    desktopAppShown: false,
     feedbackThreads: [],
     feedbackImages: [],
     tiers: createInitialTiers(),

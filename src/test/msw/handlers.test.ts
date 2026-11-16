@@ -1383,6 +1383,8 @@ function bodyFor(operationId: OperationId): unknown {
       return { token: mockPromoAnswerLink, decision: 'decline', attribution: null };
     case 'revokePromoLink':
       return { token: mockPromoRevokeLink };
+    case 'setAdminDesktopApp':
+      return { shown: true };
     case 'setAdminContacts':
       return { telegram: '@canon_keeper', email: 'support@example.test', note: 'Отвечаем в течение дня' };
     case 'createFeedbackThread':

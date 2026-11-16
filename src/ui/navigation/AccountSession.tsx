@@ -1,4 +1,4 @@
-import { ClockAlert, Gauge, LayoutDashboard, LifeBuoy, MailWarning, Megaphone, Send, Undo2, UserCog, UserRound } from 'lucide-react';
+import { ClockAlert, Gauge, LayoutDashboard, LifeBuoy, MailWarning, Megaphone, MonitorDown, Send, Undo2, UserCog, UserRound } from 'lucide-react';
 import { sendAgainWords, useAccountSession, type EmailVerificationState } from '../../shared/session/account-session';
 import { Button } from '../controls/Button';
 import { pluralize } from '../copy';
@@ -50,7 +50,8 @@ export function AccountActingMark({ className }: { className?: string }) {
 /**
  * The account part of a menu before «Выйти» (specs/2026-11-10-ux2-tariff-account.md TA1.1, TA1.2): the lines of the
  * sign-in — the unverified address, the admin items («Админка» and «Работать как пользователь», or who the admin works as
- * and the way back) — then «Тариф · «Писатель» до …», «Аккаунт» and «Написать нам» with the replies not opened yet.
+ * and the way back) — then «Тариф · «Писатель» до …», «Аккаунт», the page of the app in the words of the build while it
+ * shows that page, and «Написать нам» with the replies not opened yet.
  * `onDone` closes the menu and returns focus to the account button before the action opens a dialog or changes the
  * identity.
  */
@@ -86,6 +87,13 @@ export function AccountSessionItems({ itemRole, onDone, support = true }: {
         <Button className={styles.item} onClick={() => { onDone?.(); onOpenAccount(); }} role={itemRole} size="touch" variant="ghost">
           <UserRound aria-hidden="true" size={17} />
           Аккаунт
+        </Button>
+      ) : null}
+      {session.desktopApp ? (
+        // The page of the app of the site while it is shown (specs/2026-11-16-desk-app-page.md AP3.1, board 44·73).
+        <Button className={styles.item} onClick={() => { onDone?.(); session.desktopApp?.onOpen(); }} role={itemRole} size="touch" variant="ghost">
+          <MonitorDown aria-hidden="true" size={17} />
+          {session.desktopApp.label}
         </Button>
       ) : null}
       {session.promoRequest ? (

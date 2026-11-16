@@ -168,6 +168,10 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "getContacts", Method: "get", Path: "/contacts"},
 		{OperationID: "getAdminContacts", Method: "get", Path: "/admin/contacts"},
 		{OperationID: "setAdminContacts", Method: "put", Path: "/admin/contacts"},
+		// The page «CanonKeeper на компьютере» and its switch (specs/2026-11-16-desk-app-page.md AP1).
+		{OperationID: "getDesktopApp", Method: "get", Path: "/desktop-app"},
+		{OperationID: "getAdminDesktopApp", Method: "get", Path: "/admin/desktop-app"},
+		{OperationID: "setAdminDesktopApp", Method: "put", Path: "/admin/desktop-app"},
 		{OperationID: "uploadFeedbackImage", Method: "post", Path: "/feedback/images"},
 		{OperationID: "createFeedbackThread", Method: "post", Path: "/feedback/threads"},
 		{OperationID: "listFeedbackThreads", Method: "get", Path: "/feedback/threads"},

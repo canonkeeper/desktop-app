@@ -33,6 +33,7 @@ import { createIllustrationAccessOperations } from './repository/illustration-ac
 import { createPromoPermissionOperations } from './repository/promo-permissions';
 import { createReadingTestOperations } from './repository/reading-test';
 import { createContactOperations } from './repository/contact';
+import { createDesktopAppOperations } from './repository/desktop-app';
 import { createTierOperations } from './repository/tiers';
 import { createTierKeyOperations } from './repository/tier-keys';
 import { createTrashOperations } from './repository/trash';
@@ -82,6 +83,7 @@ export function createMockApiClient() {
     ...createPromoPermissionOperations(context),
     ...createReadingTestOperations(context),
     ...createContactOperations(context),
+    ...createDesktopAppOperations(context),
     ...createTierOperations(context),
     ...createTierKeyOperations(context),
     ...createTrashOperations(context),

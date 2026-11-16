@@ -100,6 +100,8 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	// Added by forward migration 0155: what a thread named and has not sent, the helpers a thread went to and the requests
 	// of the sample of the consent (specs/2026-11-14-desk-journal.md JR1.8), removed with the project.
 	want = append(want, "model_disclosures_pending", "model_thread_recipients", "reading_sample_requests")
+	// Added by forward migration 0159: whether the page of the app on the site is shown, a setting of the platform.
+	want = append(want, "platform_desktop_app")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},

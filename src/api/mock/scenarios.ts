@@ -69,6 +69,11 @@ export interface MockScenarioControl {
   /** The site did not hear «Отвязать» (AW1.5): unlinking is only on this computer. */
   unlinkSiteSilent?: boolean;
   /**
+   * The site has no open version of the app in its mirror (specs/2026-11-16-desk-app-page.md AP1): the page «Приложение»
+   * stays hidden whatever the switch, and the administrator reads «Зеркала нет».
+   */
+  desktopAppNoMirror?: boolean;
+  /**
    * The start of a question of the helper of the account is refused by its counter (specs/2026-11-13-desk-account-ai.md AI2.1,
    * AI2.6): the site did not answer twice (ai.account_unreachable, mayReturn says whether its unit comes back by itself), the
    * fence of the day (ai.daily_fence, with Retry-After), an app the site does not take (ai.app_unfit), a thread too large
@@ -232,6 +237,8 @@ const protectedOperations = new Set<OperationId>([
   'listRecentlyDeleted',
   'listAdminWriters', 'getAdminWriter', 'setAdminWriterQuota', 'blockAdminWriter', 'unblockAdminWriter', 'unlinkAdminWriterApp', 'listAdminDays', 'getAdminServiceStatus',
   'getAdminQuotaDefaults', 'setAdminQuotaDefaults',
+  // The switch of the page «Приложение» (specs/2026-11-16-desk-app-page.md AP1.2); the page itself is read by anyone.
+  'getAdminDesktopApp', 'setAdminDesktopApp',
   // «Связаться с нами» (specs/2026-11-07-contacts.md): the reads of an author and the admin part; a guest writes.
   'getAdminContacts', 'setAdminContacts', 'listFeedbackThreads', 'getFeedbackThread', 'addFeedbackMessage', 'getFeedbackImage',
   'listAdminFeedback', 'getAdminFeedbackThread', 'replyAdminFeedback', 'setAdminFeedbackStatus',
