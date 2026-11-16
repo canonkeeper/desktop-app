@@ -16,6 +16,21 @@ export function paragraphsLabel(from?: number, to?: number) {
   return to !== undefined && to > from ? `абзацы ${from}–${to}` : `абзац ${from}`;
 }
 
+/**
+ * The paragraphs of a chapter as the numbers of its places count them: «абзац N» is the N-th of all its paragraphs by
+ * `order` — a heading, a cited passage, an item and a break of a scene count too —, the number the server gives a paragraph
+ * (backend/internal/domain/sagamemory/version.go, Paragraph.N). One rule for the panel of the source of an answer and the
+ * page a link of the app opens (specs/2026-11-16-desk-app-links.md AL1.6).
+ */
+export function paragraphsInOrder<T extends { order: number }>(paragraphs: readonly T[]): T[] {
+  return [...paragraphs].sort((left, right) => left.order - right.order);
+}
+
+/** The paragraph a place numbers `number` (from one); none past the end of the chapter. */
+export function paragraphNumbered<T extends { order: number }>(paragraphs: readonly T[], number: number): T | undefined {
+  return Number.isSafeInteger(number) && number >= 1 ? paragraphsInOrder(paragraphs)[number - 1] : undefined;
+}
+
 /** «Книга 2, гл. 12 „Белый порт“, абзацы 3–5»; a chapter without a place is «глава, которой нет в книге». */
 export function placeLabel(place: string | undefined, from?: number, to?: number) {
   return [place || missingPlace, paragraphsLabel(from, to)].filter(Boolean).join(', ');

@@ -498,6 +498,8 @@ var windowRateLimits = map[string]ratelimit.Rule{
 	"unlinkBookFromObsidianFolder": {Limit: 20, Window: time.Minute},
 	// The records of its notes are loaded by a button after a preview (specs/2026-11-15-desk-obsidian-notes.md).
 	"importObsidianMaterials": {Limit: 10, Window: time.Minute},
+	// The map and the notes of the chapters are exported by a button (specs/2026-11-15-desk-obsidian-export.md OE1.1).
+	"exportObsidianSaga": {Limit: 10, Window: time.Minute},
 	// The journal is cleared and saved to a file by a button (specs/2026-11-14-desk-journal.md JR2.5, JR2.6); the file reads
 	// the whole choice, the heaviest read of the window.
 	"clearSendLog":   {Limit: 10, Window: time.Minute},

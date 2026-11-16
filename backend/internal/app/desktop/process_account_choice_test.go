@@ -40,7 +40,7 @@ type aiSettingsOf struct {
 // the source to the account. The profile of «Свой ИИ» — the provider, the models, «Дополнительно», the prices — is the same
 // after both.
 func TestALinkChoosesTheHelperOfTheAccountByTheIntentOfItsStart(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	site.set(theSiteWithItsHelper)
 	run := site.launch(t, site.program(t), resources, filepath.Join(t.TempDir(), "data"), nil, desktoptest.KeepAll)

@@ -16,7 +16,7 @@
     "api:check": "node scripts/generate-api-types.mjs --check",
     "architecture:check": "node scripts/check-architecture.mjs",
     "backend:test": "node scripts/local-postgres.mjs test",
-    "backend:verify": "npm run backend:test -- -race -count=1 -timeout 30m ./... && (cd backend && sqlc diff && go vet ./... && go build ./... && go mod verify) && (cd translate && go vet ./... && go test -race -count=1 ./...)",
+    "backend:verify": "CANONKEEPER_DESKTOP_WAITS=${CANONKEEPER_DESKTOP_WAITS:-5} npm run backend:test -- -race -count=1 -timeout 30m ./... && (cd backend && sqlc diff && go vet ./... && go build ./... && go mod verify) && (cd translate && go vet ./... && go test -race -count=1 ./...)",
     "backend:run": "cd backend && go run ./cmd/api",
     "production:up": "node scripts/local-production.mjs up",
     "production:down": "node scripts/local-production.mjs down",

@@ -569,6 +569,12 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     });
   }
 
+  exportObsidianSaga(projectId: string, body: OperationRequest<'exportObsidianSaga'>, options: RequiredIdempotencyOptions) {
+    return this.request<'exportObsidianSaga', '200'>('exportObsidianSaga', {
+      params: { path: { projectId } }, body, headers: idempotencyHeaders(options, 'exportObsidianSaga'),
+    });
+  }
+
   importObsidianBooks(projectId: string, body: OperationRequest<'importObsidianBooks'>, options: RequiredIdempotencyOptions) {
     return this.request<'importObsidianBooks', '200'>('importObsidianBooks', {
       params: { path: { projectId } }, body, headers: idempotencyHeaders(options, 'importObsidianBooks'),

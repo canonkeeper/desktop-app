@@ -984,8 +984,6 @@ type ObsidianVault struct {
 	ProjectID    pgtype.UUID        `json:"project_id"`
 	VaultPath    string             `json:"vault_path"`
 	ExportDir    pgtype.Text        `json:"export_dir"`
-	AutoExport   bool               `json:"auto_export"`
-	LastImportAt pgtype.Timestamptz `json:"last_import_at"`
 	LastExportAt pgtype.Timestamptz `json:"last_export_at"`
 }
 

@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use crate::control::{parse, LineError, ToBackend};
 use crate::folder::Reply;
+use crate::link::Argument;
 use crate::secrets::{Secret, Store};
 use crate::supervisor::Event;
 use crate::update::worker::Done;
@@ -63,6 +64,10 @@ pub enum Heard {
         request: String,
         checked: Option<Result<String, String>>,
     },
+    /// A second start of the app brought a link (specs/2026-11-16-desk-app-links.md AL1.2), raw.
+    Link(Argument),
+    /// The window loaded a page of its backend after the exchange of this opening (AL1.3).
+    Loaded(u64),
 }
 
 /// A running backend.

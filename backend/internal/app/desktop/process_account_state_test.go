@@ -73,7 +73,7 @@ func (run *linked) asked(from int) []desktoptest.Message {
 // awaitRemoval waits for the backend to ask the shell to remove the record of the pass.
 func (run *linked) awaitRemoval(t *testing.T, from int) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := desktoptest.Deadline(20 * time.Second)
 	for {
 		for _, change := range run.asked(from) {
 			if change.Type == "secret-delete" {
@@ -116,10 +116,10 @@ func (run *linked) saga(t *testing.T) books {
 		t.Fatalf("importBookFile = %d %s", response.StatusCode, body)
 	}
 	saga := books{project: project.ID}
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for !saga.found(t, window) {
 		if time.Now().After(deadline) {
-			t.Fatal("the book was not found in 90 s")
+			t.Fatalf("the book was not found in %s", desktoptest.Waited(90*time.Second))
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -172,7 +172,7 @@ func (saga books) work(t *testing.T, window *desktoptest.Window, state string) {
 // asks; a site silent past its term leaves what it told with «нет связи»; after a restart without the site the app is
 // linked and knows no name.
 func TestALinkedAppTellsItsAccountAsTheSiteToldIt(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	binary := site.program(t)
 	data := filepath.Join(t.TempDir(), "data")
@@ -225,7 +225,7 @@ func TestALinkedAppTellsItsAccountAsTheSiteToldIt(t *testing.T) {
 // breaks the link: the record of the pass goes through the shell and no request carries the pass any more. The author
 // finds and reads his book in every state.
 func TestTheAnswerOfTheSiteSaysTheStateOfTheLink(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	run := site.launch(t, site.program(t), resources, filepath.Join(t.TempDir(), "data"), linkedRecords(), desktoptest.KeepAll)
 	saga := run.saga(t)
@@ -307,7 +307,7 @@ func TestTheAnswerOfTheSiteSaysTheStateOfTheLink(t *testing.T) {
 // AC2.3: a refusal that comes to the pass of an unlinked link does not touch the new link made since; a record the shell
 // did not remove is not used in this run, and the next start removes it first and is not linked.
 func TestARefusalOfAnOldPassLeavesTheNewLinkAndALeftRecordGoesAtTheNextStart(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	binary := site.program(t)
 	data := filepath.Join(t.TempDir(), "data")
@@ -333,7 +333,7 @@ func TestARefusalOfAnOldPassLeavesTheNewLinkAndALeftRecordGoesAtTheNextStart(t *
 		state, _ := run.fresh(t)
 		held <- state
 	}()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := desktoptest.Deadline(10 * time.Second)
 	for len(site.heardOf(accountPath)) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("the read of the account did not reach the site")
@@ -355,7 +355,7 @@ func TestARefusalOfAnOldPassLeavesTheNewLinkAndALeftRecordGoesAtTheNextStart(t *
 		if state.State != "linked" {
 			t.Fatalf("the refusal of the old pass answered %+v", state)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(desktoptest.Waited(30 * time.Second)):
 		t.Fatal("the read with the old pass did not end")
 	}
 	if state, _ := run.fresh(t); state.State != "linked" || state.Unreachable || state.Account == nil {
@@ -401,7 +401,7 @@ func TestARefusalOfAnOldPassLeavesTheNewLinkAndALeftRecordGoesAtTheNextStart(t *
 	if state, _ := again.fresh(t); state.State != "none" || site.all() != requests {
 		t.Fatalf("the next start = %+v; the site heard %d more", state, site.all()-requests)
 	}
-	deadline = time.Now().Add(10 * time.Second)
+	deadline = desktoptest.Deadline(10 * time.Second)
 	for {
 		settings, err := os.ReadFile(DataDir{Root: data}.Settings())
 		if err == nil && !bytes.Contains(settings, []byte(`"account"`)) {
@@ -418,7 +418,7 @@ func TestARefusalOfAnOldPassLeavesTheNewLinkAndALeftRecordGoesAtTheNextStart(t *
 // not told, the record goes all the same and the answer says so. «Стереть все данные» asks the site to unlink and erases
 // when the site is silent, within its term.
 func TestUnlinkingAndErasingTellTheSiteWhenItAnswers(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	run := site.launch(t, site.program(t), resources, filepath.Join(t.TempDir(), "data"), linkedRecords(), desktoptest.KeepAll)
 	unlink := func() []byte {

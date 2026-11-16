@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // aiCheck is the answer of getAiCheck as the test reads it.
@@ -44,7 +46,7 @@ func TestTheCheckOfTheAppLeavesNoKeyAndNoWords(t *testing.T) {
 	address := startCheckProvider(t, stub)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, binary, resources, data, map[string]string{"provider:own": checkKey})
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -61,7 +63,7 @@ func TestTheCheckOfTheAppLeavesNoKeyAndNoWords(t *testing.T) {
 		t.Fatalf("startAiCheck = %d %s", response.StatusCode, body)
 	}
 	var check aiCheck
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := desktoptest.Deadline(60 * time.Second)
 	for {
 		window.read("/api/v1/desktop/ai/check", &check)
 		if check.State != "running" {
@@ -137,7 +139,7 @@ func TestTheCheckOfTheAppLeavesNoKeyAndNoWords(t *testing.T) {
 func TestTheOperationsOfTheCheckHaveTheirOwnBudgets(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	process := startBackend(t, binary, resources, filepath.Join(t.TempDir(), "data"), nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}

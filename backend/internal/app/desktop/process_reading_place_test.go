@@ -9,6 +9,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // specs/2026-11-14-chapter-place-number.md CP1.1 on the built backend of the app: a book of «.md» goes in with its chapters
@@ -36,7 +38,7 @@ func TestTheSampleNamesTheChaptersByTheirPlacesFromOne(t *testing.T) {
 			Place string `json:"place"`
 		} `json:"chapters"`
 	}
-	for deadline := time.Now().Add(3 * time.Minute); ; {
+	for deadline := desktoptest.Deadline(3 * time.Minute); ; {
 		window.read("/api/v1/projects/"+saga.project+"/reading/sample", &sample)
 		if sample.State == "succeeded" || sample.State == "failed" {
 			break

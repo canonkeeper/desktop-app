@@ -1076,6 +1076,146 @@
         "x-backend-purpose": "resource/command"
       }
     },
+    "/projects/{projectId}/obsidian/export": {
+      "post": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "exportObsidianSaga",
+        "summary": "Export the map of a saga and the notes of its chapters into the folder of its export in its Obsidian vault.",
+        "description": "Mounted only by the desktop build (specs/2026-11-15-desk-obsidian-export.md OE1). First one short transaction: the saga alive, the proof of the session, the role of an editor, the link of the vault. The answer kept for the Idempotency-Key is only of an export that ended (complete): its replay writes nothing; a replay after a failure or a partial answer exports again and comes to the same files. The map is read as the page of the map reads it: a saga without cards is obsidian.map_not_ready with reason no_cards, a map behind its cards obsidian.map_not_ready with reason updating — the Job of the cards is queued by the read of the map — (409); nothing is written then. Within 2 minutes only the reading of the folder of the export: its manifest (.canonkeeper/manifest.json) and the references the run replaces or moves; then the writes, each within a time of its own — past it the answer is partial at once and the next operation of the saga waits until the write returned. Everything is written only under the folder of the export, name after name without a link followed: a link or a file on the way to it is obsidian.export_dir_unsafe, a manifest of the folder of the saga that does not read obsidian.export_manifest_unreadable (409), nothing written. The folder is CanonKeeper/<the title of the saga>, « (2)» past a folder without the manifest of this saga, kept on the link before the first file. One file a node of the map (the nodes and the links the author took off the map left out), one a chapter with a card, Сага.md; a file the author changed (another fingerprint than the manifest keeps) is not updated without replaceChanged and, with it, moved into _Удалено/ — never written over; a reference of a node or a chapter that went is moved into _Удалено/; a file that does not read is skipped by its reason. No model, no Job, no record of what went out. One operation of a saga reads a vault at a time (obsidian.busy, 429), a reading past its time is obsidian.slow (503, nothing written). The strict Origin of the window, the CSRF token and its session; ten a minute for the window.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectId"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObsidianExportRequest"
+              },
+              "examples": {
+                "export": {
+                  "summary": "An export that leaves what the author changed",
+                  "value": {}
+                },
+                "replace": {
+                  "summary": "The word of the author: move what he changed into _Удалено/",
+                  "value": {
+                    "replaceChanged": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the export did, by groups: complete is false for a run that did not reach its end.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObsidianExport"
+                },
+                "examples": {
+                  "exported": {
+                    "summary": "Synthetic export of «Северный предел»",
+                    "value": {
+                      "folder": "CanonKeeper/Северный предел",
+                      "at": "2026-11-15T10:00:00Z",
+                      "complete": true,
+                      "created": {
+                        "count": 2,
+                        "names": [
+                          "Герои/Мара.md",
+                          "Главы/Туманный берег/1 Застава.md"
+                        ]
+                      },
+                      "updated": {
+                        "count": 1,
+                        "names": [
+                          "Сага.md"
+                        ]
+                      },
+                      "unchanged": {
+                        "count": 0,
+                        "names": []
+                      },
+                      "moved": {
+                        "count": 1,
+                        "names": [
+                          "_Удалено/Призрак.md"
+                        ]
+                      },
+                      "kept": {
+                        "count": 1,
+                        "names": [
+                          "Герои/Сава.md"
+                        ]
+                      },
+                      "skipped": [
+                        {
+                          "reason": "cloud_only",
+                          "count": 1,
+                          "names": [
+                            "Места/Белый порт.md"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "x-strict-origin-required": true,
+        "x-authz": "A member of a live saga with the right to change its books (editor and above); someone outside the saga and a deleted saga receive 404, a reader 403.",
+        "x-backend-purpose": "resource/command"
+      }
+    },
     "/projects/{projectId}/obsidian/books/{bookId}": {
       "put": {
         "tags": [
@@ -12697,6 +12837,17 @@
               "$ref": "#/components/schemas/ObsidianVaultBook"
             },
             "description": "A linked saga: the live books whose folder another book holds — to link anew or to take the link off."
+          },
+          "exportDir": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "A linked saga after its first export: the folder of the export from the root of the vault (specs/2026-11-15-desk-obsidian-export.md OE1.5, OE1.8)."
+          },
+          "lastExportAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "A linked saga: the time of its last export that reached its end; a new link or a new path of the vault forgets it (OE1.2, OE1.8)."
           }
         },
         "additionalProperties": false
@@ -13490,6 +13641,125 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ObsidianSkipCount"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ObsidianExportRequest": {
+        "type": "object",
+        "description": "An export (OE1.1): replaceChanged is the word of the author to move every reference he changed into _Удалено/ and write the fresh one.",
+        "properties": {
+          "replaceChanged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ObsidianExportGroup": {
+        "type": "object",
+        "description": "A group of the references of an export: how many, and the paths of the first 50 from the folder of the export.",
+        "required": [
+          "count",
+          "names"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "names": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ObsidianExportSkip": {
+        "type": "object",
+        "description": "The references of an export that did not read, by their reason: only in the cloud, held by another program, not to be read, a link.",
+        "required": [
+          "reason",
+          "count",
+          "names"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "cloud_only",
+              "busy",
+              "unreadable",
+              "link"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "names": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ObsidianExport": {
+        "type": "object",
+        "description": "What an export did (OE1.8): the folder of the export from the root of the vault, the time, whether the run reached its end, and the references created, updated, unchanged, moved into _Удалено/, not updated because the author changed them, skipped by their reasons.",
+        "required": [
+          "folder",
+          "at",
+          "complete",
+          "created",
+          "updated",
+          "unchanged",
+          "moved",
+          "kept",
+          "skipped"
+        ],
+        "properties": {
+          "folder": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "created": {
+            "$ref": "#/components/schemas/ObsidianExportGroup"
+          },
+          "updated": {
+            "$ref": "#/components/schemas/ObsidianExportGroup"
+          },
+          "unchanged": {
+            "$ref": "#/components/schemas/ObsidianExportGroup"
+          },
+          "moved": {
+            "$ref": "#/components/schemas/ObsidianExportGroup"
+          },
+          "kept": {
+            "$ref": "#/components/schemas/ObsidianExportGroup"
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObsidianExportSkip"
             }
           }
         },
@@ -15245,6 +15515,14 @@
             "type": "integer",
             "minimum": 1,
             "description": "obsidian.too_large of the records of notes: the records of a load and of a saga at most."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "updating",
+              "no_cards"
+            ],
+            "description": "obsidian.map_not_ready: why the map of the saga is not ready for an export — it is being updated, the Job of the cards queued; or the helper has read no book yet (specs/2026-11-15-desk-obsidian-export.md OE1.6)."
           }
         },
         "additionalProperties": false

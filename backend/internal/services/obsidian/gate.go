@@ -43,10 +43,24 @@ type Gate struct {
 	mu      sync.Mutex
 	running map[string]bool
 	total   int
+	// choosing is the one choice of the folder of a first export of the process (specs/2026-11-15-desk-obsidian-export.md
+	// OE1.5): a choice holds it until the folder it chose holds its manifest, so two sagas of one title never take one folder.
+	choosing chan struct{}
 }
 
 // NewGate is the gate of a process.
-func NewGate() *Gate { return &Gate{running: map[string]bool{}} }
+func NewGate() *Gate { return &Gate{running: map[string]bool{}, choosing: make(chan struct{}, 1)} }
+
+// choose takes the choice of a folder of a first export, waiting within ctx for another one to end; free gives it back.
+func (gate *Gate) choose(ctx context.Context) (free func(), err error) {
+	select {
+	case gate.choosing <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	var once sync.Once
+	return func() { once.Do(func() { <-gate.choosing }) }, nil
+}
 
 // Enter takes the place of an operation of the saga; release gives it back.
 func (gate *Gate) Enter(projectID string) (release func(), err error) {
@@ -135,6 +149,13 @@ func (tracked *readings) end() {
 // maybe, by a file system that does not answer — is left to end by itself; it sees its context end. A caller that went
 // away gets its own end. The readings of the operation (held) count the work until it returns.
 func within[T any](ctx context.Context, limit time.Duration, work func(context.Context) (T, error)) (T, error) {
+	return withinOr(ctx, limit, work, nil)
+}
+
+// withinOr is within whose work may answer with a value that holds something — a vault open, a lock — once its caller heard
+// ErrSlow or its own end: such a late answer goes to discard, which gives back what it holds. A work that answers right at
+// the end of its time is late too when the caller heard the end first; nothing it holds is left behind.
+func withinOr[T any](ctx context.Context, limit time.Duration, work func(context.Context) (T, error), discard func(T)) (T, error) {
 	limited, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	type result struct {
@@ -158,6 +179,13 @@ func within[T any](ctx context.Context, limit time.Duration, work func(context.C
 		}
 		return got.value, got.err
 	case <-limited.Done():
+		if discard != nil {
+			go func() {
+				if got := <-done; got.err == nil {
+					discard(got.value)
+				}
+			}()
+		}
 		if err := ctx.Err(); err != nil {
 			return zero, err
 		}
@@ -194,4 +222,9 @@ func (operation *writing) writes(limit time.Duration) (context.Context, context.
 // readIn runs the reading of an operation that writes within limit (OB0.1).
 func readIn[T any](operation *writing, limit time.Duration, work func(context.Context) (T, error)) (T, error) {
 	return within(operation.ctx, limit, work)
+}
+
+// readInOr is readIn whose late answer goes to discard (withinOr).
+func readInOr[T any](operation *writing, limit time.Duration, work func(context.Context) (T, error), discard func(T)) (T, error) {
+	return withinOr(operation.ctx, limit, work, discard)
 }

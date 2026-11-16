@@ -24,7 +24,7 @@ type Window struct {
 // OpenWindow opens the window of the process listening on 127.0.0.1:port with a one-time code of the channel.
 func OpenWindow(t testing.TB, port int, code string) *Window {
 	t.Helper()
-	window := &Window{t: t, Origin: "http://127.0.0.1:" + strconv.Itoa(port), client: &http.Client{Timeout: 60 * time.Second}}
+	window := &Window{t: t, Origin: "http://127.0.0.1:" + strconv.Itoa(port), client: &http.Client{Timeout: Waited(60 * time.Second)}}
 	response, body := window.Do(http.MethodPost, "/api/v1/desktop/session", window.CSRF(), map[string]string{"code": code})
 	for _, cookie := range response.Cookies() {
 		if cookie.Name == "ck_session" {

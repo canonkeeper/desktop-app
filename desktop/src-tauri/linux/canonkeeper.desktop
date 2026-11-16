@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The entry of the app of the .deb and the .rpm (specs/2026-11-16-desk-app-links.md AL2.2): the fields of the template of the
+# bundler of Tauri 2 and two changes — the program takes a link (%u) and opens the scheme canonkeeper://.
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}} %u
+StartupWMClass={{exec}}
+Icon={{icon}}
+MimeType=x-scheme-handler/canonkeeper;
+Name={{name}}
+Terminal=false
+Type=Application

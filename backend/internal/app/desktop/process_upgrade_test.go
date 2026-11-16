@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // programChangingJobs knows one migration after the last of the tree, and it changes the table of the Jobs.
@@ -41,7 +43,7 @@ func sagaWithAnImport(browser *client, title, key string) (string, string) {
 // queued a minute.
 func (browser *client) caughtRunning(jobID string) bool {
 	browser.t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := desktoptest.Deadline(60 * time.Second)
 	for status := browser.jobStatus(jobID); status != "running"; status = browser.jobStatus(jobID) {
 		if status != "queued" || time.Now().After(deadline) {
 			browser.t.Logf("the import is %s before it was caught running", status)
@@ -55,7 +57,7 @@ func (browser *client) caughtRunning(jobID string) bool {
 // untilFinished waits for the Job to end and returns how it ended.
 func (browser *client) untilFinished(jobID string, timeout time.Duration) string {
 	browser.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		status := browser.jobStatus(jobID)
 		if status == "succeeded" || status == "failed" || status == "canceled" || status == "expired" {
@@ -93,7 +95,7 @@ func TestAnUpdateStartsOverTheJobsTheEarlierProgramLeft(t *testing.T) {
 	for attempt := 1; ; attempt++ {
 		data = filepath.Join(t.TempDir(), "data")
 		first := startBackend(t, binary, resources, data, nil)
-		browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+		browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 		if response := browser.open(first.ready.Code); response.StatusCode != http.StatusOK {
 			t.Fatalf("open = %d", response.StatusCode)
 		}
@@ -131,7 +133,7 @@ func TestAnUpdateStartsOverTheJobsTheEarlierProgramLeft(t *testing.T) {
 	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last+1 {
 		t.Fatalf("the schema after the update = %d", schema)
 	}
-	browser := &client{t: t, origin: updated.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	browser := &client{t: t, origin: updated.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := browser.open(updated.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open after the update = %d", response.StatusCode)
 	}

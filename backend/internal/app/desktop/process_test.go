@@ -47,8 +47,17 @@ type backend struct {
 
 func desktopBinary(t *testing.T) (binary, resources string) {
 	t.Helper()
-	resources = desktoptest.Resources(t)
+	resources = processResources(t)
 	return program(t, programOfTheTree), resources
+}
+
+// processResources is the bundle of a process test, which runs beside the other process tests of the package
+// (desktoptest.Parallel): each has its own data directory, cluster, ports and stubs. A test without the bundle is skipped.
+func processResources(t *testing.T) string {
+	t.Helper()
+	resources := desktoptest.Resources(t)
+	desktoptest.Parallel(t)
+	return resources
 }
 
 func startBackend(t *testing.T, binary, resources, data string, secrets map[string]string) *backend {
@@ -105,7 +114,7 @@ func (process *backend) receive(timeout time.Duration) ControlMessage {
 	process.t.Helper()
 	line, err := process.process.Line(timeout)
 	if err != nil {
-		process.t.Fatalf("no control message in %s", timeout)
+		process.t.Fatalf("no control message in %s", desktoptest.Waited(timeout))
 	}
 	var message ControlMessage
 	_ = json.Unmarshal(line, &message)
@@ -346,7 +355,7 @@ func TestAColdStartServesTheWindowAndAClosedChannelLeavesNoProcess(t *testing.T)
 	}
 	_ = connection.Close(context.Background())
 
-	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	response := browser.open(process.ready.Code)
 	if response.StatusCode != http.StatusOK || browser.cookie == "" {
 		t.Fatalf("the first code = %d", response.StatusCode)
@@ -359,7 +368,7 @@ func TestAColdStartServesTheWindowAndAClosedChannelLeavesNoProcess(t *testing.T)
 	if response.Header.Get("Content-Security-Policy") == "" {
 		t.Fatal("an answer without the headers of the page")
 	}
-	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := stranger.open(process.ready.Code); response.StatusCode != http.StatusForbidden {
 		t.Fatalf("the code used twice = %d", response.StatusCode)
 	}
@@ -415,7 +424,7 @@ func TestAKilledBackendLeavesNothingTheNextStartCannotTakeOver(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	first := startBackend(t, binary, resources, data, nil)
-	browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := browser.open(first.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -440,7 +449,7 @@ func TestAKilledBackendLeavesNothingTheNextStartCannotTakeOver(t *testing.T) {
 	if err != nil || strings.Split(string(after), "\n")[0] == strings.Split(string(before), "\n")[0] {
 		t.Fatalf("the cluster left by the crash was not replaced: %v", err)
 	}
-	browser = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := browser.open(second.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open after the crash = %d", response.StatusCode)
 	}

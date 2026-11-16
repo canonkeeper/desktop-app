@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/domain/aisettings"
 	"canonkeeper/backend/internal/domain/coresteps"
 )
@@ -33,11 +35,14 @@ func (stub *readingStub) cards(chapter string) int {
 	return count
 }
 
-// journalRows counts the rows of the journal of the reading of the saga: every request the gateway let go.
+// journalRows counts the rows of the journal of the reading of the saga: every request the gateway let go. Its connection
+// closes at once: settled reads it every second.
 func (window readingWindow) journalRows() int {
 	window.t.Helper()
+	connection := database(window.t, window.data)
+	defer func() { _ = connection.Close(context.Background()) }()
 	var count int
-	if err := database(window.t, window.data).QueryRow(context.Background(), `
+	if err := connection.QueryRow(context.Background(), `
 		SELECT count(*) FROM model_requests WHERE project_id = $1 AND purpose IN ('card', 'card_pass', 'names', 'layer_book',
 		  'layer_reduce', 'layer_verify', 'layer_gap')`, window.project).Scan(&count); err != nil {
 		window.t.Fatal(err)
@@ -45,18 +50,22 @@ func (window readingWindow) journalRows() int {
 	return count
 }
 
-// settled waits until no request of the reading is at the stub and the count of the consent stands still.
+// settled waits until no request of the reading is at the stub, every request the stub heard has its row in the journal —
+// the gateway writes the count of the consent with the row of the request, a request cut by a pause too — and the count
+// of the consent stands still. A second of stillness alone is no event: under load the row of a cut request came later
+// (specs/2026-11-15-desk-hygiene2.md HY1.3).
 func (window readingWindow) settled(timeout time.Duration) consentAnswer {
 	window.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	last := window.consent()
 	for {
 		time.Sleep(time.Second)
 		window.stub.mu.Lock()
 		busy := window.stub.inFlight
 		window.stub.mu.Unlock()
+		journaled := window.journalRows() == window.stub.reading("")
 		consent := window.consent()
-		if busy == 0 && consent.Spent == last.Spent {
+		if busy == 0 && journaled && consent.Spent == last.Spent {
 			return consent
 		}
 		last = consent
@@ -70,7 +79,9 @@ func (window readingWindow) settled(timeout time.Duration) consentAnswer {
 // and the calibration — no check measured it, so the fallback — and the output by the limit of an answer.
 func (window readingWindow) reserves(maxOutput int64) []int64 {
 	window.t.Helper()
-	rows, err := database(window.t, window.data).Query(context.Background(), `
+	connection := database(window.t, window.data)
+	defer func() { _ = connection.Close(context.Background()) }()
+	rows, err := connection.Query(context.Background(), `
 		SELECT request_bytes FROM model_requests WHERE project_id = $1 AND purpose IN ('card', 'card_pass', 'names')`, window.project)
 	if err != nil {
 		window.t.Fatal(err)
@@ -90,8 +101,10 @@ func (window readingWindow) reserves(maxOutput int64) []int64 {
 // estimatedRows counts the rows of the journal of the saga by their outcome that are estimates — the provider sent no usage.
 func (window readingWindow) estimatedRows(outcome string) int {
 	window.t.Helper()
+	connection := database(window.t, window.data)
+	defer func() { _ = connection.Close(context.Background()) }()
 	var count int
-	if err := database(window.t, window.data).QueryRow(context.Background(), `
+	if err := connection.QueryRow(context.Background(), `
 		SELECT count(*) FROM model_requests WHERE project_id = $1 AND outcome = $2 AND estimated`, window.project, outcome).Scan(&count); err != nil {
 		window.t.Fatal(err)
 	}
@@ -144,7 +157,7 @@ func TestTheReadingAtOnceStaysWithinItsSum(t *testing.T) {
 	// «Пауза» in the middle of the stream: the requests it cut are counted by the estimate, none goes after it.
 	stub.set(func(stub *readingStub) { stub.delay = 40 * time.Second })
 	saga.setConsent(map[string]any{"state": "allowed", "continueBy": 1_000_000})
-	deadline := time.Now().Add(time.Minute)
+	deadline := desktoptest.Deadline(time.Minute)
 	for {
 		stub.mu.Lock()
 		busy := stub.inFlight
@@ -294,7 +307,7 @@ func TestThePausedReadingWaitsAndGoesOnUnderItsCount(t *testing.T) {
 	// status says «done» until the new chapters are counted.
 	bookAt := time.Now().Add(-time.Second)
 	window.importFileAs(saga.project, "Дозор.md", bookOf(titles[3]), "import-of-the-watch")
-	for deadline := time.Now().Add(5 * time.Minute); stub.cards(titles[3]) < 2; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(5 * time.Minute); stub.cards(titles[3]) < 2; time.Sleep(200 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the new book was never read: %d calls of it%s", stub.cards(titles[3]), saga.journey())
 		}
@@ -309,7 +322,7 @@ func TestThePausedReadingWaitsAndGoesOnUnderItsCount(t *testing.T) {
 	}
 
 	// The prices taken away under a sum in rubles: «цены изменились», nothing is read, «Продолжить» wants a sum.
-	connect(t, window, server.URL, map[string]any{"parallel": 1, "maxOutput": 1000})
+	connectCaughtUp(t, process, saga, server.URL, map[string]any{"parallel": 1, "maxOutput": 1000})
 	if status := saga.status(); status.Reading == nil || status.Reading.State != "paused" || *status.Reading.Pause != "prices" ||
 		status.Preparation != nil && status.Preparation.Waiting != "paused" {
 		t.Fatalf("the status without the prices = %+v", status.Reading)
@@ -372,7 +385,7 @@ func TestTheSampleOfTwoChaptersGoesThroughARestart(t *testing.T) {
 	}
 	held := func(saga readingWindow, done int) {
 		t.Helper()
-		deadline := time.Now().Add(2 * time.Minute)
+		deadline := desktoptest.Deadline(2 * time.Minute)
 		for {
 			stub.mu.Lock()
 			holding := stub.holding
@@ -388,7 +401,7 @@ func TestTheSampleOfTwoChaptersGoesThroughARestart(t *testing.T) {
 	}
 	ended := func(saga readingWindow, timeout time.Duration) sampleAnswer {
 		t.Helper()
-		deadline := time.Now().Add(timeout)
+		deadline := desktoptest.Deadline(timeout)
 		for {
 			sample := sampleOf(saga)
 			if sample.State == "succeeded" || sample.State == "failed" || sample.State == "canceled" {
@@ -437,7 +450,11 @@ func TestTheSampleOfTwoChaptersGoesThroughARestart(t *testing.T) {
 
 	// The cards Job of a book imported during the sample of another saga does not take the sample and reads nothing.
 	other := openSaga(t, window, "Ветреный берег", bookOf(four...)).watched(data, stub)
-	_, _ = cardsJobEnded(t, data, other.project, time.Now().Add(-time.Minute), 2*time.Minute)
+	// The sample takes the first chapters of the published text without a card, and a chapter is in that text once its
+	// index is: the test waits until the text is indexed and its reading stands still, not for the first cards Job that
+	// ends — under load one ended while the index still went, and the sample took the fourth chapter
+	// (specs/2026-11-15-desk-hygiene2.md HY1.3).
+	readingSettled(t, data, other.project, 2*time.Minute)
 	stub.set(func(stub *readingStub) { stub.hold, stub.holding = four[1], false })
 	if response, raw := other.post("/api/v1/projects/"+other.project+"/reading/sample", map[string]any{}, "sample-of-four"); response.StatusCode != http.StatusAccepted {
 		t.Fatalf("the second sample = %d %s", response.StatusCode, raw)
@@ -447,7 +464,7 @@ func TestTheSampleOfTwoChaptersGoesThroughARestart(t *testing.T) {
 	window.importFileAs(other.project, "Оттепель.md", bookOf(added), "import-during-the-sample")
 	// The cards Job after the index waits beside the sample — one cards Job of a saga is in work — and is not it.
 	connection := database(t, data)
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := desktoptest.Deadline(2 * time.Minute)
 	for {
 		var waiting int
 		if err := connection.QueryRow(context.Background(), `
@@ -523,7 +540,7 @@ func TestTheSumThatEndsOnTheLayerSaysTheChaptersRead(t *testing.T) {
 	if consent := saga.consent(); consent.State != "none" {
 		t.Fatalf("a saga from a file has a consent: %+v", consent)
 	}
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := desktoptest.Deadline(2 * time.Minute)
 	for {
 		if status := saga.status(); status.Reading != nil && status.Reading.State == "waiting_consent" && status.Reading.ChaptersTotal == 2 {
 			break
@@ -537,7 +554,7 @@ func TestTheSumThatEndsOnTheLayerSaysTheChaptersRead(t *testing.T) {
 	// Two cards with their passes and the names: 5 × 5 500 tokens; the layer does not fit in what is left.
 	const stop = 5*(stubInput+stubOutput) + 999
 	saga.setConsent(map[string]any{"state": "allowed", "stopAt": stop})
-	deadline = time.Now().Add(time.Minute)
+	deadline = desktoptest.Deadline(time.Minute)
 	for {
 		var status struct {
 			Reading *struct {

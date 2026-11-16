@@ -13,6 +13,8 @@ import type { SagaSection } from '../../ui/saga-sections';
 import { desktopManuscriptPage } from './DesktopManuscriptPage';
 import { LaunchNotes } from './launch-notes';
 import { obsidianPath } from './obsidian/address';
+import { LinkVisits } from './open-place/link-visits';
+import { openPlacePath } from './open-place/OpenPlace';
 import { desktopMemoryPage } from './obsidian/entries';
 import { LoadOutcome } from './obsidian/LoadOutcome';
 import { AppBookUpdateWords } from './obsidian/update-words';
@@ -50,11 +52,12 @@ function desktopAccount({ api, navigate, route }: EditionAccountInput): EditionA
     // The link with an account over the pages: its one start, the window of the waiting and the observer of its end
     // (specs/2026-11-15-desk-account-link-web.md AW1), and the tier of the linked app in the top bar
     // (specs/2026-11-15-desk-account-words-web.md AW4.7). The words of the update of a book of the app over the pages and the
-    // shell (specs/2026-11-15-desk-obsidian-book-web.md OU3.1).
+    // shell (specs/2026-11-15-desk-obsidian-book-web.md OU3.1). The place of a link `canonkeeper://` the shell gives the loaded
+    // page goes by the navigation of the router (specs/2026-11-16-desk-app-links.md AL1.4).
     wrapPages: (pages) => createElement(AppUpdates, { api, navigate, route }, createElement(AccountLinkProvider, { api, route }, createElement(
       TopBarTierProvider, { value: createElement(TierMark, { navigate }) }, createElement(
         ReadingClientProvider, { value: api }, createElement(PreparationViewProvider, { value: useDesktopReadingView }, createElement(
-          AppBookUpdateWords, { api }, pages,
+          AppBookUpdateWords, { api }, createElement(LinkVisits, { navigate }, pages),
         )),
       ),
     ))),
@@ -87,13 +90,25 @@ const obsidianRoute: EditionRoute = {
 };
 
 /**
+ * The page a link `canonkeeper://` opens (specs/2026-11-16-desk-app-links.md AL1.6): the checked values of the link the shell
+ * gives, or `refused=1`. The router reads a number as a number: the page reads the address as it is. The site has no such
+ * route.
+ */
+const linkValue = z.union([searchValue, z.number()]).optional().catch(undefined);
+const openPlaceRoute: EditionRoute = {
+  path: openPlacePath,
+  validateSearch: z.object({ saga: searchValue, chapter: searchValue, p: linkValue, rev: linkValue, refused: linkValue }).catch({}).parse,
+};
+
+/**
  * The desktop app (specs/2026-11-07-desktop-app.md DA16.4): only the open sections, their pages without closed blocks; «Книги»
- * with the editor of a chapter without the helper (specs/2026-11-13-desk-editor.md) and the page of the bridge with Obsidian,
+ * with the editor of a chapter without the helper (specs/2026-11-13-desk-editor.md), the page a link `canonkeeper://` opens
+ * (specs/2026-11-16-desk-app-links.md) and the page of the bridge with Obsidian,
  * «Ваши материалы» with its entry (specs/2026-11-15-desk-obsidian-web.md), and «Настройки» in the place of the account menu
  * (specs/2026-11-13-desk-settings.md ST1).
  */
 export const edition: Edition = {
-  routes: [...openRoutes, editorRoute, obsidianRoute, settingsRoute],
+  routes: [...openRoutes, editorRoute, obsidianRoute, openPlaceRoute, settingsRoute],
   pages: { ...openPages, manuscript: desktopManuscriptPage, memory: desktopMemoryPage, settings: settingsPage },
   sections: desktopSections,
   useAccount: desktopAccount,

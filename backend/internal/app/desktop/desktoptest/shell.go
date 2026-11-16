@@ -93,10 +93,14 @@ func (shell *Shell) Asked() []Message {
 	return append([]Message(nil), shell.asked...)
 }
 
-// Next is the next message besides the secrets; ErrNoLine when none came in timeout, a message without a type once the
-// channel closed.
+// Next is the next message besides the secrets; ErrNoLine when none came in timeout, scaled by WaitsVariable, a message
+// without a type once the channel closed.
 func (shell *Shell) Next(timeout time.Duration) (Message, error) {
-	timer := time.NewTimer(timeout)
+	return shell.nextBy(Deadline(timeout))
+}
+
+func (shell *Shell) nextBy(deadline time.Time) (Message, error) {
+	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
 	select {
 	case message, ok := <-shell.others:
@@ -111,9 +115,9 @@ func (shell *Shell) Next(timeout time.Duration) (Message, error) {
 
 // Await waits for a message of a type besides the secrets, past the others.
 func (shell *Shell) Await(kind string, timeout time.Duration) (Message, bool) {
-	deadline := time.Now().Add(timeout)
+	deadline := Deadline(timeout)
 	for {
-		message, err := shell.Next(time.Until(deadline))
+		message, err := shell.nextBy(deadline)
 		if err != nil || message.Type == "" {
 			return Message{}, false
 		}

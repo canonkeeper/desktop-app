@@ -39,6 +39,8 @@ const (
 	// maxSocketPath is the longest path of a Unix socket on every system: sockaddr_un holds 104 bytes on macOS and 108
 	// on Linux with the final NUL.
 	maxSocketPath = 103
+	// creatingSuffix names the place beside the cluster where initdb makes it (create).
+	creatingSuffix = ".creating"
 )
 
 // clusterSettings keep the cluster small (DA1.8; S0: the default max_wal_size tripled the data directory) and its log
@@ -114,7 +116,7 @@ func (cluster *Cluster) Start(ctx context.Context) error {
 		return err
 	}
 	if !created {
-		if err := cluster.initialize(ctx); err != nil {
+		if err := cluster.create(ctx); err != nil {
 			return err
 		}
 	}
@@ -126,6 +128,27 @@ func (cluster *Cluster) Start(ctx context.Context) error {
 	}
 	logFile := filepath.Join(cluster.data.Logs(), "postgres-"+time.Now().UTC().Format("2006-01-02")+".log")
 	return cluster.tool(ctx, "pg_ctl", "start", "-w", "-t", "60", "-D", cluster.directory(), "-l", logFile)
+}
+
+// create makes the cluster beside its place and moves it there only once initdb went through
+// (specs/2026-11-16-desk-restore-orphans.md RO1.4): initdb writes PG_VERSION long before it ends, and a cluster an initdb
+// cut short — the backend killed, or its program ended with it (startBound) — left in its place would be taken for a
+// cluster by every next start. What such an initdb left beside goes first, once nothing writes into it any more.
+func (cluster *Cluster) create(ctx context.Context) error {
+	place := cluster.directory()
+	making := *cluster
+	making.home = place + creatingSuffix
+	if err := removeForGood([]string{making.home}, false, undoPatience, undoQuiet); err != nil {
+		return err
+	}
+	if err := making.initialize(ctx); err != nil {
+		return err
+	}
+	// An empty directory in the place goes first: Windows moves a directory onto none.
+	if err := os.Remove(place); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return os.Rename(making.home, place)
 }
 
 // Stop stops the cluster fast (pg_ctl stop -m fast): open transactions roll back, what was committed stays.
@@ -408,8 +431,8 @@ func quoteLiteral(value string) string {
 const toolTimeout = 3 * time.Minute
 
 // tool runs a PostgreSQL program of the bundle with its output in a file, not a pipe: on Windows the server pg_ctl
-// starts inherits the handles of pg_ctl, and waiting for a pipe would never end (S0). The error names the program and
-// the last lines of its output, which name no text of books.
+// starts inherits the handles of pg_ctl, and waiting for a pipe would never end (S0). The program lives no longer than
+// the backend (startBound). The error names the program and the last lines of its output, which name no text of books.
 func (cluster *Cluster) tool(ctx context.Context, name string, args ...string) error {
 	return cluster.run(ctx, toolTimeout, nil, name, args...)
 }
@@ -451,7 +474,9 @@ func (cluster *Cluster) output(ctx context.Context, timeout time.Duration, envir
 	command := exec.CommandContext(toolCtx, program, args...)
 	command.Stdout, command.Stderr = output, output
 	command.Env = append(toolEnvironment(), environment...)
-	err = command.Run()
+	if err = startBound(command, name == "pg_ctl" && firstArg(args) == "start"); err == nil {
+		err = command.Wait()
+	}
 	raw, _ := os.ReadFile(output.Name())
 	if err != nil {
 		return "", fmt.Errorf("%w: %s %s: %v: %s", errPostgresTool, name, firstArg(args), err, lastLines(string(raw), 8))

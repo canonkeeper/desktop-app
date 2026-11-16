@@ -82,6 +82,8 @@ const idempotentOperations = new Set<OperationId>([
   'importObsidianBooks',
   'updateBookFromObsidian',
   'importObsidianMaterials',
+  // The export into the folder of the vault (specs/2026-11-15-desk-obsidian-export.md OE1.1).
+  'exportObsidianSaga',
 ]);
 const repositoryManagedIdempotencyOperations = new Set<OperationId>([
   'createAuthorMemory',
@@ -99,6 +101,7 @@ const repositoryManagedIdempotencyOperations = new Set<OperationId>([
   'importObsidianBooks',
   'updateBookFromObsidian',
   'importObsidianMaterials',
+  'exportObsidianSaga',
 ]);
 const operationManifestById = new Map<OperationId, OperationManifestRoute>(getOperationManifestEntries());
 

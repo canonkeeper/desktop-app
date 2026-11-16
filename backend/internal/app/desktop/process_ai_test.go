@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // aiState is the answer of getAiSettings.
@@ -71,7 +73,7 @@ func TestTheOwnAIOfTheAppIsKeptAndItsKeyGoesOneWay(t *testing.T) {
 	const key = "key-of-the-test-north-pass-7f3a0c19"
 	process := startBackend(t, binary, resources, data, nil)
 	port := process.ready.Port
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -82,7 +84,7 @@ func TestTheOwnAIOfTheAppIsKeptAndItsKeyGoesOneWay(t *testing.T) {
 	}
 
 	// The guards of a write: a stranger without the session, the window without its token, another origin.
-	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response, body := stranger.do(http.MethodPut, "/api/v1/desktop/ai/key", stranger.csrf(), map[string]string{"key": key}); response.StatusCode != http.StatusUnauthorized ||
 		!containsCode(body, "auth.session_required") {
 		t.Fatalf("setAiKey without the session = %d %s", response.StatusCode, body)
@@ -149,7 +151,7 @@ func TestTheOwnAIOfTheAppIsKeptAndItsKeyGoesOneWay(t *testing.T) {
 		t.Fatalf("createProject = %d %s", response.StatusCode, body)
 	}
 	window.importFile(project.ID, "Застава у перевала.md", northernBook)
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for {
 		var status struct {
 			Preparation *struct {
@@ -173,7 +175,7 @@ func TestTheOwnAIOfTheAppIsKeptAndItsKeyGoesOneWay(t *testing.T) {
 
 	// The next start: the shell hands the key over in start.
 	again := startBackend(t, binary, resources, data, map[string]string{"provider:own": key})
-	window = &client{t: t, origin: again.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	window = &client{t: t, origin: again.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := window.open(again.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}

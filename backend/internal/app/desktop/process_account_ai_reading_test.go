@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"canonkeeper/backend/internal/app/desktop/desktoptest"
 	"canonkeeper/backend/internal/domain/coresteps"
 )
 
@@ -27,8 +26,10 @@ func (site *accountAISite) checksOfThePauses(t *testing.T, count int) {
 // cardJobs counts the cards Jobs of a saga.
 func cardJobs(t *testing.T, data, projectID string) int {
 	t.Helper()
+	connection := database(t, data)
+	defer func() { _ = connection.Close(context.Background()) }()
 	var count int
-	if err := database(t, data).QueryRow(context.Background(),
+	if err := connection.QueryRow(context.Background(),
 		`SELECT count(*) FROM jobs WHERE project_id = $1 AND kind = 'chapter_cards'`, projectID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func cardJobs(t *testing.T, data, projectID string) int {
 // goes on. With the site out of reach a new book pauses the reading at «связь»; the checks while the site does not answer
 // queue no Job; once it answers, the reading goes on by itself.
 func TestTheReadingOfTheAccountGoesOnByItsRule(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	binary := site.accountProgram(t)
@@ -113,7 +114,7 @@ func TestTheReadingOfTheAccountGoesOnByItsRule(t *testing.T) {
 // stays given, the helper is not connected —; the author links the app again, the helper of the site the same: the reading is
 // queued again at once, without a restart of the app, and reads every chapter.
 func TestTheReadingOfTheAccountGoesOnOnceTheAppIsLinkedAgain(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)
@@ -180,7 +181,7 @@ func TestTheReadingOfTheAccountGoesOnOnceTheAppIsLinkedAgain(t *testing.T) {
 // for each chapter; the pause goes on by itself at the check once the site answers, and ai.reading_fence then pauses it at
 // the fence of the work of the reading with both limits of the tier in the status.
 func TestTheRefusalsOfTheSitePauseTheReadingOfTheAccount(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)

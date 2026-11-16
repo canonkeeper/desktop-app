@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // activePlaces is who holds the places of «разом» as getAccountQuota of the app tells it.
@@ -34,7 +32,7 @@ type atOnce struct {
 // the app does not know is read; «Свой ИИ» tells no places. A question the site refused «разом» makes the next read of the
 // quota ask the site again, though what it told is younger than a minute.
 func TestWhoHoldsThePlacesAtOnceIsToldBySiteAndApp(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	var mu sync.Mutex
 	turns := `{"used":0,"limit":2,"thisApp":0}`

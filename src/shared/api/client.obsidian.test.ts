@@ -79,3 +79,17 @@ describe('the client of the bridge with an Obsidian vault', () => {
     expect(() => client.updateBookFromObsidian('saga-1', 'book-1', { mode: 'preview' }, none)).toThrow('updateBookFromObsidian requires an Idempotency-Key.');
   });
 });
+
+// specs/2026-11-15-desk-obsidian-export.md OE1.1: the export — the word of the author in its body, the key in its header, never
+// without a key.
+describe('the client of the export to Obsidian', () => {
+  it('exports with the word of the author and the key of its write', async () => {
+    const { client, requests } = recordingClient();
+    await client.exportObsidianSaga('saga-1', { replaceChanged: true }, { idempotencyKey: 'idem-export-0001' });
+    expect(`${requests[0]!.method} ${new URL(requests[0]!.url).pathname}`).toBe('POST /api/v1/projects/saga-1/obsidian/export');
+    expect(requests[0]!.headers.get('Idempotency-Key')).toBe('idem-export-0001');
+    expect(await requests[0]!.json()).toEqual({ replaceChanged: true });
+    const none = { idempotencyKey: '' };
+    expect(() => client.exportObsidianSaga('saga-1', {}, none)).toThrow('exportObsidianSaga requires an Idempotency-Key.');
+  });
+});

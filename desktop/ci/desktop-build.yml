@@ -130,7 +130,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm fuse3 libarchive-tools >/dev/null
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf xvfb rpm fuse3 libarchive-tools desktop-file-utils >/dev/null
       - name: npm packages of the web and of the shell
         run: |
           npm ci --no-audit --no-fund
@@ -221,6 +221,19 @@ jobs:
             unpack nsis 7z x -y -o"$work/nsis" "$(ls "$bundle"/nsis/*-setup.exe)" >/dev/null
             "$tool.exe" marks --kind nsis "$work/nsis"
           fi
+      - name: The .desktop of the .deb and the .rpm opens the links canonkeeper:// (specs/2026-11-16-desk-app-links.md AL2.2)
+        if: runner.os == 'Linux'
+        run: |
+          # The text of the .desktop goes into the log of the run: it is compared there with the one before the scheme.
+          for kind in deb rpm; do
+            entry="$(find "$RUNNER_TEMP/marks/$kind/usr/share/applications" -name '*.desktop' | head -n 1)"
+            [ -n "$entry" ] || { echo "the $kind package has no .desktop" >&2; exit 1; }
+            echo "--- the .desktop of the $kind package: $(basename "$entry")"
+            cat "$entry"
+            desktop-file-validate "$entry"
+            grep -Eq '^Exec=[^ ]+ %u$' "$entry" || { echo "the .desktop of the $kind package gives the program no link (Exec … %u)" >&2; exit 1; }
+            grep -qx 'MimeType=x-scheme-handler/canonkeeper;' "$entry" || { echo "the .desktop of the $kind package opens no scheme canonkeeper" >&2; exit 1; }
+          done
       - name: Install (Linux · apt from the .deb)
         if: runner.os == 'Linux'
         run: |
@@ -248,6 +261,11 @@ jobs:
           "APP_DATA=$data" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           if (-not (Test-Path "$dir\canonkeeper-mcp.exe")) { throw "the installer put no canonkeeper-mcp.exe into $dir" }
           "APP_BRIDGE=$dir\canonkeeper-mcp.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          # specs/2026-11-16-desk-app-links.md AL2.1: the scheme canonkeeper:// of the current user opens this installation.
+          $scheme = Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\canonkeeper' -ErrorAction SilentlyContinue
+          $command = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\canonkeeper\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
+          if ($null -eq $scheme -or $null -eq $scheme.'URL Protocol') { throw "the installer registered no scheme canonkeeper" }
+          if ($command -ne "`"$dir\canonkeeper.exe`" `"%1`"") { throw "the command of the scheme canonkeeper is $command" }
       - name: Smoke run — start, the window gets the page of the backend, stop with no process left
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -281,6 +299,9 @@ jobs:
           $installer = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
           if (-not $bridge.HasExited) { throw "the installer (exit $($installer.ExitCode)) left the bridge running; $(Get-Held)" }
           if (-not (Test-Path "$env:APP_DIR\canonkeeper-mcp.exe")) { throw "the installation over the app (exit $($installer.ExitCode)) has no bridge; $(Get-Held)" }
+          # specs/2026-11-16-desk-app-links.md AL2.3: the scheme stays registered after an installation over the app.
+          $command = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\canonkeeper\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
+          if ($command -ne "`"$env:APP_DIR\canonkeeper.exe`" `"%1`"") { throw "after an installation over the app the command of the scheme canonkeeper is $command; $(Get-Held)" }
       - name: Uninstall without the box «Удалить данные приложения» keeps the data, a running bridge goes (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -301,6 +322,8 @@ jobs:
           if (Test-Path "$env:APP_DIR\canonkeeper-mcp.exe") { throw "the program of the bridge stayed after the uninstaller; $(Get-Held)" }
           if (Get-Process canonkeeper-mcp -ErrorAction SilentlyContinue) { throw "a bridge runs after the uninstaller; $(Get-Held)" }
           if (-not (Test-Path "$env:APP_DATA\logs")) { throw "the uninstaller removed the data" }
+          # specs/2026-11-16-desk-app-links.md AL2.1: the scheme goes with the app, the data or not.
+          if (Test-Path -LiteralPath 'HKCU:\Software\Classes\canonkeeper') { throw "the scheme canonkeeper stayed after the uninstaller; $(Get-Held)" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: installers-${{ matrix.os }}

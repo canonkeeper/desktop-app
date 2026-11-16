@@ -137,7 +137,7 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(w, response.Body)
 		return
 	}
-	upstream, err := net.DialTimeout("tcp", route, 5*time.Second)
+	upstream, err := net.DialTimeout("tcp", route, desktoptest.Waited(5*time.Second))
 	if err != nil {
 		http.Error(w, "upstream", http.StatusBadGateway)
 		return
@@ -234,7 +234,7 @@ func TestTheAppGoesOnlyWhereItsJournalAndItsNetworkSay(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the certificate of the stubs is trusted by SSL_CERT_FILE, which the roots of Linux read")
 	}
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	certificate, certFile := namedCertificate(t, providerName, siteName)
 	provider := &providerOfTheTest{}
 	providerStub := namedStub(t, certificate, provider)
@@ -259,7 +259,7 @@ func TestTheAppGoesOnlyWhereItsJournalAndItsNetworkSay(t *testing.T) {
 		t.Fatalf("the backend answered %s %s instead of ready", ready.Type, ready.Reason)
 	}
 	shell := process.Serve(nil, desktoptest.KeepAll)
-	window := &client{t: t, origin: "http://127.0.0.1:" + strconv.Itoa(ready.Port), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: "http://127.0.0.1:" + strconv.Itoa(ready.Port), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -378,6 +378,7 @@ var journalTables = []string{"model_disclosures", "model_disclosures_pending", "
 func journalHoldsNoWords(t *testing.T, data string, question, line string) {
 	t.Helper()
 	connection := database(t, data)
+	defer func() { _ = connection.Close(t.Context()) }()
 	var inBook bool
 	if err := connection.QueryRow(t.Context(), `SELECT EXISTS (SELECT 1 FROM chapter_paragraphs WHERE plain_text ILIKE '%' || $1 || '%')`, line).Scan(&inBook); err != nil || !inBook {
 		t.Fatalf("the line of the book is not in the book: %v", err)
@@ -400,7 +401,7 @@ func journalHoldsNoWords(t *testing.T, data string, question, line string) {
 // before it is refused start_indexing.
 func indexed(t *testing.T, window *client, projectID string) {
 	t.Helper()
-	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(90 * time.Second); ; time.Sleep(200 * time.Millisecond) {
 		var list struct {
 			Data []struct {
 				Kind   string `json:"kind"`

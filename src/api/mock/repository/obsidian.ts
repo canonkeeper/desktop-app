@@ -7,10 +7,12 @@ import type { MockRepositoryContext } from './context';
 import { desktopLinked } from './desktop-account';
 import type { createImportQueueOperations } from './import-queues';
 import { digest, knownFields, overlapOf, ownerOf, within, type MockChoice } from './obsidian-choice';
+import { createObsidianExportOperations } from './obsidian-export';
 import { createObsidianMaterialsOperations, previewMaterials, tooManyRecords } from './obsidian-materials';
 
 type Operation = 'getObsidianVault' | 'beginObsidianVaultChoice' | 'unlinkObsidianVault' | 'scanObsidianVault' | 'previewObsidianImport'
-  | 'importObsidianBooks' | 'updateBookFromObsidian' | 'linkBookToObsidianFolder' | 'unlinkBookFromObsidianFolder' | 'importObsidianMaterials';
+  | 'importObsidianBooks' | 'updateBookFromObsidian' | 'linkBookToObsidianFolder' | 'unlinkBookFromObsidianFolder' | 'importObsidianMaterials'
+  | 'exportObsidianSaga';
 type Folder = Schema<'ObsidianTreeFolder'>;
 type Book = Schema<'ObsidianBookPreview'>;
 
@@ -231,8 +233,17 @@ export function createObsidianOperations(
     relative,
   }, materials.obsidianRecords);
 
+  // specs/2026-11-15-desk-obsidian-export.md: the export of the map and of the notes of the chapters into its folder.
+  const exports = createObsidianExportOperations(context, {
+    saga: (projectId, write) => saga('exportObsidianSaga', projectId, write),
+    linked: (projectId) => linkedOf('exportObsidianSaga', projectId),
+    free: () => free('exportObsidianSaga'),
+    readable: () => readable('exportObsidianSaga'),
+  });
+
   return {
     ...notes,
+    ...exports,
     async getObsidianVault(projectId: string): Promise<OperationResponse<'getObsidianVault', '200'>> {
       saga('getObsidianVault', projectId, false);
       const vault = context.state.obsidianVaults[projectId];
@@ -258,6 +269,9 @@ export function createObsidianOperations(
           .map((other) => ({ ...other, folder, loadedAt: null, presence: presence(folder), excluded: [], nested: [] })));
         if (context.getScenario().obsidianLinked) relink.push({ ...relinkedBook, loadedAt: null, presence: presence(relinkedBook.folder), excluded: [], nested: [] });
         if (relink.length) answer.relink = relink;
+        // specs/2026-11-15-desk-obsidian-export.md OE1.8: the folder of the export and the time of the last one that ended.
+        if (vault.exportDir) answer.exportDir = vault.exportDir;
+        if (vault.lastExportAt) answer.lastExportAt = vault.lastExportAt;
       }
       return answer;
     },

@@ -34,7 +34,8 @@
       }
     },
     "linux": {
-      "deb": { "section": "text" },
+      "deb": { "section": "text", "desktopTemplate": "linux/canonkeeper.desktop" },
+      "rpm": { "desktopTemplate": "linux/canonkeeper.desktop" },
       "appimage": { "bundleMediaFramework": false }
     }
   },

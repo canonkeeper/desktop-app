@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/domain/aisettings"
 )
 
@@ -138,7 +140,7 @@ func TestTheAppStartsFromItsBundleAtANewPlace(t *testing.T) {
 		t.Fatalf("the start from the moved bundle answered %+v", moved.ready)
 	}
 	homesWithoutLinks(t, data)
-	browser := &client{t: t, origin: moved.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser := &client{t: t, origin: moved.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := browser.open(moved.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}

@@ -274,6 +274,97 @@ test('the code exchange does nothing on any other page', async () => {
   }
 });
 
+// specs/2026-11-16-desk-app-links.md AL1.4: a link that waited for the window rides its opening — `to`, which the core of the
+// shell built of the checked values of the link, coded before the fragment —, and the exchange goes there instead of the
+// home once the session is made; only an address of the page of the edition of exactly its form, anything else is the home.
+const placeOfLink = '/manuscript/open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=15&rev=3';
+const openingTo = (to) => `http://127.0.0.1:24117/desktop/open?n=0&to=${encodeURIComponent(to)}#c=Zm9vYmFyYmF6cXV4cXV1eA`;
+
+test('the exchange goes to the place of a link that waited, and only of its own form', async () => {
+  const ok = { ...exchanged, '/api/v1/auth/session': 200 };
+  const { asked, went } = await exchange(openingTo(placeOfLink), ok);
+  assert.deepEqual(asked[0], ['address', `/desktop/open?n=0&to=${encodeURIComponent(placeOfLink)}`]);
+  assert.deepEqual(went, [placeOfLink]);
+  assert.deepEqual((await exchange(openingTo('/manuscript/open?refused=1'), ok)).went, ['/manuscript/open?refused=1']);
+  const bare = '/manuscript/open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45';
+  assert.deepEqual((await exchange(openingTo(bare), ok)).went, [bare]);
+  // A refused code goes to its report, the place or not.
+  assert.deepEqual((await exchange(openingTo(placeOfLink), { ...exchanged, '/api/v1/desktop/session': 403 })).went, ['/desktop/open?refused=403']);
+  for (const to of [
+    '/chat',
+    '/',
+    'https://evil.example/',
+    '//evil.example/manuscript/open?refused=1',
+    '/manuscript/open?refused=2',
+    '/manuscript/books?projectId=p',
+    `${placeOfLink}&x=1`,
+    `${placeOfLink}#x`,
+    placeOfLink.replace('0b7c1a52', '0B7C1A52'),
+    placeOfLink.replace('p=15', 'p=015'),
+    placeOfLink.replace('p=15', 'p=100000'),
+    '/manuscript/open?saga=javascript:alert(1)&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45',
+  ]) {
+    assert.deepEqual((await exchange(openingTo(to), ok)).went, ['/'], to);
+  }
+  // Not coded as the shell codes it, not where the shell puts it, or broken: the home.
+  for (const href of [
+    `http://127.0.0.1:24117/desktop/open?n=0&to=${placeOfLink}#c=Zm9vYmFyYmF6cXV4cXV1eA`,
+    `http://127.0.0.1:24117/desktop/open?to=${encodeURIComponent(placeOfLink)}&n=0#c=Zm9vYmFyYmF6cXV4cXV1eA`,
+    `http://127.0.0.1:24117/desktop/open?n=0&to=${encodeURIComponent(placeOfLink)}&to=%2F#c=Zm9vYmFyYmF6cXV4cXV1eA`,
+    'http://127.0.0.1:24117/desktop/open?n=0&to=%E0%A4%A#c=Zm9vYmFyYmF6cXV4cXV1eA',
+  ]) {
+    assert.deepEqual((await exchange(href, ok)).went, ['/'], href);
+  }
+});
+
+/**
+ * Runs the script that gives the page the place of a link (desktop/src-tauri/crates/core/src/visit.js) on `href` with its
+ * argument, as the core of the shell gives it; `takes` — whether a listener of the page takes the place (the edition of the
+ * app does, src/editions/desktop/open-place/link-visits.tsx). Tells the events it sent and what it answered; the history is
+ * not touched (AL1.4: the page follows the place by the navigation of its router).
+ */
+function visit(href, to, takes = true) {
+  const script = readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'crates', 'core', 'src', 'visit.js'), 'utf8');
+  const url = new URL(href);
+  const events = [];
+  const history = new Proxy({}, { get: () => { throw new Error('the script touched the history'); } });
+  class CustomEvent {
+    constructor(type, init) { this.type = type; this.detail = init?.detail; this.cancelable = init?.cancelable === true; this.defaultPrevented = false; }
+    preventDefault() { if (this.cancelable) this.defaultPrevented = true; }
+  }
+  const dispatchEvent = (event) => {
+    events.push([event.type, event.detail]);
+    if (takes) event.preventDefault();
+    return !event.defaultPrevented;
+  };
+  const answer = vm.runInNewContext(script, {
+    location: { protocol: url.protocol, hostname: url.hostname }, history, CustomEvent, dispatchEvent, CANONKEEPER_VISIT_TO: to,
+  });
+  return { answer, events };
+}
+
+test('the move of the window gives the page of its backend the place, and nothing else', () => {
+  assert.deepEqual(visit('http://127.0.0.1:24117/chat?projectId=p', placeOfLink), { answer: true, events: [['canonkeeper:link', placeOfLink]] });
+  assert.equal(visit('http://127.0.0.1:24117/settings', '/manuscript/open?refused=1').answer, true);
+  // A page that does not take the place — not the app, or not yet — answers no: the shell notes navigate_failed.
+  assert.deepEqual(visit('http://127.0.0.1:24117/chat', placeOfLink, false), { answer: false, events: [['canonkeeper:link', placeOfLink]] });
+  for (const href of ['tauri://localhost/index.html', 'http://tauri.localhost/index.html', 'https://127.0.0.1:24117/', 'http://localhost:24117/']) {
+    assert.deepEqual(visit(href, placeOfLink), { answer: false, events: [] }, href);
+  }
+  for (const to of ['/chat', 'javascript:alert(1)', `${placeOfLink}&x=1`, 17, undefined]) {
+    assert.deepEqual(visit('http://127.0.0.1:24117/chat', to), { answer: false, events: [] }, String(to));
+  }
+  // One form of the place for both scripts and the listener of the edition of the app, one name of the event.
+  const read = (...file) => readFileSync(path.join(repositoryRoot, ...file), 'utf8');
+  const pattern = (text) => text.match(/const place = (\/\^\\\/manuscript[^\n]*\/)u?;/u)?.[1];
+  const core = (file) => read('desktop', 'src-tauri', 'crates', 'core', 'src', file);
+  const listener = read('src', 'editions', 'desktop', 'open-place', 'link-visits.tsx');
+  assert.ok(pattern(core('visit.js')));
+  assert.equal(pattern(core('exchange.js')), pattern(core('visit.js')));
+  assert.equal(pattern(listener), pattern(core('visit.js')));
+  assert.match(listener, /export const linkEvent = 'canonkeeper:link';/u);
+});
+
 test('the set is laid out again from scratch', () => {
   withStand(({ root, postgres, codex, out, build }) => {
     writeFile(path.join(out, 'codex-homes', 'stale', 'x'), 'left from an earlier run\n');
@@ -617,6 +708,113 @@ test('the installer of Windows ends the bridges, then waits for the programs of 
     for (const one of [bridge, held, stranger]) one.child.kill('SIGKILL');
     rmSync(root, { force: true, recursive: true });
   }
+});
+
+// specs/2026-11-16-desk-app-links.md AL2.1: the installer of Windows registers the scheme canonkeeper:// of the current user by
+// the native writes of NSIS — no command runs, and the directory stands in the value as it is —, the command is exactly the
+// program of the installation with the link as its one argument, and the uninstaller takes the key away with or without the
+// data, only while its command is this installation's.
+test('the installer of Windows registers the scheme canonkeeper and its uninstaller takes away only its own', () => {
+  const conf = JSON.parse(readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  assert.equal(conf.mainBinaryName, 'canonkeeper', 'the command of the scheme names the program canonkeeper.exe');
+  const hooks = readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'nsis', 'hooks.nsh'), 'utf8');
+  const macro = (name) => hooks.match(new RegExp(`!macro ${name}\\n([\\s\\S]*?)!macroend`, 'u'))?.[1] ?? '';
+  const install = macro('NSIS_HOOK_POSTINSTALL');
+  const uninstall = macro('NSIS_HOOK_POSTUNINSTALL');
+  const command = `'"$INSTDIR\\canonkeeper.exe" "%1"'`;
+  for (const [name, step] of [['NSIS_HOOK_POSTINSTALL', install], ['NSIS_HOOK_POSTUNINSTALL', uninstall]]) {
+    assert.ok(step.trim(), `${name} is missing`);
+    assert.ok(!/nsExec|powershell|ExecWait|ExecShell|\bExec\b/iu.test(step), `${name} runs a command`);
+  }
+  const key = 'HKCU "Software\\Classes\\canonkeeper';
+  assert.deepEqual(install.trim().split('\n').map((line) => line.trim()), [
+    `WriteRegStr ${key}" "" "URL:CanonKeeper"`,
+    `WriteRegStr ${key}" "URL Protocol" ""`,
+    `WriteRegStr ${key}\\DefaultIcon" "" "$INSTDIR\\canonkeeper.exe,0"`,
+    `WriteRegStr ${key}\\shell\\open\\command" "" ${command}`,
+  ]);
+  const at = (text) => uninstall.indexOf(text);
+  const read = at(`ReadRegStr $0 ${key}\\shell\\open\\command" ""`);
+  const own = at(`\${If} $0 == ${command}`);
+  const remove = at(`DeleteRegKey ${key}"`);
+  assert.ok(read >= 0 && read < own && own < remove && remove < at('${EndIf}'), 'the key is taken away without the check of its command');
+  assert.ok(at('Push $0') < read && at('Pop $0') > at('${EndIf}'), 'the step does not give $0 back to the caller');
+  assert.ok(!uninstall.includes('DeleteAppDataCheckboxState'), 'the key goes only with the data');
+  assert.ok(!macro('NSIS_HOOK_PREUNINSTALL').includes('DeleteRegKey'), 'the key goes before the files of the app');
+  assert.equal(hooks.match(/DeleteRegKey/gu)?.length, 1);
+});
+
+// AL2.2: the .deb and the .rpm carry one template of the .desktop — the fields of the template of the bundler of Tauri 2 and
+// two changes: the program takes a link (`Exec=… %u`) and opens the scheme (`MimeType=x-scheme-handler/canonkeeper;`). The
+// template rendered as the bundler renders it passes desktop-file-validate where the machine has it.
+test('the packages of Linux carry the .desktop that opens the links canonkeeper', () => {
+  const conf = JSON.parse(readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  assert.equal(conf.bundle.linux.deb.desktopTemplate, 'linux/canonkeeper.desktop');
+  assert.equal(conf.bundle.linux.rpm.desktopTemplate, 'linux/canonkeeper.desktop');
+  assert.equal(conf.bundle.linux.appimage.desktopTemplate, undefined, 'the AppImage has no template of the .desktop in Tauri 2');
+  const template = readFileSync(path.join(repositoryRoot, 'desktop', 'src-tauri', 'linux', 'canonkeeper.desktop'), 'utf8');
+  // The variables of the template of the bundler (tauri-utils DebConfig::desktop_template): categories, comment (optional),
+  // exec, icon, name.
+  const render = (values) => template
+    .replace(/\{\{#if comment\}\}\n([\s\S]*?)\{\{\/if\}\}\n/u, (_block, inner) => (values.comment ? inner : ''))
+    .replace(/\{\{(\w+)\}\}/gu, (_whole, name) => {
+      assert.ok(name in values, `the template names ${name}, which the bundler does not give`);
+      return values[name];
+    });
+  const values = { categories: 'Office;', comment: 'Книги саги и помощник писателя на вашем компьютере', exec: 'canonkeeper', icon: 'canonkeeper', name: 'CanonKeeper' };
+  const rendered = render(values);
+  const entry = rendered.split('\n').filter((line) => line && !line.startsWith('#'));
+  assert.deepEqual(entry, [
+    '[Desktop Entry]',
+    'Categories=Office;',
+    `Comment=${values.comment}`,
+    'Exec=canonkeeper %u',
+    'StartupWMClass=canonkeeper',
+    'Icon=canonkeeper',
+    'MimeType=x-scheme-handler/canonkeeper;',
+    'Name=CanonKeeper',
+    'Terminal=false',
+    'Type=Application',
+  ]);
+  assert.ok(!render({ ...values, comment: '' }).includes('Comment='));
+  const validate = spawnSync('desktop-file-validate', ['--help'], { encoding: 'utf8' });
+  if (validate.status !== 0) return;
+  const directory = mkdtempSync(path.join(tmpdir(), 'canonkeeper-desktop-entry-'));
+  try {
+    const file = path.join(directory, 'CanonKeeper.desktop');
+    writeFileSync(file, rendered);
+    const result = spawnSync('desktop-file-validate', [file], { encoding: 'utf8' });
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    assert.equal(`${result.stdout}${result.stderr}`.trim(), '', 'desktop-file-validate has words for the .desktop');
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+// AL2.3: CI checks what the machine cannot — the .desktop of the built packages, the key of the registry after «Install», after
+// «An installation over the app» and none after «Uninstall without the box» — and the smoke run gives the running app a link by
+// a second start (through the scheme on Windows, on the bus of the session on Linux) after the check that the bridge is no
+// second start, and waits for the shell to take it to the window.
+test('CI checks the scheme the packages register and gives the running app a link', () => {
+  const steps = yaml.load(readFileSync(path.join(repositoryRoot, 'desktop', 'ci', 'desktop-build.yml'), 'utf8')).jobs.app.steps;
+  const at = (pattern) => steps.findIndex((step) => pattern.test(step.name ?? ''));
+  const entry = steps[at(/^The \.desktop of the \.deb and the \.rpm opens the links canonkeeper/u)];
+  assert.ok(entry && entry.if === "runner.os == 'Linux'", 'no step checks the .desktop of the packages');
+  assert.ok(at(/^The program of each package carries the mark/u) < steps.indexOf(entry), 'the .desktop is checked before the packages are unpacked');
+  for (const text of ['for kind in deb rpm', 'desktop-file-validate "$entry"', "'^Exec=[^ ]+ %u$'", "'MimeType=x-scheme-handler/canonkeeper;'", 'cat "$entry"']) {
+    assert.ok(entry.run.includes(text), text);
+  }
+  assert.match(steps.find((step) => /^Linux packages/u.test(step.name ?? '')).run, /\bdesktop-file-utils\b/u);
+  const registered = '$command -ne "`"$dir\\canonkeeper.exe`" `"%1`""';
+  assert.ok(steps[at(/^Install \(Windows/u)].run.includes(registered), 'no check of the scheme after Install');
+  assert.ok(steps[at(/^An installation over the app /u)].run.includes('$command -ne "`"$env:APP_DIR\\canonkeeper.exe`" `"%1`""'), 'no check after an installation over the app');
+  assert.ok(steps[at(/^Uninstall without the box /u)].run.includes("if (Test-Path -LiteralPath 'HKCU:\\Software\\Classes\\canonkeeper')"), 'no check after the uninstaller');
+  const smoke = readFileSync(path.join(repositoryRoot, 'desktop', 'ci', 'smoke.mjs'), 'utf8');
+  const bridge = smoke.indexOf('the bridge of the AppImage started the app a second time');
+  const given = smoke.indexOf("`Start-Process '${link}'`");
+  assert.ok(bridge > 0 && given > bridge, 'the link is given before the check that the bridge is no second start');
+  assert.ok(smoke.includes('spawnSync(values.exe, [link]') && smoke.includes('link_opened') && smoke.includes('navigate_failed'));
+  assert.ok(given < smoke.indexOf("spawnSync('taskkill'"), 'the link is given after the app stopped');
 });
 
 test('the files of the bundler are pinned and the packages carry the marks of their kinds', () => {

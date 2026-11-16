@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // specs/2026-11-13-desk-erase.md ER1.2: the built backend of the app, the test playing its shell. Another word is
@@ -17,7 +19,7 @@ func TestTheWordOfTheWindowAsksTheShellToEraseAndTheBackendRemovesNothing(t *tes
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -25,7 +27,7 @@ func TestTheWordOfTheWindowAsksTheShellToEraseAndTheBackendRemovesNothing(t *tes
 	if response, _ := window.do(http.MethodPost, "/api/v1/desktop/erase", "", map[string]string{"confirm": "стереть"}); response.StatusCode != http.StatusForbidden {
 		t.Fatalf("eraseDesktopData without CSRF = %d", response.StatusCode)
 	}
-	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response, body := stranger.do(http.MethodPost, "/api/v1/desktop/erase", stranger.csrf(), map[string]string{"confirm": "стереть"}); response.StatusCode != http.StatusUnauthorized ||
 		!containsCode(body, "auth.session_required") {
 		t.Fatalf("eraseDesktopData without the session = %d %s", response.StatusCode, body)

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,8 +105,14 @@ func lastVersion(t *testing.T) int64 {
 	return version
 }
 
+// variantFiles keeps the files of the overlays apart from the builds that read them: the process tests run beside each
+// other, and two that ask for the same variant write its files while the first build of it may be reading them.
+var variantFiles sync.Mutex
+
 func program(t *testing.T, variant programVariant) string {
 	t.Helper()
+	variantFiles.Lock()
+	defer variantFiles.Unlock()
 	replace := map[string]string{}
 	if variant.fastUpdates != "" {
 		times, err := filepath.Abs("update_times.go")
@@ -166,9 +173,16 @@ func program(t *testing.T, variant programVariant) string {
 	})
 }
 
-// bundleWithDump is the bundle of the test with its own pg_dump: none when dump is empty, else the script dump. The other
-// programs are links to the bundle's: PostgreSQL finds its lib and share by the real path. Linux only.
+// bundleWithDump is the bundle of the test with its own pg_dump: none when dump is empty, else the script dump.
 func bundleWithDump(t *testing.T, resources, dump string) string {
+	t.Helper()
+	return bundleWithProgram(t, resources, "pg_dump", dump)
+}
+
+// bundleWithProgram is the bundle of the test with its own program of PostgreSQL name: none when script is empty, else
+// the script. The other programs are links to the bundle's: PostgreSQL finds its lib and share by the real path. Linux
+// only.
+func bundleWithProgram(t *testing.T, resources, name, script string) string {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("the bundle of the test is made of links and a shell script")
@@ -184,15 +198,15 @@ func bundleWithDump(t *testing.T, resources, dump string) string {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == "pg_dump" {
+		if entry.Name() == name {
 			continue
 		}
 		if err := os.Symlink(filepath.Join(real, entry.Name()), filepath.Join(bin, entry.Name())); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if dump != "" {
-		if err := os.WriteFile(filepath.Join(bin, "pg_dump"), []byte(dump), 0o755); err != nil {
+	if script != "" {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -274,7 +288,7 @@ func postgresProgram(t *testing.T, resources, data, name string, args ...string)
 // makeSaga opens the window and makes the saga «Северный предел».
 func makeSaga(t *testing.T, process *backend) {
 	t.Helper()
-	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := browser.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -448,7 +462,7 @@ func TestAFailedCopyOrMigrationLeavesTheDataAsTheyWere(t *testing.T) {
 		}
 	}
 	current := startBackend(t, program(t, programOfTheTree), resources, data, nil)
-	browser := &client{t: t, origin: current.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	browser := &client{t: t, origin: current.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := browser.open(current.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}

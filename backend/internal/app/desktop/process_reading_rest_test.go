@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/domain/coresteps"
 )
 
@@ -30,7 +32,7 @@ func (window readingWindow) readingJobsSince(after time.Time) int {
 // and of the books it waits for.
 func (window readingWindow) asked(names, books int, timeout time.Duration) {
 	window.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	connection := database(window.t, window.data)
 	defer func() { _ = connection.Close(context.Background()) }()
 	for {

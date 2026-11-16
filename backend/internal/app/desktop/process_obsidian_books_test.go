@@ -126,9 +126,9 @@ func loadRequest(books []previewedBook) map[string]any {
 // waitFor waits for an event of the run the condition reads, as long as the test of the run may take.
 func waitFor(t *testing.T, what string, limit time.Duration, done func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(limit); !done(); time.Sleep(100 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(limit); !done(); time.Sleep(100 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatalf("%s: not within %s", what, limit)
+			t.Fatalf("%s: not within %s", what, desktoptest.Waited(limit))
 		}
 	}
 }
@@ -138,6 +138,9 @@ func waitFor(t *testing.T, what string, limit time.Duration, done func() bool) {
 // next start cancels it — no live queue —, the same key is load_interrupted, a load under a new key goes through the queue of
 // the volumes, and both folders are linked to their books; the log of the run names neither the vault nor a note.
 func TestABackendKilledInTheMiddleOfALoadLeavesNoQueue(t *testing.T) {
+	// The runs of the two points are process tests of their own (processResources): this test waits for them beside the
+	// others.
+	t.Parallel()
 	for _, stop := range []struct {
 		point string
 		links int
@@ -147,10 +150,10 @@ func TestABackendKilledInTheMiddleOfALoadLeavesNoQueue(t *testing.T) {
 }
 
 func killedInTheMiddleOfALoad(t *testing.T, point string, links int) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	data := filepath.Join(t.TempDir(), "data")
 	first := startBackend(t, program(t, programWithALoadStoppedAt(point)), resources, data, nil)
-	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: time.Minute}}
+	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(time.Minute)}}
 	if response := window.open(first.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("the code = %d", response.StatusCode)
 	}
@@ -178,7 +181,7 @@ func killedInTheMiddleOfALoad(t *testing.T, point string, links int) {
 	_ = first.command.Wait()
 
 	second := startBackend(t, program(t, programOfTheTree), resources, data, nil)
-	window = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: time.Minute}}
+	window = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: desktoptest.Waited(time.Minute)}}
 	if response := window.open(second.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("the code after the restart = %d", response.StatusCode)
 	}
@@ -246,10 +249,10 @@ type loadedBooks struct {
 // detached the import Job of its volume — the folder is in_trash and a load puts no second book of it onto the shelf —, and
 // the book given back holds its folder again.
 func TestTheBookOfAVolumeKeepsItsFolderThroughTheTrashAndBack(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, program(t, programOfTheTree), resources, data, nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: time.Minute}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(time.Minute)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("the code = %d", response.StatusCode)
 	}

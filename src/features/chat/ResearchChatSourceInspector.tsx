@@ -12,7 +12,7 @@ import { Drawer } from '../../ui/overlays/Drawer';
 import { ReaderParagraph, ReaderPassage } from '../../ui/ReaderParagraph';
 import { useChatAttachmentQuery, useChatChapterKeyQuery, useChatSourceChapterQuery } from './api';
 import { attachmentNumber } from '../../shared/navigation/chat-source';
-import { paragraphsLabel } from '../../shared/text/place';
+import { paragraphsInOrder, paragraphsLabel } from '../../shared/text/place';
 import { phraseMarks } from './answer-phrase';
 import type { ChatSourceNavigation } from './use-chat-source-navigation';
 import styles from './ResearchChatSourceInspector.module.css';
@@ -56,7 +56,7 @@ export function ResearchChatSourceInspector({ api, chatId, chatTitle, label = 'Ð
   const notFound = ofBook && isApiStatusFailure(failed) && failed.status === 404;
   const loaded = ofBook ? chapter.data : attached.data;
   const paragraphs = ofBook
-    ? [...(chapter.data?.paragraphs ?? [])].sort((left, right) => left.order - right.order).map(({ id, markdown, text }): { id: string; text: string; markdown?: string } => ({ id, text, markdown }))
+    ? paragraphsInOrder(chapter.data?.paragraphs ?? []).map(({ id, markdown, text }): { id: string; text: string; markdown?: string } => ({ id, text, markdown }))
     : (attached.data?.paragraphs ?? []).map((text, index): { id: string; text: string; markdown?: string } => ({ id: `${target.chapterKey}-${index + 1}`, text }));
   const ranged = target.from !== undefined;
   const from = target.from ?? 0;

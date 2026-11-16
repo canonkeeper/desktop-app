@@ -401,7 +401,7 @@ func (site *accountAISite) launchAccountOf(t *testing.T, binary, version, resour
 		t.Fatalf("the backend answered %s %s instead of ready", ready.Type, ready.Reason)
 	}
 	process.Serve(linkedRecords(), desktoptest.KeepAll)
-	window := &client{t: t, origin: fmt.Sprintf("http://127.0.0.1:%d", ready.Port), http: &http.Client{Timeout: 2 * time.Minute}}
+	window := &client{t: t, origin: fmt.Sprintf("http://127.0.0.1:%d", ready.Port), http: &http.Client{Timeout: desktoptest.Waited(2 * time.Minute)}}
 	if response := window.open(ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -476,7 +476,7 @@ func (site *accountAISite) accountProgram(t *testing.T) string {
 // waitFor waits for a condition of a process test.
 func awaitTrue(t *testing.T, what string, timeout time.Duration, condition func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(timeout); !condition(); time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(timeout); !condition(); time.Sleep(200 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("%s did not come", what)
 		}
@@ -492,7 +492,7 @@ func awaitTrue(t *testing.T, what string, timeout time.Duration, condition func(
 // permit. The journal names the profile and the host of the site and the code of the refusal; no mark of a permit, the pass
 // or a question is in the output of the backend, the data directory or the environment and arguments of its processes.
 func TestATurnOfTheAccountGoesThroughTheSiteUnderItsPermit(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)
@@ -652,7 +652,7 @@ func marksAreNowhere(t *testing.T, run accountRun, marks []string, question stri
 // site decides the return by what it saw — and sends nothing for the one no worker took: its lease gives the unit back. No
 // close says canceled; every question is pending until the word of the site. After a restart a new question goes.
 func TestTheStopOfTheAppClosesARunningTurnFailed(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	binary := site.accountProgram(t)
@@ -695,7 +695,7 @@ func TestTheStopOfTheAppClosesARunningTurnFailed(t *testing.T) {
 // of the characters of the tier pauses the reading at its first refusal with the limits in the status, and no step of the
 // other chapters goes; once the site has room again the reading goes on by itself.
 func TestTheReadingOfTheAccountGoesUnderItsConsent(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)

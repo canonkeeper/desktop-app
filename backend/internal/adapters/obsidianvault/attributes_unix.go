@@ -19,3 +19,6 @@ func attributes(fs.FileInfo) uint32 { return 0 }
 
 // entryInfo says whether the look needs the information of an entry: its size, for a note.
 func entryInfo(mode fs.FileMode, noteName bool) bool { return mode.IsRegular() && noteName }
+
+// heldByAnother says a failure is a hold of another program: never outside Windows.
+func heldByAnother(error) bool { return false }

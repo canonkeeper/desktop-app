@@ -336,6 +336,7 @@ export interface CanonKeeperApiClient {
   scanObsidianVault(projectId: string): Promise<OperationResponse<'scanObsidianVault', '200'>>;
   previewObsidianImport(projectId: string, body: OperationRequest<'previewObsidianImport'>): Promise<OperationResponse<'previewObsidianImport', '200'>>;
   importObsidianMaterials(projectId: string, body: OperationRequest<'importObsidianMaterials'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'importObsidianMaterials', '200'>>;
+  exportObsidianSaga(projectId: string, body: OperationRequest<'exportObsidianSaga'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'exportObsidianSaga', '200'>>;
   importObsidianBooks(projectId: string, body: OperationRequest<'importObsidianBooks'>, options: RequiredIdempotencyOptions): Promise<OperationResponse<'importObsidianBooks', '200'>>;
   linkBookToObsidianFolder(projectId: string, bookId: string, body: OperationRequest<'linkBookToObsidianFolder'>): Promise<void>;
   unlinkBookFromObsidianFolder(projectId: string, bookId: string): Promise<void>;

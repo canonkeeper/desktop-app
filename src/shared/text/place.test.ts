@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { missingPlace, paragraphsLabel, placeLabel, plainPlaces, withoutDeviceWords } from './place';
+import { missingPlace, paragraphNumbered, paragraphsInOrder, paragraphsLabel, placeLabel, plainPlaces, withoutDeviceWords } from './place';
 
 describe('the place of a book as the author reads it (ux1-names N1)', () => {
   it('says the paragraphs in words', () => {
@@ -35,5 +35,16 @@ describe('the place of a book as the author reads it (ux1-names N1)', () => {
     expect(withoutDeviceWords('40 ¶')).toBe('40');
     expect(withoutDeviceWords('b9c99 ¶3').trim()).toBe('абзац 3');
     expect(withoutDeviceWords('abc1c2 и b2c')).toBe('abc1c2 и b2c');
+  });
+
+  // specs/2026-11-16-desk-app-links.md AL1.6: «абзац N» is the N-th paragraph of every kind by its order, as the server numbers
+  // it; the panel of the source of an answer and the page of a link take it by one rule.
+  it('numbers the paragraphs of a chapter by their order from one', () => {
+    const paragraphs = [{ id: 'c', order: 30 }, { id: 'a', order: 10 }, { id: 'b', order: 20 }];
+    expect(paragraphsInOrder(paragraphs).map((paragraph) => paragraph.id)).toEqual(['a', 'b', 'c']);
+    expect(paragraphs.map((paragraph) => paragraph.id)).toEqual(['c', 'a', 'b']);
+    expect(paragraphNumbered(paragraphs, 1)?.id).toBe('a');
+    expect(paragraphNumbered(paragraphs, 3)?.id).toBe('c');
+    for (const number of [0, 4, -1, 1.5, Number.NaN]) expect(paragraphNumbered(paragraphs, number)).toBeUndefined();
   });
 });

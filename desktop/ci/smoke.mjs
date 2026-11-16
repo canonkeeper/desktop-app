@@ -10,7 +10,9 @@
 // the bridge for the programs of the author as Claude Code or Codex would (specs/2026-11-15-desk-mcp.md MC1.1): initialize
 // and tools/list without the app, the reading turned on in settings.json before the start, tools/call sagas answered by the
 // running app — and with --appimage the same through `<AppImage> mcp`, which is no second start of the app —, and no process
-// of the bridge left once its stdin closed. Only Node built-ins.
+// of the bridge left once its stdin closed. Then it gives the running app a link canonkeeper:// by a second start as the
+// system does (specs/2026-11-16-desk-app-links.md AL2.3) — on Windows through the scheme the installer registered, on Linux
+// the program with the link on the bus of the session — and waits for the shell to take it to the window. Only Node built-ins.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -135,6 +137,24 @@ if (values.bridge) {
     process.exit(1);
   }
 }
+
+// AL2.3: a link of a place no saga of this run has — the window goes to its page, which says the chapter is not here. The
+// loaded page follows it by its router without a reload, so the shell says the link went to the window (link_opened), and the
+// page took it: no failure of the move (navigate_failed) follows.
+const link = 'canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=1';
+const before = logs('shell-').length;
+const given = windows
+  ? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Start-Process '${link}'`], { stdio: 'inherit', timeout: 60_000 })
+  : spawnSync(values.exe, [link], { stdio: 'inherit', timeout: 60_000 });
+const linked = await waitFor(() => /\slink_opened$/mu.test(logs('shell-').slice(before)), 60_000);
+await sleep(5_000);
+const moved = logs('shell-').slice(before);
+if (given.status !== 0 || !linked || /\s(navigate_failed|link_refused|link_dropped)/mu.test(moved)) {
+  report(`FAIL: the running app did not take the link of a second start to its window (exit ${given.status}, opened ${linked})`);
+  shell.kill('SIGKILL');
+  process.exit(1);
+}
+console.log('a link of a second start went to the window');
 
 if (windows) {
   spawnSync('taskkill', ['/PID', String(shell.pid)], { stdio: 'inherit' });

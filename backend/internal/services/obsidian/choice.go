@@ -218,6 +218,10 @@ type VaultState struct {
 	// the live books whose folder another book holds — the author links them anew or takes their link off.
 	Books  []VaultBook
 	Relink []VaultBook
+	// ExportDir is the folder of the export of the saga from the root of the vault, ExportedAt the time of its last export
+	// that ended (specs/2026-11-15-desk-obsidian-export.md OE1.8).
+	ExportDir  string
+	ExportedAt *time.Time
 }
 
 // VaultBook is a book of the saga linked with a folder of the vault: when it was last loaded or updated from it, and whether
@@ -288,6 +292,7 @@ func (read ReadVault) Execute(ctx context.Context, actorUserID, projectID string
 		return state, nil
 	}
 	state.Linked, state.Path, state.Name = true, linked.Path, filepath.Base(linked.Path)
+	state.ExportDir, state.ExportedAt = linked.ExportDir, linked.ExportedAt
 	folders, err := read.Links.Folders(ctx, projectID)
 	if err != nil {
 		return VaultState{}, err

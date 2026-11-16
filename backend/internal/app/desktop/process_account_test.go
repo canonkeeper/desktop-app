@@ -221,7 +221,7 @@ func (run *linked) back(t *testing.T, method, query string, client *http.Client)
 	t.Helper()
 	request, _ := http.NewRequest(method, "http://127.0.0.1:"+strconv.Itoa(run.ready.Port)+"/desktop/link/callback?"+query, nil)
 	if client == nil {
-		client = &http.Client{Timeout: time.Minute}
+		client = &http.Client{Timeout: desktoptest.Waited(time.Minute)}
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -243,7 +243,7 @@ func returnQuery(code, state string) string {
 // the computer and the version without a cookie, an Origin or a query; an address of another site in the environment
 // changed nothing.
 func TestTheAppLinksWithTheAccountThroughTheBrowser(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	run := site.launch(t, site.program(t), resources, filepath.Join(t.TempDir(), "data"), nil, desktoptest.KeepAll)
 	first, _ := run.account(t, "/api/v1/desktop/account")
@@ -347,14 +347,14 @@ func theMarksAreNowhere(t *testing.T, run *linked, state string) {
 // nothing; a wrong state does not spend the waiting; two returns at once with the right state make one exchange. The
 // pages are not kept, have no script and no style and repeat nothing of the request.
 func TestTheReturnOfTheLinkIsRefusedOrDoneOnce(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	run := site.launch(t, site.program(t), resources, filepath.Join(t.TempDir(), "data"), nil, desktoptest.KeepAll)
 	query := run.start(t)
 	state := query.Get("state")
 	stranger, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(run.ready.Port)+"/desktop/link/callback?"+returnQuery(codeMark, state), nil)
 	stranger.Host = "evil.example"
-	if response, err := (&http.Client{Timeout: 10 * time.Second}).Do(stranger); err != nil || response.StatusCode != http.StatusMisdirectedRequest {
+	if response, err := (&http.Client{Timeout: desktoptest.Waited(10 * time.Second)}).Do(stranger); err != nil || response.StatusCode != http.StatusMisdirectedRequest {
 		t.Fatalf("another Host = %v, %v", response, err)
 	} else {
 		_ = response.Body.Close()
@@ -434,7 +434,7 @@ func TestTheReturnOfTheLinkIsRefusedOrDoneOnce(t *testing.T) {
 // unlinked on the site with itself and its record removed, and the link failed for the keyring; a browser that left
 // before the end does not stop the exchange.
 func TestTheOutcomesOfAReturn(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newSiteOfTheTest(t)
 	binary := site.program(t)
 	run := site.launch(t, binary, resources, filepath.Join(t.TempDir(), "data"), nil, desktoptest.KeepAll)
@@ -517,7 +517,7 @@ func TestTheOutcomesOfAReturn(t *testing.T) {
 	if status, _, _ := run.back(t, http.MethodGet, returnQuery(codeMark, query.Get("state")), &http.Client{Timeout: 300 * time.Millisecond}); status != 0 {
 		t.Fatalf("the impatient browser got %d", status)
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := desktoptest.Deadline(30 * time.Second)
 	for {
 		if state, _ := run.account(t, "/api/v1/desktop/account"); state.State == "linked" {
 			break

@@ -41,15 +41,17 @@ export function SagaReadyWatcher({ api, children, navigate, route }: SagaReadyWa
   const status = useIndexingStatusQuery(api, projectId, { enabled: projectId !== '', follow: followEveryMs });
   const ready = status.data?.sagaReady;
   // The shelf sees the work on the saga begin and end at once: the status is read again at both moments, so the
-  // preparation is followed from its start and its end is told without waiting for the next reading.
+  // preparation is followed from its start and its end is told without waiting for the next reading. A page without a
+  // saga — the author left the shelf of a saga in work for «Настройки», say — has no status to read: `refetch` asks even
+  // the query its `enabled` keeps off, so it is not called there (specs/2026-11-15-desk-hygiene2.md HY2).
   const { refetch } = status;
   const preparing = shown.preparing && projectId !== '';
   const wasPreparing = useRef(preparing);
   useEffect(() => {
     if (wasPreparing.current === preparing) return;
     wasPreparing.current = preparing;
-    void refetch();
-  }, [preparing, refetch]);
+    if (projectId !== '') void refetch();
+  }, [preparing, projectId, refetch]);
   const [told, setTold] = useState<{ projectId: string; ready: SagaReady } | null>(null);
 
   // The readiness is told by its time: the same one read again says nothing new. On the shelf its own line says it

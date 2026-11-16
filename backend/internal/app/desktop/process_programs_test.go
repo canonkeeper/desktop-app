@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/delivery/mcp/programtools"
 )
 
@@ -48,7 +50,7 @@ func askBridgeAs(t *testing.T, bridge, data, tool, title string) (string, bool) 
 	defer func() { _ = command.Process.Kill(); _ = command.Wait() }()
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 1<<20), 4<<20)
-	deadline := time.After(30 * time.Second)
+	deadline := time.After(desktoptest.Waited(30 * time.Second))
 	lines := make(chan string)
 	go func() {
 		for scanner.Scan() {
@@ -112,7 +114,7 @@ func TestTheDoorOfTheProgramsLivesWithTheApp(t *testing.T) {
 	bridge := programs.Bridge(t, version)
 	data := filepath.Join(t.TempDir(), strings.Repeat("данные-саги-", 6))
 	running := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: running.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: running.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(running.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -229,11 +231,11 @@ func TestAStartWithTheReadingOnOpensTheDoor(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: running.origin(), http: &http.Client{Timeout: 30 * time.Second}}
+	window := &client{t: t, origin: running.origin(), http: &http.Client{Timeout: desktoptest.Waited(30 * time.Second)}}
 	if response := window.open(running.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := desktoptest.Deadline(10 * time.Second)
 	for state := programAccessOfTheWindow(t, window); state["open"] != true; state = programAccessOfTheWindow(t, window) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the door did not open at a start with the reading on: %v", state)

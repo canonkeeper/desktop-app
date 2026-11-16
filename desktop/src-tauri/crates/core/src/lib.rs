@@ -5,7 +5,7 @@
 //! where the window may go, the secrets of the app (specs/2026-11-13-desk-secrets.md SE1), «Стереть все данные»
 //! (specs/2026-11-13-desk-erase.md), the page of the start and its commands (specs/2026-11-13-desk-upgrade.md UG3), the
 //! updates of the app (specs/2026-11-13-desk-updates.md), the choice of the folder of an Obsidian vault
-//! (specs/2026-11-13-desk-obsidian.md) and the supervision of the backend process as a state machine. The window crate maps the actions of this crate onto Tauri; it holds no business
+//! (specs/2026-11-13-desk-obsidian.md), the links `canonkeeper://` (specs/2026-11-16-desk-app-links.md) and the supervision of the backend process as a state machine. The window crate maps the actions of this crate onto Tauri; it holds no business
 //! logic, and neither does this crate.
 
 pub mod backend;
@@ -15,6 +15,7 @@ pub mod erase;
 pub mod folder;
 pub mod journal;
 pub mod launch;
+pub mod link;
 pub mod mcp;
 pub mod navigation;
 pub mod paths;

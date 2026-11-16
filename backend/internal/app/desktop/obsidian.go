@@ -94,6 +94,11 @@ func (bridge *obsidianBridge) handlers(core app.Core, helper func(context.Contex
 			Vaults: vaults, Files: files, Links: links, Notes: obsidianrepo.NewNotes(core.DB), Book: obsidianSaga{core: core},
 			Plain: library.MarkdownPlainLines, Gate: bridge.gate, Limits: service.DefaultLimits,
 		},
+		// The export of the map and of the notes of the chapters (specs/2026-11-15-desk-obsidian-export.md OE1).
+		Export: service.Export{
+			Exports: obsidianrepo.NewExports(core.DB), Saga: newObsidianSagaMap(core), Writers: obsidianvault.Writers{},
+			Gate: bridge.gate, Limits: service.DefaultLimits, Now: time.Now,
+		},
 		Users: users, AllowedOrigins: core.Config.AllowedOrigins,
 	}
 }

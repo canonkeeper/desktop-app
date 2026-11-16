@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // closedInputOf counts what a turn of the chat keeps while it lives: its closed input and the binding of its model.
@@ -42,7 +44,7 @@ func TestAnUpdateEndsACancelingTurnOfTheChatTheEarlierProgramLeft(t *testing.T) 
 	defer stub.Close()
 
 	first := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(first.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -54,7 +56,7 @@ func TestAnUpdateEndsACancelingTurnOfTheChatTheEarlierProgramLeft(t *testing.T) 
 		t.Fatalf("createProject = %d %s", response.StatusCode, body)
 	}
 	window.importFile(project.ID, "Застава у перевала.md", northernBook)
-	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(90 * time.Second); ; time.Sleep(200 * time.Millisecond) {
 		if waits, ok := window.waiting(project.ID); ok && waits == "helper" {
 			break
 		}
@@ -101,11 +103,11 @@ func TestAnUpdateEndsACancelingTurnOfTheChatTheEarlierProgramLeft(t *testing.T) 
 		request.Header.Set("Origin", window.origin)
 		request.Header.Set("X-CSRF-Token", csrf)
 		request.AddCookie(&http.Cookie{Name: "ck_session", Value: window.cookie})
-		if response, err := (&http.Client{Timeout: 2 * time.Minute}).Do(request); err == nil {
+		if response, err := (&http.Client{Timeout: desktoptest.Waited(2 * time.Minute)}).Do(request); err == nil {
 			_ = response.Body.Close()
 		}
 	}()
-	deadline := time.Now().Add(time.Minute)
+	deadline := desktoptest.Deadline(time.Minute)
 	for statusesOf(t, data, turn)[0] != "canceling" {
 		if time.Now().After(deadline) {
 			t.Fatalf("the turn is %s, not canceling", statusesOf(t, data, turn)[0])
@@ -135,7 +137,7 @@ func TestAnUpdateEndsACancelingTurnOfTheChatTheEarlierProgramLeft(t *testing.T) 
 	if schema := schemaOf(t, administrator(t, data, databaseName)); schema != last+1 {
 		t.Fatalf("the schema after the update = %d", schema)
 	}
-	window = &client{t: t, origin: updated.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window = &client{t: t, origin: updated.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(updated.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open after the update = %d", response.StatusCode)
 	}

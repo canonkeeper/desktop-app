@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use canonkeeper_desktop_core::driver::{run, Config, Handle, Window};
 use canonkeeper_desktop_core::erase::{self, Earlier};
 use canonkeeper_desktop_core::journal::Journal;
+use canonkeeper_desktop_core::link::{self, Argument, Target};
 use canonkeeper_desktop_core::paths::{Places, System};
 use canonkeeper_desktop_core::secrets::{Failure, Keyring};
 use canonkeeper_desktop_core::supervisor::Notes;
@@ -47,11 +48,18 @@ struct Recorder {
     seen: Arc<Mutex<Vec<String>>>,
     installs: Arc<Mutex<Result<(), Cause>>>,
     notes: Arc<Mutex<Vec<Notes>>>,
+    /// The data directory whose mark of a link an installation says it found (specs/2026-11-16-desk-app-links.md AL1.5).
+    data: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl Recorder {
     fn new() -> Recorder {
-        Recorder { seen: Arc::default(), installs: Arc::new(Mutex::new(Ok(()))), notes: Arc::default() }
+        Recorder {
+            seen: Arc::default(),
+            installs: Arc::new(Mutex::new(Ok(()))),
+            notes: Arc::default(),
+            data: Arc::default(),
+        }
     }
 
     fn seen(&self) -> Vec<String> {
@@ -86,9 +94,9 @@ impl Window for Recorder {
     fn show_step(&self, words: &str) {
         self.push(format!("step {words}"));
     }
-    fn open(&self, port: u16, _url: &str, notes: Notes) {
+    fn open(&self, port: u16, url: &str, notes: Notes, _opening: u64) {
         self.notes.lock().unwrap().push(notes);
-        self.push(format!("open {port}"));
+        self.push(format!("open {port} {url}"));
     }
     fn show_failure(&self, failure: &words::Failure) {
         self.push(format!("failure {}", failure.page.words));
@@ -101,6 +109,9 @@ impl Window for Recorder {
     }
     fn install(&self, file: &Downloaded, kind: Kind) -> Result<(), Cause> {
         self.push(format!("install {} {}", kind.name(), file.release.version));
+        if let Some(data) = self.data.lock().unwrap().as_ref() {
+            self.push(format!("install with the mark {}", data.join(link::MARK).exists()));
+        }
         *self.installs.lock().unwrap()
     }
     fn restart(&self) {
@@ -108,6 +119,9 @@ impl Window for Recorder {
     }
     fn focus(&self) {
         self.push("focus".into());
+    }
+    fn visit(&self, target: &Target) {
+        self.push(format!("visit {}", target.path()));
     }
 
     fn folder(&self, _: &str, chosen: Box<dyn FnOnce(Option<PathBuf>) + Send>) {
@@ -193,6 +207,11 @@ impl Stand {
     }
 
     fn start(&self, stop_timeout: Duration) -> (Recorder, Handle) {
+        self.start_linked(stop_timeout, None)
+    }
+
+    /// A start of the app with a link among its arguments (specs/2026-11-16-desk-app-links.md AL1.2).
+    fn start_linked(&self, stop_timeout: Duration, link: Option<Argument>) -> (Recorder, Handle) {
         let recorder = Recorder::new();
         let config = Config {
             program: PathBuf::from(env!("CARGO_BIN_EXE_fake-backend")),
@@ -206,6 +225,7 @@ impl Stand {
             earlier: Earlier::None,
             updates: Some(self.setup.clone()),
             bridge: None,
+            link,
         };
         let journal = Journal::open(&Path::new(&self.data).join("logs"), std::time::SystemTime::now());
         let (handle, _thread) = run(config, recorder.clone(), journal, Arc::new(NoStore));
@@ -548,6 +568,107 @@ serve
     }
     // The first ready heard that nothing was checked yet.
     assert_eq!(stand.received().iter().find(|line| line.starts_with("update-state")).unwrap(), "update-state never");
+}
+
+// specs/2026-11-16-desk-app-links.md AL1.5: the program starts again with the arguments of its first start — after an
+// AppImage is replaced, and the installer of Windows is given them —, so the link of that start is marked before: the start
+// that repeats it drops it once; the same link pressed later opens it; an installer that did not start takes the mark away.
+const LINK: &str =
+    "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=15";
+
+fn journal_of(stand: &Stand) -> String {
+    let logs = Path::new(&stand.data).join("logs");
+    fs::read_dir(logs).unwrap().flatten().map(|entry| fs::read_to_string(entry.path()).unwrap()).collect()
+}
+
+#[test]
+fn a_restart_after_an_installation_does_not_open_the_link_of_the_first_start_again() {
+    let link = Argument::new(LINK);
+    let stand = Stand::new("link-replay", Kind::AppImage, UPDATES);
+    stand.publish(b"the new AppImage");
+    let (window, handle) = stand.start_linked(Duration::from_secs(20), Some(link.clone()));
+    window.wait_for("open 24117 http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Fsaga%3D");
+    window.wait_for("leave");
+    handle.left();
+    window.wait_for("restart");
+    assert!(Path::new(&stand.data).join(link::MARK).exists(), "no mark before the restart");
+
+    // The app starts again with the same arguments: the link is dropped, the window opens at its first page.
+    stand.plan(AGAIN);
+    let (again, handle) = stand.start_linked(Duration::from_secs(20), Some(link.clone()));
+    again.wait_for("open 24117 http://127.0.0.1:24117/desktop/open?n=0#c=again");
+    handle.close();
+    again.wait_for("exit");
+    assert!(!again.seen().iter().any(|seen| seen.contains("to=") || seen.starts_with("visit")), "{:?}", again.seen());
+    assert!(journal_of(&stand).contains("link_dropped replayed"), "{}", journal_of(&stand));
+    assert!(!Path::new(&stand.data).join(link::MARK).exists(), "the mark stayed");
+
+    // The author presses the same link later: it opens.
+    let (later, handle) = stand.start_linked(Duration::from_secs(20), Some(link));
+    later.wait_for("open 24117 http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Fsaga%3D");
+    handle.close();
+    later.wait_for("exit");
+    assert_eq!(journal_of(&stand).matches("link_dropped replayed").count(), 1);
+}
+
+#[test]
+fn the_installer_of_windows_gets_the_mark_and_one_that_did_not_start_takes_it_away() {
+    let link = Argument::new(LINK);
+    let stand = Stand::new("link-nsis", Kind::Nsis, UPDATES);
+    stand.publish(b"the new installer");
+    let (window, handle) = stand.start_linked(Duration::from_secs(20), Some(link.clone()));
+    *window.data.lock().unwrap() = Some(PathBuf::from(&stand.data));
+    window.wait_for("leave");
+    handle.left();
+    window.wait_for("install nsis 1.3.0");
+    window.wait_for("restart");
+    // The installer of Windows ends the app: the mark is there before it runs.
+    assert!(window.seen().contains(&"install with the mark true".to_string()), "{:?}", window.seen());
+    assert!(
+        link::replayed(Path::new(&stand.data), Some(&link)),
+        "the installer of Windows starts the app with the link again"
+    );
+
+    let failing = Stand::new("link-nsis-failed", Kind::Nsis, UPDATES);
+    failing.publish(b"the new installer");
+    let (window, handle) = failing.start_linked(Duration::from_secs(20), Some(link.clone()));
+    *window.installs.lock().unwrap() = Err(Cause::NotLaunched);
+    window.wait_for("leave");
+    failing.plan(AGAIN);
+    handle.left();
+    failing.wait_received("update-state install_failed");
+    assert!(!Path::new(&failing.data).join(link::MARK).exists(), "an installer that did not start left the mark");
+}
+
+/// Waits until the log of the shell of the stand holds `line`.
+fn wait_journal(stand: &Stand, line: &str) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        if journal_of(stand).contains(line) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("the log never said {line:?}: {}", journal_of(stand));
+}
+
+// specs/2026-11-16-desk-app-links.md AL1.3: a link of a second start while the window leaves for an installation, or while the
+// backend stops for it, is dropped — the window neither moves nor comes up for it.
+#[test]
+fn a_link_while_the_window_leaves_for_an_installation_is_dropped() {
+    let stand = Stand::new("link-leave", Kind::AppImage, &UPDATES.replace("serve\n", "serve 1500\n"));
+    stand.publish(b"the new AppImage");
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    window.wait_for("leave");
+    handle.link(Argument::new(LINK));
+    wait_journal(&stand, "link_dropped leaving");
+    handle.left();
+    stand.wait_received("shutdown");
+    handle.link(Argument::new(LINK));
+    wait_journal(&stand, "link_dropped installing");
+    window.wait_for("restart");
+    assert!(!window.seen().iter().any(|seen| seen.starts_with("visit") || seen == "focus"), "{:?}", window.seen());
+    assert!(!journal_of(&stand).contains("link_opened"), "{}", journal_of(&stand));
 }
 
 /// The first bytes of a Debian package, then anything.

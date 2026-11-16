@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // programWithFastUpdates is the program of the tree with a day of the daily check that lasts a second and a half
@@ -85,7 +87,7 @@ func (shell *shellOfAnUpdate) during(kind string, wait time.Duration, answer *Co
 // next waits for the next message of a kind.
 func (shell *shellOfAnUpdate) next(kind string, wait time.Duration) ControlMessage {
 	shell.process.t.Helper()
-	deadline := time.After(wait)
+	deadline := time.After(desktoptest.Waited(wait))
 	for {
 		select {
 		case message, open := <-shell.lines:
@@ -96,7 +98,7 @@ func (shell *shellOfAnUpdate) next(kind string, wait time.Duration) ControlMessa
 				return message
 			}
 		case <-deadline:
-			shell.process.t.Fatalf("no %s in %s", kind, wait)
+			shell.process.t.Fatalf("no %s in %s", kind, desktoptest.Waited(wait))
 		}
 	}
 }
@@ -128,7 +130,7 @@ func TestTheBackendChecksOnceADayOnlyAsTheAuthorChoseAndReadsThePhaseOfTheShell(
 	if process.ready.Type != messageReady {
 		t.Fatalf("the backend answered %+v", process.ready)
 	}
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -172,7 +174,7 @@ func TestTheBackendChecksOnceADayOnlyAsTheAuthorChoseAndReadsThePhaseOfTheShell(
 	}
 	// A backend started again hears the phase from the shell after ready: here the shell tells a download.
 	process.send(ControlMessage{Type: messageUpdateState, Phase: "downloading", Version: "1.3.0", Notes: "Что нового", Percent: 40})
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := desktoptest.Deadline(15 * time.Second)
 	for {
 		update := window.appUpdate()
 		if update["phase"] == "downloading" && update["percent"] == float64(40) && update["kind"] == "appimage" {
@@ -191,7 +193,7 @@ func TestTheBackendChecksOnceADayOnlyAsTheAuthorChoseAndReadsThePhaseOfTheShell(
 // checkedAfter is the time of the last check settings.json keeps once it is later than after.
 func checkedAfter(t *testing.T, data string, after time.Time) time.Time {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := desktoptest.Deadline(10 * time.Second)
 	for {
 		var saved struct {
 			Updates struct {
@@ -223,7 +225,7 @@ func TestAnUpdateWaitsForTheTurnsOfTheChatAndThenTakesNoNewOne(t *testing.T) {
 	if process.ready.Type != messageReady {
 		t.Fatalf("the backend answered %+v", process.ready)
 	}
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -323,7 +325,7 @@ func TestABackendThatCouldNotStopItsClusterExitsWithAnError(t *testing.T) {
 		if !errors.As(err, &exit) || exit.ExitCode() == 0 {
 			t.Fatalf("the backend that could not stop its cluster exited with %v", err)
 		}
-	case <-time.After(stopClusterTime + 30*time.Second):
+	case <-time.After(desktoptest.Waited(stopClusterTime + 30*time.Second)):
 		t.Fatal("the backend did not exit")
 	}
 	logs, err := os.ReadDir(DataDir{Root: data}.Logs())
@@ -358,7 +360,7 @@ func chatsWithTheHelper(t *testing.T, window *client, stub *httptest.Server, dat
 		t.Fatalf("createProject = %d %s", response.StatusCode, body)
 	}
 	window.importFile(project.ID, "Застава у перевала.md", northernBook)
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for {
 		if waits, ok := window.waiting(project.ID); ok && waits == "helper" {
 			break
@@ -398,7 +400,7 @@ func chatsWithTheHelper(t *testing.T, window *client, stub *httptest.Server, dat
 // waitPhase waits for the phase the page reads.
 func waitPhase(t *testing.T, window *client, phase string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := desktoptest.Deadline(10 * time.Second)
 	for {
 		update := window.appUpdate()
 		if update["phase"] == phase {

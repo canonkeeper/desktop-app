@@ -6,12 +6,15 @@
 //! its five commands on its exact origin — the fifth opens the system window that chooses the folder of an Obsidian vault
 //! (specs/2026-11-13-desk-obsidian.md OB1.2) —, the page of the start its own (capabilities/start.json;
 //! specs/2026-11-13-desk-upgrade.md UG3.2, UG3.4), and the updater plugin, which no page may call
-//! (specs/2026-11-13-desk-updates.md UB1.7): the shell installs only what its core downloaded and checked.
+//! (specs/2026-11-13-desk-updates.md UB1.7): the shell installs only what its core downloaded and checked. A link
+//! `canonkeeper://` of the first start or of a second one goes to the supervision raw (specs/2026-11-16-desk-app-links.md
+//! AL1.2); the window carries out what the core decided — its first page after the exchange, or its page moved by the
+//! script of the core — and adds no command for it.
 
 use std::collections::HashSet;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
@@ -19,6 +22,7 @@ use canonkeeper_desktop_core::driver::{self, Config, Handle, Window};
 use canonkeeper_desktop_core::erase::{self, Earlier};
 use canonkeeper_desktop_core::journal::Journal;
 use canonkeeper_desktop_core::launch::Launch;
+use canonkeeper_desktop_core::link::{self, Argument, Target};
 use canonkeeper_desktop_core::mcp;
 use canonkeeper_desktop_core::navigation::{self, Navigation, EXCHANGE_SCRIPT};
 use canonkeeper_desktop_core::paths::{self, Places, System};
@@ -65,6 +69,9 @@ struct Shell {
     /// An installation goes on: from the window leaving for the page of the start until the app starts again or the
     /// backend is back (specs/2026-11-13-desk-updates.md UB2.3, UB2.9).
     installing: AtomicBool,
+    /// The number of the opening of the window that runs: its page, once loaded, is reported by it
+    /// (specs/2026-11-16-desk-app-links.md AL1.3).
+    opening: AtomicU64,
 }
 
 impl Shell {
@@ -97,6 +104,39 @@ impl Shell {
             }
         }
     }
+}
+
+/// The links of second starts until the supervision runs (specs/2026-11-16-desk-app-links.md AL1.2): the one instance may
+/// hear a second start before the window and the supervision are made; the shell keeps the last link and gives it to the
+/// supervision once it runs.
+#[derive(Default)]
+struct Courier(Mutex<(Option<Handle>, Option<Argument>)>);
+
+impl Courier {
+    fn deliver(&self, argument: Argument) {
+        if let Ok(mut held) = self.0.lock() {
+            match &held.0 {
+                Some(supervision) => supervision.link(argument),
+                None => held.1 = Some(argument),
+            }
+        }
+    }
+
+    fn attach(&self, supervision: Handle) {
+        if let Ok(mut held) = self.0.lock() {
+            if let Some(argument) = held.1.take() {
+                supervision.link(argument);
+            }
+            held.0 = Some(supervision);
+        }
+    }
+}
+
+/// Brings the window up: from the bar of the system, from behind the other windows.
+fn raise(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 /// The window as the supervision drives it.
@@ -136,7 +176,7 @@ impl Window for TauriWindow {
         self.launch(|launch| launch.step(words));
     }
 
-    fn open(&self, port: u16, url: &str, notes: Notes) {
+    fn open(&self, port: u16, url: &str, notes: Notes, opening: u64) {
         let fresh = self.shell.granted.lock().map(|mut granted| granted.insert(port)).unwrap_or(false);
         if fresh {
             // Only the exact origin of this run of the backend may call the commands (DA3.8).
@@ -156,6 +196,7 @@ impl Window for TauriWindow {
         }
         self.launch(Launch::opened);
         self.shell.installing.store(false, Ordering::SeqCst);
+        self.shell.opening.store(opening, Ordering::SeqCst);
         self.shell.port.store(port, Ordering::SeqCst);
         self.go(url);
     }
@@ -169,9 +210,7 @@ impl Window for TauriWindow {
         self.launch(|launch| launch.failed(failure));
         self.go(&navigation::starting_page(System::CURRENT));
         if let Some(window) = self.app.get_webview_window(MAIN) {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+            raise(&window);
         }
     }
 
@@ -212,9 +251,25 @@ impl Window for TauriWindow {
     /// AC1.3).
     fn focus(&self) {
         if let Some(window) = self.app.get_webview_window(MAIN) {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+            raise(&window);
+        }
+    }
+
+    /// A link goes to the loaded page (specs/2026-11-16-desk-app-links.md AL1.4): the window comes up as for the link with the
+    /// account, and runs the script of the core with the address it built of the checked values; the page follows it by the
+    /// navigation of its router, and the script answers whether the page took it — a page that is not of the backend, or
+    /// that does not listen, is left as it is.
+    fn visit(&self, target: &Target) {
+        let Some(window) = self.app.get_webview_window(MAIN) else { return };
+        raise(&window);
+        let journal = self.shell.journal.clone();
+        let moved = window.eval_with_callback(link::visit_script(target), move |answer| {
+            if answer != "true" {
+                journal.note("navigate_failed");
+            }
+        });
+        if moved.is_err() {
+            self.shell.journal.note("navigate_failed");
         }
     }
 
@@ -352,7 +407,7 @@ fn backend_program() -> Option<PathBuf> {
     Some(std::env::current_exe().ok()?.parent()?.join(name))
 }
 
-fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
+fn setup(app: &AppHandle, courier: &Courier) -> Result<(), Box<dyn Error>> {
     let system = System::CURRENT;
     let places = UserPlaces::of(app);
     let data_dir = paths::data_dir(system, places.places());
@@ -412,6 +467,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         closing: AtomicBool::new(false),
         exiting: AtomicBool::new(false),
         installing: AtomicBool::new(false),
+        opening: AtomicU64::new(0),
     });
     app.manage(Arc::clone(&shell));
 
@@ -451,8 +507,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 && navigation::is_own_page(address, loading.port())
                 && !navigation::is_open_page(address, loading.port())
             {
-                // A page of the backend after the exchange: the window shows the app (the smoke run of CI waits for it).
+                // A page of the backend after the exchange: the window shows the app (the smoke run of CI waits for it), and
+                // a link may move it now (specs/2026-11-16-desk-app-links.md AL1.3).
                 loading.journal.note("page_loaded");
+                if let Some(supervision) = loading.supervision.get() {
+                    supervision.loaded(loading.opening.load(Ordering::SeqCst));
+                }
             }
             if payload.event() == PageLoadEvent::Finished
                 && loading.installing.load(Ordering::SeqCst)
@@ -504,16 +564,21 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         earlier,
         updates: Some(updates),
         bridge,
+        // specs/2026-11-16-desk-app-links.md AL1.2: the link among the arguments of this start, raw; the core checks it.
+        link: link::of_arguments(&std::env::args_os().skip(1).collect::<Vec<_>>(), system),
     };
     let (supervision, _thread) = driver::run(config, window, shell.journal.clone(), keyring);
-    let _ = shell.supervision.set(supervision);
+    let _ = shell.supervision.set(supervision.clone());
+    courier.attach(supervision);
     Ok(())
 }
 
 pub fn run() {
+    let courier = Arc::new(Courier::default());
+    let hearing = Arc::clone(&courier);
     tauri::Builder::default()
         // First: a second start of the app brings the window of the first one forward and ends (SH1.2).
-        .plugin(tauri_plugin_single_instance::init(|app, _arguments, _directory| {
+        .plugin(tauri_plugin_single_instance::init(move |app, arguments, _directory| {
             // The log names a second start (specs/2026-11-15-desk-mcp.md MC1.1): `canonkeeper mcp` of an AppImage never is one —
             // the smoke run of CI checks it.
             if let Some(shell) = app.try_state::<Arc<Shell>>() {
@@ -521,9 +586,12 @@ pub fn run() {
             }
             let closing = app.try_state::<Arc<Shell>>().is_some_and(|shell| shell.closing.load(Ordering::SeqCst));
             if let (false, Some(window)) = (closing, app.get_webview_window(MAIN)) {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
+                raise(&window);
+            }
+            // specs/2026-11-16-desk-app-links.md AL1.2: the link of the second start goes on raw — this runs on the thread of
+            // D-Bus or in the procedure of a window —; its program and its directory are not looked at.
+            if let Some(argument) = link::of_arguments(arguments.get(1..).unwrap_or_default(), System::CURRENT) {
+                hearing.deliver(argument);
             }
         }))
         // The installer of Windows and the AppImage (specs/2026-11-13-desk-updates.md UB2.4, UB2.5); no page gets a
@@ -542,7 +610,7 @@ pub fn run() {
             start_page::restore_question,
             start_page::restore_copy
         ])
-        .setup(|app| setup(app.handle()))
+        .setup(move |app| setup(app.handle(), &courier))
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();

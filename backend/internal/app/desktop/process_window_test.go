@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // stop stops the backend the way the shell does and waits for it to exit.
@@ -33,8 +35,8 @@ func (process *backend) exited(timeout time.Duration) {
 		if err == nil {
 			process.t.Fatal("the backend that sent fatal exited without an error")
 		}
-	case <-time.After(timeout):
-		process.t.Fatalf("the backend did not exit in %s after fatal", timeout)
+	case <-time.After(desktoptest.Waited(timeout)):
+		process.t.Fatalf("the backend did not exit in %s after fatal", desktoptest.Waited(timeout))
 	}
 }
 
@@ -54,7 +56,7 @@ func hostRequest(t *testing.T, port int, host string) int {
 	t.Helper()
 	request, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/healthz", nil)
 	request.Host = host
-	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	response, err := (&http.Client{Timeout: desktoptest.Waited(10 * time.Second)}).Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}

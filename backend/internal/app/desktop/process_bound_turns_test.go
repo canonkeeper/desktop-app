@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // compactionMarks are words of the prompt of the compaction of Codex: a request with one of them is the compaction of the thread.
@@ -182,7 +184,7 @@ func TestEveryRequestOfCodexGoesInsideItsTurn(t *testing.T) {
 	stub := httptest.NewServer(provider)
 	defer stub.Close()
 	process := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -238,7 +240,7 @@ func TestEveryRequestOfCodexGoesInsideItsTurn(t *testing.T) {
 		t.Fatalf("the long question = %d %s", status, body)
 	}
 	turn := turnOf(t, body)
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := desktoptest.Deadline(2 * time.Minute)
 	for _, _, held := provider.counts(); held == 0; _, _, held = provider.counts() {
 		if time.Now().After(deadline) {
 			t.Fatal("the long turn never reached the provider")
@@ -260,7 +262,7 @@ func TestEveryRequestOfCodexGoesInsideItsTurn(t *testing.T) {
 	if status != http.StatusAccepted {
 		t.Fatalf("the canceled question = %d %s", status, body)
 	}
-	deadline = time.Now().Add(2 * time.Minute)
+	deadline = desktoptest.Deadline(2 * time.Minute)
 	for _, _, held := provider.counts(); held == heldBefore; _, _, held = provider.counts() {
 		if time.Now().After(deadline) {
 			t.Fatal("the turn to cancel never reached the provider")

@@ -48,7 +48,7 @@ func (site *accountAISite) holdTurns(t *testing.T) (arrived func(count int), rel
 		for range count {
 			select {
 			case <-arrivals:
-			case <-time.After(3 * time.Minute):
+			case <-time.After(desktoptest.Waited(3 * time.Minute)):
 				t.Fatal("a turn never reached the site")
 			}
 		}
@@ -79,7 +79,7 @@ func (run accountRun) asked(t *testing.T, chatID, question, key string) string {
 // When the site refuses the next number by the tier, the turn ends with the code of the tier before the model — not a failure
 // of the worker — and its question did not count.
 func TestATurnThatWaitedLongerThanTheLeaseTakesANewPermit(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)
@@ -105,7 +105,7 @@ func TestATurnThatWaitedLongerThanTheLeaseTakesANewPermit(t *testing.T) {
 	if site.opened("chat_turn") != 4 {
 		t.Fatalf("the site opened %d permits of turns; want one more for the turn that waited", site.opened("chat_turn"))
 	}
-	if _, _, returned := run.jobOf(three); returned != "no" {
+	if _, _, returned := run.settledJobOf(t, three); returned != "no" {
 		t.Fatalf("the question of the turn that waited came back: %q", returned)
 	}
 
@@ -131,7 +131,7 @@ func TestATurnThatWaitedLongerThanTheLeaseTakesANewPermit(t *testing.T) {
 	if status := run.window.jobEnded(six, 3*time.Minute); status != "failed" {
 		t.Fatalf("the turn refused by the tier = %s", status)
 	}
-	if _, code, returned := run.jobOf(six); code != "quota.chat_turns_daily" || returned != "yes" {
+	if _, code, returned := run.settledJobOf(t, six); code != "quota.chat_turns_daily" || returned != "yes" {
 		t.Fatalf("the turn refused by the tier = %q, came back %q", code, returned)
 	}
 }
@@ -143,7 +143,7 @@ func TestATurnThatWaitedLongerThanTheLeaseTakesANewPermit(t *testing.T) {
 // (specs/2026-11-15-desk-interrupted-turn.md IT1.1), and its permit is closed by that ref. The kill dropped a request of it
 // mid-stream, which the new run does not know, so its question is pending, not yes.
 func TestAKilledTurnAsksItsPermitByTheSameRef(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	binary := site.accountProgram(t)
@@ -156,7 +156,7 @@ func TestAKilledTurnAsksItsPermitByTheSameRef(t *testing.T) {
 	turn := run.asked(t, chatID, questionMark, "question-killed")
 	select {
 	case <-held:
-	case <-time.After(3 * time.Minute):
+	case <-time.After(desktoptest.Waited(3 * time.Minute)):
 		t.Fatal("the turn never reached the site")
 	}
 	if err := run.process.Command.Process.Kill(); err != nil {
@@ -190,7 +190,7 @@ func TestAKilledTurnAsksItsPermitByTheSameRef(t *testing.T) {
 // own permit, and the one after it to the provider again; every turn of the one chat answers, and no permit is opened beside
 // the one of the turn of the account.
 func TestTheSourceOfATurnIsItsOwnInOneChat(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	provider := &providerOfTheTest{}
 	stub := httptest.NewServer(provider)
@@ -257,7 +257,7 @@ func TestTheSourceOfATurnIsItsOwnInOneChat(t *testing.T) {
 // files of its data directory, the homes of Codex, the saga file, the copy, the environment and the arguments of its
 // processes, nor in any row of the database, asked by queries.
 func TestNoMarkOfTheAccountLeavesTheApp(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	run := site.launchAccount(t, site.accountProgram(t), resources, data)

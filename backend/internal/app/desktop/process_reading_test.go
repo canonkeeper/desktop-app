@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/domain/coresteps"
 )
 
@@ -325,7 +327,9 @@ type readingWindow struct {
 func (window readingWindow) journey() string {
 	var story strings.Builder
 	if window.data != "" {
-		rows, err := database(window.t, window.data).Query(context.Background(), `
+		connection := database(window.t, window.data)
+		defer func() { _ = connection.Close(context.Background()) }()
+		rows, err := connection.Query(context.Background(), `
 			SELECT kind, status, coalesce(error_json->>'code', ''), retry_count FROM jobs
 			WHERE project_id = $1 AND kind IN ('chapter_cards', 'saga_layer') ORDER BY created_at`, window.project)
 		if err == nil {
@@ -416,7 +420,7 @@ func (window readingWindow) setConsent(body map[string]any) consentAnswer {
 // pausedAt waits for the consent of the saga to stand paused and answers it.
 func (window readingWindow) pausedAt(timeout time.Duration) consentAnswer {
 	window.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		consent := window.consent()
 		if consent.State == "paused" {
@@ -432,7 +436,7 @@ func (window readingWindow) pausedAt(timeout time.Duration) consentAnswer {
 // read waits until the status says nothing of the reading waits: every chapter read, the names and the threads built.
 func (window readingWindow) readThrough(timeout time.Duration) statusAnswer {
 	window.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		status := window.status()
 		if status.Reading == nil || status.Reading.State == "done" {
@@ -459,13 +463,17 @@ func openSaga(t *testing.T, window *client, title string, book string) readingWi
 	return readingWindow{client: window, t: t, project: project.ID}
 }
 
-// endedWith waits for a cards Job of the saga queued after a moment to end with the code.
+// endedWith waits for a cards Job of the saga queued after a moment to end with the code. One connection serves the
+// whole wait and closes at its end: the cluster of the app has few places, and a connection a read every 200 ms left open
+// ended the wait in seconds instead of its term (specs/2026-11-15-desk-hygiene2.md HY1.3).
 func (window readingWindow) endedWith(after time.Time, code string, timeout time.Duration) bool {
 	window.t.Helper()
-	deadline := time.Now().Add(timeout)
+	connection := database(window.t, window.data)
+	defer func() { _ = connection.Close(context.Background()) }()
+	deadline := desktoptest.Deadline(timeout)
 	for time.Now().Before(deadline) {
 		var found bool
-		err := database(window.t, window.data).QueryRow(context.Background(), `
+		err := connection.QueryRow(context.Background(), `
 			SELECT EXISTS (SELECT 1 FROM jobs WHERE project_id = $1 AND kind = 'chapter_cards' AND created_at > $2
 			  AND status = 'failed' AND error_json->>'code' = $3)`, window.project, after, code).Scan(&found)
 		if err == nil && found {
@@ -502,7 +510,7 @@ func connectBy(t *testing.T, window *client, stub, protocol string, advanced map
 
 func openWindow(t *testing.T, process *backend) *client {
 	t.Helper()
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -591,7 +599,7 @@ func TestTheReadingStopsWithinItsSum(t *testing.T) {
 	other := &readingStub{titles: []string{"Глава 5. Рассвет"}}
 	otherServer := httptest.NewServer(other)
 	defer otherServer.Close()
-	connect(t, window, otherServer.URL, map[string]any{"parallel": 1, "maxOutput": 1000})
+	connectCaughtUp(t, process, saga, otherServer.URL, map[string]any{"parallel": 1, "maxOutput": 1000})
 	movedAt := time.Now().Add(-time.Second)
 	window.importFileAs(saga.project, "Рассвет.md", bookOf("Глава 5. Рассвет"), "import-of-the-dawn")
 	if status, code := cardsJobEnded(t, data, saga.project, movedAt, 2*time.Minute); status != "failed" || code != "cards.consent" {
@@ -767,7 +775,7 @@ func TestTheSampleReadsItsThreeChapters(t *testing.T) {
 	if status, sample, raw := start(saga, "sample-of-the-north"); status != http.StatusAccepted || sample.Total != 3 {
 		t.Fatalf("the press again = %d %s", status, raw)
 	}
-	deadline := time.Now().Add(3 * time.Minute)
+	deadline := desktoptest.Deadline(3 * time.Minute)
 	var sample sampleAnswer
 	for {
 		window.read("/api/v1/projects/"+saga.project+"/reading/sample", &sample)
@@ -811,11 +819,13 @@ func TestTheSampleReadsItsThreeChapters(t *testing.T) {
 
 	// A sample stopped at its second chapter keeps the card of the first.
 	other := openSaga(t, window, "Ветреный берег", bookOf(held...))
-	_, _ = cardsJobEnded(t, data, other.project, time.Now().Add(-time.Minute), 2*time.Minute)
+	// The sample takes the chapters of the published text that are indexed: the text is waited for, not the first cards
+	// Job that ends (specs/2026-11-15-desk-hygiene2.md HY1.3).
+	readingSettled(t, data, other.project, 2*time.Minute)
 	if status, _, raw := start(other, "sample-of-the-shore"); status != http.StatusAccepted {
 		t.Fatalf("the second sample = %d %s", status, raw)
 	}
-	deadline = time.Now().Add(2 * time.Minute)
+	deadline = desktoptest.Deadline(2 * time.Minute)
 	for {
 		stub.mu.Lock()
 		holding := stub.holding
@@ -832,7 +842,7 @@ func TestTheSampleReadsItsThreeChapters(t *testing.T) {
 	if response, raw := window.do(http.MethodDelete, "/api/v1/projects/"+other.project+"/reading/sample", window.csrf(), nil); response.StatusCode != http.StatusNoContent {
 		t.Fatalf("cancelReadingSample = %d %s", response.StatusCode, raw)
 	}
-	deadline = time.Now().Add(time.Minute)
+	deadline = desktoptest.Deadline(time.Minute)
 	for {
 		window.read("/api/v1/projects/"+other.project+"/reading/sample", &sample)
 		if sample.State == "canceled" {

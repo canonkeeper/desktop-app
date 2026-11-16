@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package obsidian serves the bridge of the desktop app with a vault of Obsidian (specs/2026-11-13-desk-obsidian.md):
-// getObsidianVault, beginObsidianVaultChoice, unlinkObsidianVault, scanObsidianVault and previewObsidianImport. Only the
-// desktop mounts it. No operation takes an absolute path, and none gives one but the path of the vault in
+// getObsidianVault, beginObsidianVaultChoice, unlinkObsidianVault, scanObsidianVault, previewObsidianImport, the loads
+// and exportObsidianSaga (specs/2026-11-15-desk-obsidian-export.md). Only the desktop mounts it. No operation takes an absolute path, and none gives one but the path of the vault in
 // getObsidianVault (OB0.3).
 package obsidian
 
@@ -73,6 +73,7 @@ type Handlers struct {
 	LinkBook       BookFolderUseCase
 	UnlinkBook     BookFolderUseCase
 	Materials      MaterialsUseCase
+	Export         ExportUseCase
 	Users          CurrentUserService
 	AllowedOrigins []string
 }
@@ -82,7 +83,7 @@ type Handlers struct {
 func (handlers Handlers) Mount(router chi.Router) {
 	if handlers.Read == nil || handlers.Begin == nil || handlers.Unlink == nil || handlers.Scan == nil || handlers.Preview == nil ||
 		handlers.Load == nil || handlers.Update == nil || handlers.LinkBook == nil || handlers.UnlinkBook == nil || handlers.Materials == nil ||
-		handlers.Users == nil {
+		handlers.Export == nil || handlers.Users == nil {
 		panic("obsidian HTTP: dependencies are required")
 	}
 	router.Get("/projects/{projectId}/obsidian", handlers.read)
@@ -97,6 +98,7 @@ func (handlers Handlers) Mount(router chi.Router) {
 		router.Put("/projects/{projectId}/obsidian/books/{bookId}", handlers.linkBook)
 		router.Delete("/projects/{projectId}/obsidian/books/{bookId}", handlers.unlinkBook)
 		router.Post("/projects/{projectId}/obsidian/materials", handlers.materials)
+		router.Post("/projects/{projectId}/obsidian/export", handlers.export)
 	})
 }
 
@@ -118,6 +120,8 @@ func (handlers Handlers) read(response http.ResponseWriter, request *http.Reques
 		}
 		// specs/2026-11-14-desk-obsidian-books.md OK2.6: the linked books and the books to link anew.
 		body.Books, body.Relink = vaultBooksOf(state.Books), vaultBooksOf(state.Relink)
+		// specs/2026-11-15-desk-obsidian-export.md OE1.8: the folder of the export and the time of the last one that ended.
+		body.ExportDir, body.LastExportAt = state.ExportDir, state.ExportedAt
 	}
 	writeJSON(response, http.StatusOK, body)
 }
@@ -212,6 +216,10 @@ type vaultBody struct {
 	// Books and Relink are the books of OK2.6, only for a linked saga.
 	Books  []vaultBookBody `json:"books,omitempty"`
 	Relink []vaultBookBody `json:"relink,omitempty"`
+	// ExportDir and LastExportAt are of the export (specs/2026-11-15-desk-obsidian-export.md OE1.8), only for a linked saga:
+	// the folder from the root of the vault and the time of the last export that ended.
+	ExportDir    string     `json:"exportDir,omitempty"`
+	LastExportAt *time.Time `json:"lastExportAt,omitempty"`
 }
 
 type vaultBookBody struct {
@@ -326,6 +334,9 @@ type problemBody struct {
 	Records      int `json:"records,omitempty"`
 	SagaRecords  int `json:"sagaRecords,omitempty"`
 	LimitRecords int `json:"limitRecords,omitempty"`
+	// Reason is why the map of the saga is not ready for an export (obsidian.map_not_ready,
+	// specs/2026-11-15-desk-obsidian-export.md OE1.6): updating or no_cards.
+	Reason string `json:"reason,omitempty"`
 }
 
 func writeError(response http.ResponseWriter, err error) {

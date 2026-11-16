@@ -136,7 +136,8 @@ func router() chi.Router {
 	router := chi.NewRouter()
 	Handlers{
 		Read: bridge{}, Begin: begin{}, Unlink: unlink{}, Scan: scan{}, Preview: preview{}, Load: load{}, Update: update{},
-		LinkBook: bookFolders{}, UnlinkBook: bookFolders{}, Materials: materials{}, Users: sessions{}, AllowedOrigins: []string{origin},
+		LinkBook: bookFolders{}, UnlinkBook: bookFolders{}, Materials: materials{}, Export: exports{}, Users: sessions{},
+		AllowedOrigins: []string{origin},
 	}.Mount(router)
 	return router
 }

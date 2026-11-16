@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // questionsAfterACrash waits for the turns a crash left to end in the next run and fails the test unless each ended
@@ -32,7 +30,7 @@ func questionsAfterACrash(t *testing.T, run accountRun, returned string, turns .
 // before is asked by the ref of its row, spending nothing, and closed failed; every question is pending until the word of
 // the site (the word itself is asked six minutes after the start — services/appwork TestAnInterruptedTurnAsksNoNewPermitAtAnyAge).
 func TestAQuestionACrashLeftEndsAndOpensNoPermit(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	data := filepath.Join(t.TempDir(), "data")
 	binary := site.accountProgram(t)
@@ -98,7 +96,7 @@ func TestAQuestionACrashLeftEndsAndOpensNoPermit(t *testing.T) {
 // IT1.1 («Свой ИИ»): a question the crash left mid-answer ends with the same code; nothing is counted — the question tells
 // none —, the site hears nothing and the provider no request more.
 func TestAQuestionOfTheOwnAIACrashLeftEnds(t *testing.T) {
-	resources := desktoptest.Resources(t)
+	resources := processResources(t)
 	site := newAccountAISite(t)
 	provider := &providerOfTheTest{}
 	stub := httptest.NewServer(provider)

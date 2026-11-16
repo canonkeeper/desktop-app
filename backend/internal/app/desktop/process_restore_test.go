@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // The programs of a return: the earlier one is the tree, the later knows one migration more.
@@ -38,7 +40,7 @@ func restoreStart(binary, resources, data string) ControlMessage {
 // opened is the window of a running backend, signed in.
 func opened(t *testing.T, process *backend) *client {
 	t.Helper()
-	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := browser.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -230,7 +232,7 @@ func TestAReturnBringsTheCopyBackAndKeepsTheDataItReplaces(t *testing.T) {
 	if response, body := browser.do(http.MethodDelete, "/api/v1/books/"+book+"/cover", browser.csrf(), nil); response.StatusCode != http.StatusOK {
 		t.Fatalf("deleteBookCover = %d %s", response.StatusCode, body)
 	}
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := desktoptest.Deadline(2 * time.Minute)
 	for len(coverFiles(t, data)) != 0 {
 		if time.Now().After(deadline) {
 			t.Fatalf("the file of the deleted cover stays: %v", coverFiles(t, data))
@@ -348,7 +350,7 @@ func TestAReturnKilledAnywhereLeavesTheDataWhole(t *testing.T) {
 			t.Fatalf("the step of the return came before its mark: %v", err)
 		}
 		if at == "the restore" {
-			deadline := time.Now().Add(60 * time.Second)
+			deadline := desktoptest.Deadline(60 * time.Second)
 			for {
 				if _, err := os.Stat(filepath.Join(data, "pg"+restoringSuffix, "postmaster.pid")); err == nil {
 					break

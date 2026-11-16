@@ -38,8 +38,12 @@ const (
 	// restoreTimeout bounds pg_restore as dumpTimeout bounds pg_dump.
 	restoreTimeout = dumpTimeout
 	// undoPatience is how long the removal of a half restored part keeps trying: a program of PostgreSQL a killed return
-	// started — initdb, pg_restore — may still write into it a moment, and on Windows hold its files.
+	// started — the postgres of a step of initdb, a program the system did not end with the backend — may still write into
+	// it a moment, and on Windows hold its files.
 	undoPatience = 30 * time.Second
+	// undoQuiet is how long the removed parts must stay away before the undo is done
+	// (specs/2026-11-16-desk-restore-orphans.md RO1.2): such a program would write into a part or make it again within it.
+	undoQuiet = time.Second
 )
 
 // restoreParts are the parts of the data directory a return brings back, relative to it: the cluster, the threads of the
@@ -83,8 +87,9 @@ func restoring(data DataDir, part string) string {
 // undoRestore puts back what a return an earlier start did not end moved away, removes what it half restored and takes
 // its mark away (UG4.2). It runs before the cluster starts; without a mark it only removes half restored parts. The
 // cluster a killed return left running in its directory is stopped first: it holds the socket of the cluster and, on
-// Windows, its files. A stop that fails does not stop the undo: the server initdb of a killed return runs alone cannot be
-// stopped by pg_ctl, and it ends by itself once its directory is gone — the removal tries again meanwhile.
+// Windows, its files. A stop that fails does not stop the undo: the server of a step of initdb cannot be stopped by
+// pg_ctl, and it ends once initdb, which went with the backend (startBound), no longer feeds it. The undo is done only
+// once nothing writes into the half restored parts any more (removeForGood).
 func (cluster *Cluster) undoRestore(ctx context.Context) error {
 	data := cluster.data
 	staging := *cluster
@@ -95,7 +100,8 @@ func (cluster *Cluster) undoRestore(ctx context.Context) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err == nil {
+	marked := err == nil
+	if marked {
 		var record restoreRecord
 		if json.Unmarshal(raw, &record) != nil || !plainBefore(record.Before) {
 			return errors.New("desktop: the mark of a return names no folder of a return")
@@ -120,10 +126,12 @@ func (cluster *Cluster) undoRestore(ctx context.Context) error {
 		_ = os.Remove(filepath.Join(before, "codex"))
 		_ = os.Remove(before)
 	}
+	halfRestored := make([]string, 0, len(restoreParts))
 	for _, part := range restoreParts {
-		if err := removePatiently(restoring(data, part), undoPatience); err != nil {
-			return err
-		}
+		halfRestored = append(halfRestored, restoring(data, part))
+	}
+	if err := removeForGood(halfRestored, marked, undoPatience, undoQuiet); err != nil {
+		return err
 	}
 	if err := os.Remove(mark); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -131,11 +139,31 @@ func (cluster *Cluster) undoRestore(ctx context.Context) error {
 	return nil
 }
 
-// removePatiently removes path whole, trying again until patience passed.
-func removePatiently(path string, patience time.Duration) error {
+// removeForGood removes paths whole and is done only once none of them came back within quiet (RO1.2): a program a
+// killed return started that still runs writes into a part or makes it again a moment after its removal. It tries again
+// until patience passed; a path still there then is the error. A return to undo (settle) or a path there to remove is
+// waited out even when nothing comes back; with neither there is nothing that could write, and nothing to wait for.
+func removeForGood(paths []string, settle bool, patience, quiet time.Duration) error {
 	deadline := time.Now().Add(patience)
 	for {
-		err := os.RemoveAll(path)
+		var err error
+		for _, path := range paths {
+			if _, found := os.Lstat(path); found == nil {
+				settle = true
+			}
+			if removed := os.RemoveAll(path); removed != nil && err == nil {
+				err = removed
+			}
+		}
+		if err == nil && settle {
+			time.Sleep(quiet)
+			for _, path := range paths {
+				if _, found := os.Lstat(path); !errors.Is(found, fs.ErrNotExist) {
+					err = fmt.Errorf("desktop: %s is written into again after its removal", path)
+					break
+				}
+			}
+		}
 		if err == nil || time.Now().After(deadline) {
 			return err
 		}

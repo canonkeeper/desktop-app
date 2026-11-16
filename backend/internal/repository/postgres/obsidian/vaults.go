@@ -39,21 +39,28 @@ func (vaults *Vaults) Vault(ctx context.Context, actorUserID, projectID string, 
 		if err != nil {
 			return err
 		}
-		var vaultPath pgtype.Text
+		var vaultPath, exportDir pgtype.Text
+		var exportedAt pgtype.Timestamptz
 		err = tx.QueryRow(ctx, `
-			SELECT p.name, v.vault_path
+			SELECT p.name, v.vault_path, v.export_dir, v.last_export_at
 			FROM projects AS p
 			LEFT JOIN obsidian_vaults AS v ON v.project_id = p.id
 			WHERE p.id = $1
-		`, project).Scan(&linked.Title, &vaultPath)
-		linked.Path = vaultPath.String
+		`, project).Scan(&linked.Title, &vaultPath, &exportDir, &exportedAt)
+		linked.Path, linked.ExportDir = vaultPath.String, exportDir.String
+		if exportedAt.Valid {
+			at := exportedAt.Time.UTC()
+			linked.ExportedAt = &at
+		}
 		return err
 	})
 	return linked, err
 }
 
 // Link keeps the path of the vault of a saga: the row of the saga, new or with a new path. The folder of the export stays
-// what it was (OB1.4): a new path of the vault keeps every link of a book, whose folders are paths from its root.
+// what it was (OB1.4): a new path of the vault keeps every link of a book, whose folders are paths from its root; a new path
+// forgets the time of the last export, which went into the vault of the path before
+// (specs/2026-11-15-desk-obsidian-export.md OE1.2).
 func (vaults *Vaults) Link(ctx context.Context, projectID, vaultPath string) error {
 	project, err := storedb.ParseUUID(projectID)
 	if err != nil {
@@ -61,7 +68,8 @@ func (vaults *Vaults) Link(ctx context.Context, projectID, vaultPath string) err
 	}
 	_, err = vaults.db.Pool.Exec(ctx, `
 		INSERT INTO obsidian_vaults (project_id, vault_path) VALUES ($1, $2)
-		ON CONFLICT (project_id) DO UPDATE SET vault_path = EXCLUDED.vault_path
+		ON CONFLICT (project_id) DO UPDATE SET vault_path = EXCLUDED.vault_path,
+			last_export_at = CASE WHEN obsidian_vaults.vault_path = EXCLUDED.vault_path THEN obsidian_vaults.last_export_at END
 	`, project, vaultPath)
 	return err
 }

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // specs/2026-11-12-desk-window.md WN1.1: the built backend of the app answers «кто автор» of its window with the local
@@ -21,13 +23,13 @@ import (
 func TestTheWindowOfTheAppKnowsItsAuthor(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	process := startBackend(t, binary, resources, filepath.Join(t.TempDir(), "data"), nil)
-	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	stranger := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response, body := stranger.do(http.MethodGet, "/api/v1/auth/session", "", nil); response.StatusCode != http.StatusUnauthorized ||
 		!json.Valid(body) || !containsCode(body, "auth.session_required") {
 		t.Fatalf("getCurrentUser without the session = %d %s", response.StatusCode, body)
 	}
 
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -104,7 +106,7 @@ func TestTheAppWithoutItsHelperReadsAndFindsTheBooksAndQueuesNoCards(t *testing.
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -117,7 +119,7 @@ func TestTheAppWithoutItsHelperReadsAndFindsTheBooksAndQueuesNoCards(t *testing.
 	}
 	window.importFile(project.ID, "Застава у перевала.md", northernBook)
 
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for {
 		var list struct {
 			Data []struct {

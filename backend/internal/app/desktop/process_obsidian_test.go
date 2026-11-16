@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/domain/obsidian"
 )
 
@@ -61,7 +63,7 @@ func TestTheBackendLinksASagaWithTheFolderTheShellPicked(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, binary, resources, data, nil)
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: time.Minute}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(time.Minute)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("the code = %d", response.StatusCode)
 	}
@@ -231,7 +233,7 @@ func TestTheBackendLinksASagaWithTheFolderTheShellPicked(t *testing.T) {
 		t.Fatalf("the glued text is not the one of the preview")
 	}
 	window.importFileAs(project.ID, glued.FileName, glued.Text, "import-of-the-glued-book")
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for {
 		var list struct {
 			Data []struct {

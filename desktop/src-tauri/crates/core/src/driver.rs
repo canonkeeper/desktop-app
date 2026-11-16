@@ -15,7 +15,9 @@
 //! installation runs, and any failure before the program changed starts the backend again on the same data. The choice
 //! of the folder of an Obsidian vault (specs/2026-11-13-desk-obsidian.md OB1.1–OB1.3) goes through here as well: the
 //! backend declares it, the page asks for the system window by its number, the shell checks the folder on the thread of
-//! the window, and the page hears only how the backend ended it.
+//! the window, and the page hears only how the backend ended it. A link `canonkeeper://` (specs/2026-11-16-desk-app-links.md
+//! AL1) of the first start or of a second one is checked here and, by the phase of the supervision, waits for the window,
+//! rides its opening to the first page, goes to its loaded page or is dropped; a link a restart repeats is dropped once.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -29,6 +31,7 @@ use crate::control::{FromBackend, Step, ToBackend};
 use crate::erase::{self, Earlier, Targets, Unfinished};
 use crate::folder::{self, Choosing, Outcome, Reply};
 use crate::journal::{name, Journal};
+use crate::link::{self, Argument, Links, Target};
 use crate::paths::System;
 use crate::secrets::{self, Keyring, Opened, Secret, SecretError, Secrets, PROBE_TIMEOUT};
 use crate::supervisor::{Action, Event, Notes, Supervisor, Unfinished as UnfinishedNote};
@@ -48,8 +51,9 @@ pub trait Window: Send + 'static {
     /// The page of the shell says the long step of the start that goes on (specs/2026-11-13-desk-upgrade.md UG3.1).
     fn show_step(&self, words: &str);
     /// Lets the page of 127.0.0.1:port call the commands of the shell, keeps the notes for `launch_notes` and opens
-    /// `url`, which carries the one-time code.
-    fn open(&self, port: u16, url: &str, notes: Notes);
+    /// `url`, which carries the one-time code. `opening` numbers this opening: the window reports the page of the backend
+    /// it loaded after the exchange by it ([`Handle::loaded`]).
+    fn open(&self, port: u16, url: &str, notes: Notes, opening: u64);
     /// Shows the failure window: the words and the buttons of the failure, which its page reads by a command (UG3.2).
     fn show_failure(&self, failure: &Failure);
     /// Closes the window for good before an erasure: its webview lets go of the data of the window.
@@ -65,6 +69,9 @@ pub trait Window: Send + 'static {
     fn restart(&self);
     /// Raises the window: the link with the account went through in the browser (specs/2026-11-13-desk-account.md AC1.3).
     fn focus(&self);
+    /// Raises the window and gives its loaded page the place of a link by the script of the core; the page follows it by the
+    /// navigation of its router, without a reload (specs/2026-11-16-desk-app-links.md AL1.4).
+    fn visit(&self, target: &Target);
     /// Opens the system window that chooses a folder over the window of the app, its title naming the saga
     /// (specs/2026-11-13-desk-obsidian.md OB1.2), without waiting for it; `chosen` hears the folder, or nothing when the
     /// author canceled, once and from any thread. No page hears the folder.
@@ -95,6 +102,8 @@ pub struct Config {
     /// How the program of the bridge for the programs of the author runs, when it is there (specs/2026-11-15-desk-mcp.md
     /// MC3.2).
     pub bridge: Option<crate::mcp::Bridge>,
+    /// The link among the arguments of the first start (specs/2026-11-16-desk-app-links.md AL1.2).
+    pub link: Option<Argument>,
 }
 
 /// What the window reports to the supervision.
@@ -123,6 +132,17 @@ impl Handle {
     /// The window reached the page of the start before an installation (UB2.3).
     pub fn left(&self) {
         let _ = self.sender.send(Heard::Event(Event::Left));
+    }
+
+    /// A second start brought a link (specs/2026-11-16-desk-app-links.md AL1.2): the raw text, checked on the thread of the
+    /// supervision.
+    pub fn link(&self, argument: Argument) {
+        let _ = self.sender.send(Heard::Link(argument));
+    }
+
+    /// The window loaded a page of its backend after the exchange of the opening `opening` (AL1.3).
+    pub fn loaded(&self, opening: u64) {
+        let _ = self.sender.send(Heard::Loaded(opening));
     }
 
     /// The page asks for the system window that chooses the folder of a vault for the number the backend declared
@@ -179,7 +199,11 @@ pub fn run<W: Window>(
                 Unfinished::Kept => Fault::KeyKept,
             };
             window.show_failure(&failure(&fault, config.system, &config.data_dir, &config.version));
-            until_closed(&receiver);
+            // specs/2026-11-16-desk-app-links.md AL1.7: the link of the start is not taken; the data are not touched.
+            if config.link.is_some() {
+                journal.note(&format!("link_dropped {}", link::Dropped::Failure.name()));
+            }
+            until_closed(&receiver, &journal);
             window.exit();
             return;
         }
@@ -203,6 +227,15 @@ pub fn run<W: Window>(
         let mut first_ready = true;
         // The choices of the folder of a vault the backend declared (OB1.1).
         let mut choosing = Choosing::default();
+        // The links of this run (specs/2026-11-16-desk-app-links.md AL1.3–AL1.5): the link of the first start, unless a
+        // restart repeated the one it marked.
+        let mut links = Links::default();
+        let data_dir = Path::new(&config.data_dir);
+        if link::replayed(data_dir, config.link.as_ref()) {
+            journal.note(&format!("link_dropped {}", link::Dropped::Replayed.name()));
+        } else if let Some(argument) = &config.link {
+            arrive(&mut links, argument, supervisor.stage(), &window, &journal);
+        }
         let mut actions: VecDeque<Action> = supervisor.start().into();
         loop {
             while let Some(action) = actions.pop_front() {
@@ -220,11 +253,23 @@ pub fn run<W: Window>(
                             actions.extend(supervisor.handle(Event::SpawnFailed, Instant::now()));
                         }
                     }
-                    Action::ShowStarting => window.show_starting(),
+                    Action::ShowStarting => {
+                        links.left();
+                        window.show_starting();
+                    }
                     Action::ShowStep(step) => window.show_step(&step_words(&step)),
                     Action::Open { port, url, notes } => {
                         journal.note(&format!("window_open port={port}"));
-                        window.open(port, url.as_str(), notes);
+                        // AL1.4: the link that waited is the first page after the exchange.
+                        let (opening, carried) = links.opening();
+                        let url = match &carried {
+                            Some(target) => {
+                                journal.note("link_opened");
+                                url.to(target)
+                            }
+                            None => url,
+                        };
+                        window.open(port, url.as_str(), notes, opening);
                     }
                     Action::AskCode => {
                         if let Some(running) = backend.as_mut() {
@@ -232,6 +277,7 @@ pub fn run<W: Window>(
                         }
                     }
                     Action::ShowFailure(fault) => {
+                        links.left();
                         journal.note(&format!("failure {}", fault_name(&fault)));
                         window.show_failure(&failure(&fault, config.system, &config.data_dir, &config.version));
                     }
@@ -252,12 +298,13 @@ pub fn run<W: Window>(
                             &config.data_dir,
                             &config.version,
                         ));
-                        until_closed(&receiver);
+                        until_closed(&receiver, &journal);
                     }
                     Action::Erase => {
+                        links.left();
                         window.close();
                         journal.note("erase_started");
-                        let records = keeper.send(Ask::Erase).is_ok() && erased(&receiver);
+                        let records = keeper.send(Ask::Erase).is_ok() && erased(&receiver, &journal);
                         // The log lies in the data directory: it goes with them.
                         journal.close();
                         if config.erase.remove(config.patience).is_ok() && records {
@@ -281,33 +328,46 @@ pub fn run<W: Window>(
                         }
                     }
                     Action::Leave => {
+                        links.left();
                         let version = updating.as_ref().and_then(|updating| updating.state.line().version);
                         journal.note("update_leaving");
                         window.leave(&installing_words(version.as_deref().unwrap_or("")));
                     }
                     Action::Install { stopped } => {
+                        // AL1.5: the installer of Windows starts the app again with the arguments of this start.
+                        let nsis = updating.as_ref().is_some_and(|updating| updating.setup.kind == Kind::Nsis);
+                        let link_marked = nsis && mark(&config, &journal);
                         let restart = match updating.as_mut() {
                             Some(updating) => {
                                 install(updating, &config.data_dir, stopped, exit_code, &window, &journal)
                             }
                             None => false,
                         };
+                        if link_marked && !restart {
+                            link::unmark(data_dir);
+                        }
                         actions.extend(supervisor.handle(Event::Installed { restart }, Instant::now()));
                     }
                     Action::Restart => {
                         journal.note("update_restart");
+                        // AL1.5: the program starts again with the arguments of this start.
+                        mark(&config, &journal);
+                        links.left();
                         drop(backend.take());
                         window.restart();
                         return;
                     }
                     Action::Exit => {
                         journal.note("exit");
+                        links.left();
                         drop(backend.take());
                         window.exit();
                         return;
                     }
                 }
             }
+            // AL1.3: where no link is taken now, the link that waits goes.
+            carry(links.settle(supervisor.stage()), &window, &journal);
             let heard = match receiver.recv_timeout(TICK) {
                 Ok(heard) => heard,
                 Err(RecvTimeoutError::Timeout) => Heard::Event(Event::Tick),
@@ -341,6 +401,10 @@ pub fn run<W: Window>(
                 }
                 // The records of a launch the app no longer waits for.
                 Heard::Records { .. } => {}
+                Heard::Link(argument) => arrive(&mut links, &argument, supervisor.stage(), &window, &journal),
+                Heard::Loaded(opening) => {
+                    carry(links.loaded(opening, supervisor.stage(), Instant::now()), &window, &journal);
+                }
                 Heard::Event(Event::Message(FromBackend::SecretSave { id, value, request })) => {
                     let _ = keeper.send(Ask::Write { id, value: Some(value), request });
                 }
@@ -468,6 +532,7 @@ pub fn run<W: Window>(
                     }
                     if event == Event::Tick {
                         choosing.tick(Instant::now());
+                        carry(links.tick(supervisor.stage(), Instant::now()), &window, &journal);
                     }
                     if event == Event::Message(FromBackend::Erase) {
                         // UB2.9: the erasure comes before an update: the download, the wait and an installation that has
@@ -507,6 +572,41 @@ pub fn run<W: Window>(
         }
     });
     (handle, thread)
+}
+
+/// A link came (specs/2026-11-16-desk-app-links.md AL1.1–AL1.3): checked — a refusal is noted by its reason and leads to the
+/// page that says so —, then it waits, moves the window or is dropped.
+fn arrive<W: Window>(links: &mut Links, argument: &Argument, stage: link::Stage, window: &W, journal: &Journal) {
+    let (target, refusal) = link::target(argument);
+    if let Some(refusal) = refusal {
+        journal.note(&format!("link_refused {}", refusal.name()));
+    }
+    carry(links.arrive(target, stage, Instant::now()), window, journal);
+}
+
+/// Does what the links ask (AL1.4, AL1.7): the log names the fact and the reason, never a part of a link.
+fn carry<W: Window>(done: Vec<link::Done>, window: &W, journal: &Journal) {
+    for done in done {
+        match done {
+            link::Done::Visit(target) => {
+                journal.note("link_opened");
+                window.visit(&target);
+            }
+            link::Done::Raise => window.focus(),
+            link::Done::Merged => journal.note("link_merged"),
+            link::Done::Dropped(why) => journal.note(&format!("link_dropped {}", why.name())),
+        }
+    }
+}
+
+/// Marks the link of the first start before the program starts again (AL1.5); says whether it marked one.
+fn mark(config: &Config, journal: &Journal) -> bool {
+    let Some(argument) = &config.link else { return false };
+    if link::mark(Path::new(&config.data_dir), argument).is_err() {
+        journal.note("link_mark_not_written");
+        return false;
+    }
+    true
 }
 
 /// Installs the update the shell holds once the backend is gone (UB2.3–UB2.7) and says whether the app starts again:
@@ -615,21 +715,26 @@ enum Ask {
     Erase,
 }
 
-/// Waits for the author to close the window of a failure that ends the app; nothing else is heard meanwhile.
-fn until_closed(receiver: &mpsc::Receiver<Heard>) {
+/// Waits for the author to close the window of a failure that ends the app; nothing else is heard meanwhile — a link is
+/// dropped by its line (specs/2026-11-16-desk-app-links.md AL1.7).
+fn until_closed(receiver: &mpsc::Receiver<Heard>, journal: &Journal) {
     while let Ok(heard) = receiver.recv() {
-        if heard == Heard::Event(Event::Close) {
-            return;
+        match heard {
+            Heard::Event(Event::Close) => return,
+            Heard::Link(_) => journal.note(&format!("link_dropped {}", link::Dropped::Failure.name())),
+            _ => {}
         }
     }
 }
 
-/// Waits for the keeper to remove the records of the set; the backend is gone, so whatever else comes is not heard.
-fn erased(receiver: &mpsc::Receiver<Heard>) -> bool {
+/// Waits for the keeper to remove the records of the set; the backend is gone, so whatever else comes is not heard — a link
+/// is dropped by its line (AL1.7).
+fn erased(receiver: &mpsc::Receiver<Heard>, journal: &Journal) -> bool {
     let deadline = Instant::now() + erase::RECORDS_TIMEOUT + TICK;
     loop {
         match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(Heard::Erased { ok }) => return ok,
+            Ok(Heard::Link(_)) => journal.note(&format!("link_dropped {}", link::Dropped::Erasing.name())),
             Ok(_) => {}
             Err(_) => return false,
         }

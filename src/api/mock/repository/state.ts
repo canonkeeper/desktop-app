@@ -188,9 +188,10 @@ export type MockState = {
   appUpdate: Pick<Schema<'AppUpdate'>, 'phase' | 'found' | 'available' | 'percent' | 'checkedAt'>;
   /**
    * The link of each saga with the folder of its Obsidian vault, the choice that waits for the shell and the refusal of the
-   * last one (specs/2026-11-13-desk-obsidian.md OB1.5).
+   * last one (specs/2026-11-13-desk-obsidian.md OB1.5); the folder of the export of the saga and the time of its last export
+   * that ended (specs/2026-11-15-desk-obsidian-export.md OE1.8).
    */
-  obsidianVaults: Record<string, { path: string; name: string }>;
+  obsidianVaults: Record<string, { path: string; name: string; exportDir?: string; lastExportAt?: string }>;
   obsidianChoices: Record<string, { request: string | null; refused: Schema<'ObsidianChoiceReason'> | null }>;
   /**
    * The links of the books of each saga with the folders of its vault (specs/2026-11-14-desk-obsidian-books.md OK0.2): a

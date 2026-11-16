@@ -2009,6 +2009,14 @@
             "type": "integer",
             "minimum": 1,
             "description": "obsidian.too_large of the records of notes: the records of a load and of a saga at most."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "updating",
+              "no_cards"
+            ],
+            "description": "obsidian.map_not_ready: why the map of the saga is not ready for an export — it is being updated, the Job of the cards queued; or the helper has read no book yet (specs/2026-11-15-desk-obsidian-export.md OE1.6)."
           }
         },
         "additionalProperties": false

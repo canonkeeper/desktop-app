@@ -2,12 +2,14 @@
 
 // Package obsidian is the bridge of the desktop app with a vault of Obsidian (specs/2026-11-13-desk-obsidian.md): the
 // choice of the folder of a saga through the shell, the link and its removal, the look over the vault and the preview of
-// what an import gives. Nothing is written into the saga and nothing into the vault; the only row it keeps is the link.
+// what an import gives, the loads of the books and of the records, and the export of the map and of the notes of the
+// chapters (specs/2026-11-15-desk-obsidian-export.md) — the one write into the vault, only under the folder of the export.
 package obsidian
 
 import (
 	"context"
 	"errors"
+	"time"
 
 	"canonkeeper/backend/internal/domain/obsidian"
 )
@@ -38,10 +40,14 @@ const (
 	AccessWrite
 )
 
-// Linked is a saga as the bridge sees it: its title and the path of its vault, "" without one.
+// Linked is a saga as the bridge sees it: its title and the path of its vault, "" without one; the folder of its export
+// from the root of the vault, "" before the first, and the time of its last export that ended
+// (specs/2026-11-15-desk-obsidian-export.md OE1.8).
 type Linked struct {
-	Title string
-	Path  string
+	Title      string
+	Path       string
+	ExportDir  string
+	ExportedAt *time.Time
 }
 
 // Vaults keeps the link of a saga with the folder of its vault (obsidian_vaults; OB1.4, OB1.5).

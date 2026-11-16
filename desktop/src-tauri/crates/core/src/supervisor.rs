@@ -14,7 +14,8 @@ use serde::Serialize;
 #[cfg(test)]
 use crate::control::Said;
 use crate::control::{Code, FromBackend, Step};
-use crate::navigation::open_url;
+use crate::link::{Dropped, Stage, Target};
+use crate::navigation::{open_url, open_url_to};
 use crate::words::{candidate, Fault};
 
 /// How many falls in a row the shell answers with a restart, and within what time (SH2.2).
@@ -160,6 +161,12 @@ impl OpenUrl {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The same opening, whose exchange goes on to the place of a link that waited for the window
+    /// (specs/2026-11-16-desk-app-links.md AL1.4).
+    pub fn to(&self, target: &Target) -> OpenUrl {
+        OpenUrl(open_url_to(&self.0, target))
+    }
 }
 
 impl std::fmt::Debug for OpenUrl {
@@ -262,6 +269,21 @@ impl Supervisor {
     pub fn start(&mut self) -> Vec<Action> {
         self.alive = true;
         vec![Action::Spawn]
+    }
+
+    /// What a link that comes now meets (specs/2026-11-16-desk-app-links.md AL1.3): it waits while the backend starts —
+    /// its long steps and a restart after a fall among them — and goes to the page of the backend once it is open; the
+    /// failure window, a departure for an installation and every stop drop it.
+    pub fn stage(&self) -> Stage {
+        match self.phase {
+            Phase::Starting => Stage::Starting,
+            Phase::Open { .. } => Stage::Open,
+            Phase::Failed => Stage::Gone(Dropped::Failure),
+            Phase::Leaving { .. } => Stage::Gone(Dropped::Leaving),
+            Phase::Stopping { purpose: Purpose::Exit, .. } | Phase::Stopped => Stage::Gone(Dropped::Closing),
+            Phase::Stopping { purpose: Purpose::Install, .. } | Phase::Installing => Stage::Gone(Dropped::Installing),
+            Phase::Stopping { purpose: Purpose::Erase, .. } => Stage::Gone(Dropped::Erasing),
+        }
     }
 
     /// The port of the page the window shows, while the backend is ready.
@@ -764,6 +786,65 @@ mod tests {
         supervisor.handle(ready(24117, "c", false), now);
         supervisor.handle(Event::Install, now);
         assert_eq!(supervisor.handle(Event::Exited, now), vec![Action::Install { stopped: false }]);
+    }
+
+    // specs/2026-11-16-desk-app-links.md AL1.3: a link waits while the backend starts, its steps and a restart after a fall
+    // among them; it goes to an open page; the failure, a departure for an installation and every stop drop it.
+    #[test]
+    fn a_link_meets_the_stage_of_the_phase() {
+        let now = Instant::now();
+        let mut supervisor = Supervisor::new(STOP_TIMEOUT);
+        supervisor.start();
+        assert_eq!(supervisor.stage(), Stage::Starting);
+        supervisor.handle(Event::Message(FromBackend::Step(Step::Migrate { version: None })), now);
+        assert_eq!(supervisor.stage(), Stage::Starting);
+        supervisor.handle(ready(24117, "c", false), now);
+        assert_eq!(supervisor.stage(), Stage::Open);
+        supervisor.handle(Event::Exited, now);
+        assert_eq!(supervisor.stage(), Stage::Starting, "a restart after a fall");
+        supervisor.handle(ready(24117, "c", false), now);
+        supervisor.handle(Event::Install, now);
+        assert_eq!(supervisor.stage(), Stage::Gone(Dropped::Leaving));
+        supervisor.handle(Event::Left, now);
+        assert_eq!(supervisor.stage(), Stage::Gone(Dropped::Installing));
+        supervisor.handle(Event::Exited, now);
+        assert_eq!(supervisor.stage(), Stage::Gone(Dropped::Installing));
+        supervisor.handle(Event::Installed { restart: true }, now);
+        assert_eq!(supervisor.stage(), Stage::Gone(Dropped::Closing));
+
+        let mut erasing = Supervisor::new(STOP_TIMEOUT);
+        erasing.start();
+        erasing.handle(ready(24117, "c", false), now);
+        erasing.handle(Event::Message(FromBackend::Erase), now);
+        assert_eq!(erasing.stage(), Stage::Gone(Dropped::Erasing));
+
+        let mut closing = Supervisor::new(STOP_TIMEOUT);
+        closing.start();
+        closing.handle(ready(24117, "c", false), now);
+        closing.handle(Event::Close, now);
+        assert_eq!(closing.stage(), Stage::Gone(Dropped::Closing));
+        closing.handle(Event::Exited, now);
+        assert_eq!(closing.stage(), Stage::Gone(Dropped::Closing));
+
+        let mut failed = Supervisor::new(STOP_TIMEOUT);
+        failed.start();
+        failed.handle(Event::SpawnFailed, now);
+        assert_eq!(failed.stage(), Stage::Gone(Dropped::Failure));
+
+        // The opening carries the place of a link before the fragment of its code.
+        let opened = supervisor_open(&mut Supervisor::new(STOP_TIMEOUT));
+        assert_eq!(
+            opened.to(&Target::Refused).as_str(),
+            "http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Frefused%3D1#c=c"
+        );
+    }
+
+    fn supervisor_open(supervisor: &mut Supervisor) -> OpenUrl {
+        supervisor.start();
+        match supervisor.handle(ready(24117, "c", false), Instant::now()).remove(0) {
+            Action::Open { url, .. } => url,
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

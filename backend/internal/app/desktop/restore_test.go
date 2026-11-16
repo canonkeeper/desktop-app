@@ -134,6 +134,97 @@ func TestAReturnStoppedAnywhereIsUndoneByTheNextStart(t *testing.T) {
 	}
 }
 
+// specs/2026-11-16-desk-restore-orphans.md RO1.2: the undo is done only once nothing writes into the half restored parts.
+// A part a program of a killed return makes after the undo began — with nothing there yet, or right after its removal —
+// is removed once more; a part made again and again past the patience of the undo is its error, not a quiet success;
+// with no return to undo and nothing there the undo does not wait.
+func TestTheUndoEndsOnlyOnceNothingWritesIntoAHalfRestoredPart(t *testing.T) {
+	const quiet = 500 * time.Millisecond
+	// writesLater makes the part once, when gone is true of it, and says so by closing the channel it returns.
+	writesLater := func(part string, gone func() bool) <-chan struct{} {
+		written := make(chan struct{})
+		go func() {
+			defer close(written)
+			for !gone() {
+				time.Sleep(time.Millisecond)
+			}
+			time.Sleep(10 * time.Millisecond)
+			_ = os.MkdirAll(part, 0o700)
+			_ = os.WriteFile(filepath.Join(part, "written"), []byte("late"), 0o600)
+		}()
+		return written
+	}
+	absent := func(part string) func() bool {
+		return func() bool {
+			_, err := os.Lstat(part)
+			return os.IsNotExist(err)
+		}
+	}
+
+	// A return killed before its initdb made the part: the undo of its mark waits, and the part made after is removed too.
+	root := t.TempDir()
+	layout(t, root, map[string]string{"pg": "the author's pg"})
+	record, _ := json.Marshal(restoreRecord{Copy: "pre-145-20261113T110500.000Z", Before: beforePrefix + "20261113T110500.000Z"})
+	writeFile(t, filepath.Join(root, restoreMark), string(record))
+	part := filepath.Join(root, "pg"+restoringSuffix)
+	written := writesLater(part, func() bool { return true })
+	if err := (&Cluster{data: DataDir{Root: root}}).undoRestore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-written
+	if !absent(part)() || !absent(filepath.Join(root, restoreMark))() {
+		t.Fatal("the part made after the undo began is left")
+	}
+
+	// A part there without a mark, made again right after its removal.
+	layout(t, filepath.Dir(part), map[string]string{"pg" + restoringSuffix: "half"})
+	written = writesLater(part, absent(part))
+	if err := removeForGood([]string{part}, false, 10*time.Second, quiet); err != nil {
+		t.Fatal(err)
+	}
+	<-written
+	if !absent(part)() {
+		t.Fatal("the part made again after its removal is left")
+	}
+
+	// A program that keeps making it: the undo gives up after its patience and says so.
+	layout(t, filepath.Dir(part), map[string]string{"pg" + restoringSuffix: "half"})
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(20 * time.Millisecond):
+				_ = os.MkdirAll(part, 0o700)
+			}
+		}
+	}()
+	began := time.Now()
+	err := removeForGood([]string{part}, false, 2*time.Second, quiet)
+	close(stop)
+	<-stopped
+	if err == nil {
+		t.Fatal("a part made again and again was taken for removed")
+	}
+	if took := time.Since(began); took < 2*time.Second {
+		t.Fatalf("the undo gave up after %s", took)
+	}
+
+	// An ordinary start — no return to undo and nothing half restored — does not wait.
+	if err := os.RemoveAll(part); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, restoreMark)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	began = time.Now()
+	if err := (&Cluster{data: DataDir{Root: root}}).undoRestore(context.Background()); err != nil || time.Since(began) >= undoQuiet {
+		t.Fatalf("the undo of an ordinary start = %v after %s", err, time.Since(began))
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false

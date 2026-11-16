@@ -246,7 +246,8 @@ func TestTheVaultNamesItsBooks(t *testing.T) {
 	router := chi.NewRouter()
 	Handlers{
 		Read: vaultWithBooks{}, Begin: begin{}, Unlink: unlink{}, Scan: scan{}, Preview: preview{}, Load: load{}, Update: update{},
-		LinkBook: bookFolders{}, UnlinkBook: bookFolders{}, Materials: materials{}, Users: sessions{}, AllowedOrigins: []string{origin},
+		LinkBook: bookFolders{}, UnlinkBook: bookFolders{}, Materials: materials{}, Export: exports{}, Users: sessions{},
+		AllowedOrigins: []string{origin},
 	}.Mount(router)
 	request := httptest.NewRequest(http.MethodGet, "/projects/saga/obsidian", nil)
 	request.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "author"})

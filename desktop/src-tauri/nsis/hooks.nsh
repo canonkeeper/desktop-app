@@ -45,3 +45,23 @@
     Pop $0
   ${EndIf}
 !macroend
+
+; The links canonkeeper:// open the app at a place of a book (specs/2026-11-16-desk-app-links.md AL2.1): the scheme of the
+; current user, written by NSIS itself — no command runs, and $INSTDIR stands in the value as it is. The uninstaller takes
+; the key away with or without «Удалить данные приложения», and only while its command is this installation's: the
+; registration of another copy of the app stays.
+!macro NSIS_HOOK_POSTINSTALL
+  WriteRegStr HKCU "Software\Classes\canonkeeper" "" "URL:CanonKeeper"
+  WriteRegStr HKCU "Software\Classes\canonkeeper" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\canonkeeper\DefaultIcon" "" "$INSTDIR\canonkeeper.exe,0"
+  WriteRegStr HKCU "Software\Classes\canonkeeper\shell\open\command" "" '"$INSTDIR\canonkeeper.exe" "%1"'
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  Push $0
+  ReadRegStr $0 HKCU "Software\Classes\canonkeeper\shell\open\command" ""
+  ${If} $0 == '"$INSTDIR\canonkeeper.exe" "%1"'
+    DeleteRegKey HKCU "Software\Classes\canonkeeper"
+  ${EndIf}
+  Pop $0
+!macroend

@@ -143,6 +143,25 @@ describe('SagaReadyWatcher', () => {
     expect(strip()).toBeNull();
   });
 
+  // specs/2026-11-15-desk-hygiene2.md HY2: the author leaves the shelf of a saga in work for a page without a saga — the
+  // preparation the watcher followed is no longer the page's, and a status without a saga is never asked
+  // (`GET /projects//indexing-status`, the 404 the scenarios of the app caught under load).
+  it('asks nothing without a saga when the author leaves a saga in work', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() => {
+      client.setQueryData(manuscriptQueryKeys.shelf({ projectId: null }), { jobs: [{ kind: 'chapter_cards' }], project: { id: 'project-default' } });
+    });
+    const { api, goTo } = renderWatcher('/manuscript/books', {}, () => statusOf(), client);
+    await waitFor(() => expect(api.getIndexingStatus).toHaveBeenCalledWith('project-default', expect.anything()));
+    goTo('/settings', {});
+    await act(async () => { await Promise.resolve(); });
+    goTo('/manuscript/books', {});
+    await act(async () => { await Promise.resolve(); });
+    goTo('/account', {});
+    await act(async () => { await Promise.resolve(); });
+    expect(api.getIndexingStatus).not.toHaveBeenCalledWith('', expect.anything());
+  });
+
   // W-74: told on the shelf by its own line, the readiness is not told again on the next page of the tab.
   it('does not tell again on the next page what the shelf has told', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

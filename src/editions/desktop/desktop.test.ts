@@ -8,10 +8,12 @@ import { edition } from '.';
 describe('the desktop edition', () => {
   it('routes only the open sections', () => {
     // «Книги» has the editor of a chapter without the helper (specs/2026-11-13-desk-editor.md ED1.1) and the page of the bridge
-    // with Obsidian (specs/2026-11-15-desk-obsidian-web.md OW1.1), and the app has «Настройки» (specs/2026-11-13-desk-settings.md
-    // ST1.2): the site has none of these routes.
+    // with Obsidian (specs/2026-11-15-desk-obsidian-web.md OW1.1) and the page a link `canonkeeper://` opens
+    // (specs/2026-11-16-desk-app-links.md AL1.6), and the app has «Настройки» (specs/2026-11-13-desk-settings.md ST1.2): the
+    // site has none of these routes.
     expect(edition.routes.map((route) => route.path)).toEqual([
-      '/', '/chat', '/notes', '/saga', '/memory', '/manuscript/books', '/manuscript/edit', '/manuscript/obsidian', '/settings',
+      '/', '/chat', '/notes', '/saga', '/memory', '/manuscript/books', '/manuscript/edit', '/manuscript/obsidian', '/manuscript/open',
+      '/settings',
     ]);
     // The open pages as they are: no page of the desktop provides a closed block to its section; «Книги» and «Что помнит
     // помощник» give their open slots (the bridge with Obsidian, OW1.2), «Настройки» are the own page of the app.

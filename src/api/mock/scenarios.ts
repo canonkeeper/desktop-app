@@ -169,12 +169,19 @@ export interface MockScenarioControl {
    * A load of the records of notes meets a name the author took during it (specs/2026-11-15-desk-obsidian-notes.md): conflict.
    */
   obsidianWrite?: 'queue_busy' | 'load_interrupted' | 'notes_unread' | 'nothing_to_apply' | 'folder_missing' | 'conflict';
+  /**
+   * How the export of the map and of the notes of the chapters answers (specs/2026-11-15-desk-obsidian-export.md, Data): the map
+   * is being updated or the helper has read no book, a link or a file on the way to the folder of the export, its manifest that
+   * does not read, a file the author changed — not updated without his word, moved into _Удалено/ with it —, a run that did not
+   * reach its end. By default the first export creates every reference, the next ones change none.
+   */
+  obsidianExport?: 'updating' | 'no_cards' | 'unsafe' | 'manifest_unreadable' | 'changed' | 'partial';
 }
 
 /** What a refusal carries besides its code: fields of the problem and the Retry-After of a 429. */
 export interface MockProblemExtras {
   fields?: Pick<Schema<'Problem'>, 'attemptsLeft' | 'lockMinutes' | 'materialId' | 'mayReturn' | 'errors' | 'vaultReason' | 'notes' | 'bytes' | 'limitNotes' | 'limitBytes' | 'entries' | 'limitEntries' | 'folders' | 'queue' | 'unread' | 'bookId'
-    | 'records' | 'sagaRecords' | 'limitRecords'>;
+    | 'records' | 'sagaRecords' | 'limitRecords' | 'reason'>;
   retryAfter?: number;
 }
 

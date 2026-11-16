@@ -14,6 +14,7 @@ use canonkeeper_desktop_core::driver::{run, Config, Handle, Window};
 use canonkeeper_desktop_core::erase::{self, Earlier, Targets, Unfinished};
 use canonkeeper_desktop_core::folder;
 use canonkeeper_desktop_core::journal::Journal;
+use canonkeeper_desktop_core::link::{Argument, Target};
 use canonkeeper_desktop_core::paths::{Places, System};
 use canonkeeper_desktop_core::secrets::{Failure, Keyring, OWN_AI};
 use canonkeeper_desktop_core::supervisor::{Notes, STOP_TIMEOUT};
@@ -166,6 +167,18 @@ impl Recorder {
         chosen(folder.map(Path::to_path_buf));
     }
 
+    /// Waits for the window of a failure and gives its words.
+    fn wait_failure(&self) -> String {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            if let Some(failure) = self.seen().into_iter().find(|seen| seen.starts_with("failure ")) {
+                return failure;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("the window showed no failure; it was told {:?}", self.seen());
+    }
+
     fn wait_for(&self, what: &str) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
@@ -187,7 +200,7 @@ impl Window for Recorder {
         self.0.lock().unwrap().push(format!("step {words}"));
     }
 
-    fn open(&self, port: u16, url: &str, notes: Notes) {
+    fn open(&self, port: u16, url: &str, notes: Notes, _opening: u64) {
         self.0.lock().unwrap().push(format!("open {port} {url} {notes:?}"));
     }
 
@@ -222,6 +235,10 @@ impl Window for Recorder {
         self.0.lock().unwrap().push("focus".into());
     }
 
+    fn visit(&self, target: &Target) {
+        self.0.lock().unwrap().push(format!("visit {}", target.path()));
+    }
+
     fn folder(&self, saga: &str, chosen: Chosen) {
         self.0.lock().unwrap().push(format!("folder {saga}"));
         *self.3.lock().unwrap() = Some(chosen);
@@ -245,6 +262,8 @@ struct Stand {
     journal: bool,
     /// The updates of the app on this stand, none by default.
     updates: Option<Setup>,
+    /// The link of the first start, none by default (specs/2026-11-16-desk-app-links.md AL1.2).
+    link: Option<Argument>,
 }
 
 impl Stand {
@@ -281,6 +300,7 @@ impl Stand {
             earlier: Earlier::None,
             journal: true,
             updates: None,
+            link: None,
         }
     }
 
@@ -307,6 +327,7 @@ impl Stand {
             earlier: self.earlier.clone(),
             updates: self.updates.clone(),
             bridge: None,
+            link: self.link.clone(),
         };
         let journal = if self.journal {
             Journal::open(&Path::new(&self.data).join("logs"), std::time::SystemTime::now())
@@ -943,9 +964,12 @@ fn an_erasure_that_cannot_be_marked_does_not_begin() {
         "failure Стирание не началось. Книги на месте: {}. Запустите CanonKeeper и попробуйте ещё раз",
         stand.data
     ));
+    // specs/2026-11-16-desk-app-links.md AL1.7: a link while this window waits for «Закрыть» is dropped by its reason.
+    handle.link(link_to(1));
     handle.close();
     thread.join().unwrap();
     fs::set_permissions(&home, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(stand.journal().contains("link_dropped failure"), "{}", stand.journal());
     let seen = window.seen();
     assert_eq!(seen.last().map(String::as_str), Some("exit"));
     assert!(!seen.contains(&"close".to_string()), "the window went before the author read why: {seen:?}");
@@ -1308,4 +1332,166 @@ fn a_backend_that_never_answers_ends_the_choice_for_the_page_in_its_time() {
     assert!(picked.elapsed() >= folder::RESULT_TERM, "the choice went by early: {:?}", picked.elapsed());
     handle.close();
     thread.join().unwrap();
+}
+
+// specs/2026-11-16-desk-app-links.md: the links `canonkeeper://` of the first start and of a second one on the real threads of
+// the supervision.
+const SAGA: &str = "0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44";
+const CHAPTER: &str = "7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45";
+
+fn link_to(paragraph: u32) -> Argument {
+    Argument::new(&format!("canonkeeper://open?saga={SAGA}&chapter={CHAPTER}&p={paragraph}"))
+}
+
+fn place_of(paragraph: u32) -> String {
+    format!("/manuscript/open?saga={SAGA}&chapter={CHAPTER}&p={paragraph}")
+}
+
+/// The opening of the window whose exchange goes on to the place of the link.
+fn opening_to(code: &str, paragraph: u32) -> String {
+    format!(
+        "open 24117 http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Fsaga%3D{SAGA}%26chapter%3D{CHAPTER}%26p%3D{paragraph}#c={code} {:?}",
+        Notes::default()
+    )
+}
+
+/// The log names the facts of the links and no part of one.
+fn no_part_of_a_link(journal: &str) {
+    assert!(!journal.contains(SAGA) && !journal.contains(CHAPTER) && !journal.contains("canonkeeper:"), "{journal}");
+    assert!(!journal.contains("manuscript") && !journal.contains("p=") && !journal.contains("rev="), "{journal}");
+}
+
+#[test]
+fn a_link_of_the_first_start_is_the_first_page_after_the_exchange() {
+    // AL1.3, AL1.4: the backend starts — the link waits —, then the opening carries it: the strings of the launch are said by
+    // that page, not burnt by a page that leaves at once.
+    let mut stand = Stand::new("link-first", "ready 24117 code-of-a-link-0123456789\nserve\n");
+    stand.link = Some(link_to(15));
+    let (window, handle, thread) = stand.start(fake(), STOP_TIMEOUT);
+    window.wait_for(&opening_to("code-of-a-link-0123456789", 15));
+    handle.close();
+    thread.join().unwrap();
+    assert!(!window.seen().iter().any(|seen| seen.starts_with("visit")), "{:?}", window.seen());
+    let journal = stand.journal();
+    assert_eq!(journal.matches("link_opened").count(), 1, "{journal}");
+    no_part_of_a_link(&journal);
+}
+
+#[test]
+fn a_link_of_a_second_start_moves_the_loaded_page_and_a_refused_one_shows_its_page() {
+    // AL1.3, AL1.4: after the page of the opening loaded, the window comes up and its page moves; a refused link leads to
+    // the page that says so, once the interval since the last move went by.
+    let stand = Stand::new("link-second", "ready 24117 code-of-a-link-0123456789\nserve\n");
+    let (window, handle, thread) = stand.start(fake(), STOP_TIMEOUT);
+    window.wait_for(&format!(
+        "open 24117 http://127.0.0.1:24117/desktop/open?n=0#c=code-of-a-link-0123456789 {:?}",
+        Notes::default()
+    ));
+    // A page of another opening does not count: the link waits.
+    handle.loaded(0);
+    handle.link(link_to(15));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!window.seen().iter().any(|seen| seen.starts_with("visit")), "{:?}", window.seen());
+    handle.loaded(1);
+    window.wait_for(&format!("visit {}", place_of(15)));
+    handle.link(Argument::new(&format!("canonkeeper://open?saga={SAGA}&chapter=%41")));
+    window.wait_for("visit /manuscript/open?refused=1");
+    handle.close();
+    thread.join().unwrap();
+    let journal = stand.journal();
+    assert_eq!(journal.matches("link_opened").count(), 2, "{journal}");
+    assert!(journal.contains("link_refused value"), "{journal}");
+    no_part_of_a_link(&journal);
+}
+
+#[test]
+fn a_link_of_a_second_start_while_the_backend_starts_waits_and_rides_the_exchange() {
+    // AL1.3: the backend is slow to start; two links come meanwhile — the last one waits and the opening carries it.
+    let stand = Stand::new("link-starting", "sleep 600\nready 24117 code-of-a-link-0123456789\nserve\n");
+    let (window, handle, thread) = stand.start(fake(), STOP_TIMEOUT);
+    handle.link(link_to(3));
+    handle.link(link_to(4));
+    window.wait_for(&opening_to("code-of-a-link-0123456789", 4));
+    handle.loaded(1);
+    std::thread::sleep(Duration::from_millis(300));
+    handle.close();
+    thread.join().unwrap();
+    assert!(!window.seen().iter().any(|seen| seen.starts_with("visit")), "{:?}", window.seen());
+    let journal = stand.journal();
+    assert!(journal.contains("link_merged") && journal.matches("link_opened").count() == 1, "{journal}");
+    no_part_of_a_link(&journal);
+}
+
+#[test]
+fn a_link_while_the_data_are_erased_or_the_app_closes_is_dropped() {
+    // AL1.3: the backend stops for an erasure, or for the end of the app: the link goes, nothing moves.
+    for (name, plan, why) in [
+        ("link-erase", "ready 24117 code-of-a-link-0123456789\nerase\nserve 1500\n", "erasing"),
+        ("link-close", "ready 24117 code-of-a-link-0123456789\nserve 1500\n", "closing"),
+    ] {
+        let stand = Stand::new(name, plan);
+        let (window, handle, thread) = stand.start(fake(), STOP_TIMEOUT);
+        window.wait_for(&format!(
+            "open 24117 http://127.0.0.1:24117/desktop/open?n=0#c=code-of-a-link-0123456789 {:?}",
+            Notes::default()
+        ));
+        handle.loaded(1);
+        if why == "closing" {
+            handle.close();
+        }
+        stand.wait_received("shutdown");
+        handle.link(link_to(7));
+        thread.join().unwrap();
+        assert!(!window.seen().iter().any(|seen| seen.starts_with("visit") || seen == "focus"), "{:?}", window.seen());
+        let journal = stand.journal();
+        assert!(journal.contains(&format!("link_dropped {why}")), "{journal}");
+        assert!(!journal.contains("link_opened"), "{journal}");
+    }
+}
+
+/// A store of the system that works and takes its time to remove a record: the erasure waits for it.
+#[derive(Clone, Default)]
+struct SlowRemoval(Memory);
+
+impl Keyring for SlowRemoval {
+    fn set(&self, id: &str, value: &str) -> Result<(), Failure> {
+        self.0.set(id, value)
+    }
+    fn get(&self, id: &str) -> Result<Option<String>, Failure> {
+        self.0.get(id)
+    }
+    fn delete(&self, id: &str) -> Result<(), Failure> {
+        std::thread::sleep(Duration::from_millis(400));
+        self.0.delete(id)
+    }
+}
+
+#[test]
+fn a_link_while_a_window_of_a_failure_waits_or_the_records_go_is_dropped_by_its_reason() {
+    // AL1.7: the data were half erased — the window of the failure waits for «Закрыть», no supervision runs: the link of the
+    // start and a link of a second start are dropped, each by its line.
+    let mut stand = Stand::new("link-unended", "");
+    stand.earlier = Earlier::Unended(Unfinished::Kept);
+    stand.link = Some(link_to(3));
+    let (window, handle, thread) = stand.start(fake(), STOP_TIMEOUT);
+    let words = window.wait_failure();
+    handle.link(link_to(4));
+    handle.close();
+    thread.join().unwrap();
+    assert!(words.ends_with("[Закрыть]"), "{words}");
+    let journal = stand.journal();
+    assert_eq!(journal.matches("link_dropped failure").count(), 2, "{journal}");
+    no_part_of_a_link(&journal);
+
+    // The records of the set go after the backend stopped for an erasure: a link meanwhile is dropped as erasing.
+    let stand = Stand::new("link-records", "ready 24117 code-of-a-link-0123456789\nerase\nserve\n");
+    let store = SlowRemoval::default();
+    store.set(OWN_AI, "key-test-records-of-a-link").unwrap();
+    let (window, handle, thread) = stand.start_with(fake(), STOP_TIMEOUT, Arc::new(store));
+    window.wait_for("close");
+    handle.link(link_to(5));
+    thread.join().unwrap();
+    let journal = stand.journal();
+    assert!(journal.contains("link_dropped erasing"), "{journal}");
+    assert!(!journal.contains("link_opened"), "{journal}");
 }

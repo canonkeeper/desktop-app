@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	domain "canonkeeper/backend/internal/domain/sagaarchive"
 )
 
@@ -67,7 +69,7 @@ func TestTheWindowOpensASagaFile(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	process := startBackend(t, binary, resources, data, nil)
-	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 5 * time.Minute}}
+	browser := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(5 * time.Minute)}}
 	if response := browser.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("the code = %d", response.StatusCode)
 	}
@@ -111,7 +113,7 @@ func TestTheWindowOpensASagaFile(t *testing.T) {
 	if err := json.Unmarshal(answer, &opened); err != nil || opened.Report.Books != 13 || opened.Report.Chapters != 650 {
 		t.Fatalf("the answer = %s, %v", answer, err)
 	}
-	deadline := time.Now().Add(5 * time.Minute)
+	deadline := desktoptest.Deadline(5 * time.Minute)
 	for {
 		response, contents := browser.do(http.MethodGet, "/api/v1/projects/"+opened.ProjectID+"/saga/contents?sourceView=published&q="+url.QueryEscape("Застава"), "", nil)
 		if response.StatusCode == http.StatusOK && strings.Contains(string(contents), "Застава 25") {

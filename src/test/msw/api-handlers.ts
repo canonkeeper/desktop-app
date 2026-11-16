@@ -334,6 +334,11 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       (options, body) => repository.importObsidianMaterials(oneParam(params.projectId), body as OperationRequest<'importObsidianMaterials'>, options),
       { status: 200 }, { csrfState, operationId: 'importObsidianMaterials', request, repository }, () => readJson(request), idempotencyStore,
     )),
+    // The export of the map and of the notes of the chapters (specs/2026-11-15-desk-obsidian-export.md).
+    http.post(mswPath('exportObsidianSaga'), async ({ params, request }) => idempotentJsonResponse(
+      (options, body) => repository.exportObsidianSaga(oneParam(params.projectId), body as OperationRequest<'exportObsidianSaga'>, options),
+      { status: 200 }, { csrfState, operationId: 'exportObsidianSaga', request, repository }, () => readJson(request), idempotencyStore,
+    )),
     // Its books (specs/2026-11-14-desk-obsidian-books.md).
     http.post(mswPath('importObsidianBooks'), async ({ params, request }) => idempotentJsonResponse(
       (options, body) => repository.importObsidianBooks(oneParam(params.projectId), body as OperationRequest<'importObsidianBooks'>, options),

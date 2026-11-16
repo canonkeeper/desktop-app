@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // readingSettled waits until the text of a saga is indexed and its reading stands still: the published text has its index, and
@@ -23,7 +25,7 @@ func readingSettled(t *testing.T, data, projectID string, timeout time.Duration)
 	t.Helper()
 	connection := database(t, data)
 	defer func() { _ = connection.Close(context.Background()) }()
-	for deadline := time.Now().Add(timeout); ; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(timeout); ; time.Sleep(200 * time.Millisecond) {
 		var settled bool
 		if err := connection.QueryRow(context.Background(), `
 			SELECT EXISTS (SELECT 1 FROM chapter_text_index_state WHERE project_id = $1 AND source_view = 'published')
@@ -69,7 +71,7 @@ func (window readingWindow) mapped() bool {
 // noLiveCardsJob waits until no cards Job of the saga waits or runs.
 func (window readingWindow) noLiveCardsJob(timeout time.Duration) {
 	window.t.Helper()
-	for deadline := time.Now().Add(timeout); window.liveCardsJobs() != 0; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(timeout); window.liveCardsJobs() != 0; time.Sleep(200 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			window.t.Fatalf("a cards Job of the saga still waits or runs%s", window.journey())
 		}
@@ -79,7 +81,7 @@ func (window readingWindow) noLiveCardsJob(timeout time.Duration) {
 // heldAt waits until the stub holds the card of its held chapter.
 func (stub *readingStub) heldAt(t *testing.T, timeout time.Duration) {
 	t.Helper()
-	for deadline := time.Now().Add(timeout); ; time.Sleep(100 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(timeout); ; time.Sleep(100 * time.Millisecond) {
 		stub.mu.Lock()
 		holding := stub.holding
 		stub.mu.Unlock()
@@ -131,7 +133,7 @@ func (process *backend) catchUps() catchUpMark {
 // caughtUp waits until n catch-ups of a change of the settings ended since the mark; one that failed fails the test.
 func (process *backend) caughtUp(mark catchUpMark, n int, timeout time.Duration) {
 	process.t.Helper()
-	for deadline := time.Now().Add(timeout); ; time.Sleep(100 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(timeout); ; time.Sleep(100 * time.Millisecond) {
 		now := process.catchUps()
 		if now.failed > mark.failed {
 			process.t.Fatal("a catch-up of a change of the settings failed")
@@ -145,6 +147,18 @@ func (process *backend) caughtUp(mark catchUpMark, n int, timeout time.Duration)
 	}
 }
 
+// connectCaughtUp is connect of a helper that stays connected, waited through: the change of the settings starts a
+// catch-up beside its answer, and the cards Job it queued may end after the moment the test takes next — so the test
+// waits for the end of the catch-up and of the cards Jobs of the saga, and the cards Job it waits for after that is the one
+// its own step queued, not the catch-up's (specs/2026-11-15-desk-hygiene2.md HY1.3).
+func connectCaughtUp(t *testing.T, process *backend, saga readingWindow, stub string, advanced map[string]any) {
+	t.Helper()
+	mark := process.catchUps()
+	connect(t, saga.client, stub, advanced)
+	process.caughtUp(mark, 1, 2*time.Minute)
+	saga.noLiveCardsJob(2 * time.Minute)
+}
+
 // startCaughtUp starts the backend of the data directory and waits until its catch-ups of the start — the cards and the
 // layer — went through every saga: the journal says the end of each, one that queued nothing too (app.startCatchUp); a
 // failed one fails the test.
@@ -152,7 +166,7 @@ func startCaughtUp(t *testing.T, binary, resources, data string) *backend {
 	t.Helper()
 	from := len(journal(t, data))
 	process := startBackend(t, binary, resources, data, nil)
-	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(100 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(2 * time.Minute); ; time.Sleep(100 * time.Millisecond) {
 		written := journal(t, data)[from:]
 		if bytes.Contains(written, []byte(`"event":"cards_catch_up_failed"`)) || bytes.Contains(written, []byte(`"event":"layer_catch_up_failed"`)) {
 			t.Fatal("a catch-up of the start failed")
@@ -268,7 +282,7 @@ func TestAPauseMakesNoEmptyJobs(t *testing.T) {
 	process = startBackend(t, binary, resources, data, nil)
 	window = openWindow(t, process)
 	saga.client, waiting.client = window, window
-	for deadline := time.Now().Add(2 * time.Minute); !saga.mapped() || saga.liveCardsJobs() != 0; time.Sleep(200 * time.Millisecond) {
+	for deadline := desktoptest.Deadline(2 * time.Minute); !saga.mapped() || saga.liveCardsJobs() != 0; time.Sleep(200 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the map behind was not built after the start%s", saga.journey())
 		}

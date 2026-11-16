@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
+
 	"canonkeeper/backend/internal/adapters/modelapi"
 	"canonkeeper/backend/internal/domain/coresteps"
 	readingdomain "canonkeeper/backend/internal/domain/readingconsent"
@@ -115,7 +117,7 @@ func (provider *providerOfTheTest) seen() []providerRequest {
 // holding waits until the stub holds the answer of a turn that asked it to, so the turn runs whatever the load of the machine.
 func (provider *providerOfTheTest) holding(t *testing.T, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		provider.mu.Lock()
 		held := provider.held
@@ -175,7 +177,7 @@ func (browser *client) ask(chatID, question, key string) (string, int, []byte) {
 // jobEnded waits for a Job to end and answers its status.
 func (browser *client) jobEnded(jobID string, timeout time.Duration) string {
 	browser.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		var job struct {
 			Status string `json:"status"`
@@ -196,7 +198,8 @@ func (browser *client) jobEnded(jobID string, timeout time.Duration) string {
 func cardsJobEnded(t *testing.T, data, projectID string, after time.Time, timeout time.Duration) (string, string) {
 	t.Helper()
 	connection := database(t, data)
-	deadline := time.Now().Add(timeout)
+	defer func() { _ = connection.Close(context.Background()) }()
+	deadline := desktoptest.Deadline(timeout)
 	for {
 		var status, code string
 		err := connection.QueryRow(context.Background(), `
@@ -268,7 +271,7 @@ func TestTheOwnAIOfTheAppGoesThroughTheGateway(t *testing.T) {
 	if process.ready.GatewayPort == 0 || process.ready.GatewayPort == process.ready.Port {
 		t.Fatalf("ready names the gateway at %d", process.ready.GatewayPort)
 	}
-	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	window := &client{t: t, origin: process.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := window.open(process.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -303,7 +306,7 @@ func TestTheOwnAIOfTheAppGoesThroughTheGateway(t *testing.T) {
 		t.Fatalf("createProject = %d %s", response.StatusCode, body)
 	}
 	window.importFile(project.ID, "Застава у перевала.md", northernBook)
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := desktoptest.Deadline(90 * time.Second)
 	for {
 		if waits, ok := window.waiting(project.ID); ok && waits == "helper" {
 			break

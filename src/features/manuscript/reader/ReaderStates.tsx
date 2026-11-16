@@ -25,7 +25,11 @@ export function ReaderLoadingState() {
 /** A link that no longer leads to its place (RD3.4): what the line over the text says; the chapter opens all the same. */
 export type ReaderStaleLink = Exclude<ReaderSourceProblem, 'unavailable'> | 'unavailable';
 
-const staleWords: Readonly<Record<ReaderStaleLink, string>> = {
+/**
+ * The words of the line over the text of a stale link, one table: the page a link of the app opens says «абзаца нет» by it
+ * too (specs/2026-11-16-desk-app-links.md AL1.6).
+ */
+export const staleWords: Readonly<Record<ReaderStaleLink, string>> = {
   version: 'Глава изменилась после правки — показываю с начала. Абзац, на который вела ссылка, мог сдвинуться',
   paragraph: 'Этого абзаца в главе больше нет — показываю главу с начала',
   invalid: 'Не получилось открыть место по ссылке — показываю начало главы',

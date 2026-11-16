@@ -253,6 +253,9 @@ const allowedSearchKeysByPath: ReadonlyMap<string, ReadonlySet<string>> = new Ma
   ['/manuscript/edit', new Set(['draftId'])],
   // The step of the page of the bridge with Obsidian of the app (specs/2026-11-15-desk-obsidian-web.md OW1.1); the site has none.
   ['/manuscript/obsidian', new Set(['step'])],
+  // The place of a link `canonkeeper://` the shell gives the page of the app, or `refused=1` of a link with a mistake
+  // (specs/2026-11-16-desk-app-links.md AL1.6); the site has no such page.
+  ['/manuscript/open', new Set(['saga', 'chapter', 'p', 'rev', 'refused'])],
 ]);
 
 export function parseRoute(url: string | URL): AppRoute {

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use url::{Host, Url};
 
 use crate::control::Code;
+use crate::link::Target;
 use crate::paths::System;
 
 /// What happens to a navigation of the window.
@@ -129,6 +130,17 @@ pub fn open_url(port: u16, code: &Code, attempt: u8) -> String {
     format!("http://127.0.0.1:{port}{OPEN_PATH}?n={attempt}#c={}", code.as_str())
 }
 
+/// The page of the exchange that goes on to the place of a link that waited for the window
+/// (specs/2026-11-16-desk-app-links.md AL1.4): `to` — the address of the page of the edition, built of the checked values —
+/// stands before the fragment, and the exchange goes there instead of the home once the session is made.
+pub fn open_url_to(open: &str, target: &Target) -> String {
+    let to: String = url::form_urlencoded::byte_serialize(target.path().as_bytes()).collect();
+    match open.split_once('#') {
+        Some((address, code)) => format!("{address}&to={to}#{code}"),
+        None => format!("{open}&to={to}"),
+    }
+}
+
 /// Whether `target` is a page of the running backend.
 pub fn is_own_page(target: &str, port: Option<u16>) -> bool {
     Url::parse(target).is_ok_and(|url| is_own(&url, port))
@@ -218,6 +230,9 @@ mod tests {
             "https://",
             "mailto:",
             "not an address",
+            // A link of the app pressed inside the window: no page makes one a link yet
+            // (specs/2026-11-16-desk-app-links.md, Decision log).
+            "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=15",
         ] {
             assert_eq!(navigation(target, PORT, System::Linux), Navigation::Refuse, "{target}");
             assert_eq!(navigation(target, PORT, System::Windows), Navigation::Refuse, "{target}");
@@ -307,6 +322,22 @@ mod tests {
         assert_eq!(refused("http://127.0.0.1:24117/desktop/open", PORT), None);
         assert_eq!(refused("http://127.0.0.1:24117/chat?refused=401", PORT), None);
         assert_eq!(refused("http://127.0.0.1:24118/desktop/open?refused=401", PORT), None);
+        // AL1.4 of specs/2026-11-16-desk-app-links.md: the place of a link rides the exchange before the fragment, coded.
+        let place = crate::link::target(&crate::link::Argument::new(
+            "canonkeeper://open?saga=0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44&chapter=7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45&p=15",
+        ))
+        .0;
+        let to = open_url_to(&url, &place);
+        assert_eq!(
+            to,
+            "http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Fsaga%3D0b7c1a52-5d1e-4f43-9f6b-2a8c1e0b9d44%26chapter%3D7c3f0a52-5d1e-4f43-9f6b-2a8c1e0b9d45%26p%3D15#c=Zm9vYmFyYmF6cXV4cXV1eA"
+        );
+        assert!(is_open_page(&to, PORT) && navigation(&to, PORT, System::Linux) == Navigation::Window);
+        assert_eq!(refused(&to, PORT), None);
+        assert_eq!(
+            open_url_to(&url, &Target::Refused),
+            "http://127.0.0.1:24117/desktop/open?n=0&to=%2Fmanuscript%2Fopen%3Frefused%3D1#c=Zm9vYmFyYmF6cXV4cXV1eA"
+        );
         // The script takes the code from the address: the shell never writes the code into a script.
         assert!(EXCHANGE_SCRIPT.contains("location.hash") && EXCHANGE_SCRIPT.contains(OPEN_PATH));
         assert!(EXCHANGE_SCRIPT.contains("location.hostname !== '127.0.0.1'"));

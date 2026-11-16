@@ -3,7 +3,9 @@
 // Package obsidianvault reads a vault of Obsidian of the author — a folder outside the data directory of the app — for
 // the bridge (specs/2026-11-13-desk-obsidian.md OB0.2): through the root of the folder, opened for one operation; the
 // entries of its directories by their own type, never a link followed; a note opened without waiting, checked to be the
-// file the look saw, read up to the size of a note. Nothing is written, and no error names a path (OB0.4).
+// file the look saw, read up to the size of a note; a folder of an export is no part of what it reads
+// (specs/2026-11-15-desk-obsidian-export.md OE1.9). It writes only the folder of an export of a saga, by Writer, and no
+// error names a path (OB0.4).
 package obsidianvault
 
 import (
@@ -32,6 +34,15 @@ type Files struct{}
 // Open opens the folder of a vault for one operation (OB1.3): it exists, it is a folder, it opens as a root and its
 // entries read; otherwise obsidian.FolderError by the reason.
 func (Files) Open(vaultPath string) (service.Vault, error) {
+	root, err := openVault(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Vault{root: root, disk: map[string]string{}, exports: map[string]bool{}}, nil
+}
+
+// openVault opens the folder of a vault as a root: it exists, it is a folder and its entries read.
+func openVault(vaultPath string) (*os.Root, error) {
 	if !filepath.IsAbs(vaultPath) {
 		return nil, obsidian.FolderError{Reason: obsidian.ReasonNotFound}
 	}
@@ -60,7 +71,7 @@ func (Files) Open(vaultPath string) (service.Vault, error) {
 		_ = root.Close()
 		return nil, obsidian.FolderError{Reason: obsidian.ReasonUnreadable}
 	}
-	return &Vault{root: root, disk: map[string]string{}}, nil
+	return root, nil
 }
 
 // Vault is a vault open for one operation.
@@ -69,6 +80,8 @@ type Vault struct {
 	mu   sync.Mutex
 	// disk are the paths on the disk of the paths in NFC whose names the disk keeps otherwise — in NFD, from macOS.
 	disk map[string]string
+	// exports say of the folders the operation looked at whether each is a folder of an export.
+	exports map[string]bool
 }
 
 // Close closes the root: no handle of the vault outlives its operation.
@@ -83,6 +96,9 @@ func (vault *Vault) Folder(_ context.Context, folder string) error {
 
 func (vault *Vault) folder(folder string) (string, error) {
 	if folder == obsidian.Root {
+		if vault.exportFolder(".") {
+			return "", obsidian.ErrPath
+		}
 		return ".", nil
 	}
 	disk, found, err := vault.resolve(folder)
@@ -115,6 +131,9 @@ func (vault *Vault) resolve(relative string) (string, obsidian.Found, error) {
 		}
 		found = foundOf(name, info.Mode(), attributes(info), info.Size())
 		if index < len(names)-1 && (!found.Dir || found.Link || found.Hidden) {
+			return "", obsidian.Found{}, obsidian.ErrPath
+		}
+		if found.Dir && !found.Link && vault.exportFolder(child) {
 			return "", obsidian.Found{}, obsidian.ErrPath
 		}
 		disk = child
@@ -200,7 +219,7 @@ func (vault *Vault) Walk(ctx context.Context, folder string, visit service.Visit
 				relative := obsidian.Join(current.relative, obsidian.NFC(entry.Name()))
 				disk := path.Join(current.disk, entry.Name())
 				vault.remember(relative, disk, entry.Name())
-				if enter {
+				if enter && !vault.exportFolder(disk) {
 					stack = append(stack, pending{relative: relative, disk: disk})
 				}
 			}
@@ -214,6 +233,23 @@ func (vault *Vault) Walk(ctx context.Context, folder string, visit service.Visit
 		}
 	}
 	return ctx.Err()
+}
+
+// exportFolder says a folder of the vault is a folder of an export (OE1.9): the manifest of an export lies in it — of this
+// saga, of another or of another computer. The reading of the bridge does not enter it, and a request that names it or a
+// folder under it is not a path of the vault.
+func (vault *Vault) exportFolder(disk string) bool {
+	vault.mu.Lock()
+	known, ok := vault.exports[disk]
+	vault.mu.Unlock()
+	if ok {
+		return known
+	}
+	_, err := vault.root.Lstat(path.Join(disk, obsidian.ExportManifest))
+	vault.mu.Lock()
+	vault.exports[disk] = err == nil
+	vault.mu.Unlock()
+	return err == nil
 }
 
 // openDir opens a folder the look saw and checks it is that folder still, not a link put in its place.

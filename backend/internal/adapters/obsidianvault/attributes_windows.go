@@ -5,6 +5,7 @@
 package obsidianvault
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"syscall"
@@ -24,3 +25,12 @@ func attributes(info fs.FileInfo) uint32 {
 // entryInfo says whether the look needs the information of an entry: on Windows always — its attributes say whether it
 // is hidden, a system entry or a file only in the cloud.
 func entryInfo(fs.FileMode, bool) bool { return true }
+
+// errorSharingViolation is ERROR_SHARING_VIOLATION: another program has the file open without sharing it.
+const errorSharingViolation syscall.Errno = 32
+
+// heldByAnother says a failure is a hold of another program — Obsidian, a scanner, a synchronizer — that lets the file go in
+// a moment (golang.org/issue/31247).
+func heldByAnother(err error) bool {
+	return errors.Is(err, syscall.ERROR_ACCESS_DENIED) || errors.Is(err, errorSharingViolation)
+}

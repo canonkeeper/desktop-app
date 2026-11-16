@@ -168,6 +168,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{projectId}/obsidian/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export the map of a saga and the notes of its chapters into the folder of its export in its Obsidian vault.
+         * @description Mounted only by the desktop build (specs/2026-11-15-desk-obsidian-export.md OE1). First one short transaction: the saga alive, the proof of the session, the role of an editor, the link of the vault. The answer kept for the Idempotency-Key is only of an export that ended (complete): its replay writes nothing; a replay after a failure or a partial answer exports again and comes to the same files. The map is read as the page of the map reads it: a saga without cards is obsidian.map_not_ready with reason no_cards, a map behind its cards obsidian.map_not_ready with reason updating — the Job of the cards is queued by the read of the map — (409); nothing is written then. Within 2 minutes only the reading of the folder of the export: its manifest (.canonkeeper/manifest.json) and the references the run replaces or moves; then the writes, each within a time of its own — past it the answer is partial at once and the next operation of the saga waits until the write returned. Everything is written only under the folder of the export, name after name without a link followed: a link or a file on the way to it is obsidian.export_dir_unsafe, a manifest of the folder of the saga that does not read obsidian.export_manifest_unreadable (409), nothing written. The folder is CanonKeeper/<the title of the saga>, « (2)» past a folder without the manifest of this saga, kept on the link before the first file. One file a node of the map (the nodes and the links the author took off the map left out), one a chapter with a card, Сага.md; a file the author changed (another fingerprint than the manifest keeps) is not updated without replaceChanged and, with it, moved into _Удалено/ — never written over; a reference of a node or a chapter that went is moved into _Удалено/; a file that does not read is skipped by its reason. No model, no Job, no record of what went out. One operation of a saga reads a vault at a time (obsidian.busy, 429), a reading past its time is obsidian.slow (503, nothing written). The strict Origin of the window, the CSRF token and its session; ten a minute for the window.
+         */
+        post: operations["exportObsidianSaga"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/obsidian/books/{bookId}": {
         parameters: {
             query?: never;
@@ -4831,6 +4851,13 @@ export interface components {
             books?: components["schemas"]["ObsidianVaultBook"][];
             /** @description A linked saga: the live books whose folder another book holds — to link anew or to take the link off. */
             relink?: components["schemas"]["ObsidianVaultBook"][];
+            /** @description A linked saga after its first export: the folder of the export from the root of the vault (specs/2026-11-15-desk-obsidian-export.md OE1.5, OE1.8). */
+            exportDir?: string;
+            /**
+             * Format: date-time
+             * @description A linked saga: the time of its last export that reached its end; a new link or a new path of the vault forgets it (OE1.2, OE1.8).
+             */
+            lastExportAt?: string;
         };
         /** @description The number of a choice the shell holds (OB1.1). */
         ObsidianVaultChoice: {
@@ -5040,6 +5067,35 @@ export interface components {
                 changed: components["schemas"]["ObsidianNoteGroup"];
             };
             skipped: components["schemas"]["ObsidianSkipCount"][];
+        };
+        /** @description An export (OE1.1): replaceChanged is the word of the author to move every reference he changed into _Удалено/ and write the fresh one. */
+        ObsidianExportRequest: {
+            replaceChanged?: boolean;
+        };
+        /** @description A group of the references of an export: how many, and the paths of the first 50 from the folder of the export. */
+        ObsidianExportGroup: {
+            count: number;
+            names: string[];
+        };
+        /** @description The references of an export that did not read, by their reason: only in the cloud, held by another program, not to be read, a link. */
+        ObsidianExportSkip: {
+            /** @enum {string} */
+            reason: "cloud_only" | "busy" | "unreadable" | "link";
+            count: number;
+            names: string[];
+        };
+        /** @description What an export did (OE1.8): the folder of the export from the root of the vault, the time, whether the run reached its end, and the references created, updated, unchanged, moved into _Удалено/, not updated because the author changed them, skipped by their reasons. */
+        ObsidianExport: {
+            folder: string;
+            /** Format: date-time */
+            at: string;
+            complete: boolean;
+            created: components["schemas"]["ObsidianExportGroup"];
+            updated: components["schemas"]["ObsidianExportGroup"];
+            unchanged: components["schemas"]["ObsidianExportGroup"];
+            moved: components["schemas"]["ObsidianExportGroup"];
+            kept: components["schemas"]["ObsidianExportGroup"];
+            skipped: components["schemas"]["ObsidianExportSkip"][];
         };
         /** @description A folder of materials with the fingerprint of the records of its notes: a load of the records names it back (ON1.1). */
         ObsidianMaterialsFolderPrint: {
@@ -7761,6 +7817,11 @@ export interface components {
             sagaRecords?: number;
             /** @description obsidian.too_large of the records of notes: the records of a load and of a saga at most. */
             limitRecords?: number;
+            /**
+             * @description obsidian.map_not_ready: why the map of the saga is not ready for an export — it is being updated, the Job of the cards queued; or the helper has read no book yet (specs/2026-11-15-desk-obsidian-export.md OE1.6).
+             * @enum {string}
+             */
+            reason?: "updating" | "no_cards";
         };
         /** @description Bounded content-free support aggregates for one authorized project. The response intentionally omits project identifiers, content, prompts, paths and timestamps. */
         ProjectSupportSnapshot: {
@@ -11602,6 +11663,46 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    exportObsidianSaga: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+                /** @description Scoped by principal + method + path + request fingerprint. Duplicate same-payload replay returns the original/current result; same-key mismatched payload returns 409 Problem. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Project tenant identifier. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObsidianExportRequest"];
+            };
+        };
+        responses: {
+            /** @description What the export did, by groups: complete is false for a run that did not reach its end. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObsidianExport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

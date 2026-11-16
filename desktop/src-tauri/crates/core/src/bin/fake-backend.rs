@@ -51,6 +51,9 @@ fn main() {
                 None => say(json!({"type": "fatal", "reason": reason})),
             },
             ["exit", code] => std::process::exit(code.parse().unwrap()),
+            // `sleep <ms>`: the start takes its time — a link of a second start comes meanwhile
+            // (specs/2026-11-16-desk-app-links.md AL1.3).
+            ["sleep", ms] => thread::sleep(Duration::from_millis(ms.parse().unwrap())),
             ["secret-save", id, value, request] => {
                 say(json!({"type": "secret-save", "id": id, "value": value, "request": request}))
             }

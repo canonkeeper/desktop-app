@@ -76,6 +76,7 @@ export const operationManifest = {
   "enlargeProjectImage": { method: "POST", path: "/projects/{projectId}/images/{number}/enlarge", pathParams: ["projectId", "number"] },
   "eraseDesktopData": { method: "POST", path: "/desktop/erase", pathParams: [] },
   "exchangeAppLinkCode": { method: "POST", path: "/app/link/token", pathParams: [] },
+  "exportObsidianSaga": { method: "POST", path: "/projects/{projectId}/obsidian/export", pathParams: ["projectId"] },
   "getAccount": { method: "GET", path: "/desktop/account", pathParams: [] },
   "getAccountLetters": { method: "GET", path: "/account/letters", pathParams: [] },
   "getAccountPlan": { method: "GET", path: "/account/plan", pathParams: [] },

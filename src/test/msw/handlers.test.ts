@@ -1249,6 +1249,8 @@ function bodyFor(operationId: OperationId): unknown {
       };
     case 'updateBookFromObsidian':
       return { mode: 'preview' };
+    case 'exportObsidianSaga':
+      return { replaceChanged: false };
     case 'linkBookToObsidianFolder':
       return { folder: 'Книга 1' };
     case 'updateProgramAccess':
@@ -1705,6 +1707,7 @@ async function prepareRepositoryForOperation(
     case 'previewObsidianImport':
     case 'importObsidianBooks':
     case 'importObsidianMaterials':
+    case 'exportObsidianSaga':
     case 'linkBookToObsidianFolder':
     case 'unlinkBookFromObsidianFolder':
       // The saga is linked with the example vault the shell of the mock picks (specs/2026-11-13-desk-obsidian.md OB1.1).

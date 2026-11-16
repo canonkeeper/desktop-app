@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // desktopState is the answer of getDesktopState.
@@ -34,7 +36,7 @@ type desktopState struct {
 // would answer for the load of the machine.
 func stateOfTheWindow(t *testing.T, window *client) desktopState {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := desktoptest.Deadline(30 * time.Second)
 	for {
 		var state desktopState
 		window.read("/api/v1/desktop/state", &state)
@@ -55,12 +57,12 @@ func TestTheSettingsOfTheAppReadItsDataAndItsCopies(t *testing.T) {
 	data := filepath.Join(t.TempDir(), "data")
 
 	first := startBackend(t, program(t, programVariant{name: "tree-1.1.3", version: "1.1.3"}), resources, data, nil)
-	stranger := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	stranger := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response, body := stranger.do(http.MethodGet, "/api/v1/desktop/state", "", nil); response.StatusCode != http.StatusUnauthorized ||
 		!containsCode(body, "auth.session_required") {
 		t.Fatalf("getDesktopState without the session = %d %s", response.StatusCode, body)
 	}
-	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	window := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := window.open(first.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -75,7 +77,7 @@ func TestTheSettingsOfTheAppReadItsDataAndItsCopies(t *testing.T) {
 	makeCopy(t, DataDir{Root: data}.Backups(), "pre-7-20260101T000000.000Z", true)
 	updated := time.Now().UTC()
 	second := startBackend(t, program(t, programVariant{name: "ahead-1-1.1.4", ahead: 1, version: "1.1.4"}), resources, data, nil)
-	window = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: 10 * time.Second}}
+	window = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: desktoptest.Waited(10 * time.Second)}}
 	if response := window.open(second.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}

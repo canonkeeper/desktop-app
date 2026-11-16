@@ -115,6 +115,8 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "unlinkBookFromObsidianFolder", Method: "delete", Path: "/projects/{projectId}/obsidian/books/{bookId}"},
 		// Its notes as the records of «Ваши материалы» (specs/2026-11-15-desk-obsidian-notes.md).
 		{OperationID: "importObsidianMaterials", Method: "post", Path: "/projects/{projectId}/obsidian/materials"},
+		// The export of the map and of the notes of the chapters into its folder (specs/2026-11-15-desk-obsidian-export.md).
+		{OperationID: "exportObsidianSaga", Method: "post", Path: "/projects/{projectId}/obsidian/export"},
 		{OperationID: "getBookDrawingCounts", Method: "get", Path: "/projects/{projectId}/books/drawing-counts"},
 		{OperationID: "deleteBookCover", Method: "delete", Path: "/books/{bookId}/cover"},
 		{OperationID: "restoreBook", Method: "post", Path: "/books/{bookId}/restore"},

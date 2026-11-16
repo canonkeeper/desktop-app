@@ -1,0 +1,51 @@
+{
+  "comment": "The words of the files of the export to Obsidian (specs/2026-11-15-desk-obsidian-export.md OE2.3, Data). card are the words of the card of a node of the page of the map (src/features/saga/NodeCard.tsx), categories its mapCategories, kinds its authorMaterialKinds; files are the words only the files say. The test of domain/obsidian holds the words of the server to this table, src/features/saga/export-words.test.tsx the page and its dictionary.",
+  "card": {
+    "noType": "без типа",
+    "also": "Также:",
+    "first": "Впервые",
+    "met": "Встречается",
+    "chapterForms": ["главе", "главах", "главах"],
+    "links": "Связи",
+    "fromMaterials": "в ваших материалах",
+    "together": "Вместе в",
+    "eventForms": ["событии", "событиях", "событиях"],
+    "bothChanged": "Оба названы, когда что-то изменилось",
+    "beside": "Упоминаются в одних главах:",
+    "namedIn": "В ваших материалах",
+    "events": "События",
+    "changes": "Что изменилось",
+    "material": "По вашим материалам",
+    "plan": "План автора, в книге ещё нет",
+    "record": "Запись автора; при расхождении прав текст книги",
+    "fromObsidian": "Запись из Obsidian:",
+    "fromFile": "Из файла"
+  },
+  "categories": {
+    "character": "Герои",
+    "place": "Места",
+    "faction": "Фракции",
+    "item": "Предметы"
+  },
+  "kinds": {
+    "skill": "Навык",
+    "place": "Место",
+    "character": "Герой",
+    "item": "Предмет",
+    "faction": "Фракция",
+    "other": "Другое"
+  },
+  "files": {
+    "lead": "Эту заметку ведёт CanonKeeper и переписывает при выгрузке. Свои мысли пишите в своей заметке со ссылкой сюда.",
+    "part": "Показана часть: полный список — на карте саги в CanonKeeper",
+    "noName": "Без имени",
+    "index": "Сага",
+    "chapters": "Главы",
+    "deleted": "_Удалено",
+    "happens": "Что происходит",
+    "who": "Кто в главе",
+    "where": "Где",
+    "named": "Что ещё названо",
+    "paragraph": "абзац"
+  }
+}

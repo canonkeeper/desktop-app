@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"canonkeeper/backend/internal/app/desktop/desktoptest"
 )
 
 // syntheticBook is a long book of the made-up saga «Северный предел» in Markdown: its import runs long enough to be
@@ -84,7 +86,7 @@ func TestAJobRunningAtACrashDoesNotStopTheNextStart(t *testing.T) {
 	binary, resources := desktopBinary(t)
 	data := filepath.Join(t.TempDir(), "data")
 	first := startBackend(t, binary, resources, data, nil)
-	browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	browser := &client{t: t, origin: first.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := browser.open(first.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open = %d", response.StatusCode)
 	}
@@ -96,7 +98,7 @@ func TestAJobRunningAtACrashDoesNotStopTheNextStart(t *testing.T) {
 		t.Fatalf("createProject = %d %s", response.StatusCode, body)
 	}
 	jobID := browser.importBook(project.ID, syntheticBook(150, 40))
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := desktoptest.Deadline(60 * time.Second)
 	for status := browser.jobStatus(jobID); status != "running"; status = browser.jobStatus(jobID) {
 		if status != "queued" || time.Now().After(deadline) {
 			t.Fatalf("the import is %s before it was caught running", status)
@@ -112,13 +114,13 @@ func TestAJobRunningAtACrashDoesNotStopTheNextStart(t *testing.T) {
 	if second.ready.Type != messageReady {
 		t.Fatalf("the start after a crash with a running Job answered %+v", second.ready)
 	}
-	browser = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: 60 * time.Second}}
+	browser = &client{t: t, origin: second.origin(), http: &http.Client{Timeout: desktoptest.Waited(60 * time.Second)}}
 	if response := browser.open(second.ready.Code); response.StatusCode != http.StatusOK {
 		t.Fatalf("open after the crash = %d", response.StatusCode)
 	}
 	// DA1.7: the Job the crash left goes back to the queue when its claim runs out and the book is imported.
 	started := time.Now()
-	deadline = started.Add(4 * time.Minute)
+	deadline = started.Add(desktoptest.Waited(4 * time.Minute))
 	for status := browser.jobStatus(jobID); status != "succeeded"; status = browser.jobStatus(jobID) {
 		if status == "failed" || status == "canceled" || time.Now().After(deadline) {
 			t.Fatalf("the import after the crash = %s", status)

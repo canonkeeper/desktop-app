@@ -164,9 +164,15 @@ func (process *Process) read(stdout io.Reader) {
 // ErrNoLine is a backend that wrote no line in the time given.
 var ErrNoLine = errors.New("desktoptest: no control message in time")
 
-// Line is the next line the backend wrote, nil once it closed the channel; ErrNoLine when none came in timeout.
+// Line is the next line the backend wrote, nil once it closed the channel; ErrNoLine when none came in timeout, scaled
+// by WaitsVariable.
 func (process *Process) Line(timeout time.Duration) ([]byte, error) {
-	timer := time.NewTimer(timeout)
+	return process.lineBy(Deadline(timeout))
+}
+
+// lineBy is the next line the backend wrote before the deadline.
+func (process *Process) lineBy(deadline time.Time) ([]byte, error) {
+	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
 	select {
 	case line := <-process.lines:
@@ -178,7 +184,11 @@ func (process *Process) Line(timeout time.Duration) ([]byte, error) {
 
 // Next is the next message the backend wrote; a closed channel is a message without a type.
 func (process *Process) Next(timeout time.Duration) (Message, error) {
-	line, err := process.Line(timeout)
+	return process.nextBy(Deadline(timeout))
+}
+
+func (process *Process) nextBy(deadline time.Time) (Message, error) {
+	line, err := process.lineBy(deadline)
 	if err != nil {
 		return Message{}, err
 	}
@@ -188,11 +198,11 @@ func (process *Process) Next(timeout time.Duration) (Message, error) {
 // Ready waits for the answer to start past the steps of a long start: ready or fatal.
 func (process *Process) Ready(timeout time.Duration) Message {
 	process.t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := Deadline(timeout)
 	for {
-		message, err := process.Next(time.Until(deadline))
+		message, err := process.nextBy(deadline)
 		if err != nil {
-			process.t.Fatalf("the backend did not answer start in %s", timeout)
+			process.t.Fatalf("the backend did not answer start in %s", Waited(timeout))
 		}
 		if message.Type != "step" {
 			return message
@@ -221,13 +231,13 @@ func (process *Process) waited() <-chan struct{} {
 	return process.exited
 }
 
-// Wait waits for the backend to exit; its error is the exit's.
+// Wait waits for the backend to exit; its error is the exit's. The timeout is scaled by WaitsVariable.
 func (process *Process) Wait(timeout time.Duration) error {
 	select {
 	case <-process.waited():
 		return process.exitErr
-	case <-time.After(timeout):
-		return fmt.Errorf("desktoptest: the backend did not exit in %s", timeout)
+	case <-time.After(Waited(timeout)):
+		return fmt.Errorf("desktoptest: the backend did not exit in %s", Waited(timeout))
 	}
 }
 
@@ -242,7 +252,7 @@ func (process *Process) End() {
 		_ = process.Send(map[string]string{"type": "shutdown"})
 		select {
 		case <-exited:
-		case <-time.After(90 * time.Second):
+		case <-time.After(Waited(90 * time.Second)):
 			_ = process.Command.Process.Kill()
 			<-exited
 		}
