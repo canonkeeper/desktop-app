@@ -107,13 +107,15 @@ type shared struct {
 	waits *domain.Waits
 	state *domain.Link
 	drops sync.WaitGroup
+	// transfer is the one transfer of a saga from the site of this run (transfer.go).
+	transfer *transferState
 }
 
 func NewParts(build Build) Parts {
 	if build.Now == nil {
 		build.Now = time.Now
 	}
-	link := &shared{build: build, waits: domain.NewWaits(build.Now), state: &domain.Link{}}
+	link := &shared{build: build, waits: domain.NewWaits(build.Now), state: &domain.Link{}, transfer: newTransferState(build.Now)}
 	return Parts{
 		Start: StartLink{link: link}, Cancel: CancelLink{link: link}, Finish: FinishLink{link: link},
 		Read: GetAccount{link: link}, Unlink: UnlinkAccount{link: link}, build: build, link: link,
@@ -422,12 +424,14 @@ type Unlinked struct {
 }
 
 // UnlinkAccount is unlinkAccount (AC2.4): the site is told when it answers within UnlinkTerm; the app stops using the
-// pass in any case and its record goes — one the shell did not remove is marked for the next start. Nothing else on the
-// computer changes.
+// pass in any case and its record goes — one the shell did not remove is marked for the next start. A transfer of a saga
+// that waits or downloads ends as not_linked (specs/2026-11-16-desk-site-saga.md TR5.3). Nothing else on the computer
+// changes.
 type UnlinkAccount struct{ link *shared }
 
 func (useCase UnlinkAccount) Execute(ctx context.Context) Unlinked {
 	link, build := useCase.link, useCase.link.build
+	link.abortTransfer(domain.TransferNotLinked)
 	asked, cancel := context.WithTimeout(ctx, UnlinkTerm)
 	told := build.Site.Unlink(asked)
 	cancel()
@@ -438,8 +442,10 @@ func (useCase UnlinkAccount) Execute(ctx context.Context) Unlinked {
 }
 
 // BeforeErase tries to unlink the app on the site before «Стереть все данные» within EraseTerm (AC2.5); the erasure goes
-// on whatever it answers, and the shell removes every record.
+// on whatever it answers, and the shell removes every record. A transfer of a saga that waits or downloads ends as canceled
+// (specs/2026-11-16-desk-site-saga.md TR5.3).
 func (useCase UnlinkAccount) BeforeErase(ctx context.Context) {
+	useCase.link.abortTransfer(domain.TransferCanceled)
 	asked, cancel := context.WithTimeout(ctx, EraseTerm)
 	defer cancel()
 	useCase.link.build.Site.Unlink(asked)

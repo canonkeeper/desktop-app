@@ -102,6 +102,9 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	want = append(want, "model_disclosures_pending", "model_thread_recipients", "reading_sample_requests")
 	// Added by forward migration 0159: whether the page of the app on the site is shown, a setting of the platform.
 	want = append(want, "platform_desktop_app")
+	// Added by forward migration 0160: the requests and the codes of the transfer of a saga of the site to the linked app,
+	// account data removed with the saga too.
+	want = append(want, "app_saga_transfers")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},

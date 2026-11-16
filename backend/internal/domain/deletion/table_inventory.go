@@ -111,6 +111,10 @@ func DeletionTableInventory() []TableDisposition {
 		// deletion of a saga does not touch them; they go with the account.
 		{"app_link_codes", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		{"app_devices", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The requests and the codes of the transfer of a saga to the linked app (specs/2026-11-16-desk-site-saga.md TR3.4):
+		// rows of the account that name a saga — the project purge takes them by its cascade, the account deletion by its
+		// own DELETE; deleting a book, a chapter or a chat keeps them.
+		{"app_saga_transfers", TableActionRetainSource, TableActionDeleteWithParent, TableActionRetainSource},
 		// The permits of a linked app to work on the models of the site and the corrections under them
 		// (specs/2026-11-13-desk-permits.md PM3.3): rows of account, not of a saga; they go with the account.
 		{"model_permits", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},

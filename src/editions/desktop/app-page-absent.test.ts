@@ -12,4 +12,10 @@ describe('the address of the page of the app of the site in the app', () => {
     expect(routeOfLocation({ pathname: '/desktop', searchStr: '', state: {} })).toEqual({ ...createAppRoute('/no-such-page'), path: '/desktop' });
     expect(routeOfLocation({ pathname: '/settings', searchStr: '?part=look', state: {} }).surface).toBe('settings');
   });
+
+  // specs/2026-11-16-desk-site-saga.md TR3.2: the page /transfer is the site's; the window of the app has no such page.
+  it('/transfer of the site is the route of no page too', () => {
+    expect(routeOfLocation({ pathname: '/transfer', searchStr: '?request=r&state=s&port=24567', state: {} }))
+      .toEqual({ ...createAppRoute('/no-such-page'), path: '/transfer' });
+  });
 });

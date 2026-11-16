@@ -193,6 +193,16 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     return this.request<'startAppLink', '200'>('startAppLink', { body });
   }
 
+  /** The request of a transfer the page /transfer opened (specs/2026-11-16-desk-site-saga.md TR3.2). */
+  getSagaTransferRequest(requestId: string, options: ApiRequestOptions = {}) {
+    return this.request<'getSagaTransferRequest', '200'>('getSagaTransferRequest', { params: { path: { requestId } }, signal: options.signal });
+  }
+
+  /** The code of the saga the author chose for the app of the request (TR3.3). */
+  startSagaTransfer(body: OperationRequest<'startSagaTransfer'>) {
+    return this.request<'startSagaTransfer', '200'>('startSagaTransfer', { body });
+  }
+
   listLinkedApps(options: ApiRequestOptions = {}) {
     return this.request<'listLinkedApps', '200'>('listLinkedApps', { signal: options.signal });
   }
@@ -486,6 +496,20 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
 
   unlinkAccount() {
     return this.request<'unlinkAccount', '200'>('unlinkAccount');
+  }
+
+  /** The transfer of a saga from the site of this run of the desktop app (specs/2026-11-16-desk-site-saga.md TR2.2). */
+  getSiteSagaTransfer(options: ApiRequestOptions = {}) {
+    return this.request<'getSiteSagaTransfer', '200'>('getSiteSagaTransfer', options);
+  }
+
+  startSiteSagaTransfer() {
+    return this.request<'startSiteSagaTransfer', '200'>('startSiteSagaTransfer');
+  }
+
+  /** Stops the transfer the body names, or puts its outcome away; another transfer is answered as it is (TR2.2). */
+  cancelSiteSagaTransfer(body: OperationRequest<'cancelSiteSagaTransfer'>) {
+    return this.request<'cancelSiteSagaTransfer', '200'>('cancelSiteSagaTransfer', { body });
   }
 
   /** «Свой ИИ» of the desktop app: its settings, whether and where the key is kept, the last check (specs/2026-11-13-desk-secrets.md SE2.4). */

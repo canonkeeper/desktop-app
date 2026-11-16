@@ -145,6 +145,12 @@ func newWorld(t *testing.T, prefix string) *world {
 // openFile opens a saga file as the window does: the file in a temporary file, then the use case.
 func (world *world) openFile(file []byte, key string) (service.Opened, error) {
 	world.t.Helper()
+	return world.openFrom(file, key, service.FromFile)
+}
+
+// openFrom opens a saga file that comes from origin: a file the author chose or the site by a transfer.
+func (world *world) openFrom(file []byte, key string, origin service.Origin) (service.Opened, error) {
+	world.t.Helper()
 	temp, err := world.temp.Create()
 	if err != nil {
 		world.t.Fatal(err)
@@ -155,7 +161,7 @@ func (world *world) openFile(file []byte, key string) (service.Opened, error) {
 	sum := sha256.Sum256(file)
 	return world.open.Execute(world.ctx, service.OpenInput{
 		OpenRequest: service.OpenRequest{ActorUserID: world.user, IdempotencyKey: key, FileSHA256: hex.EncodeToString(sum[:])},
-		Proof:       world.proof, File: temp,
+		Proof:       world.proof, File: temp, Origin: origin,
 	})
 }
 

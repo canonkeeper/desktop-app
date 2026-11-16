@@ -1278,6 +1278,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/app/saga-transfers/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Announce a transfer of a saga to this app.
+         * @description specs/2026-11-16-desk-site-saga.md TR3.1: the backend of a linked app announces a transfer with the PKCE S256 challenge of its verifier and gets the number of the request the page /transfer is opened with. The request waits 10 minutes; a new one of the app puts out the one before it. The pass alone sees no saga: only the code the author gives on the page opens one. 60 an hour per app. Responses are no-store.
+         */
+        post: operations["requestAppSagaTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/saga-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download the saga of a code of this app.
+         * @description specs/2026-11-16-desk-site-saga.md TR4.1: the backend of the app sends the code of the return with the verifier of its challenge and gets the file canonkeeper-saga v1 of the saga the author gave, as getSagaArchive answers it. The code is checked first without spending it: live, not used, of this app, S256 of the verifier its challenge — any refusal is 400 app.transfer_invalid without telling which, and the code stays. The saga is then prepared by the one gate of the saves of the process — one save of an author at a time, four for the process, ten an hour —: a busy gate is 429 saga_transfer.busy with Retry-After, a saga that went or is not the author's any more 404 saga_transfer.gone; both leave the code. Only then the code is spent, once, for an account that may work and an app still linked; the file goes as a stream without Content-Length, and a failure after its first byte breaks the connection. The line of the journal names the app, the author, the saga and the outcome, never the code nor the verifier. 60 an hour per app.
+         */
+        post: operations["takeAppSagaTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/app/permits": {
         parameters: {
             query?: never;
@@ -1433,6 +1473,46 @@ export interface paths {
          * @description specs/2026-11-13-desk-link.md LK4.2: «Отвязать» — the app is unlinked and its pass opens nothing after it; nothing of the computer of the author is deleted. Only the signed-in author himself in his own session with the CSRF token; a session opened on his behalf is 403 account.own_session_required, an app of another account or one unlinked already 404 app.not_found. Responses are no-store.
          */
         delete: operations["revokeLinkedApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/saga-transfers/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the request of a transfer of a saga to the app the page /transfer opened.
+         * @description specs/2026-11-16-desk-site-saga.md TR3.2: the page /transfer reads the request of the app it opened before the author chooses a saga. A request of an app linked with another account than the signed-in one is 409 saga_transfer.other_account; one that waits no more — unknown, out of its 10 minutes, put out by a newer request of the app, with its code given already or of an app unlinked — 410 saga_transfer.expired. Only the signed-in author himself reads it: a session opened on his behalf is 403 account.own_session_required, as at /link. Nothing of the app or of another account is told. Responses are no-store.
+         */
+        get: operations["getSagaTransferRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/saga-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give the app of a request the code of a saga of the author.
+         * @description specs/2026-11-16-desk-site-saga.md TR3.3: the page /transfer gives the linked app that announced the request the one-time code of the saga the author chose. Only the signed-in author himself in his own session, with a verified address; a session opened on his behalf is 403 account.own_session_required, an unverified address 403 auth.email_unverified. The request waits and its app is live and linked with this account — 409 saga_transfer.other_account for an app of another account, 410 saga_transfer.expired for a request that waits no more —, and the saga is a live one he owns — 404 for a saga he is not in or one deleted, 403 for one he does not own. The site keeps the SHA-256 of a new code of 32 random bytes for 10 minutes and one download, bound to the request — its app, its author, the saga and the challenge of the app —; a request gives one code. The answer is the address of the return on 127.0.0.1 the site builds from the port with the code and the state of the app: the code is in it and nowhere else. 10 an hour per account. Responses are no-store.
+         */
+        post: operations["startSagaTransfer"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2748,6 +2828,34 @@ export interface paths {
          * @description Mounted only by the desktop build (specs/2026-11-13-desk-consent.md CN2.4): the live sample of the saga is canceled the standard way, the page names no Job; the cards it read stay. Nothing live is nothing to stop. The strict Origin of the window, the CSRF token and its session; sixty a minute.
          */
         delete: operations["cancelReadingSample"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/saga-transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the transfer of a saga from the site.
+         * @description Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.2): the one transfer of a saga from the site of this run — none, waiting for the author on the page /transfer with its address and term, downloading with the bytes taken (the site names no length, so no percent), opening, done with the new saga and the report of the open, or failed with one code of a closed list. The session of the window.
+         */
+        get: operations["getSiteSagaTransfer"];
+        put?: never;
+        /**
+         * Start a transfer of a saga from the site.
+         * @description Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.1): a linked app makes a PKCE verifier and a state of 32 random bytes each, living 10 minutes and only in memory with the proof of the session of the window, announces the transfer on the site under its pass and answers the address of the page /transfer of the site with the number of the request, the state and the port of the window, and the address of the account hidden after its first letter. A new start replaces a transfer that waits. While an update is installed it is 409 desktop.updating, while a transfer downloads or opens 409 saga_transfer.running, without a link 409 account.not_linked; a site that did not take the request leaves the transfer failed with its code. Ten a minute. The strict Origin of the window, the CSRF token and its session.
+         */
+        post: operations["startSiteSagaTransfer"];
+        /**
+         * Stop a transfer of a saga from the site, or put its outcome away.
+         * @description Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.2): the transfer the body names by its id — a transfer that waits or downloads stops — failed canceled, its file removed —; one that opens is 409 saga_transfer.opening; a done or failed one goes, and the transfer is none. Another id — a transfer put away or replaced by a new start meanwhile — changes nothing: the answer is the transfer as it is. Thirty a minute. The strict Origin of the window, the CSRF token and its session.
+         */
+        delete: operations["cancelSiteSagaTransfer"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6917,6 +7025,60 @@ export interface components {
             /** @description The version of the app. */
             appVersion: string;
         };
+        /** @description specs/2026-11-16-desk-site-saga.md TR3.2: a request of a transfer that waits for the signed-in author. */
+        SagaTransferRequest: {
+            /**
+             * Format: date-time
+             * @description Until when the request waits.
+             */
+            expiresAt: string;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR3.3: what the page /transfer read from the address the app opened, and the saga the author chose. */
+        SagaTransferStart: {
+            /** @description The number of the request of the app. */
+            request: string;
+            /**
+             * Format: uuid
+             * @description The saga the author transfers; a live saga he owns.
+             */
+            projectId: string;
+            /** @description The opaque state of the app; the site does not keep it. */
+            state: string;
+            /** @description The port of the return of the app on 127.0.0.1. */
+            port: number;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR3.3: the address of the return the page goes to, once. */
+        SagaTransferStarted: {
+            /**
+             * Format: uri
+             * @description http://127.0.0.1:<port>/desktop/transfer/callback with the code and the state; built by the site from the port alone.
+             */
+            callbackUrl: string;
+            /**
+             * Format: date-time
+             * @description Until when the code waits for the app.
+             */
+            expiresAt: string;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR3.1: the PKCE S256 challenge of the verifier of the app. */
+        AppSagaTransferRequest: {
+            challenge: string;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR3.1: the request the page /transfer is opened with. */
+        AppSagaTransferRequested: {
+            /** @description The number of the request. */
+            request: string;
+            /**
+             * Format: date-time
+             * @description Until when the request waits.
+             */
+            expiresAt: string;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR4.1: the code of the return and the verifier of the app. */
+        AppSagaTransferTake: {
+            code: string;
+            verifier: string;
+        };
         /** @description specs/2026-11-13-desk-link.md LK2.2: the pass of the app, given once, and its account. */
         AppLinkToken: {
             /** @description The pass of the app; the site keeps only its SHA-256. */
@@ -8542,6 +8704,55 @@ export interface components {
         AiKey: {
             /** @description The key of the provider: up to 1280 bytes of UTF-8 without spaces or control characters. */
             key: string;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR2.2: the one transfer of a saga from the site of this run of the app. */
+        SiteSagaTransfer: {
+            /**
+             * Format: uuid
+             * @description The transfer; null when there is none.
+             */
+            id: string | null;
+            /**
+             * @description none — no transfer; waiting — for the author on the page /transfer; downloading — the saga comes from the site; opening — the saga file opens as a new saga; done — the saga is open; failed — with its code.
+             * @enum {string}
+             */
+            phase: "none" | "waiting" | "downloading" | "opening" | "done" | "failed";
+            /**
+             * Format: uri
+             * @description While it waits: the page /transfer of the site with the request, the state and the port of the window; nothing of the author.
+             */
+            address: string | null;
+            /**
+             * Format: date-time
+             * @description While it waits: until when.
+             */
+            expiresAt: string | null;
+            /** @description While it waits: the address of the account of the link hidden after its first letter, as the site told it. */
+            email: string | null;
+            /** @description Once the site sent the file: its name as the site named it, only to be shown. */
+            name: string | null;
+            /** @description While it downloads and opens: the bytes of the file taken. */
+            bytes: number | null;
+            /**
+             * @description Why it failed: the request ran out, the author stopped it, the site refused the code, the saga went from the site, the saves of the site were busy beyond the term of the code, the site did not answer, the link is gone, the download broke or went silent, the file is over 1 GiB, no place on the disk, the window was restarted, an update closed the app to transfers, an unexpected failure — or the code of the open of the saga file.
+             * @enum {string|null}
+             */
+            code: "expired" | "canceled" | "transfer_invalid" | "gone" | "busy" | "unreachable" | "not_linked" | "download_cut" | "too_large" | "no_space" | "session_ended" | "updating" | "unexpected" | "saga_archive.not_archive" | "saga_archive.damaged" | "saga_archive.newer_version" | "saga_archive.too_large" | "saga_archive.invalid" | "saga_archive.no_space" | null;
+            /**
+             * Format: uuid
+             * @description Once done: the new saga.
+             */
+            projectId: string | null;
+            /** @description Once done: what the saga file brought, as openSagaArchive answers it. */
+            opened: components["schemas"]["SagaArchiveOpened"] | null;
+        };
+        /** @description specs/2026-11-16-desk-site-saga.md TR2.2: the transfer the page stops or whose outcome it puts away. */
+        SiteSagaTransferCancel: {
+            /**
+             * Format: uuid
+             * @description The id of the transfer as getSiteSagaTransfer named it.
+             */
+            id: string;
         };
         /** @description specs/2026-11-13-desk-account.md AC2.1: the link of the app with an account of the site as the window sees it. */
         DesktopAccount: {
@@ -13720,6 +13931,64 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    requestAppSagaTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSagaTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description The request waits for the author on the page /transfer. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSagaTransferRequested"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    takeAppSagaTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSagaTransferTake"];
+            };
+        };
+        responses: {
+            /** @description The saga file, named by the title of the saga in Content-Disposition (RFC 6266). */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     openModelPermit: {
         parameters: {
             query?: never;
@@ -14034,6 +14303,71 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSagaTransferRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The number of the request from the address the app opened. */
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request waits. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaTransferRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    startSagaTransfer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SagaTransferStart"];
+            };
+        };
+        responses: {
+            /** @description The address of the return with the code, once. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SagaTransferStarted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -16762,6 +17096,90 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSiteSagaTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The transfer. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSagaTransfer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    startSiteSagaTransfer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The transfer waits for the author, or failed with its code. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSagaTransfer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    cancelSiteSagaTransfer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteSagaTransferCancel"];
+            };
+        };
+        responses: {
+            /** @description The transfer after it. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSagaTransfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };

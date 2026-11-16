@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"canonkeeper/backend/internal/adapters/tempfiles"
 	coverservice "canonkeeper/backend/internal/services/library"
@@ -18,6 +19,20 @@ import (
 type SagaArchive struct {
 	CreatedBy string
 	Drawings  sagaarchiveservice.Drawings
+}
+
+// sagaArchiveExports is the constructor of the save of a saga into its file (specs/2026-11-16-desk-site-saga.md TR1.1): the
+// snapshot, the covers, the threads, the temporary files and the clock of the process, and one gate of the process for every
+// save it builds — so «one save of an author at a time, four for the process, ten an hour» (SF2.4) holds for getSagaArchive
+// and for the transfer of a saga to the app together.
+func sagaArchiveExports(snapshot sagaarchiveservice.SnapshotStore, covers sagaarchiveservice.CoverObjects, threads sagaarchiveservice.Threads, temp sagaarchiveservice.TempFiles, now func() time.Time) func(SagaArchive) *sagaarchiveservice.ExportSaga {
+	gate := sagaarchiveservice.NewGate(now)
+	return func(archive SagaArchive) *sagaarchiveservice.ExportSaga {
+		return &sagaarchiveservice.ExportSaga{
+			Snapshot: snapshot, Covers: covers, Threads: threads, Temp: temp, Gate: gate,
+			Drawings: archive.Drawings, CreatedBy: archive.CreatedBy, Now: now,
+		}
+	}
 }
 
 // sagaArchiveDirectory is the named directory of the temporary files of the saga file under the files of the build; its

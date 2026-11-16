@@ -89,12 +89,12 @@ export function routeOfLocation(location: { pathname: string; searchStr: string;
 }
 
 /** The surfaces of the pages one edition has and the other has not. */
-const pagesOfOneEdition: ReadonlySet<Surface> = new Set<Surface>(['settings', 'app-page']);
+const pagesOfOneEdition: ReadonlySet<Surface> = new Set<Surface>(['settings', 'app-page', 'transfer']);
 
 /**
- * «Настройки» are a page of the desktop app alone (specs/2026-11-13-desk-settings.md ST1.2), «CanonKeeper на компьютере» a
- * page of the site alone (specs/2026-11-16-desk-app-page.md AP2.1): in an edition without the page its address is the route
- * of no page, as before it — the tab, the guest and the shell read it so.
+ * «Настройки» are a page of the desktop app alone (specs/2026-11-13-desk-settings.md ST1.2), «CanonKeeper на компьютере» and
+ * /transfer pages of the site alone (specs/2026-11-16-desk-app-page.md AP2.1, specs/2026-11-16-desk-site-saga.md TR3.2): in an
+ * edition without the page its address is the route of no page, as before it — the tab, the guest and the shell read it so.
  */
 function routeOfEdition(route: AppRoute): AppRoute {
   if (!pagesOfOneEdition.has(route.surface) || edition.pages[route.surface]) return route;

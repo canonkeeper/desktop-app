@@ -169,7 +169,7 @@ type opening struct {
 
 func (opener *Opener) write(ctx context.Context, tx pgx.Tx, write service.OpenWrite) (service.Opened, error) {
 	archive := write.Archive
-	name, renamed, err := sagaName(ctx, tx, write.ActorUserID, archive)
+	name, renamed, err := sagaName(ctx, tx, write.ActorUserID, archive, write.Origin)
 	if err != nil {
 		return service.Opened{}, err
 	}
@@ -219,8 +219,9 @@ func (opener *Opener) write(ctx context.Context, tx pgx.Tx, write service.OpenWr
 }
 
 // sagaName is the name of the new saga: the name of the file, or «<name> — из файла от <date>» when the author has a live
-// saga of that name, cut with «…» to the limit of a name (SF3.3).
-func sagaName(ctx context.Context, tx pgx.Tx, actorUserID string, archive *domain.Archive) (string, bool, error) {
+// saga of that name — «<name> — с сайта от <date>» of a saga transferred from the site (specs/2026-11-16-desk-site-saga.md
+// TR5.2) —, cut with «…» to the limit of a name (SF3.3).
+func sagaName(ctx context.Context, tx pgx.Tx, actorUserID string, archive *domain.Archive, origin service.Origin) (string, bool, error) {
 	name := archive.Saga.Name
 	var taken bool
 	if err := tx.QueryRow(ctx, `
@@ -228,7 +229,11 @@ func sagaName(ctx context.Context, tx pgx.Tx, actorUserID string, archive *domai
 	`, actorUserID, name).Scan(&taken); err != nil || !taken {
 		return name, false, err
 	}
-	suffix := " — из файла от " + archive.Manifest.CreatedAt.UTC().Format("02.01.2006")
+	from := " — из файла от "
+	if origin == service.FromSite {
+		from = " — с сайта от "
+	}
+	suffix := from + archive.Manifest.CreatedAt.UTC().Format("02.01.2006")
 	room := domain.MaxSagaNameRunes - utf8.RuneCountInString(suffix)
 	if runes := []rune(name); len(runes) > room {
 		name = string(runes[:room-1]) + "…"

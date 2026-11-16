@@ -35,6 +35,9 @@ type accountLink struct {
 	// client is the one client of the app to the site; helpers hears the helper the site tells.
 	client  *siteapi.Client
 	helpers *siteHelpers
+	// transfers are the use cases of the transfer of a saga from the site over the link (specs/2026-11-16-desk-site-saga.md),
+	// set by compose (saga_transfer.go).
+	transfers accountservice.TransferParts
 }
 
 func newAccountLink(site string, port int, version string, secrets *shellSecrets, saved *settings, shell eraseShell, logger *log.Logger) (*accountLink, error) {
@@ -194,5 +197,16 @@ func (link accountLink) network(settings *settings, site string) func() []servic
 			return nil
 		}
 		return []service.NetworkUse{{Host: accountdomain.HostOf(site), Purpose: "вопросы помощнику и чтение книг"}}
+	}
+}
+
+// transferNetwork is what the app goes to the site for while a transfer of a saga from it waits for the author or downloads
+// (specs/2026-11-16-desk-site-saga.md TR5.4); networkUses puts it in the one line of the host of the site.
+func (link accountLink) transferNetwork(site string) func() []service.NetworkUse {
+	return func() []service.NetworkUse {
+		if !link.parts.Transferring() {
+			return nil
+		}
+		return []service.NetworkUse{{Host: accountdomain.HostOf(site), Purpose: "перенос саги с сайта"}}
 	}
 }

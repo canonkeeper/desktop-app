@@ -17,6 +17,7 @@ import { createChapterDraftOperations } from './repository/chapter-drafts';
 import { createLettersOperations } from './repository/letters';
 import { createAppLinkOperations } from './repository/app-links';
 import { createDesktopAccountOperations } from './repository/desktop-account';
+import { createSagaTransferOperations } from './repository/saga-transfer';
 import { createProgramOperations } from './repository/programs';
 import { createSendLogOperations } from './repository/send-log';
 import { createDesktopAiOperations } from './repository/desktop-ai';
@@ -71,6 +72,7 @@ export function createMockApiClient() {
     ...createDesktopAiOperations(context),
     ...createReadingOperations(context),
     ...createDesktopAccountOperations(context),
+    ...createSagaTransferOperations(context),
     ...createSendLogOperations(context),
     ...createProgramOperations(context),
     ...createQuotaOperations(context),

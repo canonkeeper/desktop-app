@@ -311,6 +311,15 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     )),
     http.delete(mswPath('unlinkAccount'), ({ request }) =>
       jsonResponse(() => repository.unlinkAccount(), undefined, { csrfState, operationId: 'unlinkAccount', request, repository })),
+    // The transfer of a saga from the site, the side of the app (specs/2026-11-16-desk-site-saga.md TR2).
+    http.get(mswPath('getSiteSagaTransfer'), ({ request }) =>
+      jsonResponse(() => repository.getSiteSagaTransfer(), undefined, { csrfState, operationId: 'getSiteSagaTransfer', request, repository })),
+    http.post(mswPath('startSiteSagaTransfer'), ({ request }) =>
+      jsonResponse(() => repository.startSiteSagaTransfer(), undefined, { csrfState, operationId: 'startSiteSagaTransfer', request, repository })),
+    http.delete(mswPath('cancelSiteSagaTransfer'), ({ request }) => jsonResponse(
+      async () => repository.cancelSiteSagaTransfer((await readJson(request)) as OperationRequest<'cancelSiteSagaTransfer'>),
+      undefined, { csrfState, operationId: 'cancelSiteSagaTransfer', request, repository },
+    )),
     // The bridge of the desktop app with an Obsidian vault (specs/2026-11-13-desk-obsidian.md).
     http.get(mswPath('getObsidianVault'), ({ params, request }) => jsonResponse(
       () => repository.getObsidianVault(oneParam(params.projectId)), undefined, { csrfState, operationId: 'getObsidianVault', request, repository },
@@ -594,6 +603,14 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
     http.post(mswPath('startAppLink'), async ({ request }) => jsonResponse(
       async () => repository.startAppLink((await readJson(request)) as OperationRequest<'startAppLink'>),
       undefined, { operationId: 'startAppLink', request, repository },
+    )),
+    // The page /transfer of the site (specs/2026-11-16-desk-site-saga.md TR3.2, TR3.3).
+    http.get(mswPath('getSagaTransferRequest'), ({ params, request }) => jsonResponse(
+      () => repository.getSagaTransferRequest(oneParam(params.requestId)), undefined, { operationId: 'getSagaTransferRequest', request, repository },
+    )),
+    http.post(mswPath('startSagaTransfer'), async ({ request }) => jsonResponse(
+      async () => repository.startSagaTransfer((await readJson(request)) as OperationRequest<'startSagaTransfer'>),
+      undefined, { operationId: 'startSagaTransfer', request, repository },
     )),
     http.get(mswPath('listLinkedApps'), ({ request }) => jsonResponse(
       () => repository.listLinkedApps(), undefined, { operationId: 'listLinkedApps', request, repository },

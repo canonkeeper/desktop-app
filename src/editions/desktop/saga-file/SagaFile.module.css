@@ -141,5 +141,49 @@
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+/* The transfer of a saga from the site (board 44·77–44·79): the term of the link of the window of the waiting, and the line
+   of «Связать с аккаунтом» of an app without a link, each with its icon. */
+.term,
+.needLink {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--ck-font-size-body-sm);
+  line-height: 1.5;
+}
+
+.term {
+  color: var(--ck-muted-foreground);
+}
+
+.needLink {
+  color: var(--ck-foreground);
+}
+
+.term svg,
+.needLink svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* The line of the work of the transfer in the place of the notices of the shell, as the line of a saga file of the site
+   (board 44·33, 44·80). */
+.notice {
+  flex: none;
+  min-width: 0;
+  border-bottom: 1px solid var(--ck-border);
+  padding: 8px 20px;
+  background: var(--ck-background);
+}
+
+@media (max-width: 767px) {
+  .notice {
+    padding: 8px 16px;
+  }
 }

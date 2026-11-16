@@ -6,7 +6,9 @@ package sagaarchive
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
 	"mime"
 	"net/http"
 	"time"
@@ -62,22 +64,44 @@ func MountExport(router chi.Router, export ExportUseCase, currentUser CurrentUse
 			writeProblem(response, http.StatusForbidden, "Forbidden", "only the owner saves a saga into a file", "forbidden")
 			return
 		case err != nil:
+			logFailure("prepare", chi.URLParam(request, "projectId"), err)
 			writeProblem(response, http.StatusInternalServerError, "Internal Server Error", "unexpected server error", "server.error")
 			return
 		}
 		defer prepared.Close()
-		_ = http.NewResponseController(response).SetWriteDeadline(time.Now().Add(service.SaveDeadline))
-		response.Header().Set("Content-Type", "application/zip")
-		// The standard library names a non-ASCII file as RFC 6266 wants: filename*=utf-8''…
-		response.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
-			"filename": bookexport.FileName(prepared.Name, bookexport.Format(domain.Extension)),
-		}))
-		response.WriteHeader(http.StatusOK)
-		if err := prepared.WriteTo(ctx, response); err != nil {
-			// The status has gone. Only a broken connection tells the reader that the file is not whole.
-			panic(http.ErrAbortHandler)
-		}
+		WriteArchive(ctx, response, prepared, chi.URLParam(request, "projectId"))
 	})
+}
+
+// WriteArchive answers with a saga file prepared already (SF2.3; specs/2026-11-16-desk-site-saga.md TR1.2): the one answer
+// of getSagaArchive and of the transfer of a saga to the app — application/zip named by the title of the saga, no longer than
+// SaveDeadline, and a failure after the first byte breaks the connection rather than ends the file, with the line
+// saga_archive_failed in the journal. The caller closes what is prepared.
+func WriteArchive(ctx context.Context, response http.ResponseWriter, prepared *service.Prepared, projectID string) {
+	_ = http.NewResponseController(response).SetWriteDeadline(time.Now().Add(service.SaveDeadline))
+	response.Header().Set("Cache-Control", "no-store")
+	response.Header().Set("Content-Type", "application/zip")
+	// The standard library names a non-ASCII file as RFC 6266 wants: filename*=utf-8''…
+	response.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+		"filename": bookexport.FileName(prepared.Name, bookexport.Format(domain.Extension)),
+	}))
+	response.WriteHeader(http.StatusOK)
+	if err := prepared.WriteTo(ctx, response); err != nil {
+		logFailure("write", projectID, err)
+		// The status has gone. Only a broken connection tells the reader that the file is not whole.
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// logFailure tells the journal why a saga did not go into its file: the stage and the error, whose words name records of the
+// file and steps of the server, never the texts of the saga (a refusal of the writer names the record, not its value).
+func logFailure(stage, projectID string, err error) {
+	message := err.Error()
+	if len(message) > 400 {
+		message = message[:400]
+	}
+	line, _ := json.Marshal(map[string]string{"event": "saga_archive_failed", "stage": stage, "projectId": projectID, "error": message})
+	log.Print(string(line))
 }
 
 func currentAuthor(response http.ResponseWriter, request *http.Request, currentUser CurrentUserService) (auth.User, bool) {

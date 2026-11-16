@@ -1,4 +1,4 @@
-import { Check, Download, Library, Plus, Settings } from 'lucide-react';
+import { Check, Download, Library, Plus, Settings, type LucideIcon } from 'lucide-react';
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { Alert } from '../feedback/Alert';
 import { Badge } from '../feedback/Badge';
@@ -11,6 +11,15 @@ export interface SagaChoiceItem {
   title: string;
   /** The saga-example of the site (specs/2026-11-09-demo-saga.md DS4.1). */
   demo?: boolean;
+}
+
+/** An item of the edition under «Новая сага»: «Перенести сагу с сайта…» of the app (specs/2026-11-16-desk-site-saga.md TR6.1). */
+export interface SagaMenuItem {
+  label: string;
+  icon: LucideIcon;
+  onSelect: () => void;
+  /** Why the item is closed now — «Сага уже переносится»: it stays in its place, says it and does nothing (PR1.1). */
+  reason?: string | null;
 }
 
 interface SagaChoiceInput {
@@ -28,6 +37,8 @@ interface SagaChoiceInput {
    * (specs/2026-11-10-ux2-patterns-refusals.md PR2.7).
    */
   createNote?: ReactNode;
+  /** An item of the edition right under «Новая сага» (board 44·78); the site gives none. */
+  more?: SagaMenuItem | null | undefined;
   /** «Настроить сагу»: the window of the saga of the page. */
   onSettings?: () => void;
   /** «Скачать всю сагу…»: the window of the kind of the files of its books (specs/2026-11-11-ux9-shelf-chat.md SC1.5). */
@@ -44,13 +55,15 @@ export function sagaMenuAnchor(trigger: HTMLElement): CSSProperties {
 
 /**
  * The one menu of the saga on every page (specs/2026-11-10-ux2-shell.md S3.1; `Pattern/Shell/Saga Menu`): «Ваши саги» —
- * the current one marked, the example with «Пример» — then «Новая сага», «Скачать всю сагу…» for whoever may take its files
+ * the current one marked, the example with «Пример» — then «Новая сага», the item of the edition under it («Перенести сагу с
+ * сайта…» of the app, specs/2026-11-16-desk-site-saga.md TR6.1), «Скачать всю сагу…» for whoever may take its files
  * (specs/2026-11-11-ux9-shelf-chat.md SC1.5) and «Настроить сагу». The name of the saga in the
  * top bar and its line in the drawer of a phone open it; choosing a saga moves the page to it.
  */
-export function useSagaChoice({ choosing, createNote, current, failed, missing, onChoose, onCreate, onDownload, onSettings, sagas }: SagaChoiceInput) {
+export function useSagaChoice({ choosing, createNote, current, failed, missing, more, onChoose, onCreate, onDownload, onSettings, sagas }: SagaChoiceInput) {
   const [at, setAt] = useState<{ anchor?: CSSProperties } | null>(null);
   const labelId = useId();
+  const moreReasonId = useId();
   const close = () => setAt(null);
   const open = (trigger?: HTMLElement) => setAt(trigger ? { anchor: sagaMenuAnchor(trigger) } : {});
   const named = current ? { name: current.title, demo: current.demo === true } : missing ? { name: missing, demo: false } : null;
@@ -79,11 +92,18 @@ export function useSagaChoice({ choosing, createNote, current, failed, missing, 
         })}
       </div>
       {failed ? <Alert tone="error">Не удалось сменить сагу.</Alert> : null}
-      {onCreate || (onSettings && current) ? <div aria-hidden="true" className={styles.separator} /> : null}
+      {onCreate || more || (onSettings && current) ? <div aria-hidden="true" className={styles.separator} /> : null}
       {onCreate ? (
         <button className={styles.item} onClick={act(onCreate)} role="menuitem" type="button">
           <Plus aria-hidden="true" className={styles.icon} size={16} />
           <span className={styles.title}>Новая сага{createNote ? <span className={styles.note}>{createNote}</span> : null}</span>
+        </button>
+      ) : null}
+      {more ? (
+        <button aria-describedby={more.reason ? moreReasonId : undefined} aria-disabled={more.reason ? true : undefined} className={styles.item}
+          onClick={more.reason ? undefined : act(more.onSelect)} role="menuitem" type="button">
+          <more.icon aria-hidden="true" className={styles.icon} size={16} />
+          <span className={styles.title}>{more.label}{more.reason ? <span className={styles.note} id={moreReasonId}>{more.reason}</span> : null}</span>
         </button>
       ) : null}
       {onDownload && current ? (

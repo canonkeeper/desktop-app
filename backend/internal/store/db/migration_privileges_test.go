@@ -189,7 +189,9 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 	// the site alone, as the apps they belong to.
 	// What the helper of a linked app read through the models of the site (0145, specs/2026-11-13-desk-proxy.md PX3): the
 	// runtime of the site alone.
-	for _, table := range []string{"app_link_codes", "app_devices", "model_permits", "model_permit_units", "app_text_prints"} {
+	// The requests and the codes of the transfer of a saga to the app (0160, specs/2026-11-16-desk-site-saga.md TR3.4): the
+	// runtime of the site alone; nobody else reads the hash of a code.
+	for _, table := range []string{"app_link_codes", "app_devices", "model_permits", "model_permit_units", "app_text_prints", "app_saga_transfers"} {
 		linked := fmt.Sprintf("%s.%s", quoteIdentifier(schema), table)
 		for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
 			assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", linked, privilege, true)

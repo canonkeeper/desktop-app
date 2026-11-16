@@ -22,6 +22,8 @@ import { AppBookUpdateWords } from './obsidian/update-words';
 import { ReadingClientProvider } from './reading/reading-api';
 import { useDesktopReadingView } from './reading-view';
 import { SagaOpened } from './saga-file/SagaOpened';
+import { SiteTransferProvider } from './saga-file/SiteTransfer';
+import { useDesktopSagaBlock } from './saga-file/TransferEntries';
 import { settingsPage, settingsRoute } from './settings/route';
 import { AppUpdates } from './updates/AppUpdates';
 import { AfterWelcome } from './updates/welcome-state';
@@ -54,13 +56,15 @@ function desktopAccount({ api, navigate, route }: EditionAccountInput): EditionA
     // (specs/2026-11-15-desk-account-link-web.md AW1), and the tier of the linked app in the top bar
     // (specs/2026-11-15-desk-account-words-web.md AW4.7). The words of the update of a book of the app over the pages and the
     // shell (specs/2026-11-15-desk-obsidian-book-web.md OU3.1). The place of a link `canonkeeper://` the shell gives the loaded
-    // page goes by the navigation of the router (specs/2026-11-16-desk-app-links.md AL1.4).
+    // page goes by the navigation of the router (specs/2026-11-16-desk-app-links.md AL1.4). The transfer of a saga from the site:
+    // the one reader of its state, its start, the window of its waiting and its end on any page (specs/2026-11-16-desk-site-saga.md
+    // TR6).
     wrapPages: (pages) => createElement(AppUpdates, { api, navigate, route }, createElement(AccountLinkProvider, { api, route }, createElement(
-      TopBarTierProvider, { value: createElement(TierMark, { navigate }) }, createElement(
+      SiteTransferProvider, { api, navigate }, createElement(TopBarTierProvider, { value: createElement(TierMark, { navigate }) }, createElement(
         ReadingClientProvider, { value: api }, createElement(PreparationViewProvider, { value: useDesktopReadingView }, createElement(
           AppBookUpdateWords, { api }, createElement(LinkVisits, { navigate }, pages),
         )),
-      ),
+      )),
     ))),
     // The lines and windows that open by themselves wait for «Добро пожаловать» (specs/2026-11-15-desk-updates-web.md UW1.4).
     // The end of a load from an Obsidian folder on another page, and the read of the folder of the saga once its books are in
@@ -118,4 +122,7 @@ export const edition: Edition = {
   pages: { ...openPages, manuscript: desktopManuscriptPage, memory: desktopMemoryPage, saga: desktopSagaPage, settings: settingsPage },
   sections: desktopSections,
   useAccount: desktopAccount,
+  // The line of the work of a transfer of a saga from the site under the top bar and its item of the menu of sagas
+  // (specs/2026-11-16-desk-site-saga.md TR6.1, TR6.2).
+  useSagaSettingsBlock: useDesktopSagaBlock,
 };

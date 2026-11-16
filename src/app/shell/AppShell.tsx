@@ -119,7 +119,8 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
   const bookRevert = useBookRevert({ api, onReturned: () => setBookChanges(null), toasts });
   // An author alone in his saga is told no role (specs/2026-11-11-ux9-shelf-chat.md SC1.1).
   const alone = useAloneInSaga(api, project, settings !== null);
-  // The closed block of «Настроить сагу» of the edition: «Скачать сагу файлом…» of the site (specs/2026-11-13-desk-sagafile-web.md SW4).
+  // The block of the saga of the edition: «Скачать сагу файлом…» of the site (specs/2026-11-13-desk-sagafile-web.md SW4), the
+  // transfer of a saga from the site of the app (specs/2026-11-16-desk-site-saga.md TR6).
   const sagaBlock = edition.useSagaSettingsBlock?.({
     api, open: settings !== null,
     saga: project ? { id: project.id, title: project.title, role: project.currentMembership.role } : null,
@@ -138,6 +139,8 @@ export function AppShell({ api, children, navigate, onLogout, route, user }: App
     } }),
     onCreate: () => setNewSaga(true),
     onSettings: () => setSettings({ error: null }),
+    // «Перенести сагу с сайта…» of the app under «Новая сага» (specs/2026-11-16-desk-site-saga.md TR6.1).
+    more: sagaBlock?.menuItem,
     // The whole saga in one archive, for whoever may take the file of a book (SC1.5).
     onDownload: project && canEditProject(project) && sagaBooks.length > 0 ? () => setSagaDownloadOpen(true) : undefined,
     // An old link to a saga that is gone: the name says so and its menu leads to another (board 14·10).

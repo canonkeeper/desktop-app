@@ -165,6 +165,8 @@ export type MockState = {
   };
   /** The links a scenario made once (`accountLinked`, `accountBroken`): after an unlinking it does not make them again. */
   desktopAccountScenario: { linked: boolean; broken: boolean };
+  /** The transfer of a saga from the site of the desktop app (specs/2026-11-16-desk-site-saga.md TR2.2). */
+  siteSagaTransfer: Schema<'SiteSagaTransfer'>;
   /** The chats a saga file brought into a saga, to read (specs/2026-11-13-desk-sagafile.md SF3.8). */
   sagaTranscripts: (Schema<'SagaTranscript'> & { projectId: string })[];
   /** «Проверить связь» of this run and the last check kept, with what it checked (specs/2026-11-13-desk-probes.md PB2). */
@@ -288,6 +290,11 @@ export type MockFeedbackImage = {
   content: Uint8Array<ArrayBuffer>;
   mimeType: string;
 };
+
+/** No transfer of a saga from the site (specs/2026-11-16-desk-site-saga.md TR2.2). */
+export function noSiteSagaTransfer(): Schema<'SiteSagaTransfer'> {
+  return { id: null, phase: 'none', address: null, expiresAt: null, email: null, name: null, bytes: null, code: null, projectId: null, opened: null };
+}
 
 function createInitialState(): MockState {
   const locator = createReaderLocator();
@@ -698,6 +705,7 @@ function createInitialState(): MockState {
     aiAccount: null,
     desktopAccount: { state: 'none', link: null, failure: null, account: null },
     desktopAccountScenario: { linked: false, broken: false },
+    siteSagaTransfer: noSiteSagaTransfer(),
     sagaTranscripts: [],
     aiCheck: { state: 'idle', startedAt: null, current: null, probes: [], report: null },
     aiCheckKept: null,

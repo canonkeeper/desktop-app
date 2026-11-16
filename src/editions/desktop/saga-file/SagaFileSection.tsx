@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { FileUp, RotateCcw, Save, Square } from 'lucide-react';
-import { forwardRef, useId, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useId, useRef, useState } from 'react';
 import { loadFailureWords } from '../../../entities/api-errors';
 import { useManuscriptShelfQuery } from '../../../entities/manuscript/api';
 import { useSagaFileSave } from '../../../entities/saga-file/api';
@@ -11,6 +11,10 @@ import { LongWork } from '../../../ui/feedback/LongWork';
 import { useToasts } from '../../../ui/feedback/useToastQueue';
 import { Confirm } from '../../../ui/overlays/Confirm';
 import settings from '../settings/Settings.module.css';
+import { LinkStart } from '../account/LinkStart';
+import { FileButton } from './FileButton';
+import { NeedLinkLine, TransferButton, useTransferNeedsLink } from './TransferEntries';
+import { transferWords } from './transfer-words';
 import { useSagaFileOpen } from './use-saga-file-open';
 import { saveWords, sagaFileWords as words } from './words';
 import styles from './SagaFile.module.css';
@@ -32,25 +36,12 @@ function ownedOf(projects: readonly Project[] | undefined) {
   return (projects ?? []).filter((project) => project.currentMembership.role === 'owner');
 }
 
-/** A button of the file with the reason it is closed standing under it, as the board draws it (`Disabled Reason`). */
-export function FileButton({ icon, label, loading = false, onClick, reason }: {
-  icon: ReactNode; label: string; loading?: boolean; onClick: () => void; reason: string | null;
-}) {
-  const why = useId();
-  return (
-    <div className={styles.action}>
-      <Button data-voice-consent="no" disabledReason={reason ? { text: reason, at: why } : null} loading={loading} onClick={onClick} variant="outline">
-        {icon}{label}
-      </Button>
-      {reason ? <p className={styles.why} id={why}>{reason}</p> : null}
-    </div>
-  );
-}
-
 /**
  * «Файл саги» of «Данные» (specs/2026-11-13-desk-sagafile-web.md SW1, SW2; board 44·11, 44·30, 44·31): «Сохранить сагу в
- * файл…» saves the one saga at once and asks which of several; «Открыть файл саги…» opens the window of files. While a file
- * goes, its line of a long work stands over the buttons — the save with «Остановить» — and its button says why it waits.
+ * файл…» saves the one saga at once and asks which of several; «Открыть файл саги…» opens the window of files; «Перенести сагу
+ * с сайта…» of a linked app beside them, without a link the line and «Связать с аккаунтом» under them
+ * (specs/2026-11-16-desk-site-saga.md TR6.1; board 44·78). While a file goes, its line of a long work stands over the buttons —
+ * the save with «Остановить» — and its button says why it waits.
  */
 export function SagaFileSection({ api }: { api: CanonKeeperApiClient }) {
   const shelf = useManuscriptShelfQuery(api, { projectId: null });
@@ -63,6 +54,7 @@ export function SagaFileSection({ api }: { api: CanonKeeperApiClient }) {
   const label = useId();
   const saveReason = save.saving ? words.savingReason : shelf.data && sagas.length === 0 ? words.noSagaReason : null;
   const openReason = opening.opening ? words.openingReason : null;
+  const needsLink = useTransferNeedsLink();
 
   function saveOneOf(list: readonly Project[]) {
     if (list.length === 1) save.start({ projectId: list[0]!.id, title: list[0]!.title });
@@ -104,7 +96,14 @@ export function SagaFileSection({ api }: { api: CanonKeeperApiClient }) {
         <FileButton icon={<Save aria-hidden="true" size={16} />} label={words.save} loading={!shelf.data && shelf.isFetching} onClick={startSave}
           reason={saveReason} />
         <FileButton icon={<FileUp aria-hidden="true" size={16} />} label={words.open} onClick={() => picker.current?.click()} reason={openReason} />
+        <TransferButton label={transferWords.entry} variant="outline" />
       </div>
+      {needsLink ? (
+        <>
+          <NeedLinkLine />
+          <div><LinkStart account={needsLink} chooseHelper={false} /></div>
+        </>
+      ) : null}
       <p className={settings.note}>{words.note}</p>
       <SagaFilePicker onFile={opening.open} ref={picker} />
       {chosen ? (

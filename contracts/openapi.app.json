@@ -239,6 +239,153 @@
         "x-authz": "Only the pass of a live linked app; it unlinks only itself."
       }
     },
+    "/app/saga-transfers/requests": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "requestAppSagaTransfer",
+        "summary": "Announce a transfer of a saga to this app.",
+        "description": "specs/2026-11-16-desk-site-saga.md TR3.1: the backend of a linked app announces a transfer with the PKCE S256 challenge of its verifier and gets the number of the request the page /transfer is opened with. The request waits 10 minutes; a new one of the app puts out the one before it. The pass alone sees no saga: only the code the author gives on the page opens one. 60 an hour per app. Responses are no-store.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSagaTransferRequest"
+              },
+              "examples": {
+                "request": {
+                  "summary": "Synthetic challenge",
+                  "value": {
+                    "challenge": "synthetic_challenge_00000000000000000000000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request waits for the author on the page /transfer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSagaTransferRequested"
+                },
+                "examples": {
+                  "requested": {
+                    "summary": "Synthetic request",
+                    "value": {
+                      "request": "00000000-0000-4000-8000-000000000301",
+                      "expiresAt": "2026-11-16T09:40:00Z"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/command",
+        "x-authz": "Only the pass of a live linked app; the request is its own."
+      }
+    },
+    "/app/saga-transfers": {
+      "post": {
+        "tags": [
+          "App"
+        ],
+        "operationId": "takeAppSagaTransfer",
+        "summary": "Download the saga of a code of this app.",
+        "description": "specs/2026-11-16-desk-site-saga.md TR4.1: the backend of the app sends the code of the return with the verifier of its challenge and gets the file canonkeeper-saga v1 of the saga the author gave, as getSagaArchive answers it. The code is checked first without spending it: live, not used, of this app, S256 of the verifier its challenge — any refusal is 400 app.transfer_invalid without telling which, and the code stays. The saga is then prepared by the one gate of the saves of the process — one save of an author at a time, four for the process, ten an hour —: a busy gate is 429 saga_transfer.busy with Retry-After, a saga that went or is not the author's any more 404 saga_transfer.gone; both leave the code. Only then the code is spent, once, for an account that may work and an app still linked; the file goes as a stream without Content-Length, and a failure after its first byte breaks the connection. The line of the journal names the app, the author, the saga and the outcome, never the code nor the verifier. 60 an hour per app.",
+        "security": [
+          {
+            "devicePass": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSagaTransferTake"
+              },
+              "examples": {
+                "take": {
+                  "summary": "Synthetic download",
+                  "value": {
+                    "code": "synthetic_code_0000000000000000000000000000",
+                    "verifier": "synthetic-verifier-0000000000000000000000000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saga file, named by the title of the saga in Content-Disposition (RFC 6266).",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/query",
+        "x-authz": "Only the pass of the live linked app the author gave the code to, with the verifier of its challenge."
+      }
+    },
     "/app/permits": {
       "post": {
         "tags": [
@@ -1232,6 +1379,63 @@
             "type": "string",
             "pattern": "^[0-9A-Za-z.+-]{1,32}$",
             "description": "The version of the app."
+          }
+        }
+      },
+      "AppSagaTransferRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge"
+        ],
+        "description": "specs/2026-11-16-desk-site-saga.md TR3.1: the PKCE S256 challenge of the verifier of the app.",
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "minLength": 43,
+            "maxLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "AppSagaTransferRequested": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request",
+          "expiresAt"
+        ],
+        "description": "specs/2026-11-16-desk-site-saga.md TR3.1: the request the page /transfer is opened with.",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "The number of the request."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Until when the request waits."
+          }
+        }
+      },
+      "AppSagaTransferTake": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "verifier"
+        ],
+        "description": "specs/2026-11-16-desk-site-saga.md TR4.1: the code of the return and the verifier of the app.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "verifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         }
       },

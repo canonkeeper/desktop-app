@@ -5,7 +5,7 @@ import { drawingStates, drawingsListKeys, drawingViews } from './drawings-addres
 /** Every surface of the routes: the name of the tab is read from one table by it (specs/2026-11-10-ux1-shell.md SH1.2). */
 export const surfaces = [
   'account', 'admin', 'app-page', 'auth', 'chat', 'compare', 'drawing', 'home', 'legal', 'link', 'manuscript', 'memory',
-  'notes', 'promo', 'promo-link', 'saga', 'settings', 'tariff', 'unknown', 'writing',
+  'notes', 'promo', 'promo-link', 'saga', 'settings', 'tariff', 'transfer', 'unknown', 'writing',
 ] as const;
 export type Surface = typeof surfaces[number];
 
@@ -207,6 +207,9 @@ const allowedSearchKeysBySurface: Record<Surface, ReadonlySet<string>> = {
   // The page /link of the site, opened by the app on the computer of the author (specs/2026-11-13-desk-link.md LK1.1): its
   // challenge, its state, the port of its return and its system.
   link: new Set(['challenge', 'state', 'port', 'platform']),
+  // The page /transfer of the site, opened by the linked app of the author (specs/2026-11-16-desk-site-saga.md TR3.2): the
+  // number of its request, its state and the port of its return.
+  transfer: new Set(['request', 'state', 'port']),
   // The page «CanonKeeper на компьютере» of the site (specs/2026-11-16-desk-app-page.md AP2.1): nothing but its address.
   'app-page': new Set(),
   // «Настройки» of the desktop app: the open part (specs/2026-11-13-desk-settings.md ST1.2) and the kind of the rows of «Журнал»
@@ -368,9 +371,10 @@ function sanitizeReturnTo(value: string, workspaceOnly = false) {
     const target = new URL(value, urlBase);
     const surface = surfaceFromPath(target.pathname);
     // «Тариф» takes a guest with a key back after signing in (specs/2026-11-10-ux2-tariff-account.md TA3.4); it has no query.
-    // The page /link takes the author back after signing in or the registration (specs/2026-11-13-desk-link.md LK1.2), and
-    // the page «CanonKeeper на компьютере» a guest who pressed «Войти» on it (specs/2026-11-16-desk-app-page.md AP2.1).
-    const outsideWorkspace = !workspaceOnly && (surface === 'tariff' || surface === 'link' || surface === 'app-page');
+    // The page /link takes the author back after signing in or the registration (specs/2026-11-13-desk-link.md LK1.2), the
+    // page /transfer as /link (specs/2026-11-16-desk-site-saga.md TR3.2), and the page «CanonKeeper на компьютере» a guest who
+    // pressed «Войти» on it (specs/2026-11-16-desk-app-page.md AP2.1).
+    const outsideWorkspace = !workspaceOnly && (surface === 'tariff' || surface === 'link' || surface === 'transfer' || surface === 'app-page');
     if (target.origin !== urlBase || (surface !== 'chat' && surface !== 'manuscript' && surface !== 'notes' && !outsideWorkspace)) return null;
     if (workspaceOnly && target.pathname !== '/chat' && target.pathname !== '/manuscript/books') return null;
     const sanitized = sanitizeSearch(surface, target.searchParams, target.pathname);
@@ -422,6 +426,7 @@ function surfaceFromPath(path: string): Surface {
   if (path === '/tariff') return 'tariff';
   if (path === '/account') return 'account';
   if (path === '/link') return 'link';
+  if (path === '/transfer') return 'transfer';
   if (path === '/settings') return 'settings';
   if (path === '/desktop') return 'app-page';
   if (path === '/chat') {

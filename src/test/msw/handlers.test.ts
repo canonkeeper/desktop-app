@@ -994,7 +994,8 @@ function requestInit(operationId: OperationId, method: string): RequestInit {
     headers.set('mock-verified-email', 'mira@example.com');
   }
 
-  if (method === 'GET' || method === 'DELETE') {
+  // A DELETE has no body, but the one that names the transfer it stops (specs/2026-11-16-desk-site-saga.md TR2.2).
+  if (method === 'GET' || method === 'DELETE' && operationId !== 'cancelSiteSagaTransfer') {
     return { method, headers };
   }
   if (operationId === 'acceptProjectInvitation') {
@@ -1225,6 +1226,8 @@ function bodyFor(operationId: OperationId): unknown {
       return { sagaReady: false };
     case 'startAppLink':
       return { challenge: 'synthetic_challenge_000000000000000000000000'.slice(0, 43), state: 'synthetic-state', port: 24567, platform: 'linux' };
+    case 'startSagaTransfer':
+      return { request: '00000000-0000-4000-8000-000000000301', projectId: 'project-white-port', state: 'synthetic-state', port: 24567 };
     case 'resetPassword':
       return { token: mockAccountToken('password_reset', 'user-mira'), newPassword: 'white-port-12' };
     case 'checkPasswordResetLink':
@@ -1259,6 +1262,9 @@ function bodyFor(operationId: OperationId): unknown {
       return { checkUpdates: false };
     case 'startAccountLink':
       return { chooseHelper: true };
+    case 'cancelSiteSagaTransfer':
+      // The transfer it names: without one the answer is none (specs/2026-11-16-desk-site-saga.md TR2.2).
+      return { id: '00000000-0000-4000-9000-000000000201' };
     case 'updateAppUpdateSettings':
       return { daily: false };
     case 'setAccountName':
@@ -1436,6 +1442,12 @@ async function prepareRepositoryForOperation(
   operationId: OperationId,
 ): Promise<Record<string, string>> {
   switch (operationId) {
+    // A transfer of a saga from the site starts for a linked app (specs/2026-11-16-desk-site-saga.md TR2.1).
+    case 'startSiteSagaTransfer':
+      // The scenario links the app at its next read; the link stays when the handlers set their own scenario.
+      repository.setScenario({ ...repository.getScenario(), accountLinked: true });
+      await repository.getAccount();
+      return {};
     case 'endAdminWriterPeriod': {
       const period = await repository.grantAdminWriterTier(pathParams.userId!, { tier: 'pro', forever: true });
       return { periodId: period.id };

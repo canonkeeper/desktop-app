@@ -7,7 +7,7 @@ import type { RouteNavigate } from '../../../shared/navigation/app-route';
 import { Button } from '../../../ui/controls/Button';
 import { IconButton } from '../../../ui/controls/IconButton';
 import { Dialog } from '../../../ui/overlays/Dialog';
-import { openedWords, sagaFileWords as words } from './words';
+import { openedWords, sagaFileWords as words, type OpenedFrom } from './words';
 import styles from './SagaFile.module.css';
 
 /**
@@ -25,14 +25,21 @@ export function SagaOpened({ navigate }: { navigate: RouteNavigate }) {
   const [closed, setClosed] = useState<ReadonlySet<number>>(() => new Set());
   const end = [...ends].reverse().find((each) => !closed.has(each.id));
   if (!end) return null;
-  const { message, notes } = openedWords(end.opened);
-  const close = () => setClosed(new Set([...closed, ...ends.map((each) => each.id)]));
+  return <OpenedDialog from="file" navigate={navigate} onClose={() => setClosed(new Set([...closed, ...ends.map((each) => each.id)]))} opened={end.opened} />;
+}
+
+/**
+ * The window itself, for a saga file and for a saga transferred from the site (specs/2026-11-16-desk-site-saga.md TR6.2): the
+ * report of the open in the words of where the saga came from; «Перейти к саге» closes it and opens the shelf of the new saga.
+ */
+export function OpenedDialog({ from, navigate, onClose, opened }: { from: OpenedFrom; navigate: RouteNavigate; onClose: () => void; opened: SagaArchiveOpened }) {
+  const { message, notes } = openedWords(opened, from);
   return (
-    <Dialog label={words.opened} onDismiss={close} width={520}>
+    <Dialog label={words.opened} onDismiss={onClose} width={520}>
       <section className={styles.opened}>
         <div className={styles.head}>
           <h2 data-overlay-heading="">{words.opened}</h2>
-          <IconButton aria-label="Закрыть" onClick={close} size="sm"><X aria-hidden="true" size={16} /></IconButton>
+          <IconButton aria-label="Закрыть" onClick={onClose} size="sm"><X aria-hidden="true" size={16} /></IconButton>
         </div>
         <p className={styles.message}>{message}</p>
         {notes.length > 0 ? (
@@ -50,7 +57,7 @@ export function SagaOpened({ navigate }: { navigate: RouteNavigate }) {
           </ul>
         ) : null}
         <footer className={styles.footer}>
-          <Button onClick={() => { close(); navigate('/manuscript/books', { projectId: end.opened.projectId }); }} variant="primary">
+          <Button onClick={() => { onClose(); navigate('/manuscript/books', { projectId: opened.projectId }); }} variant="primary">
             {words.goToSaga}<ArrowRight aria-hidden="true" size={16} />
           </Button>
         </footer>

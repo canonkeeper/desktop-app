@@ -65,7 +65,7 @@ export function AccountBlock({ onDone, onLogout, support = true, theme = true, u
           <SiteThemeChoice fullWidth />
         </div>
       ) : null}
-      <Button className={styles.logoutButton} onClick={onLogout} size="touch" variant="ghost">
+      <Button className={styles.logoutButton} onClick={() => onLogout()} size="touch" variant="ghost">
         <LogOut aria-hidden="true" size={17} />Выйти
       </Button>
     </>

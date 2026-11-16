@@ -189,7 +189,8 @@ func (client *Client) Step(ctx context.Context, step, permitID string, body []by
 }
 
 // send sends one request of the work with the pass held and reads the site's verdict (AI3.3): an answer of 2xx is the
-// response; the site's 429 is read by its code — a refusal of the tier and ai.busy are the answer of the operation, while
+// response; the site's 429 is read by its code — a refusal of the tier, ai.busy and saga_transfer.* are the answer of the
+// operation, while
 // rate_limit.exceeded or a 429 without a code keeps the client from the site until its Retry-After —; a refusal of the
 // models of the site (ai.*) is its answer too, any other 5xx and a broken connection are no connection, waited for by their
 // Retry-After when they name one; app.pass_invalid drops the pass held and tells the link. No address goes into an error.
@@ -250,7 +251,10 @@ func (client *Client) send(ctx context.Context, through *http.Client, method, pa
 			return nil, domain.ErrPassInvalid
 		}
 		return nil, domain.ErrPassReplaced
-	case response.StatusCode == http.StatusTooManyRequests && (appwork.Quota(problem.Code) || problem.Code == appwork.CodeBusy):
+	case response.StatusCode == http.StatusTooManyRequests && (appwork.Quota(problem.Code) || problem.Code == appwork.CodeBusy ||
+		strings.HasPrefix(problem.Code, "saga_transfer.")):
+		// A refusal of the tier, ai.busy and the busy saves of a transfer of a saga (specs/2026-11-16-desk-site-saga.md TR4.2)
+		// answer their operation and keep the client from nothing.
 		return nil, refusal
 	case response.StatusCode == http.StatusTooManyRequests:
 		client.wait(waitOf(retry, client.now()))

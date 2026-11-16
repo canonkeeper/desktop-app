@@ -341,6 +341,46 @@ func TestTheWriterRefusesWhatTheReaderRefuses(t *testing.T) {
 	}
 }
 
+// SF1.10: a paragraph with a break of a line inside — a line of verse, a break of a line in Word — is a paragraph of the
+// book as the import keeps it: the writer writes it, the reader takes it as it is and the card of its chapter is taken; a
+// carriage return and other signs of control stay refused.
+func TestAParagraphWithABreakOfALineGoesIntoTheFile(t *testing.T) {
+	fixture := newFixture(t)
+	fixture.chapters[0].Paragraphs[0].Markdown = "Мара поднялась к перевалу\nна *рассвете*."
+	fixture.cards[0] = fixtureCard(t, fixture.chapters[0], `{"summary":"Мара идёт через перевал."}`)
+	archive, err := read(t, fixture.write(t, nil))
+	if err != nil {
+		t.Fatalf("the reader refused a paragraph with a break of a line: %v", err)
+	}
+	var first Chapter
+	if err := archive.EachChapter(func(chapter Chapter) error {
+		if chapter.Ref == chapterOne {
+			first = chapter
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := first.Paragraphs[0].Markdown; got != "Мара поднялась к перевалу\nна *рассвете*." {
+		t.Fatalf("the paragraph read again = %q", got)
+	}
+	if !archive.Cards[0].Accepted {
+		t.Fatal("the card of a chapter with a break of a line is not taken")
+	}
+	for _, sign := range []string{"\r", "\r\n", "\v", "\f", "\u0085"} {
+		writer := NewWriter(&bytes.Buffer{})
+		chapters, err := writer.Chapters()
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := fixtureChapters()[0]
+		bad.Paragraphs[0].Markdown = "Строка" + sign + "строка"
+		if err := chapters.Add(bad); !errors.Is(err, ErrUnwritable) {
+			t.Fatalf("a paragraph with %q = %v; want it refused", sign, err)
+		}
+	}
+}
+
 // SF1.10, SF3.1: the names of a saga, a book and a chapter pass the checks of their domains — words within the limit, no
 // zero — so a tab or another sign the product keeps in a name does not stop the save, and the file opens.
 func TestTheNamesOfTheProductGoAsTheyAre(t *testing.T) {

@@ -80,12 +80,17 @@ func (callback LinkCallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeCallback is a page of the return: plain HTML of one paragraph.
+// writeCallback is a page of the return: plain HTML of one paragraph under the name of the app.
 func writeCallback(w http.ResponseWriter, status int, words string) {
+	writePage(w, status, "CanonKeeper", words)
+}
+
+// writePage is a page of the return of its heading and one paragraph: plain HTML, not kept by the browser.
+func writePage(w http.ResponseWriter, status int, heading, words string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(`<!doctype html><html lang="ru"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width, initial-scale=1"><title>CanonKeeper</title></head>` +
-		`<body><main><h1>CanonKeeper</h1><p>` + html.EscapeString(words) + `</p></main></body></html>`))
+		`<body><main><h1>` + html.EscapeString(heading) + `</h1><p>` + html.EscapeString(words) + `</p></main></body></html>`))
 }

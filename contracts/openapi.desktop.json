@@ -6405,6 +6405,227 @@
         "x-authz": "The session of the window of the one local author; only the owner of the saga, any other saga is 404."
       }
     },
+    "/desktop/saga-transfer": {
+      "get": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "getSiteSagaTransfer",
+        "summary": "Read the transfer of a saga from the site.",
+        "description": "Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.2): the one transfer of a saga from the site of this run — none, waiting for the author on the page /transfer with its address and term, downloading with the bytes taken (the site names no length, so no percent), opening, done with the new saga and the report of the open, or failed with one code of a closed list. The session of the window.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transfer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSagaTransfer"
+                },
+                "examples": {
+                  "downloading": {
+                    "summary": "Synthetic transfer",
+                    "value": {
+                      "id": "00000000-0000-4000-8000-000000000201",
+                      "phase": "downloading",
+                      "address": null,
+                      "expiresAt": null,
+                      "email": null,
+                      "name": "Северный предел.cksaga",
+                      "bytes": 7340032,
+                      "code": null,
+                      "projectId": null,
+                      "opened": null
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-backend-purpose": "resource/read",
+        "x-authz": "The session of the window of the one local author of the computer; no project is involved."
+      },
+      "post": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "startSiteSagaTransfer",
+        "summary": "Start a transfer of a saga from the site.",
+        "description": "Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.1): a linked app makes a PKCE verifier and a state of 32 random bytes each, living 10 minutes and only in memory with the proof of the session of the window, announces the transfer on the site under its pass and answers the address of the page /transfer of the site with the number of the request, the state and the port of the window, and the address of the account hidden after its first letter. A new start replaces a transfer that waits. While an update is installed it is 409 desktop.updating, while a transfer downloads or opens 409 saga_transfer.running, without a link 409 account.not_linked; a site that did not take the request leaves the transfer failed with its code. Ten a minute. The strict Origin of the window, the CSRF token and its session.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transfer waits for the author, or failed with its code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSagaTransfer"
+                },
+                "examples": {
+                  "waiting": {
+                    "summary": "Synthetic transfer",
+                    "value": {
+                      "id": "00000000-0000-4000-8000-000000000201",
+                      "phase": "waiting",
+                      "address": "https://canonkeeper.example.test/transfer?port=24567&request=00000000-0000-4000-8000-000000000301&state=state-example-000000000000000000000000000",
+                      "expiresAt": "2026-11-16T09:40:00.000Z",
+                      "email": "a…@example.test",
+                      "name": null,
+                      "bytes": null,
+                      "code": null,
+                      "projectId": null,
+                      "opened": null
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-strict-origin-required": true,
+        "x-backend-purpose": "resource/command",
+        "x-authz": "The session of the window of the one local author of the computer; no project is involved."
+      },
+      "delete": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "cancelSiteSagaTransfer",
+        "summary": "Stop a transfer of a saga from the site, or put its outcome away.",
+        "description": "Mounted only by the desktop build (specs/2026-11-16-desk-site-saga.md TR2.2): the transfer the body names by its id — a transfer that waits or downloads stops — failed canceled, its file removed —; one that opens is 409 saga_transfer.opening; a done or failed one goes, and the transfer is none. Another id — a transfer put away or replaced by a new start meanwhile — changes nothing: the answer is the transfer as it is. Thirty a minute. The strict Origin of the window, the CSRF token and its session.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteSagaTransferCancel"
+              },
+              "examples": {
+                "canceled": {
+                  "summary": "The transfer the page shows",
+                  "value": {
+                    "id": "00000000-0000-4000-8000-000000000201"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The transfer after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSagaTransfer"
+                },
+                "examples": {
+                  "canceled": {
+                    "summary": "Synthetic transfer",
+                    "value": {
+                      "id": "00000000-0000-4000-8000-000000000201",
+                      "phase": "failed",
+                      "address": null,
+                      "expiresAt": null,
+                      "email": null,
+                      "name": null,
+                      "bytes": null,
+                      "code": "canceled",
+                      "projectId": null,
+                      "opened": null
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-strict-origin-required": true,
+        "x-backend-purpose": "resource/command",
+        "x-authz": "The session of the window of the one local author of the computer; no project is involved."
+      }
+    },
     "/desktop/account": {
       "get": {
         "tags": [
@@ -17369,6 +17590,146 @@
             "maxLength": 1280,
             "pattern": "^\\S+$",
             "description": "The key of the provider: up to 1280 bytes of UTF-8 without spaces or control characters."
+          }
+        }
+      },
+      "SiteSagaTransfer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "phase",
+          "address",
+          "expiresAt",
+          "email",
+          "name",
+          "bytes",
+          "code",
+          "projectId",
+          "opened"
+        ],
+        "description": "specs/2026-11-16-desk-site-saga.md TR2.2: the one transfer of a saga from the site of this run of the app.",
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The transfer; null when there is none."
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "none",
+              "waiting",
+              "downloading",
+              "opening",
+              "done",
+              "failed"
+            ],
+            "description": "none — no transfer; waiting — for the author on the page /transfer; downloading — the saga comes from the site; opening — the saga file opens as a new saga; done — the saga is open; failed — with its code."
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "While it waits: the page /transfer of the site with the request, the state and the port of the window; nothing of the author."
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "While it waits: until when."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "While it waits: the address of the account of the link hidden after its first letter, as the site told it."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Once the site sent the file: its name as the site named it, only to be shown."
+          },
+          "bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "While it downloads and opens: the bytes of the file taken."
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "expired",
+              "canceled",
+              "transfer_invalid",
+              "gone",
+              "busy",
+              "unreachable",
+              "not_linked",
+              "download_cut",
+              "too_large",
+              "no_space",
+              "session_ended",
+              "updating",
+              "unexpected",
+              "saga_archive.not_archive",
+              "saga_archive.damaged",
+              "saga_archive.newer_version",
+              "saga_archive.too_large",
+              "saga_archive.invalid",
+              "saga_archive.no_space",
+              null
+            ],
+            "description": "Why it failed: the request ran out, the author stopped it, the site refused the code, the saga went from the site, the saves of the site were busy beyond the term of the code, the site did not answer, the link is gone, the download broke or went silent, the file is over 1 GiB, no place on the disk, the window was restarted, an update closed the app to transfers, an unexpected failure — or the code of the open of the saga file."
+          },
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Once done: the new saga."
+          },
+          "opened": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SagaArchiveOpened"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Once done: what the saga file brought, as openSagaArchive answers it."
+          }
+        }
+      },
+      "SiteSagaTransferCancel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "description": "specs/2026-11-16-desk-site-saga.md TR2.2: the transfer the page stops or whose outcome it puts away.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The id of the transfer as getSiteSagaTransfer named it."
           }
         }
       },

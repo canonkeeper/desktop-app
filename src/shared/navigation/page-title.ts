@@ -45,6 +45,8 @@ export const sectionTitles: Readonly<Record<Surface, string | null>> = {
   saga: 'Карта',
   settings: 'Настройки',
   tariff: 'Тариф',
+  // The page /transfer of the site (specs/2026-11-16-desk-site-saga.md TR3.2).
+  transfer: 'Перенести сагу в приложение',
   unknown: 'Страница не найдена',
   writing: 'Письмо',
 };

@@ -89,8 +89,9 @@ func stamped(at time.Time) bool { return !at.IsZero() }
 
 func int32Range(value, low int) bool { return value >= low && value <= math.MaxInt32 }
 
-// validMarkdown is a paragraph of the book as the import of a book keeps it: no zero, no sign of control but the tab, no
-// lost sign; the Markdown is of the subset of the faces (read and written back it is the same) and its words are not empty.
+// validMarkdown is a paragraph of the book as the import of a book keeps it: no zero, no sign of control but the tab and the
+// line break (a line of verse or a break of a line in Word stays inside its paragraph, and the site keeps it so), no lost
+// sign; the Markdown is of the subset of the faces (read and written back it is the same) and its words are not empty.
 // The brackets ⟦⟧⟨⟩⟪⟫ are signs of the words of a book — every kind of file an import takes keeps them — and a draft makes
 // them brackets when it takes the text of a chapter (textface.Marked), so they are carried as they are.
 func validMarkdown(markdown string) bool {
@@ -98,7 +99,7 @@ func validMarkdown(markdown string) bool {
 		return false
 	}
 	if strings.ContainsFunc(markdown, func(r rune) bool {
-		return r == 0 || r != '\t' && unicode.IsControl(r) || r == utf8.RuneError
+		return r == 0 || r != '\t' && r != '\n' && unicode.IsControl(r) || r == utf8.RuneError
 	}) {
 		return false
 	}

@@ -171,7 +171,8 @@ func TestAnEvilFileLeavesNoTrace(t *testing.T) {
 }
 
 // SF3.3, SF3.12: a file opened twice with two keys is two sagas, the second named by the date of its file and the first
-// unchanged; the same request twice is one saga and one answer; the key with another file is a conflict.
+// unchanged; the same request twice is one saga and one answer; the key with another file is a conflict. A saga transferred
+// from the site whose name is taken is named as one from the site (specs/2026-11-16-desk-site-saga.md TR5.2).
 func TestAFileOpensOncePerKey(t *testing.T) {
 	world := newWorld(t, "ck_saga_file_key")
 	file := northernLimit(t, fixtureOptions{})
@@ -193,6 +194,10 @@ func TestAFileOpensOncePerKey(t *testing.T) {
 		if !slices.Equal(values, after[part]) {
 			t.Fatalf("the %s of the first saga changed: %v → %v", part, values, after[part])
 		}
+	}
+	transferred, err := world.openFrom(file, "the-transfer-key", service.FromSite)
+	if err != nil || transferred.Name != "Северный предел — с сайта от 12.11.2026" || !transferred.Renamed {
+		t.Fatalf("a saga transferred from the site = %+v %v", transferred, err)
 	}
 }
 

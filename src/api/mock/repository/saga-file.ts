@@ -76,18 +76,10 @@ export function createSagaFileOperations(context: MockRepositoryContext): SagaFi
           chatsNotRead?: string[]; leftOut?: Report['leftOut']; sections?: string[];
         };
         if ((manifest.version ?? 1) > 1) refuse(422, 'saga_archive.newer_version', 'the file is not a saga file this app opens');
-        const name = manifest.saga?.name?.trim() || file.name.replace(/\.cksaga$/iu, '');
-        const taken = context.state.projects.some((project) => project.title === name);
-        const title = taken ? `${name} — из файла от ${dayOf(manifest.createdAt ?? now)}` : name;
-        const project = openedSaga(context, title);
-        return {
-          projectId: project.id, name: title, renamed: taken,
-          report: {
-            books: 1, chapters: 2, cards: 2, chaptersWithoutCards: { count: 0, places: [] }, namesFresh: true, threads: false,
-            materials: 0, memory: 0, notes: 0, chats: 2, chatsNotRead: manifest.chatsNotRead ?? [], coversSkipped: [],
-            leftOut: manifest.leftOut ?? nothingLeftOut, sections: manifest.sections ?? [],
-          },
-        } satisfies OperationResponse<'openSagaArchive', '201'>;
+        return openSagaOfFile(context, {
+          from: 'file', name: manifest.saga?.name?.trim() || file.name.replace(/\.cksaga$/iu, ''), createdAt: manifest.createdAt ?? now,
+          chatsNotRead: manifest.chatsNotRead ?? [], leftOut: manifest.leftOut ?? nothingLeftOut, sections: manifest.sections ?? [],
+        });
       });
     },
 
@@ -110,6 +102,35 @@ export function createSagaFileOperations(context: MockRepositoryContext): SagaFi
       const keys = new Set(chat.turns.flatMap((turn) => [...(turn.answer ?? '').matchAll(/source:([a-z0-9]+)\//gu)].map((match) => match[1]!)));
       const { projectId: _projectId, ...transcript } = clone(chat);
       return { ...transcript, places: Object.fromEntries([...keys].flatMap((key) => (places.has(key) ? [[key, places.get(key)!]] : []))) };
+    },
+  };
+}
+
+/** What the manifest of a saga file tells the open of the mock, and where the file came from: chosen, or the site. */
+export interface SagaOfFile {
+  from: 'file' | 'site';
+  name: string;
+  createdAt: string;
+  chatsNotRead: string[];
+  leftOut: Report['leftOut'];
+  sections: string[];
+}
+
+/**
+ * The open of a saga file in the mock — «Открыть файл саги» and the transfer of a saga from the site
+ * (specs/2026-11-16-desk-site-saga.md TR5.2) open a file the same way: a saga of this name already there makes the new one
+ * «… — из файла от …» — «… — с сайта от …» of a transfer —, and the report is as the server writes it.
+ */
+export function openSagaOfFile(context: MockRepositoryContext, file: SagaOfFile): OperationResponse<'openSagaArchive', '201'> {
+  const taken = context.state.projects.some((project) => project.title === file.name);
+  const title = taken ? `${file.name} — ${file.from === 'site' ? 'с сайта' : 'из файла'} от ${dayOf(file.createdAt)}` : file.name;
+  const project = openedSaga(context, title);
+  return {
+    projectId: project.id, name: title, renamed: taken,
+    report: {
+      books: 1, chapters: 2, cards: 2, chaptersWithoutCards: { count: 0, places: [] }, namesFresh: true, threads: false,
+      materials: 0, memory: 0, notes: 0, chats: 2, chatsNotRead: file.chatsNotRead, coversSkipped: [],
+      leftOut: file.leftOut, sections: file.sections,
     },
   };
 }

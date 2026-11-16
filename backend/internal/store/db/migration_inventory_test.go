@@ -19,8 +19,8 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 160 {
-		t.Fatalf("migration inventory length = %d, want 160", len(inventory))
+	if len(inventory) != 161 {
+		t.Fatalf("migration inventory length = %d, want 161", len(inventory))
 	}
 	if inventory[0].Version != 0 || inventory[0].Name != "0000_schema_migrations.sql" {
 		t.Fatalf("first migration = %+v", inventory[0])
@@ -444,6 +444,9 @@ func TestMigrationInventoryIsSequentialAndImmutable(t *testing.T) {
 	}
 	if inventory[159].Version != 159 || inventory[159].Name != "0159_desktop_app_page.sql" {
 		t.Fatalf("the switch of the page of the app migration = %+v", inventory[159])
+	}
+	if inventory[160].Version != 160 || inventory[160].Name != "0160_app_saga_transfers.sql" {
+		t.Fatalf("the transfer of a saga of the site to the app migration = %+v", inventory[160])
 	}
 	if inventory[64].Version != 64 || inventory[64].Name != "0064_illustration_checks.sql" {
 		t.Fatalf("illustration checks migration = %+v", inventory[64])

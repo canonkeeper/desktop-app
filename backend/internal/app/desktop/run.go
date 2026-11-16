@@ -250,7 +250,8 @@ func Run(ctx context.Context, options Options) (err error) {
 	defer gateway.Close()
 	desktop := &build{
 		host: listener.Addr().String(), authorID: authorID, codes: codes, files: webFiles(), version: options.Version,
-		state: appState(data, options.Version, saved, networkUses(account, options.Site, account.network(saved, options.Site), ownNetwork(saved.AI), updates.network),
+		state: appState(data, options.Version, saved, networkUses(account, options.Site, account.network(saved, options.Site), ownNetwork(saved.AI), updates.network,
+			account.transferNetwork(options.Site)),
 			proxyOfTheNetwork(os.Getenv, account, options.Site, saved.AI)),
 		settings: saved, secrets: appSecrets, shell: eraseShell{send: channel.send}, gateway: gateway, updates: updates, logger: logger, account: *account,
 		work: work, site: options.Site, resumeEvery: options.ResumeEvery,

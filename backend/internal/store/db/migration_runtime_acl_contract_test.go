@@ -53,6 +53,9 @@ var productRuntimeTableContract = roleTableContract{
 				// The codes of the link of the app and the linked apps of an account (0143, specs/2026-11-13-desk-link.md):
 				// they go with the account.
 				"app_link_codes", "app_devices",
+				// The requests and the codes of the transfer of a saga of the site to the linked app (0160,
+				// specs/2026-11-16-desk-site-saga.md TR3.4): they go with the account, the app and the saga.
+				"app_saga_transfers",
 				// The permits of a linked app to work on the models of the site and the corrections under them (0144,
 				// specs/2026-11-13-desk-permits.md): they go with the account. 0144 also adds the returns on the word of an app
 				// to the writer's limits, the platform's and the writer's day: columns of the same rows, the same privileges.

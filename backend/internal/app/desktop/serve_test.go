@@ -83,7 +83,7 @@ func serveRequest(handler http.Handler, method, target, host string, headers map
 func TestARequestForAnotherHostGets421(t *testing.T) {
 	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
 	for _, host := range []string{"evil.example", "localhost:43123", "127.0.0.1", "127.0.0.1:1", "[::1]:43123"} {
-		for _, target := range []string{"/", "/api/v1/projects", "/healthz", "/api/v1/desktop/session", "/desktop/link/callback?code=c&state=s"} {
+		for _, target := range []string{"/", "/api/v1/projects", "/healthz", "/api/v1/desktop/session", "/desktop/link/callback?code=c&state=s", "/desktop/transfer/callback?code=c&state=s"} {
 			response := serveRequest(handler, http.MethodGet, target, host, nil)
 			if response.Code != http.StatusMisdirectedRequest || response.Body.Len() != 0 {
 				t.Errorf("Host %s, %s = %d %q; want 421 without a body", host, target, response.Code, response.Body.String())
@@ -266,6 +266,61 @@ func TestTheOperationsOfTheLinkNeedTheSessionOfTheWindow(t *testing.T) {
 		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"auth.session_required"`) ||
 			strings.Contains(response.Body.String(), "/link?") {
 			t.Errorf("%s %s without the session = %d %s", request.method, request.target, response.Code, response.Body.String())
+		}
+	}
+}
+
+// specs/2026-11-16-desk-site-saga.md TR5.1: the window has two routes without its session — the returns of /link and of
+// /transfer —; every other path outside the API is the page. A return of a transfer it does not take — another method, no
+// waiting, a code of another shape, another query — is 403 with the page of its refusal, under the headers of the page and
+// not kept by the browser, and the page repeats nothing of the request.
+func TestTheWindowHasTwoReturnsWithoutItsSession(t *testing.T) {
+	handler := desktopHandler(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	const code, state = "code-of-the-test-north-00000000000000000000", "state-of-the-test-north-0000000000000000000"
+	returns := map[string]string{
+		"/desktop/link/callback":     "Эта ссылка связи уже не действует. Вернитесь в CanonKeeper и свяжите приложение ещё раз",
+		"/desktop/transfer/callback": "Эта ссылка переноса уже не действует. Вернитесь в CanonKeeper и начните перенос снова",
+	}
+	for _, path := range []string{"/desktop/link/callback", "/desktop/transfer/callback", "/desktop/callback", "/desktop/saga-transfer",
+		"/desktop/transfer", "/desktop/link", "/desktop/other/callback", "/transfer/callback"} {
+		response := serveRequest(handler, http.MethodGet, path+"?code="+code+"&state="+state, testHost, nil)
+		words, isReturn := returns[path]
+		switch {
+		case isReturn && (response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), words)):
+			t.Errorf("the return %s = %d %s", path, response.Code, response.Body.String())
+		case !isReturn && (response.Code != http.StatusOK || response.Body.String() != "<!doctype html>"):
+			t.Errorf("%s is not the page: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	for _, request := range []struct{ method, target string }{
+		{http.MethodGet, "/desktop/transfer/callback?code=" + code + "&state=" + state},
+		{http.MethodPost, "/desktop/transfer/callback?code=" + code + "&state=" + state},
+		{http.MethodHead, "/desktop/transfer/callback?code=" + code + "&state=" + state},
+		{http.MethodGet, "/desktop/transfer/callback?code=short&state=" + state},
+		{http.MethodGet, "/desktop/transfer/callback?code=" + code},
+		{http.MethodGet, "/desktop/transfer/callback?code=" + code + "&state=" + state + "&state=" + state},
+		{http.MethodGet, "/desktop/transfer/callback?code=" + code + "&state=" + state + "&more=1"},
+		{http.MethodGet, "/desktop/transfer/callback"},
+	} {
+		response := serveRequest(handler, request.method, request.target, testHost, nil)
+		body := response.Body.String()
+		if response.Code != http.StatusForbidden || response.Header().Get("Cache-Control") != "no-store" ||
+			response.Header().Get("Content-Security-Policy") == "" || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s %s = %d %v", request.method, request.target, response.Code, response.Header())
+		}
+		if request.method == http.MethodHead {
+			continue
+		}
+		if !strings.Contains(body, returns["/desktop/transfer/callback"]) || strings.Contains(body, "<script") || strings.Contains(body, "style") ||
+			strings.Contains(body, code) || strings.Contains(body, "state-of") || strings.Contains(body, "short") {
+			t.Errorf("%s %s = %s", request.method, request.target, body)
+		}
+	}
+	// The operations of the transfer are the window's: without its session they are the 401 of the site.
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		response := serveRequest(handler, method, "/api/v1/desktop/saga-transfer", testHost, map[string]string{"Origin": "http://" + testHost})
+		if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), `"auth.session_required"`) {
+			t.Errorf("%s /api/v1/desktop/saga-transfer without the session = %d %s", method, response.Code, response.Body.String())
 		}
 	}
 }

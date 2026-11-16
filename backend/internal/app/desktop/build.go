@@ -20,7 +20,6 @@ import (
 	"canonkeeper/backend/internal/auth"
 	"canonkeeper/backend/internal/config"
 	httpdesktop "canonkeeper/backend/internal/delivery/http/desktop"
-	httpsagaarchive "canonkeeper/backend/internal/delivery/http/sagaarchive"
 	accountdomain "canonkeeper/backend/internal/domain/accountlink"
 	agentdomain "canonkeeper/backend/internal/domain/agent"
 	"canonkeeper/backend/internal/domain/aisettings"
@@ -296,7 +295,7 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 	// specs/2026-11-15-desk-mcp.md: the door for the programs of the author, once the core is built.
 	open.Programs = desktop.useProgramDoor(core, sagas, journal)
 	stopTurns := stop.Execute
-	desktop.updates.useTurns(service.CountChatTurns{Projects: sagas, Jobs: core.JobService, LocalAuthorID: desktop.authorID}.Execute)
+	desktop.useTransfers(core, desktop.account.client, service.CountChatTurns{Projects: sagas, Jobs: core.JobService, LocalAuthorID: desktop.authorID}.Execute)
 	desktop.mu.Lock()
 	desktop.stopTurns, desktop.codex, desktop.catchUp = stopTurns, core.Codex, core.CatchUpReading
 	desktop.resume = &readingservice.Resume{
@@ -310,8 +309,8 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 			Routes: func(router chi.Router) {
 				sessionHandlers.Mount(router)
 				open.Mount(router)
-				// «Открыть файл саги» (specs/2026-11-13-desk-sagafile.md SF3.12): only the app opens a saga file.
-				httpsagaarchive.MountOpen(router, core.SagaArchiveOpen, app.SagaArchiveTemp(core), sessions, core.Config.AllowedOrigins)
+				// «Открыть файл саги» and «Перенести сагу с сайта»: only the app opens a saga file and transfers one from the site.
+				desktop.mountSagaFiles(router, core, sessions)
 				// The bridge with a vault of Obsidian (specs/2026-11-13-desk-obsidian.md): only the app reads a folder of the author.
 				desktop.obsidian.handlers(core, desktop.helper().reads, readingPolicy.allowed, sessions).Mount(router)
 			},
@@ -344,11 +343,7 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 			if desktop.ready != nil {
 				desktop.ready()
 			}
-			// A check that runs as the app stops is canceled before the gateway closes, and keeps nothing (PB2.1).
-			return nil, func(context.Context) error {
-				checks.Stop()
-				return nil
-			}
+			return nil, desktop.stopModules(checks)
 		},
 	}
 	if desktop.work != nil {
@@ -440,15 +435,16 @@ func (desktop *build) AIChanged(ctx context.Context) {
 }
 
 // serve is the root handler (DA3.4, DA3.6): a Host other than 127.0.0.1:P gets 421, the API and the readiness checks go
-// to the core, the return of the page /link of the site is the one route without the session of the window
-// (specs/2026-11-13-desk-account.md AC1.2), every other path is the embedded page, and every answer carries the headers
-// of the page.
+// to the core, the returns of the pages /link and /transfer of the site are the two routes without the session of the
+// window (specs/2026-11-13-desk-account.md AC1.2; specs/2026-11-16-desk-site-saga.md TR5.1), every other path is the
+// embedded page, and every answer carries the headers of the page.
 func (desktop *build) serve(api http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", api)
 	mux.Handle("/healthz", api)
 	mux.Handle("/readyz", api)
 	mux.Handle("/desktop/link/callback", desktop.account.callback())
+	mux.Handle("/desktop/transfer/callback", httpdesktop.TransferCallback{Finish: desktop.account.transfers.Finish})
 	mux.Handle("/", page(desktop.files))
 	return httpapi.RequireHost(desktop.host)(withPageHeaders(mux))
 }
@@ -500,6 +496,9 @@ var windowRateLimits = map[string]ratelimit.Rule{
 	"importObsidianMaterials": {Limit: 10, Window: time.Minute},
 	// The map and the notes of the chapters are exported by a button (specs/2026-11-15-desk-obsidian-export.md OE1.1).
 	"exportObsidianSaga": {Limit: 10, Window: time.Minute},
+	// A transfer of a saga from the site starts and stops by a button (specs/2026-11-16-desk-site-saga.md TR2).
+	"startSiteSagaTransfer":  {Limit: 10, Window: time.Minute},
+	"cancelSiteSagaTransfer": {Limit: 30, Window: time.Minute},
 	// The journal is cleared and saved to a file by a button (specs/2026-11-14-desk-journal.md JR2.5, JR2.6); the file reads
 	// the whole choice, the heaviest read of the window.
 	"clearSendLog":   {Limit: 10, Window: time.Minute},

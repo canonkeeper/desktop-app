@@ -77,3 +77,48 @@ describe('the window «Сага открыта» says', () => {
     expect(notes[1]!.places).toEqual(['Книга 1, гл. 1 „Туманный берег“', 'Книга 2, гл. 12 „Белый порт“']);
   });
 });
+
+// specs/2026-11-16-desk-site-saga.md TR6.2 (the decision of the pages, 16.11): a saga transferred from the site is said in the
+// words of the site, not of a file — the author saw no file.
+describe('the window «Сага открыта» of a saga transferred from the site says', () => {
+  const site = (report: Partial<SagaArchiveReport>, more: Partial<SagaArchiveOpened> = {}) => openedWords(opened(report, more), 'site').notes.map((note) => note.text);
+
+  it('the same first line and the same notes of the name, of the chapters the helper does not know and of the covers', () => {
+    expect(openedWords(opened({}), 'site')).toEqual(openedWords(opened({})));
+    expect(site({}, { renamed: true, name: 'Хроники Белого порта — с сайта от 16.11.2026' })).toEqual([
+      'Сага с таким названием уже есть — эта названа „Хроники Белого порта — с сайта от 16.11.2026“',
+    ]);
+    expect(site({ chaptersWithoutCards: { count: 5, places: [] } })).toEqual(['Помощник ещё не знает 5 глав: он прочитает их, когда вы подключите помощника']);
+    expect(site({ coversSkipped: ['Белый порт'] })).toEqual(['Обложка книги „Белый порт“ не перенеслась']);
+  });
+
+  it('chapters at work and drawings — and the sections of the workshops — in one line: they stayed on the site', () => {
+    const line = ['Главы в работе и рисунки остались на сайте — приложение их не открывает'];
+    expect(site(left({ drafts: 3, drawings: 12 }))).toEqual(line);
+    expect(site(left({ drafts: 1 }))).toEqual(line);
+    expect(site(left({ drawings: 1 }))).toEqual(line);
+    expect(site({ sections: ['workshops/writing/drafts.jsonl'] })).toEqual(line);
+    expect(site({ ...left({ drafts: 3, drawings: 12 }), sections: ['workshops/writing/drafts.jsonl', 'workshops/drawings/drawings.jsonl'] })).toEqual(line);
+  });
+
+  it('what of «Недавно удалённые», of the other members and of the chats the site did not give', () => {
+    expect(site(left({ trashedBooks: 1, trashedChapters: 4 }))).toEqual(['Не перенеслись 1 книга и 4 главы из „Недавно удалённых“ — они остались на сайте']);
+    expect(site(left({ trashedBooks: 1 }))).toEqual(['Не перенеслась 1 книга из „Недавно удалённых“ — она осталась на сайте']);
+    expect(site(left({ trashedChapters: 4 }))).toEqual(['Не перенеслись 4 главы из „Недавно удалённых“ — они остались на сайте']);
+    expect(site(left({ othersTurns: 14 }))).toEqual(['Не перенеслись 14 вопросов других участников саги']);
+    expect(site(left({ othersTurns: 1 }))).toEqual(['Не перенёсся 1 вопрос других участников саги']);
+    expect(site({ chatsNotRead: ['Кто убил капитана', 'Хронология осады'] })).toEqual([
+      'Не перенеслись 2 чата: „Кто убил капитана“, „Хронология осады“ — их не удалось прочитать на сайте',
+    ]);
+    expect(site({ chatsNotRead: ['Кто убил капитана'] })).toEqual(['Не перенёсся 1 чат: „Кто убил капитана“ — его не удалось прочитать на сайте']);
+  });
+
+  it('every note at once without a word of a file or of a link', () => {
+    const { notes } = openedWords(opened({
+      chaptersWithoutCards: { count: 5, places: ['Книга 1, гл. 1 „Туманный берег“'] }, chatsNotRead: ['Кто убил капитана'], coversSkipped: ['Белый порт'],
+      ...left({ drafts: 3, drawings: 12, trashedBooks: 1, trashedChapters: 4, othersTurns: 14 }), sections: ['workshops/writing/drafts.jsonl'],
+    }, { renamed: true, name: 'Хроники Белого порта — с сайта от 16.11.2026' }), 'site');
+    expect(notes.map((note) => note.key)).toEqual(['name', 'unknown', 'chats', 'covers', 'workshops', 'trash', 'others']);
+    expect(notes.map((note) => note.text).join(' ')).not.toMatch(/файл|Свяжите/u);
+  });
+});

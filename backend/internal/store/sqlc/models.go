@@ -59,6 +59,19 @@ type AppLinkCode struct {
 	UsedAt    pgtype.Timestamptz `json:"used_at"`
 }
 
+type AppSagaTransfer struct {
+	ID            pgtype.UUID        `json:"id"`
+	DeviceID      pgtype.UUID        `json:"device_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Challenge     string             `json:"challenge"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	CodeHash      pgtype.Text        `json:"code_hash"`
+	CodeExpiresAt pgtype.Timestamptz `json:"code_expires_at"`
+	UsedAt        pgtype.Timestamptz `json:"used_at"`
+}
+
 type AppTextPrint struct {
 	UserID  pgtype.UUID        `json:"user_id"`
 	Print   []byte             `json:"print"`

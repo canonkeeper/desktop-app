@@ -177,6 +177,10 @@ type Core struct {
 	// SagaArchiveOpen opens a saga file as a new saga, mounted by a build that has the operation (SF3.12).
 	SagaFiles       *tempfiles.Directory
 	SagaArchiveOpen *sagaarchiveservice.OpenSaga
+	// SagaArchiveExport builds the save of a saga into its file with what the build tells of it: every save of the process —
+	// getSagaArchive and the transfer of a saga to the app — goes through the one gate it holds
+	// (specs/2026-11-16-desk-site-saga.md TR1.1).
+	SagaArchiveExport func(SagaArchive) *sagaarchiveservice.ExportSaga
 }
 
 // ChatUseCases are the use cases of the chat other modules ask it through, and the deletion of the native tree of a
@@ -828,7 +832,7 @@ func composeProduct(
 	missingLayers := sagalayerservice.NewQueueMissingLayers(sagaRepository, layerQueue)
 	queues := readingQueues{cards: missingCards, layers: missingLayers, due: layerQueue, layer: extension.Workers.Layer > 0}
 	core.CatchUpReading, core.QueueReading = queues.CatchUp, queues.Queue
-	sagaArchiveGate := sagaarchiveservice.NewGate(time.Now)
+	core.SagaArchiveExport = sagaArchiveExports(sagaarchiverepo.New(db), coverFiles, clients, tempFilesPort{core.SagaFiles}, time.Now)
 	// «Открыть файл саги» (specs/2026-11-13-desk-sagafile.md SF3): the stores of the saga and its books with the quota fence
 	// of the build and the files of the covers; a build that has the operation mounts it (SF3.12).
 	core.SagaArchiveOpen = &sagaarchiveservice.OpenSaga{
@@ -959,10 +963,7 @@ func composeProduct(
 			).Mount(router)
 			httplibrary.MountBookExport(router, coverservice.NewExportBook(coverRepository, coverGet, time.Now).WithPictures(modules.BookPictures), currentUser)
 			// «Сохранить сагу в файл» (specs/2026-11-13-desk-sagafile.md SF2): the open core of both builds.
-			httpsagaarchive.MountExport(router, &sagaarchiveservice.ExportSaga{
-				Snapshot: sagaarchiverepo.New(db), Covers: coverFiles, Threads: clients, Temp: tempFilesPort{core.SagaFiles},
-				Gate: sagaArchiveGate, Drawings: modules.SagaArchive.Drawings, CreatedBy: modules.SagaArchive.CreatedBy, Now: time.Now,
-			}, currentUser)
+			httpsagaarchive.MountExport(router, core.SagaArchiveExport(modules.SagaArchive), currentUser)
 			// The chats a saga file brought, to read (SF3.8).
 			httpsagaarchive.MountTranscripts(router, sagaarchiveservice.ListTranscripts{Store: sagaTranscripts},
 				sagaarchiveservice.GetTranscript{Store: sagaTranscripts, Outlines: saga}, currentUser)

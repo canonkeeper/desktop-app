@@ -4,6 +4,7 @@ import type { AuthFailure, CurrentUser } from '../entities/session/api';
 import type { CanonKeeperApiClient } from '../shared/api';
 import type { AppRoute, RouteNavigate, Surface } from '../shared/navigation/app-route';
 import type { ToastInput } from '../ui/feedback/useToastQueue';
+import type { SagaMenuItem } from '../ui/navigation/SagaMenu';
 import type { SagaSection } from '../ui/saga-sections';
 
 /**
@@ -30,8 +31,9 @@ export interface Edition {
    */
   useSectionMarks?: (route: AppRoute, saga: SectionMarksSaga) => SectionMarks;
   /**
-   * The closed block of «Настроить сагу» of the edition: «Скачать сагу файлом…» of the site
-   * (specs/2026-11-13-desk-sagafile-web.md SW4). An edition without one has nothing there.
+   * The block of the saga of the edition around the shell: «Скачать сагу файлом…» of «Настроить сагу» of the site
+   * (specs/2026-11-13-desk-sagafile-web.md SW4), the transfer of a saga from the site of the app — its line and its item of the
+   * menu of sagas (specs/2026-11-16-desk-site-saga.md TR6). An edition without one has nothing there.
    */
   useSagaSettingsBlock?: (input: SagaSettingsBlockInput) => SagaSettingsBlock;
 }
@@ -44,7 +46,10 @@ export interface SagaSettingsBlockInput {
   open: boolean;
 }
 
-/** What a block of «Настроить сагу» puts on the page: its item in the window, its line under the top bar, its windows. */
+/**
+ * What a block of the saga puts on the page: its item in the window «Настроить сагу», its line under the top bar, its windows
+ * and its item of the menu of sagas.
+ */
 export interface SagaSettingsBlock {
   /** An item of the window before «Удалить сагу…»; `close` closes the window. Null — none for this author. */
   item: ((close: () => void) => ReactNode) | null;
@@ -52,6 +57,8 @@ export interface SagaSettingsBlock {
   notice: ReactNode;
   /** Its windows over the page. */
   overlay: ReactNode;
+  /** An item of the menu of sagas under «Новая сага»; none — the menu has no item of the block. */
+  menuItem?: SagaMenuItem | null;
 }
 
 /** The saga of the page the marks are read for, and whether its author may change it (specs/2026-11-11-ux9-shelf-chat.md SC3.6). */
@@ -75,8 +82,11 @@ export interface EditionPageProps {
   api: CanonKeeperApiClient;
   navigate: RouteNavigate;
   route: AppRoute;
-  /** Signing out, where the edition signs in. */
-  onLogout?: () => void;
+  /**
+   * Signing out, where the edition signs in; `returnTo` — the page the next sign-in comes back to: «Войти в другой аккаунт» of
+   * /transfer (specs/2026-11-16-desk-site-saga.md TR3.2).
+   */
+  onLogout?: (returnTo?: string) => void;
   user: CurrentUser;
 }
 
@@ -108,7 +118,7 @@ export interface EditionAccount {
   publicPage: ReactNode;
   /** A page that stands instead of the product until the author is known: sign-in and its link pages. */
   signInPage: ReactNode;
-  onLogout?: () => void;
+  onLogout?: (returnTo?: string) => void;
   /** Around the product of the author: the account and what follows it. */
   wrapAccount: (product: ReactNode) => ReactNode;
   /** Around the pages: what lives above them and follows the author from page to page. */

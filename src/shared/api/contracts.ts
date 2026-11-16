@@ -265,6 +265,9 @@ export interface CanonKeeperApiClient {
   setAccountLetters(body: OperationRequest<'setAccountLetters'>): Promise<OperationResponse<'setAccountLetters', '200'>>;
   /** The link of the CanonKeeper app of this computer with the account: the page /link (specs/2026-11-13-desk-link.md LK1). */
   startAppLink(body: OperationRequest<'startAppLink'>): Promise<OperationResponse<'startAppLink', '200'>>;
+  /** The page /transfer of the site (specs/2026-11-16-desk-site-saga.md TR3.2, TR3.3). */
+  getSagaTransferRequest(requestId: string, options?: ApiRequestOptions): Promise<OperationResponse<'getSagaTransferRequest', '200'>>;
+  startSagaTransfer(body: OperationRequest<'startSagaTransfer'>): Promise<OperationResponse<'startSagaTransfer', '200'>>;
   /** «Аккаунт → Приложения на компьютере» (specs/2026-11-13-desk-link.md LK4). */
   listLinkedApps(options?: ApiRequestOptions): Promise<OperationResponse<'listLinkedApps', '200'>>;
   revokeLinkedApp(appId: string): Promise<void>;
@@ -322,6 +325,10 @@ export interface CanonKeeperApiClient {
   startAccountLink(body: OperationRequest<'startAccountLink'>): Promise<OperationResponse<'startAccountLink', '200'>>;
   cancelAccountLink(): Promise<void>;
   unlinkAccount(): Promise<OperationResponse<'unlinkAccount', '200'>>;
+  /** The transfer of a saga from the site in the desktop app (specs/2026-11-16-desk-site-saga.md TR2). */
+  getSiteSagaTransfer(options?: ApiRequestOptions): Promise<OperationResponse<'getSiteSagaTransfer', '200'>>;
+  startSiteSagaTransfer(): Promise<OperationResponse<'startSiteSagaTransfer', '200'>>;
+  cancelSiteSagaTransfer(body: OperationRequest<'cancelSiteSagaTransfer'>): Promise<OperationResponse<'cancelSiteSagaTransfer', '200'>>;
   getAiSettings(options?: ApiRequestOptions): Promise<OperationResponse<'getAiSettings', '200'>>;
   updateAiSettings(body: OperationRequest<'updateAiSettings'>): Promise<OperationResponse<'updateAiSettings', '200'>>;
   setAiKey(body: OperationRequest<'setAiKey'>): Promise<void>;

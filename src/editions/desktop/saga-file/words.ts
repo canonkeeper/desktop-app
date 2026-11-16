@@ -27,7 +27,8 @@ export const sagaFileWords = {
   opened: 'Сага открыта',
   goToSaga: 'Перейти к саге',
   card: 'Перенести сагу с сайта или другого компьютера',
-  cardText: 'На сайте CanonKeeper: нажмите название саги вверху → «Настроить сагу» → «Скачать сагу файлом…». На другом компьютере: «Настройки» → «Данные» → «Сохранить сагу в файл…». Откройте этот файл здесь — книги и всё, что помощник знает о саге, переедут целиком.',
+  /** The words of the card with the transfer from the site (specs/2026-11-16-desk-boards13.md, Data; board 44·77). */
+  cardText: 'Сага с сайта переедет одной кнопкой — книги и всё, что помощник о ней знает. Файл саги с другого компьютера откройте здесь же.',
   /** The general line of a refusal the page has no words of its own for; the code goes beside it. */
   openFailed: 'Не удалось открыть файл саги',
 } as const;
@@ -74,12 +75,18 @@ export interface OpenedNote {
   places?: readonly string[];
 }
 
+/** Where an opened saga came from: a saga file the author chose, or the site by a transfer (specs/2026-11-16-desk-site-saga.md). */
+export type OpenedFrom = 'file' | 'site';
+
 /**
  * What the window «Сага открыта» says (SW2.3; 44·31): the first line names the saga by its new name with the numbers of
  * its books and chapters — that the helper knows it only when the file brought what he knows — and under it only the notes
- * the report gives a cause for, each in its own words, the numbers agreed with their nouns.
+ * the report gives a cause for, each in its own words, the numbers agreed with their nouns. A saga transferred from the site
+ * is said in the words of the site (specs/2026-11-16-desk-site-saga.md TR6.2): the author saw no file — what stayed out
+ * stayed on the site, and chapters at work and drawings, the sections of the workshops among them, are one line.
  */
-export function openedWords({ name, renamed, report }: SagaArchiveOpened): { message: string; notes: OpenedNote[] } {
+export function openedWords({ name, renamed, report }: SagaArchiveOpened, from: OpenedFrom = 'file'): { message: string; notes: OpenedNote[] } {
+  const site = from === 'site';
   const numbers = `${formatCount(report.books, 'книга', 'книги', 'книг')}, ${formatCount(report.chapters, 'глава', 'главы', 'глав')}`;
   const known = report.cards > 0 ? '. Помощник уже знает эту сагу — читать книги заново не нужно' : '';
   const notes: OpenedNote[] = [];
@@ -95,7 +102,7 @@ export function openedWords({ name, renamed, report }: SagaArchiveOpened): { mes
   if (chats.length > 0) {
     notes.push({
       key: 'chats',
-      text: `${by(chats.length, 'Не перенёсся', 'Не перенеслись')} ${formatCount(chats.length, 'чат', 'чата', 'чатов')}: ${quoted(chats)} — ${them(chats.length, 'его')} не удалось прочитать, когда сага сохранялась в файл`,
+      text: `${by(chats.length, 'Не перенёсся', 'Не перенеслись')} ${formatCount(chats.length, 'чат', 'чата', 'чатов')}: ${quoted(chats)} — ${them(chats.length, 'его')} не удалось прочитать${site ? ' на сайте' : ', когда сага сохранялась в файл'}`,
     });
   }
   const covers = report.coversSkipped;
@@ -103,6 +110,10 @@ export function openedWords({ name, renamed, report }: SagaArchiveOpened): { mes
     notes.push({ key: 'covers', text: covers.length === 1 ? `Обложка книги ${quoted(covers)} не перенеслась` : `Обложки книг ${quoted(covers)} не перенеслись` });
   }
   const { drafts, drawings, trashedBooks, trashedChapters, othersTurns } = report.leftOut;
+  if (site) {
+    notes.push(...siteNotes(report));
+    return { message: `${name}: ${numbers}${known}`, notes };
+  }
   const leftHere = [
     drafts > 0 ? formatCount(drafts, 'глава в работе', 'главы в работе', 'глав в работе') : null,
     drawings > 0 ? formatCount(drawings, 'рисунок', 'рисунка', 'рисунков') : null,
@@ -128,4 +139,30 @@ export function openedWords({ name, renamed, report }: SagaArchiveOpened): { mes
     notes.push({ key: 'sections', text: 'В файле есть главы в работе и рисунки. Свяжите приложение с аккаунтом, чтобы открыть их' });
   }
   return { message: `${name}: ${numbers}${known}`, notes };
+}
+
+/**
+ * What a transfer from the site left out, in the words of the site: chapters at work and drawings — with the sections of the
+ * workshops, which the app does not open — one line; what of «Недавно удалённые» and the questions of the other members.
+ */
+function siteNotes({ leftOut, sections }: SagaArchiveOpened['report']): OpenedNote[] {
+  const { drafts, drawings, trashedBooks, trashedChapters, othersTurns } = leftOut;
+  const notes: OpenedNote[] = [];
+  if (drafts > 0 || drawings > 0 || sections.length > 0) {
+    notes.push({ key: 'workshops', text: 'Главы в работе и рисунки остались на сайте — приложение их не открывает' });
+  }
+  const trashed = [
+    trashedBooks > 0 ? formatCount(trashedBooks, 'книга', 'книги', 'книг') : null,
+    trashedChapters > 0 ? formatCount(trashedChapters, 'глава', 'главы', 'глав') : null,
+  ].filter((part): part is string => part !== null);
+  if (trashed.length > 0) {
+    const alone = trashed.length === 1 ? (trashedBooks || trashedChapters) : 0;
+    const verb = alone ? by(alone, 'перенеслась', 'перенеслись') : 'перенеслись';
+    const stayed = alone === 1 ? 'она осталась' : 'они остались';
+    notes.push({ key: 'trash', text: `Не ${verb} ${trashed.join(' и ')} из „Недавно удалённых“ — ${stayed} на сайте` });
+  }
+  if (othersTurns > 0) {
+    notes.push({ key: 'others', text: `Не ${by(othersTurns, 'перенёсся', 'перенеслись')} ${formatCount(othersTurns, 'вопрос', 'вопроса', 'вопросов')} других участников саги` });
+  }
+  return notes;
 }

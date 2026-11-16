@@ -37,6 +37,11 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "exchangeAppLinkCode", Method: "post", Path: "/app/link/token"},
 		{OperationID: "getAppAccount", Method: "get", Path: "/app/account"},
 		{OperationID: "unlinkApp", Method: "delete", Path: "/app/device"},
+		// The transfer of a saga of the site to the app (specs/2026-11-16-desk-site-saga.md TR3, TR4).
+		{OperationID: "getSagaTransferRequest", Method: "get", Path: "/account/saga-transfers/{requestId}"},
+		{OperationID: "startSagaTransfer", Method: "post", Path: "/account/saga-transfers"},
+		{OperationID: "requestAppSagaTransfer", Method: "post", Path: "/app/saga-transfers/requests"},
+		{OperationID: "takeAppSagaTransfer", Method: "post", Path: "/app/saga-transfers"},
 		{OperationID: "getDesktopState", Method: "get", Path: "/desktop/state"},
 		// The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3).
 		{OperationID: "getProgramAccess", Method: "get", Path: "/desktop/programs"},
@@ -79,6 +84,10 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "unlinkAccount", Method: "delete", Path: "/desktop/account"},
 		{OperationID: "startAccountLink", Method: "post", Path: "/desktop/account/link"},
 		{OperationID: "cancelAccountLink", Method: "delete", Path: "/desktop/account/link"},
+		// The transfer of a saga from the site, the side of the app (specs/2026-11-16-desk-site-saga.md TR2).
+		{OperationID: "getSiteSagaTransfer", Method: "get", Path: "/desktop/saga-transfer"},
+		{OperationID: "startSiteSagaTransfer", Method: "post", Path: "/desktop/saga-transfer"},
+		{OperationID: "cancelSiteSagaTransfer", Method: "delete", Path: "/desktop/saga-transfer"},
 		{OperationID: "listProjects", Method: "get", Path: "/projects"},
 		{OperationID: "createProject", Method: "post", Path: "/projects"},
 		{OperationID: "listChatSessions", Method: "get", Path: "/projects/{projectId}/chats"},

@@ -22,6 +22,15 @@ type OpenRequest struct {
 	FileSHA256     string
 }
 
+// Origin is where an opened saga file comes from: a file the author chose, or the site by a transfer of a saga
+// (specs/2026-11-16-desk-site-saga.md TR5.2). It names the copy of a saga whose name the author has already.
+type Origin int
+
+const (
+	FromFile Origin = iota
+	FromSite
+)
+
 // StoredCover is the file of a cover the open put among the files of the build before its transaction.
 type StoredCover struct {
 	ArtifactID string
@@ -36,6 +45,7 @@ type StoredCover struct {
 // OpenWrite is a file the reader took, to write as a new saga.
 type OpenWrite struct {
 	OpenRequest
+	Origin  Origin
 	Proof   auth.SessionWriteProof
 	Archive *domain.Archive
 	// Covers are the covers taken, by the ref of their book; Skipped the titles of the books whose cover was not.
@@ -120,8 +130,9 @@ type OpenSaga struct {
 // OpenInput is the file the author opens, read into a temporary file, with its SHA-256.
 type OpenInput struct {
 	OpenRequest
-	Proof auth.SessionWriteProof
-	File  TempFile
+	Origin Origin
+	Proof  auth.SessionWriteProof
+	File   TempFile
 }
 
 // Execute opens the file.
@@ -144,7 +155,7 @@ func (useCase *OpenSaga) Execute(ctx context.Context, input OpenInput) (Opened, 
 	if err != nil {
 		return Opened{}, err
 	}
-	write := OpenWrite{OpenRequest: input.OpenRequest, Proof: input.Proof, Archive: archive, Covers: map[string]StoredCover{},
+	write := OpenWrite{OpenRequest: input.OpenRequest, Origin: input.Origin, Proof: input.Proof, Archive: archive, Covers: map[string]StoredCover{},
 		Skipped: []string{}, At: useCase.Now().UTC()}
 	pending, err := useCase.takeCovers(ctx, archive, &write)
 	if err != nil {

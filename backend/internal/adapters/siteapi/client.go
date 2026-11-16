@@ -7,7 +7,9 @@
 // are those of the connection, of TLS and of the headers of the answer, and the whole term of a short operation; a body
 // of a stream has none. The client is the one holder of the pass of the device in a request: a new link holds a new
 // pass of its own generation, and app.pass_invalid drops the pass only when it came to the pass held (AC2.3); 429 is no
-// connection until its Retry-After. Nothing of a code, a verifier or a pass goes into a log or an error.
+// connection until its Retry-After, but for the refusals of an operation itself — of the tier, ai.busy and the busy saves of
+// a transfer of a saga (specs/2026-11-16-desk-site-saga.md TR4.2). Nothing of a code, a verifier or a pass goes into a log
+// or an error.
 package siteapi
 
 import (

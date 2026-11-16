@@ -56,6 +56,18 @@ export interface MockScenarioControl {
   accountLinkOutcome?: 'linked' | 'exchange' | 'keyring' | 'expired';
   /** The site refused the pass of the linked app (AW2.4): getAccount says broken, once — a new link links again. */
   accountBroken?: boolean;
+  /**
+   * How a transfer of a saga from the site goes on at the reads of getSiteSagaTransfer (specs/2026-11-16-desk-site-saga.md TR6;
+   * the mock has no browser and no site): `done` — one phase a read, as the backend goes them: the site prepares the saga, it
+   * comes, it opens, it is open; a code of a failure — the transfer fails with it at the next read. Without it a transfer waits
+   * until its term or its stop.
+   */
+  siteSagaTransfer?: 'done' | Exclude<NonNullable<Schema<'SiteSagaTransfer'>['code']>, 'canceled'>;
+  /**
+   * How the page /transfer of the site finds the request of the app (specs/2026-11-16-desk-site-saga.md TR3.2): an app of another
+   * account, or a request that waits no more; without it any request waits for the author.
+   */
+  sagaTransferRequest?: 'other_account' | 'expired';
   /** The site did not answer the last read of the account (AW2.3): what it told stays with «нет связи». */
   accountUnreachable?: boolean;
   /** The app is linked and knows nothing of the account yet — a restart without the site, or the moment after a link (AW2.3). */

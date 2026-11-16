@@ -49,7 +49,7 @@ describe('«Книги» of the desktop app', () => {
   it('has «Перенести сагу с сайта или другого компьютера» on the first screen, which opens a saga file', async () => {
     const { api } = renderBooks('/manuscript/books', 'empty-lists');
     const card = await screen.findByRole('region', { name: 'Перенести сагу с сайта или другого компьютера' }, { timeout: 10_000 });
-    expect(within(card).getByText('На сайте CanonKeeper: нажмите название саги вверху → «Настроить сагу» → «Скачать сагу файлом…». На другом компьютере: «Настройки» → «Данные» → «Сохранить сагу в файл…». Откройте этот файл здесь — книги и всё, что помощник знает о саге, переедут целиком.')).toBeTruthy();
+    expect(within(card).getByText('Сага с сайта переедет одной кнопкой — книги и всё, что помощник о ней знает. Файл саги с другого компьютера откройте здесь же.')).toBeTruthy();
     const opened = vi.spyOn(api, 'openSagaArchive').mockImplementation(() => new Promise(() => undefined));
     const file = new File(['PK'], 'Хроники Белого порта.cksaga');
     fireEvent.drop(card, { dataTransfer: { files: [file] } });
