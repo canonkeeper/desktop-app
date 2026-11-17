@@ -213,7 +213,7 @@ func TestValidateRejectsUnsafeModelEnvironmentSettings(t *testing.T) {
 }
 
 // specs/2026-11-13-desk-proxy.md PX1.3, PX1.5, DT4.9: the models of the site for apps take their own key, named by its
-// variable only, and their own places, 16 by default; the model and effort of their turns are those of the chat of the
+// variable only, and their own places, 48 by default; the model and effort of their turns are those of the chat of the
 // site, read from its overrides of Codex, and the ways of apps do not open without them.
 func TestTheModelsOfAppsTakeTheirOwnKeyAndTheChatOfTheSite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -244,7 +244,7 @@ func TestTheModelsOfAppsTakeTheirOwnKeyAndTheChatOfTheSite(t *testing.T) {
 	if model, effort := config.Chat(); model != "gpt-north-chat" || effort != "high" {
 		t.Fatalf("Chat() = %q, %q", model, effort)
 	}
-	if places := (ModelAPI{}).AppPlaces(); places != 16 {
+	if places := (ModelAPI{}).AppPlaces(); places != 48 {
 		t.Fatalf("the places of apps by default = %d", places)
 	}
 	for name, mutate := range map[string]func(*Config){
@@ -269,6 +269,54 @@ func TestTheModelsOfAppsTakeTheirOwnKeyAndTheChatOfTheSite(t *testing.T) {
 	t.Setenv("BACKEND_MODEL_API_APP_PARALLEL", "8")
 	if loaded := Load(); loaded.ModelAPI.AppKeyEnv != "CODEX_LB_CANONKEEPER_DESKTOP_KEY" || loaded.ModelAPI.AppPlaces() != 8 {
 		t.Fatalf("Load() = %q, %d places", loaded.ModelAPI.AppKeyEnv, loaded.ModelAPI.AppPlaces())
+	}
+}
+
+// specs/2026-11-17-model-cache.md MC4.1: the key of the reading of books is named by its variable only, in the file or the
+// environment, a variable of its own — neither the key of the site nor the key of apps; none is the key of the site.
+func TestTheReadingOfBooksNamesItsOwnKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	payload := `{
+		"http_addr":"127.0.0.1:8789","environment":"test","database_url":"postgres://product",
+		"allowed_origins":["http://test.localhost:3334"],"file_storage_dir":"data/files",
+		"codex":{"path":"/opt/codex","cwd":"/srv/work","repository_home":"/srv/repository-home",
+		"home":"/srv/runtime-home","sqlite_home":"/srv/sqlite","private_home":"/srv/private","temp_dir":"/srv/tmp"},
+		"model_api":{"base_url":"https://models.example.test/backend-api/codex","key_env":"CODEX_LB_API_KEY",
+		"model":"gpt-6-luna","writing_model":"gpt-6.1-sol","writing_check_model":"gpt-6.1-terra",
+		"reading_key_env":"CODEX_LB_CANONKEEPER_READING_KEY"},
+		"mail":{"mode":"outbox","public_url":"http://test.localhost:3334","from":"support@canonkeeper.ru","outbox_dir":"/srv/mail-outbox"}}
+	`
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Validate(); err != nil || config.ModelAPI.ReadingKeyEnv != "CODEX_LB_CANONKEEPER_READING_KEY" {
+		t.Fatalf("the key of the reading = %q, %v", config.ModelAPI.ReadingKeyEnv, err)
+	}
+	for name, mutate := range map[string]func(*Config){
+		"a key of the reading not a variable": func(c *Config) { c.ModelAPI.ReadingKeyEnv = "reading key" },
+		"the key of the site for the reading": func(c *Config) { c.ModelAPI.ReadingKeyEnv = c.ModelAPI.KeyEnv },
+		"the key of apps for the reading": func(c *Config) {
+			c.ModelAPI.AppKeyEnv, c.ModelAPI.ReadingKeyEnv = "CODEX_LB_CANONKEEPER_DESKTOP_KEY", "CODEX_LB_CANONKEEPER_DESKTOP_KEY"
+			c.CodexConfigOverrides = []string{"model=\"gpt-north-chat\""}
+		},
+	} {
+		broken := config
+		mutate(&broken)
+		if err := broken.Validate(); err == nil {
+			t.Errorf("%s: Validate() accepted it", name)
+		}
+	}
+	config.ModelAPI.ReadingKeyEnv = ""
+	if err := config.Validate(); err != nil {
+		t.Fatalf("a site without the key of the reading: %v", err)
+	}
+	t.Setenv("BACKEND_MODEL_API_READING_KEY_ENV", "CODEX_LB_CANONKEEPER_READING_KEY")
+	if loaded := Load(); loaded.ModelAPI.ReadingKeyEnv != "CODEX_LB_CANONKEEPER_READING_KEY" {
+		t.Fatalf("Load() = %q", loaded.ModelAPI.ReadingKeyEnv)
 	}
 }
 

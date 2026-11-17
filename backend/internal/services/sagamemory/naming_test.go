@@ -3,6 +3,7 @@ package sagamemory
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -101,5 +102,28 @@ func TestARefusalOfTheJournalIsNoCardAndNoDoneJob(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), disclosure.CodeUnavailable) {
 		t.Fatal(err)
+	}
+}
+
+// specs/2026-11-17-long-chapters.md LC1.5: the card and the pass of each part of a long chapter name the paragraphs of the
+// part, not the chapter whole.
+func TestThePartsOfALongChapterNameTheirParagraphs(t *testing.T) {
+	model := &namedCardsModel{}
+	chapter := &domain.Chapter{ID: "c1", Key: "1", BookOrder: 1, Title: "Глава 1", Paragraphs: longParagraphs(overTheSplit()...)}
+	if _, err := NewCardWriter(model, domain.CurrentCardInstructions).Write(context.Background(), chapter); err != nil {
+		t.Fatal(err)
+	}
+	for _, instructions := range []string{domain.CurrentCardInstructions.Text, domain.CurrentCardInstructions.Pass} {
+		var ranges []disclosure.Range
+		for _, named := range model.calls(instructions) {
+			if len(named.Chapters) != 1 || named.Chapters[0].ID != "c1" || named.Chapters[0].Precision != disclosure.Paragraphs {
+				t.Fatalf("%.20s… named %+v", instructions, named)
+			}
+			ranges = append(ranges, named.Chapters[0].Paragraphs...)
+		}
+		slices.SortFunc(ranges, func(a, b disclosure.Range) int { return a.From - b.From })
+		if want := []disclosure.Range{{From: 1, To: 175}, {From: 176, To: 351}}; !slices.Equal(ranges, want) {
+			t.Fatalf("%.20s… named the paragraphs %+v", instructions, ranges)
+		}
 	}
 }

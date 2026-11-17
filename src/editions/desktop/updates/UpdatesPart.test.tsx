@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +9,7 @@ import { ToastsProvider } from '../../../ui/feedback/Toast';
 import { noShell, shellOfTheWindow } from '../settings/settings.test-helpers';
 import { appUpdateKey, updatePollMs, useAppUpdate } from './app-update';
 import { refusal, release, updateAt } from './update-test-helpers';
-import { checkedWhen, type AppUpdate } from './update-words';
+import { checkedWhen, refusalWords, type AppUpdate } from './update-words';
 import { UpdatesPart } from './UpdatesPart';
 
 // The clock of the tests: 15 November 2026, 16:00 on the clock of the machine, whatever its time zone (the page writes the
@@ -100,7 +102,10 @@ const rows: Row[] = [
   { name: 'install_failed without a package', update: updateAt({ kind: 'nsis', phase: 'install_failed', found: null, available: release }), words: [`Не удалось установить версию 1.3.0. ${unchanged}`], check: 'shown', install: 'shown' },
   { name: 'install_failed with the package kept', update: updateAt({ kind: 'deb', phase: 'install_failed', found: null, available: release, package: path }), words: [`Не удалось установить версию 1.3.0. ${unchanged}`, `Пакет новой версии сохранён: ${path} — его можно установить и самому`], check: 'shown', install: 'shown' },
   { name: 'install_refused / declined', update: updateAt({ kind: 'deb', phase: 'install_refused', found: null, available: release, refusal: 'declined', package: path }), words: [`Обновление не установлено: окно пароля администратора закрыто. Пакет новой версии сохранён: ${path} — его можно установить и самому`], check: 'shown', install: 'shown' },
-  { name: 'install_refused / unavailable', update: updateAt({ kind: 'rpm', phase: 'install_refused', found: null, available: release, refusal: 'unavailable', package: path }), words: [`Система не может спросить пароль администратора. Пакет новой версии сохранён: ${path} — установите его сами`], check: 'shown', install: null },
+  // specs/2026-11-17-desk-update-linux.md UL3.1: 127 is both no window of the password and no right.
+  { name: 'install_refused / unavailable', update: updateAt({ kind: 'rpm', phase: 'install_refused', found: null, available: release, refusal: 'unavailable', package: path }), words: [`Система не спросила пароль администратора или не дала разрешения на установку. Пакет новой версии сохранён: ${path} — установите его сами`], check: 'shown', install: null },
+  // UL3.1: another installation of programs — nothing kept, the retry once it ended.
+  { name: 'install_refused / busy', update: updateAt({ kind: 'deb', phase: 'install_refused', found: null, available: release, refusal: 'busy' }), words: ['Обновление не установлено: на компьютере идёт другая установка программ. Дождитесь её конца и нажмите «Обновить и перезапустить» — система спросит пароль администратора'], check: 'shown', install: 'shown' },
   { name: 'kind: none', update: updateAt({ kind: 'none' }), words: ['Эта сборка обновляется вручную: новая версия — на странице выпусков'], check: null, install: null, releases: true, daily: null },
   { name: 'version: null', update: updateAt({ version: null, phase: 'downloading', found: null, available: null, percent: 10 }), words: ['Скачиваю новую версию: 10 %'], check: null, install: null, cancel: 'shown' },
 ];
@@ -122,6 +127,15 @@ describe('«Настройки → Обновления»', () => {
     const daily = screen.queryByRole('switch', { name: 'Проверять новые версии при запуске и раз в день' });
     if (row.daily === null) expect(daily).toBeNull();
     else expect(daily?.getAttribute('aria-checked')).toBe(String(row.update.daily));
+  });
+
+  // specs/2026-11-17-desk-update-linux.md UL3.1: every refusal of the contract has its words, and no other has.
+  it('has the words of every refusal of the contract', () => {
+    const contract = JSON.parse(readFileSync(join(process.cwd(), 'contracts/openapi.desktop.json'), 'utf8')) as {
+      components: { schemas: { AppUpdate: { properties: { refusal: { enum: (string | null)[] } } } } };
+    };
+    const refusals = contract.components.schemas.AppUpdate.properties.refusal.enum.filter((refusal) => refusal !== null);
+    expect(Object.keys(refusalWords).sort()).toEqual([...refusals].sort());
   });
 
   // UW2.1 (the coordinator, 15.11): «Обновить и перезапустить» is the main button wherever it stands.

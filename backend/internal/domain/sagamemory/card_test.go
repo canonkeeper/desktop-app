@@ -36,7 +36,7 @@ func TestParseCardReadsV3Parts(t *testing.T) {
 	 "facts": [{"subject": "Мирон", "attribute": "Возраст", "value": "24 года", "p": 1}, {"subject": "Мирон", "attribute": "уровень", "value": ""},
 	           {"subject": "Мирон", "attribute": "возраст", "value": "7 лет", "p": 2, "past": true}],
 	 "changes": [{"subject": "Мирон", "change": "уровень 71", "p": 2}]
-	}`, 3)
+	}`, 1, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,12 +58,12 @@ func TestParseCardReadsV3Parts(t *testing.T) {
 		`{"summary": "s", "when": {"after": "NaN дней", "lasts": {"n": "Inf", "unit": "час"}}}`,
 		`{"summary": "s", "when": {"after": {"n": "-Inf", "unit": "год"}}}`,
 	} {
-		card, err := ParseCard(loose, 3)
+		card, err := ParseCard(loose, 1, 3)
 		if err != nil || card.When != nil {
 			t.Fatalf("ParseCard(%s) = %+v, %v; want the card without a chapter time", loose, card, err)
 		}
 	}
-	approx, err := ParseCard(`{"summary": "s", "when": {"lasts": {"n": 0.5, "unit": "Недели", "approx": true}}}`, 3)
+	approx, err := ParseCard(`{"summary": "s", "when": {"lasts": {"n": 0.5, "unit": "Недели", "approx": true}}}`, 1, 3)
 	if err != nil || approx.When == nil || *approx.When.Lasts != (Span{N: 0.5, Unit: "неделя", Approx: true}) {
 		t.Fatalf("approximate span = %+v, %v", approx.When, err)
 	}
@@ -92,7 +92,7 @@ func TestParseCardReadsV4Parts(t *testing.T) {
 	card, err := ParseCard(`{"summary": "Глава.",
 	 "events": [{"event": "Бой", "p": 1, "key": true}, {"event": "Обед", "p": 2}],
 	 "knows": [{"who": " Мирон ", "kind": "Скрывает", "what": "кто он", "p": 2}, {"who": "", "what": "пусто"}, {"who": "Молли", "what": "ничего", "p": 99}],
-	 "hooks": [{"what": "шрам без причины", "p": 3}, {"what": "  "}]}`, 3)
+	 "hooks": [{"what": "шрам без причины", "p": 3}, {"what": "  "}]}`, 1, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestParseCardReadsV4Parts(t *testing.T) {
 func TestCardAddLeavesOutWhatTheCardSays(t *testing.T) {
 	card := Card{Summary: "Глава.", Facts: []Fact{{Subject: "Мирон", Attribute: "возраст", Value: "24 года"}}, Hooks: []Hook{{What: "Шрам"}}}
 	more, err := ParseCardAdditions(`{"facts": [{"subject": "мирон", "attribute": "Возраст", "value": "24 года"}, {"subject": "Мирон", "attribute": "рост", "value": "высокий"}],
-	 "hooks": [{"what": "шрам"}, {"what": "письмо"}], "knows": [{"who": "Мирон", "what": "тайна"}]}`, 1)
+	 "hooks": [{"what": "шрам"}, {"what": "письмо"}], "knows": [{"who": "Мирон", "what": "тайна"}]}`, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

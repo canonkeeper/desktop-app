@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"canonkeeper/backend/internal/domain/disclosure"
+	"canonkeeper/backend/internal/domain/modelthread"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
@@ -17,9 +18,12 @@ import (
 )
 
 const (
-	maxScanTaskRunes      = 500
-	maxScanPlaces         = 30
-	defaultScanParallel   = 8
+	maxScanTaskRunes    = 500
+	maxScanPlaces       = 30
+	defaultScanParallel = 8
+	// maxScanParallel bounds the chunks one scan reads at once, whatever the places of the process: a scan does not take
+	// the whole minute of the pool of codex-lb the turns of the chat share (specs/2026-11-17-model-cache.md MC2.2).
+	maxScanParallel       = 32
 	defaultScanChunkRunes = 30000
 	// The app-server fails a dynamic tool call after 60 seconds, so one scan call stops
 	// starting chunks it cannot finish within the budget and reports where to continue.
@@ -39,7 +43,14 @@ const (
 	scanPending scanState = iota
 	scanDone
 	scanFailed
+	// scanSkipped is a chapter longer than skippedChunks chunks: its chunk does not go to the model
+	// (specs/2026-11-17-long-chapters.md LC3.1).
+	scanSkipped
 )
+
+// skippedChunks is how many chunks of text a chapter the scan does not read holds: longer, it is read by search or by read
+// with paragraphs (LC3.1).
+const skippedChunks = 4
 
 type scanChunk struct {
 	chapters []*sagamemory.Chapter
@@ -84,7 +95,8 @@ func (tools *ReadTools) Scan(ctx context.Context, call ToolContext, input ScanIn
 	})
 }
 
-// scanChunks groups the chapters of the range into model inputs of bounded size.
+// scanChunks groups the chapters of the range into model inputs of bounded size; a chapter longer than skippedChunks chunks
+// closes the chunk before it and stands as a chunk of its own the scan skips (LC3.1).
 func (tools *ReadTools) scanChunks(saga *sagaScope, from, to int, books map[string]bool) []*scanChunk {
 	var chunks []*scanChunk
 	var current []*sagamemory.Chapter
@@ -98,6 +110,10 @@ func (tools *ReadTools) scanChunks(saga *sagaScope, from, to int, books map[stri
 		if len(current) > 0 && size+length > tools.scan.ChunkRunes {
 			chunks = append(chunks, &scanChunk{chapters: current})
 			current, size = nil, 0
+		}
+		if length > skippedChunks*tools.scan.ChunkRunes {
+			chunks = append(chunks, &scanChunk{chapters: []*sagamemory.Chapter{chapter}, state: scanSkipped})
+			continue
 		}
 		current = append(current, chapter)
 		size += length
@@ -158,7 +174,9 @@ func (tools *ReadTools) runScan(ctx context.Context, task string, chunks []*scan
 		}()
 	}
 	for _, chunk := range chunks {
-		work <- chunk
+		if chunk.state != scanSkipped {
+			work <- chunk
+		}
 	}
 	close(work)
 	workers.Wait()
@@ -203,7 +221,11 @@ func (tools *ReadTools) scanChunk(ctx context.Context, task string, saga *sagaSc
 		}
 		ctx = disclosure.With(ctx, named)
 	}
-	output, usage, err := tools.scanModel.Complete(ctx, sagamemory.ScanInstructions, "ЗАДАЧА: "+task+"\n\n"+text.String())
+	// The text of the chunk comes first and the task after it, the empty line after its last chapter between them: the
+	// same chunk in the next scan, of another task, comes from the cache of the provider under its thread
+	// (specs/2026-11-17-model-cache.md MC2.1). The instructions are as they were.
+	ctx = scanThread(ctx, saga.authority.ProjectID, chapters)
+	output, usage, err := tools.scanModel.Complete(ctx, sagamemory.ScanInstructions, text.String()+"ЗАДАЧА: "+task)
 	if err != nil {
 		return nil, usage, err
 	}
@@ -224,6 +246,18 @@ func (tools *ReadTools) scanChunk(ctx context.Context, task string, saga *sagaSc
 		places = append(places, scanPlace{ScanFinding: finding, chapter: chapter})
 	}
 	return places, usage, nil
+}
+
+// scanThread is the context of the call of a chunk: the thread of the saga and the chapters of the chunk in their order
+// (specs/2026-11-17-model-cache.md MC1.3) — the same chunk in the next scan comes from the cache of the provider, and the
+// chunks of one scan go apart over the accounts.
+func scanThread(ctx context.Context, projectID string, chapters []*sagamemory.Chapter) context.Context {
+	parts := make([]string, 0, len(chapters)+2)
+	parts = append(parts, "scan", projectID)
+	for _, chapter := range chapters {
+		parts = append(parts, chapter.ID)
+	}
+	return modelthread.With(ctx, parts...)
 }
 
 // renderScan reports the scanned, unfinished and failed chapter ranges and groups the places
@@ -275,6 +309,13 @@ func renderScan(saga *sagaScope, chunks []*scanChunk, places []scanPlace) string
 	}
 	if failed := chunkRanges(chunks, scanFailed); len(failed) > 0 {
 		fmt.Fprintf(&out, "Не удалось просмотреть: %s (повторите scan для этих глав).\n", strings.Join(failed, ", "))
+	}
+	for _, chunk := range chunks {
+		if chunk.state == scanSkipped {
+			chapter := chunk.chapters[0]
+			fmt.Fprintf(&out, "Глава %s слишком длинная для scan (%d знаков): ищите в ней через search или читайте read с from/to по абзацам.\n",
+				chapter.Key, chapter.Runes)
+		}
 	}
 	for _, item := range order {
 		place := item.places[0]

@@ -31,5 +31,10 @@ getrandom = "0.3"
 # a key of one run, given when it is built; a release never carries it.
 smoke = []
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# The check of the locks of the installers of Debian is tested on real locks of each kind the system shows, POSIX and OFD
+# among them (specs/2026-11-17-desk-update-linux.md UL2.1).
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }

@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::control::{BackupCopy, Said, Step};
 use crate::paths::System;
+use crate::update::package;
 
 /// «Написать нам» of the failure window: the contact form of the site in the browser of the system.
 pub const CONTACT_URL: &str = "https://canonkeeper.ru/?contact=write";
@@ -273,6 +274,38 @@ pub fn installing_words(version: &str) -> String {
         ),
         None => "Устанавливаю новую версию: сохраняю данные и останавливаю помощника. Приложение закроется и откроется снова"
             .to_string(),
+    }
+}
+
+/// The words of the page of the start while the backend stops before a package of Linux is installed
+/// (specs/2026-11-17-desk-update-linux.md UL1.3, the board 44·39).
+pub fn stopping_words(version: &str) -> String {
+    format!("Сохраняю данные и останавливаю помощника, чтобы установить {}", accusative(version))
+}
+
+/// The words of a step of the installation of a package of Linux (UL1.3, the board 44·39); the code of the step in the log
+/// of the shell is [`package::Step::code`].
+pub fn package_words(step: package::Step, version: &str) -> String {
+    match step {
+        package::Step::Password => {
+            format!("Система спрашивает пароль администратора, чтобы установить {}", accusative(version))
+        }
+        package::Step::Running => {
+            format!("Устанавливаю {}. Окно откроется снова, когда установка закончится", accusative(version))
+        }
+        // The board 44·39: «2» and «минут» stay on one line.
+        package::Step::LockWait => {
+            "Жду, пока закончится другая установка программ (до 2\u{00a0}минут). Если она ждёт ответа в терминале, ответьте там"
+                .to_string()
+        }
+    }
+}
+
+/// «версию 1.3.0», without a plain version «новую версию».
+fn accusative(version: &str) -> String {
+    match plain_version(Some(version)) {
+        Some(version) => format!("версию {version}"),
+        None => "новую версию".to_string(),
     }
 }
 
@@ -743,6 +776,29 @@ mod tests {
         assert_eq!(
             step_words(&Step::Restore { copy: None }),
             "Возвращаю данные из копии — это может занять несколько минут"
+        );
+    }
+
+    // specs/2026-11-17-desk-update-linux.md UL1.3 (the board 44·39): the steps of an installation of a package.
+    #[test]
+    fn the_steps_of_an_installation_of_a_package_say_what_goes_on() {
+        assert_eq!(stopping_words("1.3.0"), "Сохраняю данные и останавливаю помощника, чтобы установить версию 1.3.0");
+        assert_eq!(
+            package_words(package::Step::Password, "1.3.0"),
+            "Система спрашивает пароль администратора, чтобы установить версию 1.3.0"
+        );
+        assert_eq!(
+            package_words(package::Step::Running, "1.3.0"),
+            "Устанавливаю версию 1.3.0. Окно откроется снова, когда установка закончится"
+        );
+        assert_eq!(
+            package_words(package::Step::LockWait, "1.3.0"),
+            "Жду, пока закончится другая установка программ (до 2\u{00a0}минут). Если она ждёт ответа в терминале, ответьте там"
+        );
+        assert_eq!(stopping_words(""), "Сохраняю данные и останавливаю помощника, чтобы установить новую версию");
+        assert_eq!(
+            package_words(package::Step::Running, "../x"),
+            "Устанавливаю новую версию. Окно откроется снова, когда установка закончится"
         );
     }
 

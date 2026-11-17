@@ -15,7 +15,8 @@ export function useWelcomeState(api: WelcomeClient) {
   return useQuery({
     queryKey: desktopStateQueryKey,
     queryFn: ({ meta, signal }) => stateApi(meta).getDesktopState({ signal }),
-    meta: { canonKeeperApi: api },
+    // The same query as «Данные» reads, with its own failure (specs/2026-11-17-desk-update-linux.md UL4.1).
+    meta: { canonKeeperApi: api, outageScope: 'local' },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

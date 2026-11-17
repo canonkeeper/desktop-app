@@ -26,13 +26,14 @@ function updateApi(meta: unknown) {
 /**
  * The update of the app as the backend holds it (UW2.4). One reader follows it — the edition around the pages, by the
  * times of `updatePollMs`; any other reader takes the same answer and reads nothing on its own, except the part
- * «Обновления», which reads it again when the author enters it (`enter`).
+ * «Обновления», which reads it again when the author enters it (`enter`). A failure of its read is its own
+ * (`outageScope: 'local'`, specs/2026-11-17-desk-update-linux.md UL4.1): the part says it, the root does not probe for it.
  */
 export function useAppUpdate(api: UpdateClient, { follow = false, enter = false }: { follow?: boolean; enter?: boolean } = {}) {
   return useQuery({
     queryKey: appUpdateKey,
     queryFn: ({ meta, signal }) => updateApi(meta).getAppUpdate({ signal }),
-    meta: { canonKeeperApi: api },
+    meta: { canonKeeperApi: api, outageScope: 'local' },
     refetchInterval: follow ? (query) => (goingPhases.has(query.state.data?.phase as AppUpdate['phase']) ? updatePollMs.going : updatePollMs.calm) : false,
     refetchOnWindowFocus: follow,
     refetchOnReconnect: follow,

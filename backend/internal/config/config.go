@@ -122,6 +122,10 @@ type ModelAPI struct {
 	// apps. AppParallel is the number of requests of all apps at once (AppPlaces).
 	AppKeyEnv   string
 	AppParallel int
+	// ReadingKeyEnv names the variable of the key of the reading of books — cards, names, the thread layer
+	// (specs/2026-11-17-model-cache.md MC4.1): a fork of the key of the site with a bound of its own in the pool of
+	// codex-lb; the value is read only when a call goes. Empty, the reading goes with the key of the site.
+	ReadingKeyEnv string
 }
 
 // Enabled reports whether direct model calls are configured.
@@ -217,6 +221,7 @@ func Load() Config {
 			VoiceBrainEffort:  strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_VOICE_BRAIN_EFFORT")),
 			AppKeyEnv:         strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_APP_KEY_ENV")),
 			AppParallel:       parseParallel(os.Getenv("BACKEND_MODEL_API_APP_PARALLEL")),
+			ReadingKeyEnv:     strings.TrimSpace(os.Getenv("BACKEND_MODEL_API_READING_KEY_ENV")),
 		},
 		Mail:          developmentMail(),
 		Illustrations: Illustrations{UploadsEnabled: parseBool(os.Getenv("BACKEND_ILLUSTRATIONS_UPLOADS_ENABLED"))},
@@ -379,6 +384,9 @@ func (api ModelAPI) validateShape() error {
 	if api.AppKeyEnv != "" && (!agentdomain.ValidPassEnv([]string{api.AppKeyEnv}) || api.AppKeyEnv == api.KeyEnv) || api.AppParallel < 0 {
 		return errors.New("config: the models of apps need a key variable of their own and a non-negative parallelism")
 	}
+	if api.ReadingKeyEnv != "" && (!agentdomain.ValidPassEnv([]string{api.ReadingKeyEnv}) || api.ReadingKeyEnv == api.KeyEnv || api.ReadingKeyEnv == api.AppKeyEnv) {
+		return errors.New("config: the reading of books needs a key variable of its own")
+	}
 	if api.VoiceURL != "" {
 		voice, err := url.Parse(api.VoiceURL)
 		if err != nil || (voice.Scheme != "https" && voice.Scheme != "http") || voice.Host == "" || strings.Trim(voice.Path, "/") != "" {
@@ -389,12 +397,12 @@ func (api ModelAPI) validateShape() error {
 }
 
 // AppPlaces is how many requests of all linked apps go to the provider at once (specs/2026-11-13-desk-proxy.md PX1.5):
-// AppParallel, or 16.
+// AppParallel, or 48: four apps reading at once with all their places (the owner's word of 17.11; it was 16).
 func (api ModelAPI) AppPlaces() int {
 	if api.AppParallel > 0 {
 		return api.AppParallel
 	}
-	return 16
+	return 48
 }
 
 // Chat names the model and effort of the chat of the site: the model and model_reasoning_effort of its overrides of

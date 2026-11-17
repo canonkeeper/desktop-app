@@ -8946,11 +8946,11 @@ export interface components {
             /** @description How much of the file is downloaded; only in the phase downloading. */
             percent: number | null;
             /**
-             * @description Why the system did not install the package; only in the phase install_refused.
+             * @description Why the system did not install the package; only in the phase install_refused: declined — the window of the password was closed; unavailable — the system did not ask for the password or gave no right; busy — another installation of programs holds a lock of the installers of Debian, nothing changed and no package is kept.
              * @enum {string|null}
              */
-            refusal: "declined" | "unavailable" | null;
-            /** @description Where the package of Linux is kept for the author; in the phases install_refused and install_failed. */
+            refusal: "declined" | "unavailable" | "busy" | null;
+            /** @description Where the package of Linux is kept for the author; in the phases install_refused (but busy) and install_failed. */
             package: string | null;
             /**
              * Format: date-time

@@ -231,6 +231,38 @@ func TestAnInstallationTheShellDidNotTakeOpensTheGateAgain(t *testing.T) {
 	}
 }
 
+// specs/2026-11-17-desk-update-linux.md UL2.1, UL2.4: another installation of programs holds a lock of Debian — the shell
+// refuses the package it was asked to install before the backend stops. New turns are taken again, no package is named, and
+// «Обновить и перезапустить» asks the shell again.
+func TestAnotherInstallationOfProgramsRefusesThePackageAndTheTurnsGoOn(t *testing.T) {
+	updates, channel, _ := updaterOfTheTest(t, domain.UpdateDeb)
+	updates.useTurns(func(context.Context) (int, error) { return 0, nil })
+	updates.heard(ControlMessage{Type: messageUpdateState, Phase: "idle", Found: "available", Version: "1.3.0"})
+	if err := updates.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	updates.heard(ControlMessage{Type: messageUpdateState, Phase: "downloaded", Version: "1.3.0"})
+	updates.whenNoTurns(context.Background())
+	if _, err := updates.gate.Admit(); !errors.Is(err, researchdomain.ErrUpdating) {
+		t.Fatalf("a new turn after the backend asked to install = %v", err)
+	}
+	updates.heard(ControlMessage{Type: messageUpdateState, Phase: "install_refused", Version: "1.3.0", Refusal: "busy"})
+	done, err := updates.gate.Admit()
+	if err != nil {
+		t.Fatal("the gate stayed closed after another installation refused the package")
+	}
+	done()
+	if update := updates.Update(); update.Phase != domain.UpdateInstallRefused || update.Refusal != domain.UpdateBusy || update.Package != "" || !domain.MayInstall(update) {
+		t.Fatalf("a refusal by another installation = %+v", update)
+	}
+	if err := updates.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := channel.kinds(); !slices.Equal(got, []string{"update-download 1.3.0", "update-install 1.3.0", "update-download 1.3.0"}) {
+		t.Fatalf("the backend wrote %v", got)
+	}
+}
+
 // UB2.7: the cause of an installation that did not happen, which the shell reports with install_failed, is in the log of
 // the run once.
 func TestTheCauseOfAFailedInstallationIsInTheLogOfTheRun(t *testing.T) {

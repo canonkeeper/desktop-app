@@ -241,8 +241,9 @@ function logs(data, prefix) {
 
 /**
  * N+1 runs after the update: settings.json names it, the shell installed a kind and loaded the page twice. The line of the
- * shell log that says it did not install N+1 — update_install_refused, update_not_installed — ends the wait at once with
- * that line (specs/2026-11-15-desk-ci-shell.md CS6.2).
+ * shell log that says it did not install N+1 — update_install_refused (busy among them), update_not_installed,
+ * update_install_unfinished — ends the wait at once with that line (specs/2026-11-15-desk-ci-shell.md CS6.2,
+ * specs/2026-11-17-desk-update-linux.md UL5.1).
  */
 export async function waitForTheUpdate(data, version, ms) {
   const settings = () => {
@@ -254,7 +255,7 @@ export async function waitForTheUpdate(data, version, ms) {
   };
   await waitFor('N+1 running after the update', () => {
     const shell = logs(data, 'shell-');
-    const refused = shell.split('\n').find((line) => /\s(?:update_install_refused|update_not_installed)\b/u.test(line));
+    const refused = shell.split('\n').find((line) => /\s(?:update_install_refused|update_not_installed|update_install_unfinished)\b/u.test(line));
     if (refused) throw new Error(`the shell did not install N+1: ${refused.trim()}`);
     return settings().version === version && /update_installing kind=/u.test(shell) && (shell.match(/\spage_loaded$/gmu) ?? []).length >= 2;
   }, ms);

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"canonkeeper/backend/internal/domain/disclosure"
 	"canonkeeper/backend/internal/domain/quota"
@@ -160,6 +159,8 @@ type BuildCards struct {
 	ready        SagaReady
 	// end hears the end of a Job (specs/2026-11-13-desk-account-ai.md AI3.2); nil on the site.
 	end WorkEnded
+	// unbuiltLog hears every chapter a Job leaves without a card (specs/2026-11-17-long-chapters.md LC4.1).
+	unbuiltLog UnbuiltLog
 }
 
 // NewBuildCards builds cards with the model; usage, namesFailure and done may be nil where nothing
@@ -199,9 +200,16 @@ func (build *BuildCards) WithPolicy(policy CardBuildPolicy) *BuildCards {
 
 // writerOfRun is the writer of one run: it ends a chapter the provider refused at once only where the policy marks chapters
 // for the helper of now (NA2.1); a builder without the policy — the site — and the helper of the account repeat it as before.
-func (build *BuildCards) writerOfRun(ctx context.Context) *CardWriter {
+// Under a policy that names the chapters the reading takes at once the parts of a chapter go one by one, so the run gives the
+// model no more requests at once than the chapters (specs/2026-11-17-long-chapters.md LC1.3); no part begins once the run
+// halted.
+func (build *BuildCards) writerOfRun(ctx context.Context, halted <-chan struct{}) *CardWriter {
 	writer := *build.writer
 	writer.refusals = build.policy != nil && build.policy.MarksChapters(ctx)
+	if build.policy != nil && build.policy.ChaptersAtOnce(ctx) > 0 {
+		writer.atOnce = 1
+	}
+	writer.halted = halted
 	return &writer
 }
 
@@ -308,7 +316,7 @@ func (build *BuildCards) RunForClaim(ctx context.Context, claim jobs.WorkerClaim
 	var stopped domain.Stop
 	var journaled error
 	work := make(chan int)
-	writer := build.writerOfRun(ctx)
+	writer := build.writerOfRun(ctx, halted)
 	var workers sync.WaitGroup
 	for range build.chaptersAtOnce(ctx) {
 		workers.Add(1)
@@ -324,9 +332,11 @@ func (build *BuildCards) RunForClaim(ctx context.Context, claim jobs.WorkerClaim
 				}
 				chapter := &chapters[index]
 				chapter.Key = chapterKeys[chapter.ID]
+				began := time.Now()
 				written, err := writer.Write(runCtx, chapter)
 				card, spent := written.Card, written.Usage
 				build.recordUsage(ctx, claim.ProjectID, spent)
+				build.unbuilt(runCtx, claim, chapter.ID, written, err, time.Since(began))
 				if stop, ok := domain.StopOf(err); ok {
 					halt.Do(func() {
 						stopped = stop
@@ -343,14 +353,11 @@ func (build *BuildCards) RunForClaim(ctx context.Context, claim jobs.WorkerClaim
 					})
 					continue
 				}
-				if err != nil && build.policy != nil && written.Unread != "" && runCtx.Err() == nil {
-					key := CardKey{ChapterID: chapter.ID, ContentHash: missing.Chapters[index].ContentHash}
-					if err := build.policy.MarkUnread(ctx, claim.ProjectID, key, domain.CurrentCardInstructions.Version, written.Unread); err == nil {
-						mu.Lock()
-						marked++
-						mu.Unlock()
-						continue
-					}
+				if err != nil && build.markUnread(ctx, runCtx, claim.ProjectID, CardKey{ChapterID: chapter.ID, ContentHash: missing.Chapters[index].ContentHash}, written) {
+					mu.Lock()
+					marked++
+					mu.Unlock()
+					continue
 				}
 				if err != nil {
 					mu.Lock()
@@ -592,20 +599,6 @@ func (build *BuildCards) ended(ctx context.Context, jobID string, status jobs.St
 	if build.end != nil && err == nil && (status == jobs.StatusSucceeded || status == jobs.StatusFailed || status == jobs.StatusCanceled) {
 		build.end.Ended(context.WithoutCancel(ctx), jobID, status)
 	}
-}
-
-// CardInputCharacters are the characters of the inputs of the card steps of chapters of the selection
-// (specs/2026-11-13-desk-account-ai.md AI3.4): each chapter keyed as the builder keys it, its text by the function the card
-// writer gives the model — the characters of the reading the site of the account counts.
-func CardInputCharacters(selection Selection, chapters []domain.Chapter) int64 {
-	keys := chapterKeys(selection)
-	var characters int64
-	for index := range chapters {
-		chapter := chapters[index]
-		chapter.Key = keys[chapter.ID]
-		characters += int64(utf8.RuneCountInString(domain.ChapterText(&chapter)))
-	}
-	return characters
 }
 
 // chapterKeys assigns the agent-facing chapter keys of the version without loading text.

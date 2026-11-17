@@ -153,6 +153,7 @@ func NewReadTools(repository ReadRepository, saga SagaText, scanModel ScanModel,
 	if scan.Parallel <= 0 {
 		scan.Parallel = defaultScanParallel
 	}
+	scan.Parallel = min(scan.Parallel, maxScanParallel)
 	if scan.ChunkRunes <= 0 {
 		scan.ChunkRunes = defaultScanChunkRunes
 	}

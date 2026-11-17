@@ -192,9 +192,7 @@ func (status Status) remaining(ctx context.Context, projectID string, resumed ti
 		input.Parallel, input.Host, input.Model = own.Advanced.Parallel, own.Host(), own.CardsModel
 		input.Reasoning = own.Advanced.Reasoning != aisettings.ReasoningNone
 	}
-	for _, chapter := range toRead.Unread {
-		input.Unread = append(input.Unread, chapter.Characters)
-	}
+	input.Unread = unreadOf(toRead.Unread)
 	if status.Samples != nil {
 		if input.Sample, err = status.Samples.Measured(ctx, projectID); err != nil {
 			return nil, err

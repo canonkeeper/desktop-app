@@ -184,10 +184,7 @@ var ErrModelOutput = errors.New("saga memory: invalid model output")
 // ChapterText renders a chapter with numbered paragraphs, the form models read and cite.
 func ChapterText(chapter *Chapter) string {
 	var builder strings.Builder
-	builder.WriteString(chapter.Label())
-	if chapter.Key != "" {
-		fmt.Fprintf(&builder, " (гл. %s)", chapter.Key)
-	}
+	builder.WriteString(chapterHead(chapter))
 	builder.WriteString("\n\n")
 	for index, paragraph := range chapter.Paragraphs {
 		fmt.Fprintf(&builder, "¶%d %s\n", index+1, paragraph.Text)
@@ -196,10 +193,11 @@ func ChapterText(chapter *Chapter) string {
 }
 
 // ParseCard extracts the card JSON from model output and normalizes it: blank entries are
-// dropped, paragraph numbers outside the chapter become 0 and sizes are bounded. A card
+// dropped, paragraph numbers outside the paragraphs first..last the model read — the chapter, or
+// its part (specs/2026-11-17-long-chapters.md LC1.2) — become 0 and sizes are bounded. A card
 // without a summary is rejected so the builder asks again.
-func ParseCard(output string, paragraphs int) (Card, error) {
-	card, err := ParseCardAdditions(output, paragraphs)
+func ParseCard(output string, first, last int) (Card, error) {
+	card, err := ParseCardAdditions(output, first, last)
 	if err != nil {
 		return Card{}, err
 	}
@@ -211,7 +209,7 @@ func ParseCard(output string, paragraphs int) (Card, error) {
 
 // ParseCardAdditions reads the answer of the pass over a written card: the same schema and the same
 // normalization as a card, but only what the card missed, so no summary is required.
-func ParseCardAdditions(output string, paragraphs int) (Card, error) {
+func ParseCardAdditions(output string, first, last int) (Card, error) {
 	start, end := strings.Index(output, "{"), strings.LastIndex(output, "}")
 	if start < 0 || end <= start {
 		return Card{}, fmt.Errorf("%w: no JSON object", ErrModelOutput)
@@ -222,7 +220,7 @@ func ParseCardAdditions(output string, paragraphs int) (Card, error) {
 	}
 	card.Summary = bounded(card.Summary, maxSummaryRunes)
 	paragraph := func(p int) int {
-		if p < 1 || p > paragraphs {
+		if p < max(first, 1) || p > last {
 			return 0
 		}
 		return p

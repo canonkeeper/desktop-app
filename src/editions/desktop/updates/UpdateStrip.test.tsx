@@ -98,7 +98,9 @@ const stripRows: StripRow[] = [
   { name: 'the file not proved', update: updateAt({ phase: 'verify_failed', found: null, available: release }), message: 'Файл версии 1.3.0 не прошёл проверку', buttons: ['Открыть обновления'], cross: failureCross },
   { name: 'not installed', update: updateAt({ phase: 'install_failed', found: null, available: release, package: path }), message: 'Не удалось установить версию 1.3.0', buttons: ['Открыть обновления'], cross: failureCross },
   { name: 'the window of the password closed', update: updateAt({ kind: 'deb', phase: 'install_refused', found: null, available: release, refusal: 'declined', package: path }), message: 'Обновление до версии 1.3.0 не установлено: окно пароля администратора закрыто', buttons: ['Открыть обновления'], cross: failureCross },
-  { name: 'no password can be asked', update: updateAt({ kind: 'rpm', phase: 'install_refused', found: null, available: release, refusal: 'unavailable', package: path }), message: 'Обновление до версии 1.3.0 не установлено: система не может спросить пароль администратора', buttons: ['Открыть обновления'], cross: failureCross },
+  // specs/2026-11-17-desk-update-linux.md UL3.1 (board 44·15): the words of the part, the package with them; another installation.
+  { name: 'no password or no right', update: updateAt({ kind: 'rpm', phase: 'install_refused', found: null, available: release, refusal: 'unavailable', package: path }), message: `Система не спросила пароль администратора или не дала разрешения на установку. Пакет новой версии сохранён: ${path} — установите его сами`, buttons: ['Открыть обновления'], cross: failureCross },
+  { name: 'another installation of programs', update: updateAt({ kind: 'deb', phase: 'install_refused', found: null, available: release, refusal: 'busy' }), message: 'Обновление до версии 1.3.0 не установлено: идёт другая установка программ', buttons: ['Открыть обновления'], cross: failureCross },
 ];
 
 const allButtons = ['Что нового', 'Обновить и перезапустить', 'Отменить обновление', 'Открыть обновления'];

@@ -62,8 +62,9 @@ type ChapterRevision struct {
 	Revision int64
 }
 
-// Characters are the characters of the published text of each chapter at its revision.
-func (repository *Repository) Characters(ctx context.Context, projectID string, chapters []ChapterRevision) (map[string]int, error) {
+// Lengths are the characters of each paragraph of the published text of each chapter at its revision, in the order of the
+// paragraphs: what a chapter holds and the parts its card reads by (specs/2026-11-17-long-chapters.md LC1.6).
+func (repository *Repository) Lengths(ctx context.Context, projectID string, chapters []ChapterRevision) (map[string][]int, error) {
 	project, err := storedb.ParseUUID(projectID)
 	if err != nil {
 		return nil, service.ErrNotFound
@@ -77,13 +78,13 @@ func (repository *Repository) Characters(ctx context.Context, projectID string, 
 		}
 		ids, revisions = append(ids, id), append(revisions, chapter.Revision)
 	}
-	characters := make(map[string]int, len(chapters))
+	lengths := make(map[string][]int, len(chapters))
 	if len(ids) == 0 {
-		return characters, nil
+		return lengths, nil
 	}
 	// The paragraphs of each chapter by its revision go by the index (chapter_id, revision, variant, …).
 	rows, err := repository.db.Pool.Query(ctx, `
-		SELECT wanted.chapter_id::text, coalesce(sum(char_length(paragraph.plain_text)), 0)::bigint
+		SELECT wanted.chapter_id::text, array_agg(char_length(paragraph.plain_text) ORDER BY paragraph."order")::int[]
 		FROM unnest($2::uuid[], $3::bigint[]) AS wanted(chapter_id, revision)
 		JOIN chapters AS chapter ON chapter.id = wanted.chapter_id AND chapter.project_id = $1 AND chapter.deleted_at IS NULL
 		JOIN chapter_paragraphs AS paragraph ON paragraph.chapter_id = wanted.chapter_id AND paragraph.revision = wanted.revision
@@ -95,13 +96,17 @@ func (repository *Repository) Characters(ctx context.Context, projectID string, 
 	defer rows.Close()
 	for rows.Next() {
 		var id string
-		var count int64
-		if err := rows.Scan(&id, &count); err != nil {
+		var counts []int32
+		if err := rows.Scan(&id, &counts); err != nil {
 			return nil, err
 		}
-		characters[id] = int(count)
+		chapter := make([]int, len(counts))
+		for index, count := range counts {
+			chapter[index] = int(count)
+		}
+		lengths[id] = chapter
 	}
-	return characters, rows.Err()
+	return lengths, rows.Err()
 }
 
 var errNoRows = pgx.ErrNoRows

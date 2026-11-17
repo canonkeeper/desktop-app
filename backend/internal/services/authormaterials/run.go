@@ -8,6 +8,7 @@ import (
 
 	domain "canonkeeper/backend/internal/domain/authormaterials"
 	"canonkeeper/backend/internal/domain/disclosure"
+	"canonkeeper/backend/internal/domain/modelthread"
 	"canonkeeper/backend/internal/domain/quota"
 	"canonkeeper/backend/internal/jobs"
 )
@@ -77,11 +78,13 @@ func (run RunImport) RunForClaim(ctx context.Context, claim jobs.WorkerClaim, su
 	if err != nil {
 		return "", err
 	}
+	// Every call of the parsing goes under the thread of the materials of the Job (specs/2026-11-17-model-cache.md MC1.3).
+	calls := modelthread.With(ctx, "materials", jobs.JobIDOf(ctx))
 	mappings := make([]domain.Mapping, len(parsed.Sections))
 	for index, section := range parsed.Sections {
 		// A call gives a part of one section of the file or text of the author, named by its number
 		// (specs/2026-11-14-desk-journal.md JR1.3).
-		mapping, ok, err := run.mapSection(disclosure.With(ctx, disclosure.Named{Sections: []int{index + 1}}), claim, section)
+		mapping, ok, err := run.mapSection(disclosure.With(calls, disclosure.Named{Sections: []int{index + 1}}), claim, section)
 		if err != nil {
 			return "", err
 		}

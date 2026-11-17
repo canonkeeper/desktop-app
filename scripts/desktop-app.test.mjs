@@ -927,7 +927,9 @@ test('the stand-in pkexec stays, and the smoke run of an update ends at a refusa
     mkdirSync(path.join(data, 'logs'));
     writeFileSync(path.join(data, 'settings.json'), JSON.stringify({ version: '0.1.0' }));
     const shell = path.join(data, 'logs', 'shell-2026-11-15.log');
-    for (const said of ['update_install_refused', 'update_not_installed cause=held count=1']) {
+    // specs/2026-11-17-desk-update-linux.md UL5.1: another installation of programs and an installation that did not finish end it
+    // too.
+    for (const said of ['update_install_refused reason=declined', 'update_install_refused reason=busy', 'update_install_unfinished', 'update_not_installed cause=held count=1']) {
       writeFileSync(shell, `2026-11-15T17:41:25Z update_installing kind=rpm\n2026-11-15T17:41:26Z ${said}\n2026-11-15T17:41:26Z backend_spawned\n`);
       const started = Date.now();
       await assert.rejects(waitForTheUpdate(data, '0.1.1', 900_000), (error) => error.message.endsWith(`2026-11-15T17:41:26Z ${said}`));

@@ -250,6 +250,13 @@ impl Supervisor {
         vec![Action::SendShutdown]
     }
 
+    /// Whether an installation the backend asks for now is taken (UB2.3): only while the backend is ready, once. The driver asks
+    /// it before it checks the locks of another installation (specs/2026-11-17-desk-update-linux.md UL2.1), the same rule as
+    /// [`Event::Install`] goes by.
+    pub fn takes_install(&self) -> bool {
+        matches!(self.phase, Phase::Open { .. })
+    }
+
     /// Whether an installation goes on: from the window leaving for the page of the start to the end of the installation.
     pub fn installing(&self) -> bool {
         matches!(
@@ -359,7 +366,7 @@ impl Supervisor {
             }
             (_, Phase::Leaving { .. } | Phase::Stopping { .. } | Phase::Installing | Phase::Stopped) => vec![],
             // UB2.3: only a backend that is ready asks, and only once.
-            (Event::Install, Phase::Open { .. }) => {
+            (Event::Install, _) if self.takes_install() => {
                 self.phase = Phase::Leaving { since: now };
                 vec![Action::Leave]
             }
@@ -735,12 +742,15 @@ mod tests {
         // specs/2026-11-13-desk-updates.md UB2.3: the page of the start first, then shutdown, then the installation.
         let now = Instant::now();
         let mut supervisor = Supervisor::new(STOP_TIMEOUT);
-        // Only a ready backend asks.
+        // Only a ready backend asks — the one rule the driver asks too before it checks the locks of Debian
+        // (specs/2026-11-17-desk-update-linux.md UL2.1).
         supervisor.start();
+        assert!(!supervisor.takes_install());
         assert_eq!(supervisor.handle(Event::Install, now), vec![]);
         supervisor.handle(ready(24117, "c", false), now);
+        assert!(supervisor.takes_install());
         assert_eq!(supervisor.handle(Event::Install, now), vec![Action::Leave]);
-        assert!(supervisor.installing() && supervisor.port().is_none());
+        assert!(supervisor.installing() && supervisor.port().is_none() && !supervisor.takes_install());
         assert_eq!(supervisor.handle(Event::Install, now), vec![]);
         // UB2.9: closing the window does not cut it short.
         assert_eq!(supervisor.handle(Event::Close, now), vec![]);

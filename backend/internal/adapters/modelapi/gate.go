@@ -16,6 +16,14 @@ const (
 	classes
 )
 
+// String names the class in a line of the journal.
+func (class Class) String() string {
+	if class == Background {
+		return "background"
+	}
+	return "interactive"
+}
+
 // gate bounds the model calls of the whole process. A place is held for one HTTP attempt only,
 // so a retry pause never keeps it.
 type gate struct {

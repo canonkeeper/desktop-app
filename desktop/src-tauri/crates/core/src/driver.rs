@@ -34,12 +34,17 @@ use crate::journal::{name, Journal};
 use crate::link::{self, Argument, Links, Target};
 use crate::paths::System;
 use crate::secrets::{self, Keyring, Opened, Secret, SecretError, Secrets, PROBE_TIMEOUT};
-use crate::supervisor::{Action, Event, Notes, Supervisor, Unfinished as UnfinishedNote};
-use crate::update::fetch::{Downloaded, Network};
-use crate::update::state::{Cause, Updates};
-use crate::update::worker::{Done, Worker};
-use crate::update::{self, package, stopped, Kind, Setup};
-use crate::words::{failure, installing_words, step_words, Failure, Fault};
+use crate::supervisor::{Action, Event, Notes, Supervisor};
+use crate::update::fetch::Downloaded;
+use crate::update::package::Progress;
+use crate::update::state::{Cause, Download, Refusal};
+use crate::update::worker::Done;
+use crate::update::{self, locks, Kind, Setup};
+use crate::words::{failure, installing_words, package_words, step_words, stopping_words, Failure, Fault};
+
+mod installation;
+
+use installation::{ended, install, tell, Updating};
 
 /// How often time passes for the supervisor while nothing happens.
 const TICK: Duration = Duration::from_secs(1);
@@ -154,30 +159,6 @@ impl Handle {
             let _ = reply.send(Outcome::Expired);
         }
         heard
-    }
-}
-
-/// The update the shell holds and the thread of its network.
-struct Updating {
-    setup: Setup,
-    state: Updates,
-    worker: Worker,
-}
-
-impl Updating {
-    fn start(setup: Setup, version: &str, heard: Sender<Heard>) -> Updating {
-        let state = Updates::new(setup.kind, version);
-        let worker = Worker::start(Network::new(setup.policy.clone()), setup.kind, move |done| {
-            let _ = heard.send(Heard::Update(done));
-        });
-        Updating { setup, state, worker }
-    }
-}
-
-/// Tells the backend what the update came to (UB1.1).
-fn tell(backend: &mut Option<Backend>, updating: &Option<Updating>) {
-    if let (Some(running), Some(updating)) = (backend.as_mut(), updating.as_ref()) {
-        let _ = running.send(&ToBackend::UpdateState(&updating.state.line()));
     }
 }
 
@@ -330,23 +311,32 @@ pub fn run<W: Window>(
                     Action::Leave => {
                         links.left();
                         let version = updating.as_ref().and_then(|updating| updating.state.line().version);
+                        let version = version.as_deref().unwrap_or("");
                         journal.note("update_leaving");
-                        window.leave(&installing_words(version.as_deref().unwrap_or("")));
+                        // specs/2026-11-17-desk-update-linux.md UL1.3: a package says what the stop is for; the installers of
+                        // Windows and the AppImage keep their words.
+                        let package = updating
+                            .as_ref()
+                            .is_some_and(|updating| matches!(updating.setup.kind, Kind::Deb | Kind::Rpm));
+                        window.leave(&if package { stopping_words(version) } else { installing_words(version) });
                     }
                     Action::Install { stopped } => {
                         // AL1.5: the installer of Windows starts the app again with the arguments of this start.
                         let nsis = updating.as_ref().is_some_and(|updating| updating.setup.kind == Kind::Nsis);
                         let link_marked = nsis && mark(&config, &journal);
-                        let restart = match updating.as_mut() {
+                        let began = match updating.as_mut() {
                             Some(updating) => {
-                                install(updating, &config.data_dir, stopped, exit_code, &window, &journal)
+                                install(updating, &config.data_dir, stopped, exit_code, &window, &journal, &sender)
                             }
-                            None => false,
+                            None => Some(false),
                         };
-                        if link_marked && !restart {
-                            link::unmark(data_dir);
+                        // UL1.1: a package installs on its thread; its end comes as a message.
+                        if let Some(restart) = began {
+                            if link_marked && !restart {
+                                link::unmark(data_dir);
+                            }
+                            actions.extend(supervisor.handle(Event::Installed { restart }, Instant::now()));
                         }
-                        actions.extend(supervisor.handle(Event::Installed { restart }, Instant::now()));
                     }
                     Action::Restart => {
                         journal.note("update_restart");
@@ -476,9 +466,14 @@ pub fn run<W: Window>(
                 }
                 Heard::Event(Event::Message(FromBackend::UpdateDownload { version })) => {
                     if let Some(updating) = updating.as_mut() {
-                        if let Some(release) = updating.state.download(&version) {
-                            journal.note("update_download");
-                            updating.worker.download(release);
+                        match updating.state.download(&version) {
+                            Some(Download::Fetch(release)) => {
+                                journal.note("update_download");
+                                updating.worker.download(*release);
+                            }
+                            // specs/2026-11-17-desk-update-linux.md UL2.3: the retry after a refusal takes the file it kept.
+                            Some(Download::Held) => journal.note("update_download_held"),
+                            None => {}
                         }
                     }
                     tell(&mut backend, &updating);
@@ -497,14 +492,38 @@ pub fn run<W: Window>(
                     if let Some(updating) =
                         updating.as_mut().filter(|updating| !marked && updating.state.may_install(&version))
                     {
-                        let leaving = supervisor.handle(Event::Install, Instant::now());
-                        if !leaving.is_empty() {
-                            journal.note("update_install");
-                            updating.state.install();
-                            actions.extend(leaving);
+                        // specs/2026-11-17-desk-update-linux.md UL2.1: a `.deb` the supervision would take while another
+                        // installation holds a lock of Debian is refused at once — the backend works on, the window stays.
+                        let programs = &updating.setup.programs;
+                        if supervisor.takes_install()
+                            && updating.setup.kind == Kind::Deb
+                            && locks::locked(&programs.locks, &programs.proc_locks)
+                        {
+                            journal.note(&format!("update_install_refused reason={}", Refusal::Busy.name()));
+                            updating.state.install_refused(Refusal::Busy, None);
+                        } else {
+                            let leaving = supervisor.handle(Event::Install, Instant::now());
+                            if !leaving.is_empty() {
+                                journal.note("update_install");
+                                updating.state.install();
+                                actions.extend(leaving);
+                            }
                         }
                     }
                     tell(&mut backend, &updating);
+                }
+                // UL1.1, UL1.3: the thread of the installation of a package says its steps and its end; the supervision alone
+                // shows them and keeps what it came to.
+                Heard::Package(Progress::Step(step)) if supervisor.installing() => {
+                    journal.note(step.code());
+                    let version = updating.as_ref().and_then(|updating| updating.state.line().version);
+                    window.show_step(&package_words(step, version.as_deref().unwrap_or("")));
+                }
+                Heard::Package(Progress::Step(_)) => {}
+                Heard::Package(Progress::Ended(outcome)) => {
+                    let restart =
+                        updating.as_mut().is_some_and(|updating| ended(updating, &config.data_dir, outcome, &journal));
+                    actions.extend(supervisor.handle(Event::Installed { restart }, Instant::now()));
                 }
                 Heard::Update(done) => {
                     if let Some(held) = updating.as_mut() {
@@ -607,102 +626,6 @@ fn mark(config: &Config, journal: &Journal) -> bool {
         return false;
     }
     true
-}
-
-/// Installs the update the shell holds once the backend is gone (UB2.3–UB2.7) and says whether the app starts again:
-/// only a backend that stopped by itself and cleanly, with the cluster of the data directory stopped and no program of the
-/// installation running, lets an installation begin. Anything else is `install_failed` — or `install_refused` — with
-/// nothing changed, and the backend starts again; a package of Linux is kept for the author.
-fn install<W: Window>(
-    updating: &mut Updating,
-    data_dir: &str,
-    stopped: bool,
-    exit_code: Option<Option<i32>>,
-    window: &W,
-    journal: &Journal,
-) -> bool {
-    let kind = updating.setup.kind;
-    let Some(file) = updating.state.file().cloned() else {
-        updating.state.install_failed(Cause::NotLaunched, None);
-        return false;
-    };
-    let failed = |updating: &mut Updating, cause: Cause| {
-        let kept = package::keep(&file, kind, &updating.setup.programs).map(|path| path.to_string_lossy().into_owned());
-        updating.state.install_failed(cause, kept);
-        false
-    };
-    if !stopped || exit_code != Some(Some(0)) {
-        journal.note("update_not_installed cause=backend");
-        return failed(updating, Cause::NotStopped);
-    }
-    let held = stopped::holders(Path::new(data_dir), &updating.setup.holders, &updating.setup.bridges);
-    if !held.is_empty() {
-        journal.note(&format!("update_not_installed cause=held count={}", held.len()));
-        return failed(updating, Cause::NotStopped);
-    }
-    journal.note(&format!("update_installing kind={}", kind.name()));
-    match kind {
-        Kind::Deb | Kind::Rpm => {
-            match package::install(&file, kind, &updating.setup.policy.keys, &updating.setup.programs) {
-                package::Outcome::Installed => true,
-                package::Outcome::Refused(refusal, kept) => {
-                    journal.note("update_install_refused");
-                    updating.state.install_refused(refusal, kept.to_string_lossy().into_owned());
-                    false
-                }
-                package::Outcome::NotRun(kept) => {
-                    journal.note("update_not_installed cause=package");
-                    updating
-                        .state
-                        .install_failed(Cause::NotLaunched, kept.map(|path| path.to_string_lossy().into_owned()));
-                    false
-                }
-                package::Outcome::Unfinished(kept) => {
-                    // UB2.6: the system may be half done: the app starts again whole, and the start of the version on the disk
-                    // decides; the note says what happened.
-                    journal.note("update_install_unfinished");
-                    let note = UnfinishedNote {
-                        version: file.release.version.to_string(),
-                        package: kept.map(|path| path.to_string_lossy().into_owned()),
-                    };
-                    if update::write_note(Path::new(data_dir), &note).is_err() {
-                        journal.note("update_note_not_written");
-                    }
-                    true
-                }
-            }
-        }
-        Kind::Nsis | Kind::AppImage => {
-            // MC1.8: the installer of Windows ends the bridges of the installation first; the launch of the new version says
-            // how the programs of the author read again.
-            if kind == Kind::Nsis
-                && stopped::runs(&updating.setup.bridges)
-                && update::write_bridge_note(Path::new(data_dir), &file.release.version.to_string()).is_err()
-            {
-                journal.note("update_bridge_note_not_written");
-            }
-            install_file(updating, window, journal, &file, kind)
-        }
-        Kind::None => failed(updating, Cause::NotLaunched),
-    }
-}
-
-/// The installer of Windows or the AppImage replaces the program (UB2.4, UB2.5).
-fn install_file<W: Window>(
-    updating: &mut Updating,
-    window: &W,
-    journal: &Journal,
-    file: &Downloaded,
-    kind: Kind,
-) -> bool {
-    match window.install(file, kind) {
-        Ok(()) => true,
-        Err(cause) => {
-            journal.note("update_not_installed cause=installer");
-            updating.state.install_failed(cause, None);
-            false
-        }
-    }
 }
 
 /// What the keeper of the secrets is asked.

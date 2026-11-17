@@ -59,7 +59,8 @@ var _ readingservice.Settings = readingSettings{}
 
 // sagaToRead is what the published text of a saga has to read, by the rules of the core: the chapters without a card of
 // their current text (sagamemory.MissingCards), the names that wait for the model (sagamemory.NamesOf) and the layer
-// that is due (sagalayer.Pending); measured, the characters of each chapter by its revision. What did not read or come
+// that is due (sagalayer.Pending); measured, the characters of each chapter by its revision and the parts its card reads by
+// (specs/2026-11-17-long-chapters.md LC1.6). What did not read or come
 // together is left out only while its mark acts — the one rule of the policy of the reading
 // (specs/2026-11-15-desk-reading-rest.md RR1.4).
 type sagaToRead struct {
@@ -80,9 +81,9 @@ func (reading sagaToRead) ToRead(ctx context.Context, projectID string, measured
 		revisions = append(revisions, readingrepo.ChapterRevision{ID: chapter.ID, Revision: chapter.Revision})
 		books[chapter.BookID] = true
 	}
-	characters := map[string]int{}
+	lengths := map[string][]int{}
 	if measured {
-		if characters, err = reading.reading.Characters(ctx, projectID, revisions); err != nil {
+		if lengths, err = reading.reading.Lengths(ctx, projectID, revisions); err != nil {
 			return readingservice.ToRead{}, err
 		}
 	}
@@ -102,12 +103,14 @@ func (reading sagaToRead) ToRead(ctx context.Context, projectID string, measured
 			toRead.Marked = append(toRead.Marked, mark)
 			continue
 		}
-		toRead.Unread = append(toRead.Unread, readingservice.Chapter{ID: chapter.ID, Hash: chapter.ContentHash, Characters: characters[chapter.ID]})
+		characters, parts := readingservice.Measure(lengths[chapter.ID])
+		toRead.Unread = append(toRead.Unread, readingservice.Chapter{ID: chapter.ID, Hash: chapter.ContentHash, Characters: characters, Parts: parts})
 	}
 	for _, chapter := range selection.Chapters {
 		if !unread[chapter.ID] {
+			characters, _ := readingservice.Measure(lengths[chapter.ID])
 			toRead.Carded++
-			toRead.CardedCharacters += int64(characters[chapter.ID])
+			toRead.CardedCharacters += int64(characters)
 		}
 	}
 	if len(toRead.Unread) == 0 && len(selection.Chapters) > len(toRead.Marked) {
@@ -230,7 +233,7 @@ func (cards sampleCards) Cards(ctx context.Context, projectID string, chapters [
 	if err != nil {
 		return nil, err
 	}
-	characters, err := cards.reading.Characters(ctx, projectID, revisions)
+	lengths, err := cards.reading.Lengths(ctx, projectID, revisions)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +243,8 @@ func (cards sampleCards) Cards(ctx context.Context, projectID string, chapters [
 		if !ok {
 			continue
 		}
-		shownCard := readingservice.SampleCard{ChapterID: key.ChapterID, Summary: card.Summary, Characters: characters[key.ChapterID]}
+		characters, parts := readingservice.Measure(lengths[key.ChapterID])
+		shownCard := readingservice.SampleCard{ChapterID: key.ChapterID, Summary: card.Summary, Characters: characters, Parts: parts}
 		if current, ok := selected[key.ChapterID]; ok {
 			shownCard.Place = current.Place()
 		}

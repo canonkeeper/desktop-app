@@ -4,14 +4,18 @@
 //! state, the shell the network and the installation. Here are the parts of the shell that need no window — the
 //! constant list of addresses and keys (`policy`), what a release says and what proves it (`manifest`), the network
 //! (`fetch`), the state the shell reports (`state`) and its thread (`worker`), the check that everything holding the
-//! files stopped (`stopped`), the package of Linux (`package`) — and the signer and the check of a release (`sign`,
-//! `release`), which `canonkeeper-release` runs in the jobs of a release.
+//! files stopped (`stopped`), the package of Linux (`package`), the output of its installer (`output`), the locks of
+//! another installation (`locks`) and the package kept for the author (`kept`) — and the signer
+//! and the check of a release (`sign`, `release`), which `canonkeeper-release` runs in the jobs of a release.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub mod fetch;
+pub mod kept;
+pub(crate) mod locks;
 pub mod manifest;
+mod output;
 pub mod package;
 pub mod policy;
 pub mod release;

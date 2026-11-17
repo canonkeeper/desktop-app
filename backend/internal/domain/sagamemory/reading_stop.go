@@ -55,6 +55,11 @@ var ErrRefused = errors.New("saga memory: the request of the reading was refused
 // a stream torn mid-answer, a gateway that could not ask the provider (RR1.1).
 var ErrNoAnswer = errors.New("saga memory: the request of the reading got no answer")
 
+// ErrAttemptTimeout is a call of the model an attempt of which its own time limit cut — before the headers of the answer or
+// while it was read (specs/2026-11-17-long-chapters.md LC2.1): the client of the site repeats such an attempt once, and the
+// second ends the call with it; the card of a chapter that ends with it is a timeout (LC4.1).
+var ErrAttemptTimeout = errors.New("saga memory: an attempt of the call of the model ran out of its time")
+
 // The reasons a step of the reading did not come together once the model was asked (RR1.1): the answer was cut short, it
 // did not read, the request was refused, nobody answered it.
 const (

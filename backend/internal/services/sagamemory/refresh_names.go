@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"canonkeeper/backend/internal/domain/disclosure"
+	"canonkeeper/backend/internal/domain/modelthread"
 	domain "canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/jobs"
 )
@@ -66,7 +67,8 @@ func (build *BuildCards) buildNames(ctx context.Context, claim jobs.WorkerClaim,
 		}
 		// The list of the names of the saga goes, named by how many names it has (JR1.3).
 		named := disclosure.Named{Names: strings.Count(strings.TrimSpace(names.list), "\n") + 1}
-		output, spent, err := build.model.Complete(disclosure.With(ctx, named), domain.NameInstructions, names.list)
+		// The register goes under the thread of the names of the Job (specs/2026-11-17-model-cache.md MC1.3).
+		output, spent, err := build.model.Complete(modelthread.With(disclosure.With(ctx, named), "names", jobs.JobIDOf(ctx)), domain.NameInstructions, names.list)
 		build.recordUsage(ctx, claim.ProjectID, spent)
 		if errors.Is(err, disclosure.ErrJournal) {
 			return "model", err

@@ -132,6 +132,23 @@ type Extension struct {
 	Compose    func(Core) (Modules, error)
 }
 
+// processModel is the configuration of the client of the models of the process. The client of the site waits out a
+// refusal of the pool of codex-lb for its own calls and journals the waits, and reads books with the key of the reading;
+// the client of the app goes to its own gateway (CarryJob) and waits out nothing (specs/2026-11-17-model-cache.md MC4.1,
+// MC4.2).
+func processModel(api config.ModelAPI, logger *log.Logger) modelapi.Config {
+	brain, brainEffort := api.Brain()
+	return modelapi.Config{
+		BaseURL: api.BaseURL, KeyEnv: api.KeyEnv, ReadingKeyEnv: api.ReadingKeyEnv, Key: api.Key,
+		CarryJob: api.CarryJob, Stops: api.Stops, RetryPause: api.RetryPause,
+		WaitsPool: !api.CarryJob, Logger: logger,
+		Model: api.Model, Effort: api.Effort, CardsModel: api.CardsModel, CardsEffort: api.CardsEffort,
+		ImageModel: api.ImageModel, ImageQuality: api.ImageQuality, CheckModel: api.CheckModel,
+		WritingModel: api.WritingModel, WritingEffort: api.WritingEffort, WritingCheckModel: api.WritingCheckModel,
+		Parallel: api.Parallel, VoiceBrain: brain, VoiceBrainEffort: brainEffort,
+	}
+}
+
 // BuildModel is the model of the background builds of a saga: one call with its instructions and its input.
 type BuildModel interface {
 	Complete(ctx context.Context, instructions, input string) (string, quota.ModelUsage, error)
@@ -501,16 +518,7 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger, extension E
 		}
 	}
 
-	voiceBrainModel, voiceBrainEffort := cfg.ModelAPI.Brain()
-	model, err := modelapi.New(modelapi.Config{
-		BaseURL: cfg.ModelAPI.BaseURL, KeyEnv: cfg.ModelAPI.KeyEnv, Key: cfg.ModelAPI.Key, CarryJob: cfg.ModelAPI.CarryJob,
-		Stops: cfg.ModelAPI.Stops, RetryPause: cfg.ModelAPI.RetryPause,
-		Model: cfg.ModelAPI.Model, Effort: cfg.ModelAPI.Effort,
-		CardsModel: cfg.ModelAPI.CardsModel, CardsEffort: cfg.ModelAPI.CardsEffort,
-		ImageModel: cfg.ModelAPI.ImageModel, ImageQuality: cfg.ModelAPI.ImageQuality, CheckModel: cfg.ModelAPI.CheckModel,
-		WritingModel: cfg.ModelAPI.WritingModel, WritingEffort: cfg.ModelAPI.WritingEffort, WritingCheckModel: cfg.ModelAPI.WritingCheckModel,
-		Parallel: cfg.ModelAPI.Parallel, VoiceBrain: voiceBrainModel, VoiceBrainEffort: voiceBrainEffort,
-	})
+	model, err := modelapi.New(processModel(cfg.ModelAPI, logger))
 	if err != nil {
 		return errors.New("api: model API unavailable")
 	}
@@ -719,7 +727,9 @@ func composeProduct(
 			}
 		}
 	}
-	var buildModel BuildModel = model.Background()
+	// The cards, the names and the thread layer read books with the key of the reading when one is named; the desktop has
+	// none, and its port is Background (specs/2026-11-17-model-cache.md MC4.1).
+	var buildModel BuildModel = model.Reading()
 	if extension.BuildModel != nil {
 		var err error
 		if buildModel, err = extension.BuildModel(buildModel); err != nil {
@@ -731,7 +741,8 @@ func composeProduct(
 	cardsBuilder := sagamemoryservice.NewBuildCards(
 		sagaRepository, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,
 		func(projectID, stage string, err error) { logNamesFailure(logger, projectID, stage, err) }, cardsDone,
-	).WithMap(sagamemoryservice.NewMapBuilder(saga, sagaRepository, authorMaterials), func(projectID, stage string, err error) { logMapFailure(logger, projectID, stage, err) }).WithEnd(ended)
+	).WithMap(sagamemoryservice.NewMapBuilder(saga, sagaRepository, authorMaterials), func(projectID, stage string, err error) { logMapFailure(logger, projectID, stage, err) }).WithEnd(ended).
+		WithUnbuilt(func(unbuilt sagamemoryservice.Unbuilt) { logCardUnbuilt(logger, unbuilt) })
 	// The same gate and cards model: a chat call waiting for a place goes first (R2.1).
 	layerBuilder := sagalayerservice.NewBuildLayer(
 		saga, sagaRepository, buildModel, usage, model.CardsModel(), cfg.ModelAPI.Parallel,

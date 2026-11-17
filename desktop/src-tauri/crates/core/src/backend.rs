@@ -19,6 +19,7 @@ use crate::folder::Reply;
 use crate::link::Argument;
 use crate::secrets::{Secret, Store};
 use crate::supervisor::Event;
+use crate::update::package::Progress;
 use crate::update::worker::Done;
 
 /// One line is at most this long, as on the side of the backend (control.go, maxControlLine).
@@ -53,6 +54,9 @@ pub enum Heard {
     },
     /// The thread of the network of an update found something (specs/2026-11-13-desk-updates.md UB1.3, UB2.2).
     Update(Done),
+    /// The thread of an installation of a package of Linux said a step, or how it ended
+    /// (specs/2026-11-17-desk-update-linux.md UL1.1).
+    Package(Progress),
     /// The page asks for the system window of a choice of a folder (specs/2026-11-13-desk-obsidian.md OB1.2).
     Pick {
         request: String,

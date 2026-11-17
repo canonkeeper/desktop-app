@@ -130,7 +130,7 @@ func (fixture fixture) write(t *testing.T, change func(*Writer) error) []byte {
 	parsed := map[int]*sagamemory.Card{}
 	for index, card := range fixture.cards {
 		must(cards.Add(card))
-		value, err := sagamemory.ParseCard(string(card.Card), 2)
+		value, err := sagamemory.ParseCard(string(card.Card), 1, 2)
 		must(err)
 		parsed[index] = &value
 	}

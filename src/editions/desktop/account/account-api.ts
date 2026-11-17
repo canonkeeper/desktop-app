@@ -36,12 +36,15 @@ export function useDesktopAccount(api: Pick<AccountClient, 'getAccount'>, enable
   });
 }
 
-/** The link as the one query reads it: a refusal of a start reads it again by these (AW1.2). */
+/**
+ * The link as the one query reads it: a refusal of a start reads it again by these (AW1.2). A failure of its read is its own
+ * (`outageScope: 'local'`, specs/2026-11-17-desk-update-linux.md UL4.1): the part says it, the root does not probe for it.
+ */
 export function accountQueryOptions(api: Pick<AccountClient, 'getAccount'>) {
   return queryOptions({
     queryKey: accountQueryKey,
     queryFn: ({ meta, signal }) => clientOf(meta).getAccount({ signal }),
-    meta: { accountApi: api },
+    meta: { accountApi: api, outageScope: 'local' },
   });
 }
 

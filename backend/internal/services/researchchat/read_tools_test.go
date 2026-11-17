@@ -3,13 +3,16 @@ package researchchat
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"canonkeeper/backend/internal/domain/agent"
+	"canonkeeper/backend/internal/domain/modelthread"
 	"canonkeeper/backend/internal/domain/quota"
 	researchdomain "canonkeeper/backend/internal/domain/researchchat"
 	"canonkeeper/backend/internal/domain/sagamemory"
@@ -57,21 +60,35 @@ type scanModelStub struct {
 	delay  time.Duration
 	inputs []string
 	jobs   []string
+	// threads are the threads of the calls, by the order of inputs (specs/2026-11-17-model-cache.md MC1.3).
+	threads [][]string
+	// atOnce is how many calls ran at once at most.
+	running, atOnce int
 }
 
 func (stub *scanModelStub) Complete(ctx context.Context, instructions, input string) (string, quota.ModelUsage, error) {
 	if instructions != sagamemory.ScanInstructions {
 		return "", quota.ModelUsage{}, errors.New("unexpected instructions")
 	}
+	stub.mu.Lock()
+	stub.running++
+	stub.atOnce = max(stub.atOnce, stub.running)
+	stub.mu.Unlock()
 	select {
 	case <-time.After(stub.delay):
 	case <-ctx.Done():
+		stub.mu.Lock()
+		stub.running--
+		stub.mu.Unlock()
 		return "", quota.ModelUsage{}, ctx.Err()
 	}
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+	stub.running--
+	thread, _ := modelthread.Of(ctx)
 	stub.inputs = append(stub.inputs, input)
 	stub.jobs = append(stub.jobs, jobs.JobIDOf(ctx))
+	stub.threads = append(stub.threads, thread)
 	if strings.Contains(input, "Вьюжница снова появилась") {
 		return `{"found":[{"item":"Вьюжница","chapter":"3","p":1,"quote":"Вьюжница снова появилась.","note":"раса"}]}`, scanCallUsage, nil
 	}
@@ -282,7 +299,7 @@ func TestScanGroupsFindingsByItemAcrossChunks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(model.inputs) != 3 || !strings.HasPrefix(model.inputs[0], "ЗАДАЧА: все упоминания вьюжниц\n\nТом ") {
+	if len(model.inputs) != 3 {
 		t.Fatalf("scan inputs = %q, want one chunk per chapter", model.inputs)
 	}
 	want := "Просмотрены главы: гл. 1–3. Найдено: 1 (мест: 3). Порядок — по первому появлению.\n" +
@@ -295,6 +312,77 @@ func TestScanGroupsFindingsByItemAcrossChunks(t *testing.T) {
 	}
 	if _, err := tools.Scan(context.Background(), rootCall, ScanInput{Task: "ы"}); err == nil {
 		t.Fatal("scan with a too short task succeeded")
+	}
+}
+
+// specs/2026-11-17-model-cache.md MC1.3: each chunk of a scan goes under the thread of the saga and the chapters of the
+// chunk in their order, so one chunk in two scans of other tasks is one thread, and the chunks of a scan go apart.
+func TestTheChunksOfAScanGoUnderTheThreadsOfTheirChapters(t *testing.T) {
+	tools, _, model := newTestToolsWithScan(researchdomain.ScopeProject, "", ScanSettings{Parallel: 2, ChunkRunes: 30})
+	for _, task := range []string{"все упоминания вьюжниц", "кто стоит у ворот"} {
+		if _, err := tools.Scan(context.Background(), rootCall, ScanInput{Task: task}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byInput := map[string][]string{}
+	for index, input := range model.inputs {
+		chapter := strings.SplitN(input, " (гл. ", 2)
+		if len(chapter) < 2 {
+			t.Fatalf("an input names no chapter: %q", input)
+		}
+		key := strings.SplitN(chapter[1], ")", 2)[0]
+		want := []string{"scan", "project-1", "c" + key}
+		if !reflect.DeepEqual(model.threads[index], want) {
+			t.Fatalf("the chunk of chapter %s went under %q, want %q", key, model.threads[index], want)
+		}
+		byInput[key] = model.threads[index]
+	}
+	if len(model.inputs) != 6 || len(byInput) != 3 {
+		t.Fatalf("%d calls over %d chunks", len(model.inputs), len(byInput))
+	}
+	chunk := &scanChunk{chapters: []*sagamemory.Chapter{{ID: "c1"}, {ID: "c2"}}}
+	if parts, _ := modelthread.Of(scanThread(context.Background(), "project-1", chunk.chapters)); !reflect.DeepEqual(parts, []string{"scan", "project-1", "c1", "c2"}) {
+		t.Fatalf("a chunk of two chapters goes under %q", parts)
+	}
+}
+
+// specs/2026-11-17-model-cache.md MC2.1: the input of a chunk is the text of its chapters, as it was, then an empty line and
+// the task — two scans of one chunk with other tasks share their beginning up to the task, which the cache of the provider
+// gives.
+func TestTheInputOfAChunkIsItsTextThenTheTask(t *testing.T) {
+	tools, _, model := newTestToolsWithScan(researchdomain.ScopeProject, "", ScanSettings{Parallel: 1, ChunkRunes: 1000})
+	for _, task := range []string{"все упоминания вьюжниц", "кто стоит у ворот"} {
+		if _, err := tools.Scan(context.Background(), rootCall, ScanInput{Task: task, From: "1", To: "2"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(model.inputs) != 2 {
+		t.Fatalf("scan inputs = %q, want one chunk a scan", model.inputs)
+	}
+	first, second := model.inputs[0], model.inputs[1]
+	text := strings.TrimSuffix(first, "ЗАДАЧА: все упоминания вьюжниц")
+	if !strings.HasPrefix(first, "Том 1, Глава 1. Начало (гл. 1)\n\n¶1 Мирон вошёл в город.\n") || !strings.HasSuffix(text, "¶1 Дорога вела на север.\n\n") ||
+		text == first || second != text+"ЗАДАЧА: кто стоит у ворот" {
+		t.Fatalf("the inputs of one chunk:\n%q\n%q", first, second)
+	}
+}
+
+// MC2.2: one scan reads no more than 32 chunks at once, whatever the places of the process; the rest goes on as it does.
+func TestAScanReadsNoMoreThan32ChunksAtOnce(t *testing.T) {
+	chapters := make([]sagamemory.Chapter, 40)
+	for index := range chapters {
+		chapters[index] = sagamemory.Chapter{ID: fmt.Sprintf("c%d", index+1), BookID: "b1", BookOrder: 1, Order: index + 1,
+			Title: fmt.Sprintf("Глава %d. Застава", index+1), Paragraphs: []sagamemory.Paragraph{{Text: "Вьюжница ждала у ворот."}}}
+	}
+	repository := &readRepositoryStub{authority: researchdomain.ReadAuthority{ProjectID: "project-1", SourceView: "draft", Scope: researchdomain.ScopeProject}}
+	model := &scanModelStub{delay: 50 * time.Millisecond}
+	tools := NewReadTools(repository, sagamemorytest.NewSaga(sagamemory.NewVersion("project-1", "draft", "fp", chapters), testStems, nil), model, nil,
+		ScanSettings{Parallel: 96, ChunkRunes: 30}, noThreadLayer{})
+	if _, err := tools.Scan(context.Background(), rootCall, ScanInput{Task: "все упоминания вьюжниц"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.inputs) != 40 || model.atOnce > 32 || model.atOnce < 2 {
+		t.Fatalf("%d chunks read, %d at once", len(model.inputs), model.atOnce)
 	}
 }
 
@@ -455,5 +543,41 @@ func TestToolsRetryAChapterDeletedDuringTheCall(t *testing.T) {
 	}
 	if len(repository.retained) != 0 {
 		t.Fatalf("retained %v for failed calls", repository.retained)
+	}
+}
+
+// specs/2026-11-17-long-chapters.md LC3.1: a chapter longer than four chunks is not given to the model: its chunk stands
+// skipped between its neighbours, which keep their inputs and their own ranges, and the answer names it with its length and
+// what reads it.
+func TestScanSkipsAChapterLongerThanFourChunks(t *testing.T) {
+	version := testSaga()
+	chapters := append([]sagamemory.Chapter(nil), version.Chapters...)
+	for index := range chapters {
+		chapters[index].Key, chapters[index].Index = "", 0
+	}
+	chapters[1].Paragraphs = []sagamemory.Paragraph{{Text: strings.TrimSpace(strings.Repeat("Дорога вела на север. ", 10))}}
+	long := sagamemory.NewVersion("project-1", "draft", "fp", chapters)
+	repository := &readRepositoryStub{authority: researchdomain.ReadAuthority{ProjectID: "project-1", SourceView: "draft", Scope: researchdomain.ScopeProject}}
+	model := &scanModelStub{}
+	usage := &usageStub{}
+	tools := NewReadTools(repository, sagamemorytest.NewSaga(long, testStems, testCards()), model, usage, ScanSettings{Parallel: 2, ChunkRunes: 30}, noThreadLayer{})
+	output, err := tools.Scan(context.Background(), rootCall, ScanInput{Task: "все упоминания вьюжниц"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Просмотрены главы: гл. 1, гл. 3. Найдено: 1 (мест: 2). Порядок — по первому появлению.\n" +
+		"Глава 2 слишком длинная для scan (219 знаков): ищите в ней через search или читайте read с from/to по абзацам.\n" +
+		"- вьюжница — мест: 2; впервые гл. 1 (¶2): «Вьюжница ждала у ворот.»; также: гл. 3 (¶1)\n"
+	if output != want {
+		t.Fatalf("scan output = %q, want %q", output, want)
+	}
+	sort.Strings(model.inputs)
+	inputs := []string{
+		sagamemory.ChapterText(&testSaga().Chapters[0]) + "\nЗАДАЧА: все упоминания вьюжниц",
+		sagamemory.ChapterText(&testSaga().Chapters[2]) + "\nЗАДАЧА: все упоминания вьюжниц",
+	}
+	sort.Strings(inputs)
+	if !reflect.DeepEqual(model.inputs, inputs) || len(usage.records) != 2 {
+		t.Fatalf("the model read %q, %d spends", model.inputs, len(usage.records))
 	}
 }

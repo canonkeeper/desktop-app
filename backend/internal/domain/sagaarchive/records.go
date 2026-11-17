@@ -114,7 +114,7 @@ func (reading *reading) cards() error {
 			head := archive.Chapters[index]
 			filed := FileCard{Card: card}
 			if card.Version <= sagamemory.CardVersion && card.ContentHash == head.ContentHash {
-				if parsed, err := sagamemory.ParseCard(string(card.Card), head.Paragraphs); err == nil {
+				if parsed, err := sagamemory.ParseCard(string(card.Card), 1, head.Paragraphs); err == nil {
 					filed.Accepted, filed.Parsed = true, parsed
 				}
 			}

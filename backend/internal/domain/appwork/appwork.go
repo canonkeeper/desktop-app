@@ -16,11 +16,12 @@ import (
 )
 
 // The places of a linked app on the models of the site (specs/2026-11-13-desk-account-ai.md AI3.3,
-// specs/2026-11-13-desk-proxy.md PX1.5; the owner's word of 16.11): the site keeps PlacesPerApp requests of one app at
+// specs/2026-11-13-desk-proxy.md PX1.5; the owner's word of 17.11 — twelve, it was six since 16.11: the pool of codex-lb
+// bounds the requests of all apps a minute, the places only share them between apps): the site keeps PlacesPerApp requests of one app at
 // once, and the reading of the books holds at most ReadingPlaces of them — so many chapters at once —, so a question of
 // the chat always has its place. The site's gate and the app's gateway and policy of the reading read these two numbers.
 const (
-	PlacesPerApp  = 6
+	PlacesPerApp  = 12
 	ReadingPlaces = PlacesPerApp - 1
 )
 

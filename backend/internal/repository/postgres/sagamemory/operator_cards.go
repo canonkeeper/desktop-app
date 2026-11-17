@@ -235,7 +235,7 @@ func loadCard(ctx context.Context, queries *sqlc.Queries, project pgtype.UUID, p
 		return fmt.Sprintf("the card of chapter %s names no model", card.ChapterID), nil
 	}
 	// A card checks as the cards Job's parser leaves it: an object with a summary, bounded.
-	parsed, err := domain.ParseCard(string(card.Card), 1<<30)
+	parsed, err := domain.ParseCard(string(card.Card), 1, 1<<30)
 	if err != nil || len(card.Card) == 0 || card.Card[0] != '{' {
 		return fmt.Sprintf("the card of chapter %s does not check as a card", card.ChapterID), nil
 	}

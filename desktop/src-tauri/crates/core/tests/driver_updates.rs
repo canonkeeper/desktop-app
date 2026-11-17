@@ -71,14 +71,19 @@ impl Recorder {
     }
 
     fn wait_for(&self, what: &str) {
+        self.wait_times(what, 1);
+    }
+
+    /// Waits until the window was told `what` `times` times.
+    fn wait_times(&self, what: &str, times: usize) {
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
-            if self.seen().iter().any(|seen| seen.starts_with(what)) {
+            if self.seen().iter().filter(|seen| seen.starts_with(what)).count() >= times {
                 return;
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        panic!("the window was never told {what:?}; it was told {:?}", self.seen());
+        panic!("the window was never told {what:?} {times} times; it was told {:?}", self.seen());
     }
 
     /// What the window was told, the openings without their codes.
@@ -174,6 +179,9 @@ impl Stand {
             dpkg: root.join("bin").join("dpkg"),
             dnf: root.join("bin").join("dnf"),
             rpm: root.join("bin").join("rpm"),
+            locks: vec![root.join("lock-frontend")],
+            // The locks of the system: the test holds its own lock file only.
+            proc_locks: "/proc/locks".into(),
             downloads: Some(root.join("Загрузки")),
             home: Some(root.join("дом")),
             temp: root.join("temp"),
@@ -186,10 +194,12 @@ impl Stand {
 
     /// A program of the test, by its name in `bin/`: a script of the shell of Unix — `pkexec` and the package managers
     /// exist only for the packages of Linux.
+    /// `LOCK` in the body is the lock of the stand (specs/2026-11-17-desk-update-linux.md UL1.3).
     #[cfg(unix)]
     fn program(&self, name: &str, body: &str) {
         use std::os::unix::fs::PermissionsExt;
         let path = self.root.join("bin").join(name);
+        let body = body.replace("LOCK", &self.setup.programs.locks[0].display().to_string());
         fs::write(&path, format!("#!/bin/sh\necho \"$@\" >> '{}'\n{body}\n", self.root.join("pkexec.txt").display()))
             .unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -482,6 +492,32 @@ fn a_package_that_failed_after_the_password_starts_the_app_again_with_its_note()
         Some(canonkeeper_desktop_core::supervisor::Unfinished { version: "1.3.0".into(), package: Some(package) })
     );
 
+    // specs/2026-11-17-desk-update-linux.md UL2.2: `apt-get` waited for another installation, took the lock and failed — the
+    // system may be half done —, or it waited and ended without its error `E:` (killed while it waited): the same restart with
+    // the note and the package.
+    for (name, body) in [
+        (
+            "waited-unfinished",
+            "echo 'Ожидание блокировки кэша: … LOCK …' >&2\nsleep 0.2\necho 'Распаковывается canonkeeper (1.3.0)…'\n\
+             echo 'E: Sub-process /usr/bin/dpkg returned an error code (1)' >&2\nexit 100",
+        ),
+        ("waited-killed", "echo 'Ожидание блокировки кэша: … LOCK …' >&2\nexit 100"),
+    ] {
+        let stand = Stand::new(name, Kind::Deb, UPDATES);
+        stand.program("pkexec", body);
+        stand.program("apt-get", "exit 0");
+        stand.publish(&debian());
+        let (window, handle) = stand.start(Duration::from_secs(20));
+        window.wait_for("leave");
+        handle.left();
+        window.wait_for("restart");
+        assert_eq!(stand.starts(), 1, "{name}: the backend started again under the old shell");
+        assert!(
+            update::take_note(Path::new(&stand.data)).is_some_and(|note| note.package.is_some()),
+            "{name}: no note"
+        );
+    }
+
     // A success starts the app again, without a note.
     let stand = Stand::new("installed", Kind::Deb, UPDATES);
     stand.program("pkexec", "exit 0");
@@ -493,6 +529,157 @@ fn a_package_that_failed_after_the_password_starts_the_app_again_with_its_note()
     window.wait_for("restart");
     assert_eq!(update::take_note(Path::new(&stand.data)), None);
     assert_eq!(fs::read_dir(stand.root.join("Загрузки")).unwrap().count(), 0);
+}
+
+// specs/2026-11-17-desk-update-linux.md UL2.1: another installation holds a lock of Debian — here a lock of the test on the
+// lock file of the stand, which the real list of the locks of the system shows: the shell refuses the `.deb` at once. The
+// window does not leave, the backend is not stopped, `pkexec` does not run, nothing is kept in «Загрузки», and the backend
+// hears `busy`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_package_is_not_begun_while_another_installation_holds_a_lock() {
+    let stand = Stand::new("busy-before", Kind::Deb, UPDATES);
+    stand.program("pkexec", "exit 0");
+    stand.program("apt-get", "exit 0");
+    stand.publish(&debian());
+    let lock = fs::File::create(&stand.setup.programs.locks[0]).unwrap();
+    lock.lock().unwrap();
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    stand.wait_received("update-refusal busy");
+    let received = stand.received();
+    assert!(received.contains(&"update-state install_refused".to_string()), "{received:?}");
+    assert!(!received.contains(&"shutdown".to_string()), "{received:?}");
+    assert_eq!(window.told(), ["open"]);
+    assert_eq!(stand.pkexec_record(), "", "pkexec ran");
+    assert_eq!(fs::read_dir(stand.root.join("Загрузки")).unwrap().count(), 0);
+    assert!(journal_of(&stand).contains("update_install_refused reason=busy"), "{}", journal_of(&stand));
+    assert_eq!(stand.starts(), 1);
+    handle.close();
+    window.wait_for("exit");
+}
+
+// specs/2026-11-17-desk-update-linux.md UL1.1, UL1.3: the page of the start says each step of a package — the stop of the
+// backend, the password, the work, the wait for another installation and the work again — and the errors of `pkexec` are no
+// step of the work.
+#[cfg(unix)]
+#[test]
+fn the_page_of_the_start_says_each_step_of_a_package() {
+    let stand = Stand::new("package-steps", Kind::Deb, UPDATES);
+    stand.program(
+        "pkexec",
+        "sleep 0.2\necho 'Чтение списков пакетов…'\necho 'Ожидание блокировки кэша: Не удалось получить блокировку файла LOCK'\n\
+         echo 'Настраивается пакет canonkeeper (1.3.0)…'\nexit 0",
+    );
+    stand.program("apt-get", "exit 0");
+    stand.publish(&debian());
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    window.wait_for("leave");
+    handle.left();
+    window.wait_for("restart");
+    assert_eq!(
+        window.told(),
+        [
+            "open",
+            "leave Сохраняю данные и останавливаю помощника, чтобы установить версию 1.3.0",
+            "step Система спрашивает пароль администратора, чтобы установить версию 1.3.0",
+            "step Устанавливаю версию 1.3.0. Окно откроется снова, когда установка закончится",
+            "step Жду, пока закончится другая установка программ (до 2\u{00a0}минут). Если она ждёт ответа в терминале, ответьте там",
+            "step Устанавливаю версию 1.3.0. Окно откроется снова, когда установка закончится",
+            "restart",
+        ]
+    );
+    let journal = journal_of(&stand);
+    for code in ["update_password_asked", "update_package_running", "update_lock_wait"] {
+        assert!(journal.contains(code), "{journal}");
+    }
+    assert!(!journal.contains("Чтение списков"), "the output of the installer is in the log of the shell");
+
+    let stand = Stand::new("package-dismissed", Kind::Deb, UPDATES);
+    stand.program("pkexec", "echo 'Error executing command as another user: Request dismissed' >&2\nexit 126");
+    stand.program("apt-get", "exit 0");
+    stand.publish(&debian());
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    window.wait_for("leave");
+    stand.plan(AGAIN);
+    handle.left();
+    stand.wait_received("update-state install_refused");
+    let told = window.told();
+    assert_eq!(
+        told[1..],
+        [
+            "leave Сохраняю данные и останавливаю помощника, чтобы установить версию 1.3.0",
+            "step Система спрашивает пароль администратора, чтобы установить версию 1.3.0",
+            "starting",
+            "open",
+        ]
+    );
+}
+
+// specs/2026-11-17-desk-update-linux.md UL2.3: «Обновить и перезапустить» after the window of the password was closed installs the
+// same file: no download, and the package is not kept in «Загрузки» a second time.
+#[cfg(unix)]
+#[test]
+fn a_retry_after_a_closed_window_of_the_password_takes_the_same_file() {
+    let stand = Stand::new("retry", Kind::Deb, UPDATES);
+    stand.program("pkexec", "exit 126");
+    stand.program("apt-get", "exit 0");
+    stand.publish(&debian());
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    window.wait_for("leave");
+    // The backend that starts after the refusal asks again at once, as the author's button would.
+    stand.plan(
+        r#"ready 24117 again
+on install_refused {"type":"update-download","version":"1.3.0"}
+on downloaded {"type":"update-install","version":"1.3.0"}
+serve
+"#,
+    );
+    handle.left();
+    window.wait_times("leave", 2);
+    stand.plan(AGAIN);
+    handle.left();
+    window.wait_times("open", 3);
+    stand.wait_received("update-refusal declined");
+    let files = stand.source.requests().iter().filter(|request| request.path == "/site/file-1.3.0").count();
+    assert_eq!(files, 1, "the file was downloaded again");
+    assert_eq!(stand.pkexec_record().lines().count(), 2, "{}", stand.pkexec_record());
+    assert_eq!(fs::read_dir(stand.root.join("Загрузки")).unwrap().count(), 1, "the package is kept twice");
+    assert!(journal_of(&stand).contains("update_download_held"), "{}", journal_of(&stand));
+}
+
+// specs/2026-11-17-desk-update-linux.md UL2.2: after the password `apt-get` waited for another installation and never took its
+// lock — a refusal as a closed window is: no restart and no note, the window back on the page of the start and the backend
+// started again, which hears `busy`; no package is kept.
+#[cfg(unix)]
+#[test]
+fn apt_get_that_never_took_the_lock_after_the_password_is_busy_without_a_restart() {
+    let stand = Stand::new("busy-after", Kind::Deb, UPDATES);
+    stand.program(
+        "pkexec",
+        "echo 'Ожидание блокировки кэша: Не удалось получить блокировку файла LOCK' >&2\n\
+         echo 'E: Невозможно получить блокировку внешнего интерфейса dpkg (LOCK)' >&2\nexit 100",
+    );
+    stand.program("apt-get", "exit 0");
+    stand.publish(&debian());
+    let (window, handle) = stand.start(Duration::from_secs(20));
+    window.wait_for("leave");
+    stand.plan(AGAIN);
+    handle.left();
+    stand.wait_received("update-refusal busy");
+    assert_eq!(
+        window.told()[1..],
+        [
+            "leave Сохраняю данные и останавливаю помощника, чтобы установить версию 1.3.0",
+            "step Система спрашивает пароль администратора, чтобы установить версию 1.3.0",
+            "step Жду, пока закончится другая установка программ (до 2\u{00a0}минут). Если она ждёт ответа в терминале, ответьте там",
+            "starting",
+            "open",
+        ]
+    );
+    assert_eq!(stand.starts(), 2);
+    assert_eq!(update::take_note(Path::new(&stand.data)), None);
+    assert_eq!(fs::read_dir(stand.root.join("Загрузки")).unwrap().count(), 0, "a package is kept");
+    assert!(journal_of(&stand).contains("update_install_refused reason=busy"), "{}", journal_of(&stand));
 }
 
 #[test]

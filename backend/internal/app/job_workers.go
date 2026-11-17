@@ -11,6 +11,7 @@ import (
 	"canonkeeper/backend/internal/jobs"
 	"canonkeeper/backend/internal/jobworker"
 	"canonkeeper/backend/internal/observability"
+	sagamemoryservice "canonkeeper/backend/internal/services/sagamemory"
 )
 
 type queuedJobClaims interface {
@@ -174,6 +175,31 @@ func logNamesFailure(logger *log.Logger, projectID, stage string, err error) {
 	entry := namesFailureLogEntry{Event: "saga_names_failed", ProjectID: projectID, Stage: stage}
 	entry.ErrorClass, entry.ErrorCause = observability.ClassifyError(err)
 	line, _ := json.Marshal(entry)
+	logger.Print(string(line))
+}
+
+// cardUnbuiltLogEntry is a chapter a cards Job left without a card (specs/2026-11-17-long-chapters.md LC4.1): ids, counts
+// and the outcome — no text, title, key, place or words of an error.
+type cardUnbuiltLogEntry struct {
+	Event        string `json:"event"`
+	JobID        string `json:"jobId"`
+	ProjectID    string `json:"projectId"`
+	ChapterID    string `json:"chapterId"`
+	Parts        int    `json:"parts"`
+	Attempts     int    `json:"attempts"`
+	Outcome      string `json:"outcome"`
+	Seconds      int    `json:"seconds"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
+}
+
+// logCardUnbuilt says that a cards Job left a chapter without a card once the model was called (LC4.1).
+func logCardUnbuilt(logger *log.Logger, unbuilt sagamemoryservice.Unbuilt) {
+	line, _ := json.Marshal(cardUnbuiltLogEntry{
+		Event: "card_chapter_unbuilt", JobID: unbuilt.JobID, ProjectID: unbuilt.ProjectID, ChapterID: unbuilt.ChapterID,
+		Parts: unbuilt.Parts, Attempts: unbuilt.Attempts, Outcome: unbuilt.Outcome, Seconds: unbuilt.Seconds,
+		InputTokens: unbuilt.InputTokens, OutputTokens: unbuilt.OutputTokens,
+	})
 	logger.Print(string(line))
 }
 

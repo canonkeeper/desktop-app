@@ -59,11 +59,11 @@ func (port VisionPort) Look(ctx context.Context, instructions, prompt string, im
 	}
 	ctx, cancel := context.WithTimeout(ctx, port.timeout)
 	defer cancel()
-	if err := port.client.gate.acquire(ctx, Interactive); err != nil {
-		return "", quota.ModelUsage{}, err
-	}
-	defer port.client.gate.release()
-	text, usage, _, err := port.client.once(ctx, payload, nil, false)
+	// One attempt, with the thread of its context (specs/2026-11-17-model-cache.md MC1.1).
+	send := sending{thread: port.client.threadOf(ctx)}
+	text, usage, _, err := exchange(ctx, port.client, Interactive, send.thread, func() (string, quota.ModelUsage, attempt, error) {
+		return port.client.once(ctx, send, payload, nil, false)
+	})
 	return text, usage, err
 }
 

@@ -17,10 +17,10 @@ func price(text string) *aisettings.Price {
 	return &value
 }
 
-func chapters(count, characters int) []int {
-	out := make([]int, count)
+func chapters(count, characters int) []Chapter {
+	out := make([]Chapter, count)
 	for i := range out {
-		out[i] = characters
+		out[i] = Chapter{Characters: int64(characters), Parts: 1}
 	}
 	return out
 }
@@ -123,7 +123,7 @@ func TestTheEstimateByTheSampleChangesOnlyWhatItMeasured(t *testing.T) {
 	if sampled.Kind != KindSample || !slices.Contains(sampled.Assumptions, AssumptionCalibrationSample) {
 		t.Fatalf("the kind = %s %v", sampled.Kind, sampled.Assumptions)
 	}
-	byFormula := estimateOf(Input{Unread: chapters(600, 10_000), Books: 1, Parallel: 4}, terms{calibration: 330, outputOfChapter: 6_500, secondsOfChapter: 90})
+	byFormula := estimateOf(Input{Unread: chapters(600, 10_000), Books: 1, Parallel: 4}, terms{calibration: 330, outputOfPart: 6_500, secondsOfPart: 90})
 	if sampled.Input != byFormula.Input || sampled.Output != byFormula.Output {
 		t.Fatalf("by the sample %d/%d, by the formula with what it measured %d/%d", sampled.Input, sampled.Output, byFormula.Input, byFormula.Output)
 	}
@@ -162,5 +162,42 @@ func TestTheEstimateOfASagaWhoseChaptersAreRead(t *testing.T) {
 	}
 	if two := Count(Input{Unread: chapters(2, 5_000), Books: 1, Parallel: 4}); two.SampleChapters != 2 {
 		t.Fatalf("the sample of two chapters = %d", two.SampleChapters)
+	}
+}
+
+// specs/2026-11-17-long-chapters.md LC1.6: a long chapter costs the card and the pass of each of its parts — its text once,
+// the instructions, the card of the pass, the output and the time per part —, and the time is the parts over «Запросов
+// одновременно»; the sample measures a part, not a chapter.
+func TestTheEstimateCountsTheCardsOfTheParts(t *testing.T) {
+	short := Input{Unread: chapters(4, 10_000), Books: 1, Parallel: 4, Calibration: 330, CalibrationChecked: true}
+	long := short
+	long.Unread = append(chapters(3, 10_000), Chapter{Characters: 10_000, Parts: 6})
+	before, after := Count(short), Count(long)
+	if extra := after.Input - before.Input; extra != repeated(3*(4_700+2*3_300+10_000)+6*(4_700+10_000)+2*3_300)-repeated(4*(4_700+2*3_300+10_000)) {
+		t.Fatalf("five more parts cost %d tokens in", extra)
+	}
+	if extra := after.Output - before.Output; extra != repeated(9*outputPlain)-repeated(4*outputPlain) {
+		t.Fatalf("five more parts cost %d tokens out", extra)
+	}
+	if after.Seconds-before.Seconds != (ceilDiv(9, 4)-ceilDiv(4, 4))*chapterSeconds || after.Chapters != 4 {
+		t.Fatalf("the time of 9 parts = %d, of 4 = %d", after.Seconds, before.Seconds)
+	}
+	if unnamed := Count(Input{Unread: []Chapter{{Characters: 10_000}}, Books: 1, Parallel: 4}); unnamed.Input != Count(Input{Unread: chapters(1, 10_000), Books: 1, Parallel: 4}).Input {
+		t.Fatal("a chapter of no named parts is not one part")
+	}
+
+	byChapters := Input{Unread: chapters(10, 10_000), Books: 1, Parallel: 1, Host: "api.deepseek.com", Model: "reader", Sample: &Sample{
+		Host: "api.deepseek.com", Model: "reader", Chapters: 3, Characters: 6_000,
+		Tokens: aisettings.Tokens{Input: 3*(14_700) + 2*1_980, Output: 3 * 6_500}, Seconds: 270,
+	}}
+	byParts := byChapters
+	sample := *byChapters.Sample
+	sample.Parts = 5
+	sample.Tokens = aisettings.Tokens{Input: 5*(14_700) + 2*1_980, Output: 5 * 6_500}
+	sample.Seconds = 450
+	byParts.Sample = &sample
+	if chaptered, parted := Count(byChapters), Count(byParts); chaptered.Input != parted.Input || chaptered.Output != parted.Output || chaptered.Seconds != parted.Seconds {
+		t.Fatalf("a sample of five parts in three chapters measured %d/%d/%d, of three chapters %d/%d/%d",
+			parted.Input, parted.Output, parted.Seconds, chaptered.Input, chaptered.Output, chaptered.Seconds)
 	}
 }

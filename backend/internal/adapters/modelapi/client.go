@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -69,6 +70,9 @@ const maxRetryAfter = 5 * time.Minute
 type Config struct {
 	BaseURL string
 	KeyEnv  string // name of the environment variable holding the API key; empty for keyless relays
+	// ReadingKeyEnv names the variable of the key of the reading of books — cards, names, the layer —, a fork of the key of
+	// the site with a bound of its own in the pool of codex-lb (specs/2026-11-17-model-cache.md MC4.1); empty, KeyEnv.
+	ReadingKeyEnv string
 	// Key is the key by value, for the client of the app: the token of its local gateway, which never enters an
 	// environment (specs/2026-11-13-desk-gateway.md GW3.1). Set, KeyEnv is not read.
 	Key string
@@ -82,8 +86,13 @@ type Config struct {
 	// RetryPause is the unit of the pause before a repeat (attempt²·RetryPause); zero is three seconds. Only the program of
 	// the process tests shortens it.
 	RetryPause time.Duration
-	Model      string
-	Effort     string
+	// WaitsPool makes the client of the site wait out a refusal of the pool of codex-lb for its own calls, outside the count
+	// of the attempts, while the call lives (specs/2026-11-17-model-cache.md MC4.2); a client without it — of the steps of
+	// apps — hands the refusal to its caller (PoolRefusal). Logger takes the line of each wait; nil keeps none.
+	WaitsPool bool
+	Logger    *log.Logger
+	Model     string
+	Effort    string
 	// CardsModel and CardsEffort are what chapter cards (the Background port) call; empty, they
 	// are Model and Effort (specs/2026-10-29-chapter-cards-quality.md, UC3).
 	CardsModel  string
@@ -111,9 +120,15 @@ type Config struct {
 // Client is the one transport of the process; callers use it through a Port of their class.
 type Client struct {
 	config Config
-	http   *http.Client
-	gate   *gate
-	pause  func(attempt int) time.Duration
+	// http sends the calls of the client, whose every attempt holds its own time (attemptTime); images sends the drawings
+	// of the images route within the time of their own HTTP client.
+	http        *http.Client
+	images      *http.Client
+	attemptTime time.Duration
+	gate        *gate
+	pause       func(attempt int) time.Duration
+	// poolWait is how long a wait of the pool lasts for the wait it asks; only the tests shorten it.
+	poolWait func(asked time.Duration) time.Duration
 }
 
 // New makes the client of the process; without a base URL it is a client of an AI not connected yet, whose every call
@@ -126,9 +141,14 @@ func New(config Config) (*Client, error) {
 	if unit <= 0 {
 		unit = 3 * time.Second
 	}
+	attemptTime := siteAttemptTime
+	if config.CarryJob {
+		attemptTime = appAttemptTime
+	}
 	return &Client{
-		config: config, http: &http.Client{Timeout: 30 * time.Minute}, gate: newGate(config.Parallel),
-		pause: func(attempt int) time.Duration { return time.Duration(attempt*attempt) * unit },
+		config: config, http: &http.Client{}, images: &http.Client{Timeout: 30 * time.Minute}, attemptTime: attemptTime, gate: newGate(config.Parallel),
+		pause:    func(attempt int) time.Duration { return time.Duration(attempt*attempt) * unit },
+		poolWait: func(asked time.Duration) time.Duration { return asked },
 	}, nil
 }
 
@@ -164,7 +184,7 @@ type ImagesRoute struct {
 func (client *Client) ImagesRoute() ImagesRoute {
 	model, quality := client.config.Images()
 	return ImagesRoute{
-		BaseURL: client.config.BaseURL, KeyEnv: client.config.KeyEnv, Model: model, Quality: quality, HTTP: client.http,
+		BaseURL: client.config.BaseURL, KeyEnv: client.config.KeyEnv, Model: model, Quality: quality, HTTP: client.images,
 		Hold: func(ctx context.Context) (func(), error) {
 			if err := client.gate.acquire(ctx, Interactive); err != nil {
 				return nil, err
@@ -180,6 +200,8 @@ type Port struct {
 	client        *Client
 	class         Class
 	model, effort string
+	// keyEnv is the variable of the key of the port; empty, the key of the client.
+	keyEnv string
 }
 
 // Interactive is the port of calls a writer waits for during a chat turn.
@@ -191,6 +213,15 @@ func (client *Client) Interactive() Port {
 func (client *Client) Background() Port {
 	model, effort := client.config.Cards()
 	return Port{client: client, class: Background, model: model, effort: effort}
+}
+
+// Reading is the port of the reading of books — the cards, the names and the thread layer (MC4.1): Background, with the key
+// of the reading when one is named; the materials of the author stay on Background with the key of the site. The gate of
+// the process is one for all the ports.
+func (client *Client) Reading() Port {
+	port := client.Background()
+	port.keyEnv = client.config.ReadingKeyEnv
+	return port
 }
 
 // agentEffort is the effort the measurement wrote scenes with; checkEffort the one it checked them with.
@@ -318,10 +349,12 @@ func (port Port) Stream(ctx context.Context, instructions, input string, portion
 	var lastErr error
 	var asked time.Duration
 	unreachable, repeated, checked := false, false, false
-	for attempt := 0; attempt < attempts; attempt++ {
-		if attempt > 0 {
+	send := sending{keyEnv: port.keyEnv, thread: client.threadOf(ctx)}
+	timeouts := 0
+	for try := 0; try < attempts; try++ {
+		if try > 0 {
 			// The wait the provider asked for in Retry-After, or the client's own pause (GW3.3).
-			wait := client.pause(attempt)
+			wait := client.pause(try)
 			if asked > 0 {
 				wait = asked
 			}
@@ -331,20 +364,19 @@ func (port Port) Stream(ctx context.Context, instructions, input string, portion
 			case <-time.After(wait):
 			}
 		}
-		if err := client.gate.acquire(ctx, port.class); err != nil {
-			return "", usage, err
-		}
-		if portions != nil {
-			portions("")
-		}
-		text, spent, outcome, err := client.once(ctx, payload, portions, attempt == attempts-1)
-		client.gate.release()
+		last := try == attempts-1
+		text, spent, outcome, err := exchange(ctx, client, port.class, send.thread, func() (string, quota.ModelUsage, attempt, error) {
+			if portions != nil {
+				portions("")
+			}
+			return client.once(ctx, send, payload, portions, last)
+		})
 		usage = usage.Add(spent)
 		if err == nil {
 			return text, usage, nil
 		}
 		lastErr, asked, unreachable, repeated, checked = err, outcome.wait, outcome.unreachable, outcome.retry, outcome.checked
-		if !outcome.retry || ctx.Err() != nil {
+		if !outcome.retry || ctx.Err() != nil || client.timedOutTwice(outcome, &timeouts) {
 			break
 		}
 	}
@@ -377,14 +409,20 @@ func (silent *noAnswer) Unwrap() []error { return []error{silent.err, sagamemory
 type attempt struct {
 	retry bool
 	wait  time.Duration
+	// timedOut: the own time of the attempt ended it, before the headers or while its answer was read (LC2.1).
+	timedOut bool
 	// unreachable: the gateway of the app could not reach the provider, or the client the gateway.
 	unreachable bool
 	// checked: the gateway let the request go under the check of the reading (CheckedHeader).
 	checked bool
+	// threadRefused: codex-lb refused the thread of the request, which lost its account (MC1.2).
+	threadRefused bool
+	// pool: the pool of requests of codex-lb refused the request (MC4.2).
+	pool bool
 }
 
-// retryAfter is the wait of a Retry-After of a refusal — seconds or a date — bounded by maxRetryAfter; none is zero.
-func retryAfter(header http.Header) time.Duration {
+// RetryAfter is the wait of a Retry-After of a refusal — seconds or a date — bounded by maxRetryAfter; none is zero.
+func RetryAfter(header http.Header) time.Duration {
 	value := strings.TrimSpace(header.Get("Retry-After"))
 	if value == "" {
 		return 0
@@ -398,18 +436,31 @@ func retryAfter(header http.Header) time.Duration {
 	return min(max(wait, 0), maxRetryAfter)
 }
 
-// authorize puts the key of a call: by value for the app, from the variable of the environment for the site.
-func (client *Client) authorize(req *http.Request, last bool) error {
+// sending is what the HTTP requests of one call send besides the body: the variable of the key of its port — empty, the
+// client's — and its thread.
+type sending struct {
+	keyEnv string
+	thread *callThread
+}
+
+// authorize puts the key of a call: by value for the app, from the variable of the environment for the site — of the port,
+// or of the client — and the thread of the call.
+func (client *Client) authorize(req *http.Request, send sending, last bool) error {
+	keyEnv := send.keyEnv
+	if keyEnv == "" {
+		keyEnv = client.config.KeyEnv
+	}
 	switch {
 	case client.config.Key != "":
 		req.Header.Set("Authorization", "Bearer "+client.config.Key)
-	case client.config.KeyEnv != "":
-		key := os.Getenv(client.config.KeyEnv)
+	case keyEnv != "":
+		key := os.Getenv(keyEnv)
 		if key == "" {
-			return fmt.Errorf("model API key variable %s is empty", client.config.KeyEnv)
+			return fmt.Errorf("model API key variable %s is empty", keyEnv)
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
+	send.thread.name(req.Header)
 	if client.config.CarryJob {
 		if job := jobs.JobIDOf(req.Context()); job != "" {
 			req.Header.Set(JobHeader, job)
@@ -429,66 +480,16 @@ func (client *Client) authorize(req *http.Request, last bool) error {
 	return nil
 }
 
-// gatewayRefusal is the refusal of the local gateway of the app: its code and the reason of the reading it names.
-type gatewayRefusal struct {
-	Error struct {
-		Code   string `json:"code"`
-		Reason string `json:"reason"`
-	} `json:"error"`
+// refused is a refusal of the provider of the site, read from the first 300 bytes of its body: a wait (429) and a failure
+// (5xx) are repeated, and a refusal of the thread and of the pool are named (MC1.2, MC4.2). The excerpt goes into the error.
+func refused(resp *http.Response) (attempt, error) {
+	excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+	return attempt{
+			retry: resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500, wait: RetryAfter(resp.Header),
+			threadRefused: ThreadRefused(resp.StatusCode, excerpt), pool: PoolRefused(resp.StatusCode, excerpt),
+		},
+		fmt.Errorf("model API status %d: %s", resp.StatusCode, strings.TrimSpace(string(excerpt)))
 }
-
-// stopOf is the typed stop of a refusal of the gateway (CN3.4): the funds, the key, the model and a refusal of the check
-// of the reading are not repeated; no connection is repeated and stops after the last attempt. A refusal the gateway named
-// refused is not repeated either (specs/2026-11-15-desk-reading-rest.md RR1.1): the caller gets sagamemory.ErrRefused.
-func stopOf(raw []byte) (stop *sagamemory.Stopped, unreachable, refused bool) {
-	var refusal gatewayRefusal
-	if json.Unmarshal(raw, &refusal) != nil {
-		return nil, false, false
-	}
-	switch {
-	case refusal.Error.Code == codeReadingPaused:
-		return &sagamemory.Stopped{Stop: sagamemory.StopPaused}, false, false
-	case sagamemory.Stop(refusal.Error.Reason).Typed():
-		return &sagamemory.Stopped{Stop: sagamemory.Stop(refusal.Error.Reason)}, false, false
-	default:
-		return nil, refusal.Error.Reason == string(sagamemory.StopConnection), refusal.Error.Reason == reasonRefused
-	}
-}
-
-// journalCode is the code of a refusal of the journal of the gateway of the app (journal.unavailable, journal.unnamed), or "".
-func journalCode(raw []byte) string {
-	var refusal gatewayRefusal
-	if json.Unmarshal(raw, &refusal) != nil {
-		return ""
-	}
-	switch refusal.Error.Code {
-	case disclosure.CodeUnavailable, disclosure.CodeUnnamed:
-		return refusal.Error.Code
-	default:
-		return ""
-	}
-}
-
-// repeatsInApp says the client of the app repeats a refusal of the gateway of the status: a wait (429), a failure (5xx) and a
-// refusal of a state that passes — 408, 409, 423, 425 —, which the table of the gateway counts as no answer, not as a refusal
-// of the request (aisettings.Classify; specs/2026-11-15-desk-reading-no-answer.md NA2.1). The statuses that pass are those of
-// the one rule aisettings.Passes, which this core adapter of both builds does not import: a test holds the two together
-// (specs/2026-11-15-desk-reading-queue.md RQ3.1). The client of the site repeats a wait and a failure alone.
-func repeatsInApp(status int) bool {
-	switch status {
-	case http.StatusRequestTimeout, http.StatusConflict, http.StatusLocked, http.StatusTooEarly, http.StatusTooManyRequests:
-		return true
-	default:
-		return status >= 500
-	}
-}
-
-// codeReadingPaused is the refusal of the check of the reading at the gateway of the app; reasonRefused the reason the gateway
-// gives a refusal that repeating does not cure (RR1.1).
-const (
-	codeReadingPaused = "reading.paused"
-	reasonRefused     = "refused"
-)
 
 // responseUsage is the usage of response.completed in the Responses API.
 type responseUsage struct {
@@ -502,20 +503,24 @@ type responseUsage struct {
 	} `json:"output_tokens_details"`
 }
 
-func (client *Client) once(ctx context.Context, payload []byte, portions func(string), last bool) (string, quota.ModelUsage, attempt, error) {
+func (client *Client) once(ctx context.Context, send sending, payload []byte, portions func(string), last bool) (string, quota.ModelUsage, attempt, error) {
 	var usage quota.ModelUsage
+	call := ctx
+	ctx, cancel := client.attempt(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(client.config.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
 		return "", usage, attempt{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if err := client.authorize(req, last); err != nil {
+	if err := client.authorize(req, send, last); err != nil {
 		return "", usage, attempt{}, err
 	}
 	resp, err := client.http.Do(req)
 	if err != nil {
-		return "", usage, attempt{retry: ctx.Err() == nil, unreachable: client.config.Stops}, err
+		outcome := attempt{retry: call.Err() == nil, unreachable: client.config.Stops}
+		return "", usage, outcome, client.timedOut(call, ctx, &outcome, err)
 	}
 	defer resp.Body.Close()
 	checked := client.config.Stops && resp.Header.Get(CheckedHeader) != ""
@@ -531,16 +536,14 @@ func (client *Client) once(ctx context.Context, payload []byte, portions func(st
 		} else if refused {
 			return "", usage, attempt{}, fmt.Errorf("model API status %d: %w", resp.StatusCode, sagamemory.ErrRefused)
 		} else if unreachable {
-			return "", usage, attempt{retry: true, unreachable: true, wait: retryAfter(resp.Header)},
+			return "", usage, attempt{retry: true, unreachable: true, wait: RetryAfter(resp.Header)},
 				fmt.Errorf("model API status %d: the provider could not be reached", resp.StatusCode)
 		}
-		return "", usage, attempt{retry: repeatsInApp(resp.StatusCode), wait: retryAfter(resp.Header), checked: checked}, fmt.Errorf("model API status %d", resp.StatusCode)
+		return "", usage, attempt{retry: repeatsInApp(resp.StatusCode), wait: RetryAfter(resp.Header), checked: checked}, fmt.Errorf("model API status %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		retry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return "", usage, attempt{retry: retry, wait: retryAfter(resp.Header)},
-			fmt.Errorf("model API status %d: %s", resp.StatusCode, strings.TrimSpace(string(excerpt)))
+		outcome, err := refused(resp)
+		return "", usage, outcome, err
 	}
 	usage.Calls = 1
 	var text strings.Builder
@@ -617,10 +620,12 @@ func (client *Client) once(ctx context.Context, payload []byte, portions func(st
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", usage, attempt{retry: true, checked: checked}, err
+		outcome := attempt{retry: true, checked: checked}
+		return "", usage, outcome, client.timedOut(call, ctx, &outcome, err)
 	}
 	if !completed {
-		return "", usage, attempt{retry: true, checked: checked}, errors.New("model API stream ended before completion")
+		outcome := attempt{retry: true, checked: checked}
+		return "", usage, outcome, client.timedOut(call, ctx, &outcome, errors.New("model API stream ended before completion"))
 	}
 	return text.String(), usage, attempt{}, nil
 }

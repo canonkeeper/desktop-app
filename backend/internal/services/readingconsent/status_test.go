@@ -76,7 +76,7 @@ func TestTheStatusSaysTheStateOfTheReading(t *testing.T) {
 	}
 	// Two cards since the continuation are no pace: the estimate says the time.
 	// ⌈400/4⌉·120 s of the chapters, the names and the layer by the formula: the time does not hang on the characters.
-	estimate := domain.Count(domain.Input{Unread: make([]int, 400), Parallel: 4, Reasoning: true}).Seconds
+	estimate := domain.Count(domain.Input{Unread: make([]domain.Chapter, 400), Parallel: 4, Reasoning: true}).Seconds
 	if _, reading = state(going(), ToRead{Unread: chaptersOf(400)}, 2); reading.RemainingSeconds == nil || *reading.RemainingSeconds != estimate {
 		t.Fatalf("the time by the estimate = %v", reading.RemainingSeconds)
 	}

@@ -34,13 +34,16 @@ func (store *sampleStoreOfTheTest) SampleRequests(context.Context, string) ([]Sa
 	return store.requests, nil
 }
 
-type sampleCardsOfTheTest struct{ carded map[string]bool }
+type sampleCardsOfTheTest struct {
+	carded map[string]bool
+	parts  map[string]int
+}
 
 func (cards sampleCardsOfTheTest) Cards(_ context.Context, _ string, chapters []Chapter) ([]SampleCard, error) {
 	var shown []SampleCard
 	for _, chapter := range chapters {
 		if cards.carded[chapter.ID] {
-			shown = append(shown, SampleCard{ChapterID: chapter.ID, Place: "Книга 1, гл. 1", Summary: "Пересказ", Characters: 2_000})
+			shown = append(shown, SampleCard{ChapterID: chapter.ID, Place: "Книга 1, гл. 1", Summary: "Пересказ", Characters: 2_000, Parts: cards.parts[chapter.ID]})
 		}
 	}
 	return shown, nil
@@ -171,5 +174,35 @@ func TestASampleTheProviderDidNotAnswerSaysItsOwnWords(t *testing.T) {
 		if got := failureOf(SampleJob{Status: "failed", ErrorCode: code}); got != want {
 			t.Errorf("a sample that ended %s = %q; want %q", code, got, want)
 		}
+	}
+}
+
+// specs/2026-11-17-long-chapters.md LC1.6: what the lengths of the paragraphs of a chapter say — its characters and the parts
+// of the one division of the card writer —, and the sample measures the parts its cards read by.
+func TestTheSampleMeasuresThePartsOfItsChapters(t *testing.T) {
+	lengths := make([]int, 351)
+	for index := range lengths[:350] {
+		lengths[index] = 1_000
+	}
+	lengths[350] = 1
+	if characters, parts := Measure(lengths); characters != 350_001 || parts != 2 {
+		t.Fatalf("a chapter one character over the split = %d characters, %d parts", characters, parts)
+	}
+	if characters, parts := Measure(lengths[:350]); characters != 350_000 || parts != 1 {
+		t.Fatalf("a chapter of the split = %d characters, %d parts", characters, parts)
+	}
+	if characters, parts := Measure(nil); characters != 0 || parts != 1 {
+		t.Fatalf("a chapter not measured = %d characters, %d parts", characters, parts)
+	}
+	// Three paragraphs of 200 000 do not go in two parts of 300 000: the division of the writer gives three, a count by the
+	// characters alone would give two.
+	if characters, parts := Measure([]int{200_000, 200_000, 200_000}); characters != 600_000 || parts != 3 {
+		t.Fatalf("a chapter of three paragraphs of 200 000 = %d characters, %d parts", characters, parts)
+	}
+	store := &sampleStoreOfTheTest{last: &SampleJob{JobID: "sample-job", Status: "succeeded", Chapters: []Chapter{{ID: "c1", Hash: "h1"}, {ID: "c2", Hash: "h2"}}}}
+	store.requests = []SampleRequest{{Duration: 50 * time.Second, Host: "api.deepseek.com", Model: "reader", TokensKnown: true, Tokens: aisettings.Tokens{Input: 15_000, Output: 6_000}}}
+	samples := Samples{Store: store, Cards: sampleCardsOfTheTest{carded: map[string]bool{"c1": true, "c2": true}, parts: map[string]int{"c2": 3}}}
+	if measured, err := samples.Measured(context.Background(), "saga"); err != nil || measured == nil || measured.Chapters != 2 || measured.Parts != 4 {
+		t.Fatalf("the measure of a chapter and a chapter of three parts = %+v, %v", measured, err)
 	}
 }

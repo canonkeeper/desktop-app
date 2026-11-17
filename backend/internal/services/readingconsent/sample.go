@@ -62,8 +62,10 @@ type SampleCard struct {
 	Summary   string
 	Events    []string
 	People    []string
-	// Characters are the characters of the text of the chapter: the measure of the sample counts them.
+	// Characters are the characters of the text of the chapter and Parts the parts its card read by: the measure of the
+	// sample counts them (specs/2026-11-17-long-chapters.md LC1.6).
 	Characters int
+	Parts      int
 }
 
 // SampleCards read the cards of the chapters of a sample that have one for the text the sample read.
@@ -289,8 +291,9 @@ func busySeconds(requests []SampleRequest) int {
 }
 
 // Measured is what the last sample that read measured for the estimate (CN1.5): the provider and the model of its requests
-// — one of each, or no measure —, its chapters with their characters, the tokens of their cards and passes and the time of
-// a chapter one request after another. A sample whose requests the provider sent no usage for measured nothing.
+// — one of each, or no measure —, its chapters with their characters and the parts their cards read by (LC1.6), the tokens
+// of their cards and passes and the time of its requests one after another. A sample whose requests the provider sent no
+// usage for measured nothing.
 func (samples Samples) Measured(ctx context.Context, projectID string) (*domain.Sample, error) {
 	last, err := samples.Store.LastSample(ctx, projectID)
 	if err != nil || last == nil || stateOf(*last) != SampleSucceeded {
@@ -315,6 +318,7 @@ func (samples Samples) Measured(ctx context.Context, projectID string) (*domain.
 	}
 	for _, card := range cards {
 		measured.Characters += int64(card.Characters)
+		measured.Parts += max(card.Parts, 1)
 	}
 	measured.Seconds = int(serial / time.Second)
 	return measured, nil

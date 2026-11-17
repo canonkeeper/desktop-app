@@ -156,6 +156,20 @@ func TestTheUpdateOfTheAppIsReadAndAskedOnlyByTheWindowInItsPhase(t *testing.T) 
 	}
 }
 
+// specs/2026-11-17-desk-update-linux.md UL2.4: another installation of programs refused the package — getAppUpdate says busy
+// and names no package.
+func TestARefusalByAnotherInstallationIsReadWithoutAPackage(t *testing.T) {
+	router := windowUpdated(&updatesOfTheTest{update: domain.AppUpdate{
+		Version: "1.2.0", Daily: true, Kind: domain.UpdateDeb, Phase: domain.UpdateInstallRefused, Refusal: domain.UpdateBusy,
+		Available: &domain.UpdateRelease{Version: "1.3.0"},
+	}})
+	status, body := updateRequest(router, http.MethodGet, "/desktop/update", "", "cookie-of-the-window", nil)
+	var read map[string]any
+	if status != http.StatusOK || json.Unmarshal([]byte(body), &read) != nil || read["phase"] != "install_refused" || read["refusal"] != "busy" || read["package"] != nil {
+		t.Fatalf("getAppUpdate = %d %s", status, body)
+	}
+}
+
 func mustJSON(value any) string {
 	encoded, _ := json.Marshal(value)
 	return string(encoded)

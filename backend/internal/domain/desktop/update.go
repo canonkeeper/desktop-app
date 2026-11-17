@@ -57,13 +57,15 @@ const (
 	UpdateOffline      UpdateFound = "offline"
 )
 
-// UpdateRefusal is why the system did not install a package (UB2.6): the window of the password was closed, or the
-// system cannot ask for it.
+// UpdateRefusal is why the system did not install a package (UB2.6): the window of the password was closed, the system
+// did not ask for it or gave no right, or another installation of programs holds a lock of Debian
+// (specs/2026-11-17-desk-update-linux.md UL2.1, UL2.2) — then no package is kept, and the author presses again once it ended.
 type UpdateRefusal string
 
 const (
 	UpdateDeclined    UpdateRefusal = "declined"
 	UpdateUnavailable UpdateRefusal = "unavailable"
+	UpdateBusy        UpdateRefusal = "busy"
 )
 
 // UpdateRelease is a later version the shell proved by its signature, with the plain text of its notes.

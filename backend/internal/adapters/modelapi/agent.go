@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -50,6 +48,8 @@ func (port Port) Act(ctx context.Context, instructions, input string, tools []Fu
 		functions[index] = map[string]any{"type": "function", "name": tool.Name, "description": tool.Description, "parameters": tool.Parameters}
 	}
 	var usage quota.ModelUsage
+	// Every round and every attempt of the turn go with the thread of its context (specs/2026-11-17-model-cache.md MC1.1).
+	send := sending{keyEnv: port.keyEnv, thread: port.client.threadOf(ctx)}
 	for round := 0; round < maxActRounds; round++ {
 		body := map[string]any{
 			"model": port.model, "instructions": instructions, "input": items, "tools": functions, "tool_choice": "auto",
@@ -62,7 +62,7 @@ func (port Port) Act(ctx context.Context, instructions, input string, tools []Fu
 		if err != nil {
 			return "", usage, err
 		}
-		output, spent, err := port.round(ctx, payload)
+		output, spent, err := port.round(ctx, send, payload)
 		usage = usage.Add(spent)
 		if err != nil {
 			return "", usage, err
@@ -121,32 +121,31 @@ func (port Port) Act(ctx context.Context, instructions, input string, tools []Fu
 type functionCall struct{ callID, name, arguments string }
 
 // round is one call of a turn with the retries and the gate of Complete; it answers the output items.
-func (port Port) round(ctx context.Context, payload []byte) ([]json.RawMessage, quota.ModelUsage, error) {
+func (port Port) round(ctx context.Context, send sending, payload []byte) ([]json.RawMessage, quota.ModelUsage, error) {
 	client := port.client
 	if !client.Connected() {
 		return nil, quota.ModelUsage{}, ErrNotConfigured
 	}
 	var usage quota.ModelUsage
 	var lastErr error
-	for attempt := 0; attempt < 6; attempt++ {
-		if attempt > 0 {
+	timeouts := 0
+	for try := 0; try < attempts; try++ {
+		if try > 0 {
 			select {
 			case <-ctx.Done():
 				return nil, usage, ctx.Err()
-			case <-time.After(client.pause(attempt)):
+			case <-time.After(client.pause(try)):
 			}
 		}
-		if err := client.gate.acquire(ctx, port.class); err != nil {
-			return nil, usage, err
-		}
-		output, spent, retry, err := client.items(ctx, payload)
-		client.gate.release()
+		output, spent, outcome, err := exchange(ctx, client, port.class, send.thread, func() ([]json.RawMessage, quota.ModelUsage, attempt, error) {
+			return client.items(ctx, send, payload)
+		})
 		usage = usage.Add(spent)
 		if err == nil {
 			return output, usage, nil
 		}
 		lastErr = err
-		if !retry || ctx.Err() != nil {
+		if !outcome.retry || ctx.Err() != nil || client.timedOutTwice(outcome, &timeouts) {
 			break
 		}
 	}
@@ -154,26 +153,29 @@ func (port Port) round(ctx context.Context, payload []byte) ([]json.RawMessage, 
 }
 
 // items reads the output items of a streamed response: each comes whole in response.output_item.done.
-func (client *Client) items(ctx context.Context, payload []byte) ([]json.RawMessage, quota.ModelUsage, bool, error) {
+func (client *Client) items(ctx context.Context, send sending, payload []byte) ([]json.RawMessage, quota.ModelUsage, attempt, error) {
 	var usage quota.ModelUsage
+	call := ctx
+	ctx, cancel := client.attempt(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(client.config.BaseURL, "/")+"/responses", bytes.NewReader(payload))
 	if err != nil {
-		return nil, usage, false, err
+		return nil, usage, attempt{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if err := client.authorize(req, false); err != nil {
-		return nil, usage, false, err
+	if err := client.authorize(req, send, false); err != nil {
+		return nil, usage, attempt{}, err
 	}
 	resp, err := client.http.Do(req)
 	if err != nil {
-		return nil, usage, ctx.Err() == nil, err
+		outcome := attempt{retry: call.Err() == nil}
+		return nil, usage, outcome, client.timedOut(call, ctx, &outcome, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		excerpt, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		retry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return nil, usage, retry, fmt.Errorf("model API status %d: %s", resp.StatusCode, strings.TrimSpace(string(excerpt)))
+		outcome, err := refused(resp)
+		return nil, usage, outcome, err
 	}
 	usage.Calls = 1
 	var output []json.RawMessage
@@ -212,14 +214,16 @@ func (client *Client) items(ctx context.Context, payload []byte) ([]json.RawMess
 			if event.Response.Error != nil {
 				message = event.Response.Error.Message
 			}
-			return nil, usage, true, errors.New(message)
+			return nil, usage, attempt{retry: true}, errors.New(message)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, usage, true, err
+		outcome := attempt{retry: true}
+		return nil, usage, outcome, client.timedOut(call, ctx, &outcome, err)
 	}
 	if !completed {
-		return nil, usage, true, errors.New("model API stream ended before completion")
+		outcome := attempt{retry: true}
+		return nil, usage, outcome, client.timedOut(call, ctx, &outcome, errors.New("model API stream ended before completion"))
 	}
-	return output, usage, false, nil
+	return output, usage, attempt{}, nil
 }

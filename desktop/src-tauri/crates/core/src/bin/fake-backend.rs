@@ -89,6 +89,10 @@ fn main() {
                         let phase = message["phase"].as_str().unwrap_or("?");
                         let phase = if phase == "idle" { message["found"].as_str().unwrap_or("?") } else { phase };
                         record(&resources, &format!("update-state {phase}"));
+                        // Why the system did not install a package (specs/2026-11-17-desk-update-linux.md UL2.4).
+                        if let Some(refusal) = message["refusal"].as_str() {
+                            record(&resources, &format!("update-refusal {refusal}"));
+                        }
                         for (when, line, done) in reactions.iter_mut().filter(|(when, _, done)| when == phase && !*done)
                         {
                             let _ = when;

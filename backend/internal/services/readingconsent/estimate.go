@@ -12,6 +12,7 @@ import (
 
 	"canonkeeper/backend/internal/domain/aisettings"
 	domain "canonkeeper/backend/internal/domain/readingconsent"
+	"canonkeeper/backend/internal/domain/sagamemory"
 )
 
 var (
@@ -81,10 +82,30 @@ type ToRead struct {
 	NamesUnread, ThreadsUnread string
 }
 
-// Chapter is a chapter of the published text by its current text.
+// Chapter is a chapter of the published text by its current text: its characters and the parts its card reads by, when
+// measured.
 type Chapter struct {
 	ID, Hash   string
 	Characters int
+	Parts      int
+}
+
+// Measure is what the characters of the paragraphs of a chapter say of it: the characters it holds and the parts its card
+// reads by — the one division of the card writer (sagamemory.PartsOf; specs/2026-11-17-long-chapters.md LC1.6).
+func Measure(lengths []int) (characters, parts int) {
+	for _, length := range lengths {
+		characters += length
+	}
+	return characters, len(sagamemory.PartsOf(lengths))
+}
+
+// unreadOf are the chapters an estimate counts.
+func unreadOf(chapters []Chapter) []domain.Chapter {
+	unread := make([]domain.Chapter, 0, len(chapters))
+	for _, chapter := range chapters {
+		unread = append(unread, domain.Chapter{Characters: int64(chapter.Characters), Parts: chapter.Parts})
+	}
+	return unread
 }
 
 // Saga reads what the published text of a saga has to read; the characters of its chapters only when measured — the
@@ -145,9 +166,7 @@ func (get GetEstimate) Execute(ctx context.Context, actorID, projectID string) (
 		Reasoning: own.Advanced.Reasoning != aisettings.ReasoningNone, Parallel: own.Advanced.Parallel,
 		Host: own.Host(), Model: own.CardsModel,
 	}
-	for _, chapter := range toRead.Unread {
-		input.Unread = append(input.Unread, chapter.Characters)
-	}
+	input.Unread = unreadOf(toRead.Unread)
 	input.Calibration, input.CalibrationChecked = get.Settings.Calibration()
 	if prices, ok := own.Advanced.Prices(); ok {
 		input.Prices = &prices
@@ -176,9 +195,7 @@ func (get GetEstimate) ofAccount(ctx context.Context, projectID string) (Estimat
 		Carded: toRead.Carded, CardedCharacters: toRead.CardedCharacters, Books: toRead.Books,
 		NamesWait: toRead.NamesWait, ThreadsWait: toRead.ThreadsWait, Reasoning: true, Parallel: 1, Host: get.Settings.SiteHost(),
 	}
-	for _, chapter := range toRead.Unread {
-		input.Unread = append(input.Unread, chapter.Characters)
-	}
+	input.Unread = unreadOf(toRead.Unread)
 	characters, err := get.Saga.Inputs(ctx, projectID, toRead.Unread)
 	if err != nil {
 		return Estimate{}, err

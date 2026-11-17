@@ -98,6 +98,49 @@ export function whatsNewTitle(version: string | null) {
   return version ? `Что нового в версии ${version}` : updateWords.whatsNew;
 }
 
+type Refusal = NonNullable<AppUpdate['refusal']>;
+
+/** The words of a refusal of the system: the line of the part, the line of the strip, and whether the part offers the retry. */
+interface RefusalWords {
+  part: (release: string | null, kept: string | null) => string;
+  strip: (release: string | null, kept: string | null) => string;
+  retry: boolean;
+}
+
+/** What the part says of the package kept for the author: whether he can install it himself, or must. */
+const keptLine = (kept: string | null, yourself: string) => (kept ? [`Пакет новой версии сохранён: ${kept} — ${yourself}`] : []);
+
+/**
+ * Why the system did not install a package, one row a refusal of the contract (UW2.1, Data; specs/2026-11-17-desk-update-linux.md
+ * UL3.1): the administrator closed the window of the system — the package kept and the retry; the system did not ask or gave
+ * no right — the package to install by hand, no retry; another installation of programs — nothing kept, the retry once it
+ * ended.
+ */
+export const refusalWords: Record<Refusal, RefusalWords> = {
+  declined: {
+    part: (_release, kept) => ['Обновление не установлено: окно пароля администратора закрыто.', ...keptLine(kept, 'его можно установить и самому')].join(' '),
+    strip: (release) => `Обновление до ${versionCase.genitive(release)} не установлено: окно пароля администратора закрыто`,
+    retry: true,
+  },
+  unavailable: {
+    part: (_release, kept) => [
+      'Система не спросила пароль администратора или не дала разрешения на установку.', ...keptLine(kept, 'установите его сами'),
+    ].join(' '),
+    strip: (release, kept) => refusalWords.unavailable.part(release, kept),
+    retry: false,
+  },
+  busy: {
+    part: () => 'Обновление не установлено: на компьютере идёт другая установка программ. Дождитесь её конца и нажмите «Обновить и перезапустить» — система спросит пароль администратора',
+    strip: (release) => `Обновление до ${versionCase.genitive(release)} не установлено: идёт другая установка программ`,
+    retry: true,
+  },
+};
+
+/** A refusal the server did not name reads as the closed window, as before. */
+function refusalOf(update: AppUpdate) {
+  return refusalWords[update.refusal ?? 'declined'];
+}
+
 /** A Linux package: the system asks the administrator when it installs (UB2.6). */
 export function asksAdmin(update: Pick<AppUpdate, 'kind'>) {
   return update.kind === 'deb' || update.kind === 'rpm';
@@ -194,17 +237,10 @@ export function partStateOf(update: AppUpdate, now = Date.now()): PartState {
         `Не удалось установить ${versionCase.accusative(release)}. ${unchanged}`,
         ...(update.package ? [`Пакет новой версии сохранён: ${update.package} — его можно установить и самому`] : []),
       ]);
-    case 'install_refused':
-      if (update.refusal === 'unavailable') {
-        return failure([[
-          'Система не может спросить пароль администратора.',
-          ...(update.package ? [`Пакет новой версии сохранён: ${update.package} — установите его сами`] : []),
-        ].join(' ')], false);
-      }
-      return failure([[
-        'Обновление не установлено: окно пароля администратора закрыто.',
-        ...(update.package ? [`Пакет новой версии сохранён: ${update.package} — его можно установить и самому`] : []),
-      ].join(' ')]);
+    case 'install_refused': {
+      const refusal = refusalOf(update);
+      return failure([refusal.part(release, update.package)], refusal.retry);
+    }
   }
 }
 
@@ -255,9 +291,7 @@ export function stripStateOf(update: AppUpdate): StripState | null {
     case 'install_failed':
       return failure(update.phase, `Не удалось установить ${versionCase.accusative(release)}`);
     case 'install_refused':
-      return failure(`${update.phase}:${update.refusal ?? ''}`, update.refusal === 'unavailable'
-        ? `Обновление до ${versionCase.genitive(release)} не установлено: система не может спросить пароль администратора`
-        : `Обновление до ${versionCase.genitive(release)} не установлено: окно пароля администратора закрыто`);
+      return failure(`${update.phase}:${update.refusal ?? ''}`, refusalOf(update).strip(release, update.package));
     default:
       return null;
   }
@@ -279,9 +313,13 @@ export function updatedLine(version: string | null, bridgesStopped = false) {
   return bridgesStopped ? `${updated}. Чтобы Claude Code и Codex снова читали саги, начните в них новую сессию` : updated;
 }
 
-/** The installation of a Linux package did not finish (UB2.6): with the package kept, or the way to the releases. */
+/**
+ * The installation of a Linux package did not finish (UB2.6): with the package kept, or the way to the releases — and the check
+ * of the part «Обновления», which stands whatever the daily check (specs/2026-11-17-desk-update-linux.md UL3.1).
+ */
 export function unfinishedLine(unfinished: { version: string; package?: string }) {
+  const check = 'проверьте обновления в «Настройках → Обновления»';
   return unfinished.package
-    ? `Установка версии ${unfinished.version} не закончилась. Пакет сохранён: ${unfinished.package} — установите его сами`
-    : `Установка версии ${unfinished.version} не закончилась. Скачайте её на странице выпусков`;
+    ? `Установка версии ${unfinished.version} не закончилась. Пакет сохранён: ${unfinished.package} — установите его сами или ${check}`
+    : `Установка версии ${unfinished.version} не закончилась. Скачайте её на странице выпусков или ${check}`;
 }

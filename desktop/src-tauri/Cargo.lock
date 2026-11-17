@@ -434,7 +434,7 @@ dependencies = [
 
 [[package]]
 name = "canonkeeper-desktop"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "canonkeeper-desktop-core",
  "gtk",
@@ -457,6 +457,7 @@ dependencies = [
  "getrandom 0.3.4",
  "infer",
  "keyring",
+ "libc",
  "minisign-verify",
  "reqwest",
  "rustls",

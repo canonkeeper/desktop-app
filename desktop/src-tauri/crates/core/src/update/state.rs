@@ -3,7 +3,9 @@
 //! The state of an update as the shell holds it (specs/2026-11-13-desk-updates.md UB1.1, UB1.7, UB2): what the last check
 //! found, the release it proved and the file it downloaded and checked; the line `update-state` tells the backend, after
 //! every change and after every `ready`, so a backend started again loses nothing. The shell installs only the release it
-//! holds, of the version it reported itself, and only from the phase where the file is downloaded and checked.
+//! holds, of the version it reported itself, and only from the phase where the file is downloaded and checked. After a
+//! refusal the author can repeat by himself — another installation of programs, a closed window of the password — the file
+//! stays for the retry of its version (specs/2026-11-17-desk-update-linux.md UL2.3) until a check, a cancel or an erasure.
 
 use serde::Serialize;
 
@@ -31,8 +33,22 @@ pub enum Found {
 pub enum Refusal {
     /// The window of the password was closed (`pkexec` 126).
     Declined,
-    /// The system cannot ask for the password: no `pkexec`, no agent of polkit (127).
+    /// The system did not ask for the password or gave no right: no `pkexec`, no agent of polkit, not authorized (127).
     Unavailable,
+    /// Another installation of programs holds a lock of the installers of Debian (specs/2026-11-17-desk-update-linux.md
+    /// UL2.1, UL2.2): nothing changed, no package is kept — the author presses again once it ended.
+    Busy,
+}
+
+impl Refusal {
+    /// The name in the channel and in the log of the shell.
+    pub fn name(self) -> &'static str {
+        match self {
+            Refusal::Declined => "declined",
+            Refusal::Unavailable => "unavailable",
+            Refusal::Busy => "busy",
+        }
+    }
 }
 
 /// Why an installation did not happen after the backend stopped (UB2.7).
@@ -60,9 +76,10 @@ pub enum Phase {
     Installing,
     DownloadFailed,
     VerifyFailed,
+    /// The system did not install the package: where it is kept for the author — none for `busy`.
     InstallRefused {
         refusal: Refusal,
-        package: String,
+        package: Option<String>,
     },
     InstallFailed {
         cause: Cause,
@@ -88,6 +105,16 @@ pub struct Line {
     pub package: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<Cause>,
+}
+
+/// What `update-download` takes (UL2.3).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Download {
+    /// The release to download anew.
+    Fetch(Box<Release>),
+    /// The file kept after a refusal: no download — its kind and signature are checked again before the installation, as
+    /// always.
+    Held,
 }
 
 /// The update the shell holds.
@@ -123,6 +150,8 @@ impl Updates {
         if self.kind == Kind::None || self.busy() {
             return false;
         }
+        // UL2.3: a check lets the file of a retry go — it may find another version.
+        self.file = None;
         self.phase = Phase::Checking;
         true
     }
@@ -143,8 +172,8 @@ impl Updates {
     }
 
     /// `update-download`: the release of `version` the shell holds, downloaded anew — from an available version or after
-    /// a download, a check or an installation that failed.
-    pub fn download(&mut self, version: &str) -> Option<Release> {
+    /// a download, a check or an installation that failed; after a refusal that kept the file of that version, the file.
+    pub fn download(&mut self, version: &str) -> Option<Download> {
         let may = matches!(
             self.phase,
             Phase::Idle(Found::Available)
@@ -156,9 +185,15 @@ impl Updates {
         if !may || !self.holds(version) {
             return None;
         }
+        let kept =
+            self.file.as_ref().is_some_and(|file| file.release.version.to_string() == version.trim_start_matches('v'));
+        if matches!(self.phase, Phase::InstallRefused { .. }) && kept {
+            self.phase = Phase::Downloaded;
+            return Some(Download::Held);
+        }
         self.file = None;
         self.phase = Phase::Downloading { percent: 0 };
-        self.release.clone()
+        self.release.clone().map(|release| Download::Fetch(Box::new(release)))
     }
 
     /// A new percent of the download; true when it changed.
@@ -229,9 +264,12 @@ impl Updates {
         self.phase = Phase::InstallFailed { cause, package };
     }
 
-    /// The system did not install the package: nothing changed, the package is kept for the author (UB2.6).
-    pub fn install_refused(&mut self, refusal: Refusal, package: String) {
-        self.file = None;
+    /// The system did not install the package: nothing changed, the package is kept for the author (UB2.6) — but for `busy`.
+    /// After `busy` and `declined` the file stays for the retry the author can make (UL2.3); after `unavailable` there is none.
+    pub fn install_refused(&mut self, refusal: Refusal, package: Option<String>) {
+        if !matches!(refusal, Refusal::Busy | Refusal::Declined) {
+            self.file = None;
+        }
         self.phase = Phase::InstallRefused { refusal, package };
     }
 
@@ -264,7 +302,7 @@ impl Updates {
             Phase::DownloadFailed => line.phase = "download_failed",
             Phase::VerifyFailed => line.phase = "verify_failed",
             Phase::InstallRefused { refusal, package } => {
-                (line.phase, line.refusal, line.package) = ("install_refused", Some(*refusal), Some(package.clone()));
+                (line.phase, line.refusal, line.package) = ("install_refused", Some(*refusal), package.clone());
             }
             Phase::InstallFailed { cause, package } => {
                 (line.phase, line.cause, line.package) = ("install_failed", Some(*cause), package.clone());
@@ -318,12 +356,33 @@ mod tests {
         assert!(updates.install().is_some());
         assert_eq!(updates.line().phase, "installing");
         assert!(updates.download("1.3.0").is_none() && !updates.check());
-        updates.install_refused(Refusal::Declined, "/home/тест/Загрузки/CanonKeeper_1.3.0_amd64.deb".into());
+        updates.install_refused(Refusal::Declined, Some("/home/тест/Загрузки/CanonKeeper_1.3.0_amd64.deb".into()));
         let line = serde_json::to_value(updates.line()).unwrap();
         assert_eq!(line["phase"], "install_refused");
         assert_eq!(line["refusal"], "declined");
-        // «Обновить и перезапустить» again downloads anew.
-        assert!(updates.download("1.3.0").is_some());
+        // specs/2026-11-17-desk-update-linux.md UL2.3: «Обновить и перезапустить» again installs the same file, not another
+        // version of it.
+        assert_eq!(updates.download("1.3.1"), None);
+        assert_eq!(updates.download("1.3.0"), Some(Download::Held));
+        assert!(updates.may_install("1.3.0") && updates.install() == Some(file("1.3.0")));
+        // UL2.4: another installation of programs — no package for the author; the file stays as well.
+        updates.install_refused(Refusal::Busy, None);
+        let line = serde_json::to_value(updates.line()).unwrap();
+        assert_eq!(
+            (&line["phase"], &line["refusal"], line.get("package")),
+            (&"install_refused".into(), &"busy".into(), None)
+        );
+        assert_eq!(updates.download("1.3.0"), Some(Download::Held));
+        // A system that cannot ask keeps nothing for a retry.
+        updates.install();
+        updates.install_refused(Refusal::Unavailable, Some("/home/тест/Загрузки/CanonKeeper_1.3.0_amd64.deb".into()));
+        assert!(matches!(updates.download("1.3.0"), Some(Download::Fetch(_))));
+        // A check lets the file go: the next download is a new one.
+        updates.downloaded(Ok(file("1.3.0")));
+        updates.install();
+        updates.install_refused(Refusal::Declined, None);
+        assert!(updates.check() && updates.checked(Checked::Found(Box::new(release("1.3.0")))));
+        assert!(matches!(updates.download("1.3.0"), Some(Download::Fetch(_))));
     }
 
     #[test]
@@ -361,5 +420,16 @@ mod tests {
         updates.forget();
         assert!(!updates.may_install("1.3.0") && updates.file().is_none());
         assert_eq!(updates.line().found, Some(Found::Available));
+        // specs/2026-11-17-desk-update-linux.md UL2.3: the file of a retry goes with a cancel and an erasure.
+        let stops: [fn(&mut Updates); 2] = [|updates| assert!(updates.cancel("1.3.0")), Updates::forget];
+        for stop in stops {
+            updates.download("1.3.0");
+            updates.downloaded(Ok(file("1.3.0")));
+            updates.install();
+            updates.install_refused(Refusal::Busy, None);
+            assert_eq!(updates.download("1.3.0"), Some(Download::Held));
+            stop(&mut updates);
+            assert!(updates.file().is_none());
+        }
     }
 }

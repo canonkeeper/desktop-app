@@ -66,6 +66,8 @@ type fileModelAPI struct {
 	// AppKeyEnv and AppParallel are the models of the site for linked apps (specs/2026-11-13-desk-proxy.md).
 	AppKeyEnv   string `json:"app_key_env"`
 	AppParallel int    `json:"app_parallel"`
+	// ReadingKeyEnv names the key of the reading of books (specs/2026-11-17-model-cache.md MC4.1).
+	ReadingKeyEnv string `json:"reading_key_env"`
 }
 
 func (input fileModelAPI) modelAPI() ModelAPI {
@@ -80,6 +82,7 @@ func (input fileModelAPI) modelAPI() ModelAPI {
 		VoiceURL:          strings.TrimSpace(input.VoiceURL), VoiceModel: strings.TrimSpace(input.VoiceModel),
 		VoiceBrain: strings.TrimSpace(input.VoiceBrain), VoiceBrainEffort: strings.TrimSpace(input.VoiceBrainEffort),
 		AppKeyEnv: strings.TrimSpace(input.AppKeyEnv), AppParallel: input.AppParallel,
+		ReadingKeyEnv: strings.TrimSpace(input.ReadingKeyEnv),
 	}
 }
 

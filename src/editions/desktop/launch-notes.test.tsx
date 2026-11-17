@@ -158,7 +158,8 @@ describe('the lines of a launch after an update', () => {
     const path = '/home/author/Загрузки/CanonKeeper_1.3.0_amd64.deb';
     shellOfTheWindow({ launch_notes: { portChanged: false, restartedAfterCrash: false, updatedFrom: '1.2.0', releaseNotes: notes, updateUnfinished: { version: '1.3.0', package: path } } });
     renderNotes('1.3.0');
-    const line = await within(toasts()).findByText(`Установка версии 1.3.0 не закончилась. Пакет сохранён: ${path} — установите его сами`);
+    // specs/2026-11-17-desk-update-linux.md UL3.1: and the check of the part «Обновления», which the strip of a version found joins.
+    const line = await within(toasts()).findByText(`Установка версии 1.3.0 не закончилась. Пакет сохранён: ${path} — установите его сами или проверьте обновления в «Настройках → Обновления»`);
     expect(line.closest('[data-tone]')!.getAttribute('data-tone')).toBe('error');
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(within(toasts()).queryByText(/обновлён/u)).toBeNull();
@@ -168,7 +169,7 @@ describe('the lines of a launch after an update', () => {
   it('give the way to the releases when the package was not kept', async () => {
     const invoke = shellOfTheWindow({ launch_notes: { portChanged: false, restartedAfterCrash: false, updateUnfinished: { version: '1.3.0' } } });
     renderNotes('1.2.0');
-    const line = (await within(toasts()).findByText('Установка версии 1.3.0 не закончилась. Скачайте её на странице выпусков')).closest('[data-tone]') as HTMLElement;
+    const line = (await within(toasts()).findByText('Установка версии 1.3.0 не закончилась. Скачайте её на странице выпусков или проверьте обновления в «Настройках → Обновления»')).closest('[data-tone]') as HTMLElement;
     fireEvent.click(within(line).getByRole('link', { name: 'Открыть страницу выпусков' }));
     await waitFor(() => expect(invoke).toHaveBeenLastCalledWith('open_external', { url: 'https://github.com/canonkeeper/desktop-app/releases' }));
   });

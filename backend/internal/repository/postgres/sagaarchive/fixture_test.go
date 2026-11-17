@@ -160,7 +160,7 @@ func northernLimit(t *testing.T, options fixtureOptions) []byte {
 			card.BuiltFrom = &built
 		}
 		must(cards.Add(card))
-		value, err := sagamemory.ParseCard(item.card, len(item.chapter.Paragraphs))
+		value, err := sagamemory.ParseCard(item.card, 1, len(item.chapter.Paragraphs))
 		must(err)
 		parsed[index] = &value
 	}

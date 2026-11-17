@@ -63,7 +63,8 @@ const (
 	cardInstructions = 4_700
 	// cardInPass are the tokens of the card the pass reads beside the chapter.
 	cardInPass = 10_000
-	// outputPlain and outputReasoning are the output of a card and its pass, without and with reasoning.
+	// outputPlain and outputReasoning are the output of a card and its pass — of a chapter, or of a part of a long one —,
+	// without and with reasoning.
 	outputPlain     = 7_000
 	outputReasoning = 19_000
 	// namesIn and namesOut are the register of names for a card: its names in, who is who out.
@@ -80,28 +81,39 @@ const (
 	layerVerifyOut    = 400
 	layerKeptIn       = 3_000
 	layerEvidence     = 10
-	// The time of a chapter (card and pass), of the register and of a call of the layer.
+	// The time of a chapter or a part of a long one (card and pass), of the register and of a call of the layer.
 	chapterSeconds = 120
 	namesSeconds   = 60
 	layerSeconds   = 30
 )
 
-// Sample is what the sample of three chapters measured: the provider and the model it read with, its chapters, their
-// characters, the tokens of their cards and passes and the time of their requests one after another.
+// Sample is what the sample of three chapters measured: the provider and the model it read with, its chapters and the parts
+// their cards read by (specs/2026-11-17-long-chapters.md LC1.6), their characters, the tokens of their cards and passes and
+// the time of their requests one after another.
 type Sample struct {
 	Host, Model string
 	Chapters    int
+	Parts       int
 	Characters  int64
 	Tokens      aisettings.Tokens
 	Seconds     int
 }
 
-// Input is what an estimate counts: the characters of each chapter of the published text without a card, the chapters
+// Chapter is a chapter without a card an estimate counts: its characters and the parts its card reads by
+// (sagamemory.PartsOf; LC1.6) — one when none are named.
+type Chapter struct {
+	Characters int64
+	Parts      int
+}
+
+func (chapter Chapter) parts() int { return max(chapter.Parts, 1) }
+
+// Input is what an estimate counts: each chapter of the published text without a card, the chapters
 // with one and their characters, the books, whether the names or the threads wait for the model though every chapter is
 // read, the calibration of the check of the connection and whether it measured the model of the reading now, the
 // reasoning, «Запросов одновременно», the prices, the provider and the model of the reading, and the sample.
 type Input struct {
-	Unread             []int
+	Unread             []Chapter
 	Carded             int
 	CardedCharacters   int64
 	Books              int
@@ -142,35 +154,38 @@ type Estimate struct {
 // SampleChapters is how many chapters a sample reads: those without a card, three at most.
 const SampleChapters = 3
 
-// terms are the measured or assumed numbers of a chapter.
+// terms are the measured or assumed numbers of a card: the tokens of a thousand characters, the output and the time of the
+// card and the pass of a chapter, or of a part of a long one.
 type terms struct {
-	calibration      float64
-	outputOfChapter  int64
-	secondsOfChapter int
+	calibration   float64
+	outputOfPart  int64
+	secondsOfPart int
 }
 
 // Count is the estimate (CN1.4, CN1.5). The sample counts only while it was read by the provider and the model of the
 // reading now, and it changes only what it measured: the tokens of a character of a chapter and the output and the time
-// of a chapter. The constant part of a chapter, the names and the layer stay by the formula.
+// of a part (of a chapter, or of a part of a long one: LC1.6). The constant part of a card, the names and the layer stay by
+// the formula.
 func Count(input Input) Estimate {
-	measure := terms{calibration: aisettings.FallbackCalibration, outputOfChapter: outputPlain, secondsOfChapter: chapterSeconds}
+	measure := terms{calibration: aisettings.FallbackCalibration, outputOfPart: outputPlain, secondsOfPart: chapterSeconds}
 	assumptions := []Assumption{AssumptionCalibrationFallback}
 	if input.CalibrationChecked && input.Calibration > 0 {
 		measure.calibration, assumptions = input.Calibration, []Assumption{AssumptionCalibrationChecked}
 	}
 	reasoning := AssumptionNoReasoning
 	if input.Reasoning {
-		measure.outputOfChapter, reasoning = outputReasoning, AssumptionReasoning
+		measure.outputOfPart, reasoning = outputReasoning, AssumptionReasoning
 	}
 	kind := KindRough
 	if sample := input.Sample; sample != nil && sample.Chapters > 0 && sample.Characters > 0 && sample.Host == input.Host && sample.Model == input.Model {
-		perCharacter := (float64(sample.Tokens.Input) - float64(sample.Chapters)*(cardInstructions+cardInPass)) / (2 * float64(sample.Characters))
+		parts := max(sample.Parts, sample.Chapters)
+		perCharacter := (float64(sample.Tokens.Input) - float64(parts)*(cardInstructions+cardInPass)) / (2 * float64(sample.Characters))
 		if perCharacter > 0 {
 			measure.calibration = perCharacter * 1000
 		}
-		measure.outputOfChapter = max(sample.Tokens.Output/int64(sample.Chapters), 1)
+		measure.outputOfPart = max(sample.Tokens.Output/int64(parts), 1)
 		if sample.Seconds > 0 {
-			measure.secondsOfChapter = max(sample.Seconds/sample.Chapters, 1)
+			measure.secondsOfPart = max(sample.Seconds/parts, 1)
 		}
 		kind, assumptions = KindSample, []Assumption{AssumptionCalibrationSample}
 	}
@@ -192,14 +207,16 @@ func estimateOf(input Input, measure terms) Estimate {
 	all := input.Carded + len(input.Unread)
 	characters := input.CardedCharacters
 	var cardsIn, cardsOut int64
+	parts := 0
 	for _, chapter := range input.Unread {
-		characters += int64(chapter)
-		cardsIn += cardInstructions + 2*textOf(int64(chapter)) + cardInPass
-		cardsOut += measure.outputOfChapter
+		characters += chapter.Characters
+		parts += chapter.parts()
+		cardsIn += int64(chapter.parts())*(cardInstructions+cardInPass) + 2*textOf(chapter.Characters)
+		cardsOut += int64(chapter.parts()) * measure.outputOfPart
 	}
 	cardsIn, cardsOut = repeated(cardsIn), repeated(cardsOut)
 	var namesTokensIn, namesTokensOut int64
-	seconds := ceilDiv(len(input.Unread), parallel) * measure.secondsOfChapter
+	seconds := ceilDiv(parts, parallel) * measure.secondsOfPart
 	if len(input.Unread) > 0 || input.NamesWait {
 		namesTokensIn, namesTokensOut = int64(all)*namesIn, int64(all)*namesOut
 		seconds += namesSeconds
@@ -232,7 +249,7 @@ func estimateOf(input Input, measure terms) Estimate {
 	}
 	estimate.ChapterEdit = Edit{
 		Input:  repeated(cardInstructions+2*textOf(average)+cardInPass) + int64(max(all, 1))*namesIn,
-		Output: repeated(measure.outputOfChapter) + int64(max(all, 1))*namesOut,
+		Output: repeated(measure.outputOfPart) + int64(max(all, 1))*namesOut,
 	}
 	if prices := input.Prices; prices != nil {
 		amount := prices.Cost(aisettings.Tokens{Input: estimate.Input, Output: estimate.Output})

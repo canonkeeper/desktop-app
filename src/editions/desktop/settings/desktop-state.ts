@@ -6,7 +6,10 @@ import type { CanonKeeperApiClient, OperationResponse } from '../../../shared/ap
 export type DesktopState = OperationResponse<'getDesktopState', '200'>;
 type DesktopStateClient = Pick<CanonKeeperApiClient, 'getDesktopState'>;
 
-/** The one query of the state of the app: «Данные», «О программе» and «Добро пожаловать» read it. */
+/**
+ * The one query of the state of the app: «Данные», «О программе» and «Добро пожаловать» read it. A failure of its read is its
+ * own (`outageScope: 'local'`, specs/2026-11-17-desk-update-linux.md UL4.1): the parts say it, the root does not probe for it.
+ */
 export const desktopStateQueryKey = [...canonKeeperQueryKeys.all, 'desktop-state'] as const;
 
 export function stateApi(meta: unknown) {
@@ -26,7 +29,7 @@ export function useDesktopState(api: DesktopStateClient) {
   return useQuery({
     queryKey: desktopStateQueryKey,
     queryFn: ({ meta, signal }) => stateApi(meta).getDesktopState({ signal }),
-    meta: { canonKeeperApi: api },
+    meta: { canonKeeperApi: api, outageScope: 'local' },
     refetchInterval: (query) => (query.state.data?.usage.counting ? countingPollMs : false),
   });
 }

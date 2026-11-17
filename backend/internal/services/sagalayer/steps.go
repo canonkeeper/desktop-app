@@ -2,10 +2,15 @@ package sagalayer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
 	"sync"
 
+	"canonkeeper/backend/internal/domain/coresteps"
 	"canonkeeper/backend/internal/domain/disclosure"
+	"canonkeeper/backend/internal/domain/modelthread"
 	domain "canonkeeper/backend/internal/domain/sagalayer"
 	"canonkeeper/backend/internal/domain/sagamemory"
 	"canonkeeper/backend/internal/jobs"
@@ -92,16 +97,18 @@ func (current *run) save(books []domain.Book, progress float64) error {
 // answer, a refusal and no answer would come again at the same settings, and a cut answer was paid whole — the question gives
 // up at once with its reason; an answer that did not read through the three gives up as unreadable.
 //
-// The call names what it gives (specs/2026-11-14-desk-journal.md JR1.3) in a context of its own over the context of the run:
-// the books and the checks run in parallel. A request the journal of the app did not send is not asked again (JR1.6).
-func (current *run) ask(named disclosure.Named, instructions, input string, parse func(string) error) error {
+// The call names what it gives (specs/2026-11-14-desk-journal.md JR1.3) and its thread in a context of its own over the
+// context of the run: the books and the checks run in parallel. A request the journal of the app did not send is not asked
+// again (JR1.6).
+func (current *run) ask(thread []string, named disclosure.Named, instructions, input string, parse func(string) error) error {
 	var last error
 	marks, unreadable := current.build.policy != nil, false
+	ctx := modelthread.With(disclosure.With(current.ctx, named), thread...)
 	for range callAttempts {
 		if err := current.ctx.Err(); err != nil {
 			return err
 		}
-		output, spent, err := current.build.model.Complete(disclosure.With(current.ctx, named), instructions, input)
+		output, spent, err := current.build.model.Complete(ctx, instructions, input)
 		current.build.recordUsage(current.ctx, current.claim.ProjectID, spent)
 		if _, stopped := sagamemory.StopOf(err); stopped || errors.Is(err, disclosure.ErrJournal) {
 			// A stop of the reading is not asked again (specs/2026-11-13-desk-consent.md CN3.4).
@@ -125,6 +132,12 @@ func (current *run) ask(named disclosure.Named, instructions, input string, pars
 	return last
 }
 
+// thread is the thread of a step of the build within its Job and what more names the call — the number of a book, the
+// text of a record (specs/2026-11-17-model-cache.md MC1.3).
+func (current *run) thread(step coresteps.Name, more ...string) []string {
+	return append([]string{"layer", jobs.JobIDOf(current.ctx), string(step)}, more...)
+}
+
 // unanswered is a question of a build that gave no answer for a named reason (RR1.1, RR1.3): the build is marked with it.
 type unanswered struct {
 	reason string
@@ -144,7 +157,7 @@ func (current *run) runSteps() (*domain.Layer, *jobs.SagaLayerResult, error) {
 	}
 	if !current.steps.Reduced {
 		// The reduction reads the threads of the books (JR1.3).
-		err := current.ask(disclosure.Named{Threads: true}, domain.ReduceInstructions, domain.ReduceInput(books, version), func(output string) (err error) {
+		err := current.ask(current.thread(coresteps.LayerReduce), disclosure.Named{Threads: true}, domain.ReduceInstructions, domain.ReduceInput(books, version), func(output string) (err error) {
 			current.steps.Registry, err = domain.ParseRegistry(output, version)
 			return err
 		})
@@ -164,7 +177,7 @@ func (current *run) runSteps() (*domain.Layer, *jobs.SagaLayerResult, error) {
 		// «Что упущено» reads the threads and what the helper learned of the chapters of the books (JR1.3).
 		gap := current.cardsOf(current.chapters)
 		gap.Threads = true
-		err := current.ask(gap, domain.GapInstructions, domain.GapInput(kept, books, version), func(output string) (err error) {
+		err := current.ask(current.thread(coresteps.LayerGap), gap, domain.GapInstructions, domain.GapInput(kept, books, version), func(output string) (err error) {
 			current.steps.Gap, err = domain.ParseRegistry(output, version)
 			return err
 		})
@@ -253,7 +266,8 @@ func (current *run) mapBooks() ([]domain.Book, int, error) {
 			digests[j] = domain.ChapterDigest(&current.outline.Version.Chapters[index], current.cards[index])
 		}
 		var book domain.Book
-		err := current.ask(current.cardsOf(plan.chapters), domain.MapInstructions, domain.BookInput(plan.book.Order, digests), func(output string) (err error) {
+		thread := current.thread(coresteps.LayerBook, strconv.Itoa(plan.book.Order))
+		err := current.ask(thread, current.cardsOf(plan.chapters), domain.MapInstructions, domain.BookInput(plan.book.Order, digests), func(output string) (err error) {
 			book, err = domain.ParseBook(output, current.outline.Version)
 			return err
 		})
@@ -294,7 +308,9 @@ func (current *run) verify(threads []domain.Thread, verdicts map[int]domain.Verd
 			return err
 		}
 		var verdict domain.Verdict
-		err = current.ask(named, domain.VerifyInstructions, input, func(output string) (err error) {
+		record := sha256.Sum256([]byte(threads[i].Text))
+		check := current.thread(coresteps.LayerVerify, hex.EncodeToString(record[:]))
+		err = current.ask(check, named, domain.VerifyInstructions, input, func(output string) (err error) {
 			verdict, err = domain.ParseVerdict(output)
 			return err
 		})
