@@ -1,10 +1,13 @@
+import { useQueries } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { quotaFailureCode, useAccountQuota } from '../../../entities/account-quota/api';
+import { bookLoadsOf } from '../../../entities/account-quota/book-loads';
 import { refusalWords, type RefusalWords } from '../../../entities/account-quota/refusal-words';
 import { publicApiErrorMessage } from '../../../entities/api-errors';
 import type { Book, ImportQueue, ManuscriptApiClient } from '../../../entities/manuscript/api';
 import { createIdempotencyKey } from '../../../entities/manuscript/api';
 import {
+  manuscriptJobQuery,
   useCancelImportQueueMutation,
   useCreateImportQueueMutation,
   useImportConstraintsQuery,
@@ -34,7 +37,7 @@ import {
 import { fileOpening } from './book-opening';
 
 type UploadClient = Pick<ManuscriptApiClient,
-  'cancelImportQueue' | 'createImportQueue' | 'getAccountQuota' | 'getImportConstraints' | 'getImportQueue'
+  'cancelImportQueue' | 'createImportQueue' | 'getAccountQuota' | 'getImportConstraints' | 'getImportQueue' | 'getJob'
   | 'listImportQueues' | 'skipImportQueueItem' | 'startImportQueue' | 'uploadImportQueueItem'>;
 
 const activeStatuses: ReadonlySet<ImportQueue['status']> = new Set(['uploading', 'draft', 'running']);
@@ -103,9 +106,18 @@ export function useUpload({ api, books, canEdit, elsewhere = false, projectId }:
   const volumes: VolumeView[] = useMemo(() => queue ? volumeViews(queue, transfers, shelfBookIds, elsewhere) : pendingViews(sending),
     [elsewhere, queue, sending, shelfBookIds, transfers]);
   const sendingHere = Object.values(transfers).some((transfer) => transfer.state === 'sending' || transfer.state === 'waiting');
+  // The volumes whose import Job was refused because a book is loaded once: only «Пропустить» helps them
+  // (specs/2026-11-18-free-tier.md FT1.3) — read by the one query of a Job, as their cards read it.
+  const failedJobs = useQueries({
+    queries: volumes.filter((volume) => volume.failedJobId).map((volume) => ({ ...manuscriptJobQuery(api, volume.failedJobId!) })),
+  });
+  const skipOnly = new Set(volumes.filter((volume) => failedJobs.some((job) => job.data?.id === volume.failedJobId
+    && job.data?.error?.code === 'quota.book_reloads')).map((volume) => volume.key));
   // Once every volume is a book of the shelf, the line of the reading says the rest (UP3.1: one line of the saga).
-  const line = queue && volumes.length > 0 ? uploadLine(queue, volumes, sendingHere) : null;
+  const line = queue && volumes.length > 0 ? uploadLine(queue, volumes, sendingHere, skipOnly) : null;
   const room = uploadRoom(quota, projectId);
+  // A book loaded once (FT3.1): every choice goes through the window, which says so before the files go.
+  const loads = bookLoadsOf(quota, projectId);
 
   const working = Boolean(queue) || sending.length > 0;
   const blockedReason = !canEdit
@@ -137,7 +149,9 @@ export function useUpload({ api, books, canEdit, elsewhere = false, projectId }:
       return;
     }
     const screened = screenFiles(localFiles(chosenFiles), limits);
-    if (chosenFiles.length >= 2) {
+    // A book loaded once is said before it goes (FT3.1; the decision of the boards 18.11): one file opens the window too, and
+    // nothing asks to replace a book by a file.
+    if (chosenFiles.length >= 2 || loads) {
       setRefused([]);
       setOrder({ rows: orderRows(screened.chosen), refused: screened.refused });
       return;
@@ -295,6 +309,8 @@ export function useUpload({ api, books, canEdit, elsewhere = false, projectId }:
     },
     closeOrder: () => setOrder(null),
     room,
+    /** What the window says before the files go on a tier where a book is loaded once (FT3.1); null elsewhere. */
+    loadsOnce: loads?.warning ?? null,
     sendRows: (rows: readonly OrderRow[]) => send(rows),
     sending: sending.length > 0 || upload.isPending || create.isPending,
     queue,

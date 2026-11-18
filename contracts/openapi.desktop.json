@@ -2114,7 +2114,7 @@
         ],
         "operationId": "getAccountQuota",
         "summary": "Read the signed-in writer's quotas",
-        "description": "Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.",
+        "description": "Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store. A book of a tier where it is loaded once (specs/2026-11-18-free-tier.md FT1) is refused with 409 quota.book_reloads: bookReloads and booksLoaded say it before.",
         "responses": {
           "200": {
             "description": "Limits in force, today's use and the text of owned projects.",
@@ -2201,7 +2201,9 @@
                             }
                           }
                         }
-                      ]
+                      ],
+                      "bookReloads": true,
+                      "booksLoaded": 13
                     }
                   }
                 }
@@ -2768,6 +2770,7 @@
         ],
         "operationId": "createBook",
         "summary": "Create a book inside a project.",
+        "description": "On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a book without text is refused with 409 quota.book_reloads: no text can come into it later.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -3712,6 +3715,7 @@
         ],
         "operationId": "createImportQueue",
         "summary": "Create or replay a durable import queue draft.",
+        "description": "On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a queue whose books would take the books that ever came into the sagas of the owner over account_books is refused with 409 quota.book_reloads.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -3918,7 +3922,7 @@
         ],
         "operationId": "uploadImportQueueItem",
         "summary": "Upload or replace one durable queue item and run full preflight.",
-        "description": "A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409.",
+        "description": "A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409. On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a new file of a waiting volume is refused with 409 quota.book_reloads once the books that ever came into the sagas of the owner reach account_books.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -4075,7 +4079,7 @@
         ],
         "operationId": "startImportQueue",
         "summary": "Atomically validate, reserve, and start an import queue.",
-        "description": "An actor whose email is not verified gets 403 auth.email_unverified and nothing is created.",
+        "description": "An actor whose email is not verified gets 403 auth.email_unverified and nothing is created. On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) the volumes that would take the books that ever came into the sagas of the owner over account_books are refused with 409 quota.book_reloads; a volume refused so by its import Job waits with that code and only «Пропустить» helps it.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -4288,7 +4292,7 @@
             "$ref": "#/components/responses/TooManyRequests"
           }
         },
-        "description": "Direct multipart upload with file plus metadata/options. URL-fetch and uploaded-file-id imports are out of scope; upload controls require server-generated storage key, filename non-use as path, content sniffing, archive bounds and parser quarantine. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created.",
+        "description": "Direct multipart upload with file plus metadata/options. URL-fetch and uploaded-file-id imports are out of scope; upload controls require server-generated storage key, filename non-use as path, content sniffing, archive bounds and parser quarantine. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created. A book of a tier that loads it once (specs/2026-11-18-free-tier.md FT1, book_reloads 0 of the owner of the saga): a new version of a book (update_preview, update_book) is refused with 409 quota.book_reloads before the file is read and before the upload of the day is spent; a new book is refused with 409 quota.book_reloads once the books that ever came into the sagas of the owner reach account_books — a deleted book or saga gives no place back — and the import Job of a new book that would go over them under the quota lock fails with the same code.",
         "security": [
           {
             "sessionAuth": []
@@ -9353,7 +9357,7 @@
           "Projects"
         ],
         "summary": "Take a version of the text into a chapter in writing.",
-        "description": "specs/2026-11-06-writing-agent.md WA7.5: «Вернуть эту версию» puts the version whole in place of the working text; «Взять в главу» puts a piece of it, named by its first and last phrases, in place of a place of the working text, after it, or at the end of the text. The text before goes into a version first, at the revision the page saw. A piece starts the run that checks its seams (the job of the draft), unless the daily limit of rewrites is spent: then the piece stays unchecked. 409 chapter_draft.busy while a run works, 409 chapter_draft.added, conflict at another revision; 400 for a piece or a place that does not stand in its text once.",
+        "description": "specs/2026-11-06-writing-agent.md WA7.5: «Вернуть эту версию» puts the version whole in place of the working text; «Взять в главу» puts a piece of it, named by its first and last phrases, in place of a place of the working text, after it, or at the end of the text. The text before goes into a version first, at the revision the page saw. A piece starts the run that checks its seams (the job of the draft), unless the daily limit of rewrites is spent: then the piece stays unchecked. 409 chapter_draft.busy while a run works, 409 chapter_draft.added, conflict at another revision; 400 for a piece or a place that does not stand in its text once. The same holds when the tier of the writer starts no work of the model in the draft (specs/2026-11-18-free-tier.md FT2.3, tiers.writing_none): a piece is taken by hand on every tier, without the check of its seams.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectId"
@@ -14905,7 +14909,9 @@
           "draftRewrites",
           "projects",
           "account",
-          "ownedProjects"
+          "ownedProjects",
+          "bookReloads",
+          "booksLoaded"
         ],
         "properties": {
           "day": {
@@ -14961,6 +14967,15 @@
             "items": {
               "$ref": "#/components/schemas/ProjectQuota"
             }
+          },
+          "bookReloads": {
+            "type": "boolean",
+            "description": "specs/2026-11-18-free-tier.md FT1.5: false — a book of the writer's sagas is loaded once (book_reloads 0): no new version of it from a file, and a new book only while booksLoaded is below account.books.limit. True in the desktop app."
+          },
+          "booksLoaded": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "specs/2026-11-18-free-tier.md FT1.5: every book that ever came into the sagas the writer owns — live, in the trash, in a deleted saga —, the example saga aside."
           }
         },
         "additionalProperties": false
@@ -21705,6 +21720,52 @@
           "newChapter": {
             "type": "boolean",
             "description": "specs/2026-11-10-ux1-writing.md UW1.1: true — the first Job of scenes of this draft would count as a new chapter of the writer's tier (specs/2026-11-08-subscription-tiers.md TR7.1: it edits no chapter of the book, is not nearly done by the author's own words, and no new chapter of it counts yet, TR7.3); false — its scenes are not charged. Absent in a build without tiers and once the chapter is in the book. A page names the price of the chapter by it before the author presses; whether the tier allows a new chapter now is getAccountPlan, and only startChapterDraftJob decides."
+          },
+          "trial": {
+            "$ref": "#/components/schemas/ChapterDraftTrial"
+          }
+        }
+      },
+      "ChapterDraftTrial": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "until",
+          "allows"
+        ],
+        "description": "specs/2026-11-18-free-tier.md FT2.2, FT2.4: what the model may start in the draft for the writer who reads it when «Письмо» of his tier is a trial — a tier without a window of new chapters —, by the same rule as the start of the work: before — a new chapter whose trial is not spent, chapter — his trial new chapter in its day, proofread — his trial proofreading in its day, none — no trial in the draft; until — the end of that day, null for before and none; allows — the works the model may start now. A page makes the button of a work not in allows unavailable with the reason and reads the draft again at until. Absent on a tier with a window, in a build without tiers and once the chapter is in the book.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "before",
+              "chapter",
+              "proofread",
+              "none"
+            ]
+          },
+          "until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "allows": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "scenes",
+                "check",
+                "rewrite",
+                "proofread",
+                "turn"
+              ]
+            },
+            "description": "scenes — «Писать» and «Переписать отсюда до конца»; check — «Проверить главу по саге»; rewrite — a rewrite of a place and the seams of a piece taken from a version; proofread — a proofreading, «Вычитать заново» and another file; turn — a message to the helper."
           }
         }
       },

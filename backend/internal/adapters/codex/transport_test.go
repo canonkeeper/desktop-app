@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -191,6 +193,27 @@ func TestTheAppServerOfTheBundleTakesNoSubcommand(t *testing.T) {
 		if got := len(appServerArgs(path)); got != want {
 			t.Errorf("appServerArgs(%q) = %d arguments, want %d", path, got, want)
 		}
+	}
+}
+
+// specs/2026-11-18-desk-windows-chat.md WC1.1: the sandbox of Windows without the rights of an administrator refuses a
+// thread whose profile reads only a part of the disk, so on Windows alone the app-server gets one -c more after the
+// overrides of its build — the profile of the thread reads the whole disk, and writes nothing and has no network as
+// before. Everywhere else, the site among them, the command of the app-server is the one it was, to the byte.
+func TestTheAppServerOfWindowsAloneReadsTheWholeDisk(t *testing.T) {
+	overrides := []string{`model="gpt-test"`, `model_provider="codex-lb"`}
+	want := []string{"app-server", "-c", overrides[0], "-c", overrides[1], "--listen", "stdio://"}
+	if runtime.GOOS == "windows" {
+		want = slices.Concat(want[:5], []string{"-c", theOverrideOfWindows}, want[5:])
+	}
+	if got := appServerCommand(filepath.Join("opt", "codex", "bin", "codex"), overrides); !slices.Equal(got, want) {
+		t.Fatalf("the command of the app-server on %s = %q, want %q", runtime.GOOS, got, want)
+	}
+	if got := appServerCommand(filepath.Join("opt", "canonkeeper", "codex-app-server.exe"), nil); !slices.Equal(got, want[5:]) {
+		t.Fatalf("the command of the app-server of the bundle on %s = %q, want %q", runtime.GOOS, got, want[5:])
+	}
+	if !agentdomain.ValidConfigOverrides(platformOverrides()) {
+		t.Fatalf("the overrides of %s are not valid overrides: %q", runtime.GOOS, platformOverrides())
 	}
 }
 

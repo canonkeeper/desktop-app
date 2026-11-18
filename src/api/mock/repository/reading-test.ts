@@ -3,10 +3,16 @@ import { MockApiError } from '../scenarios';
 import type { MockRepositoryContext } from './context';
 
 type Step = Schema<'ReadingTestStep'>;
+type Voted = Schema<'ReadingTestVoteResult'>;
 type Operation = 'takeReadingTestPair' | 'voteReadingTestPair';
 
-/** The tests of the mock (specs/2026-11-05-reading-test.md). All their text is invented. */
+/**
+ * The tests of the mock (specs/2026-11-05-reading-test.md). All their text is invented. The open test has no labels and
+ * goes straight on after a choice; the test of the reveal has the same pairs with labels, the author against the model of
+ * the product (RT5.4), and reveals each voted pair.
+ */
 export const mockReadingTestSlug = 'mock-compare-open-0001';
+export const mockRevealReadingTestSlug = 'mock-compare-reveal-01';
 export const mockClosedReadingTestSlug = 'mock-compare-closed-01';
 
 /** The sketch of a chapter and the items both pieces cover (RT1.10); a pair without one shows only its context. */
@@ -17,7 +23,10 @@ const sketches: Record<number, { sketch: string[]; shown: number[] }> = {
   },
 };
 
-const pairs = [
+type MockSide = { condition: string; label?: string; paragraphs: string[] };
+type MockPair = { number: number; context: string; a: MockSide; b: MockSide };
+
+const pairs: MockPair[] = [
   {
     number: 1,
     context: 'Вечер у переправы. Лодочник ждёт последнего пассажира.',
@@ -83,6 +92,15 @@ const pairs = [
   },
 ];
 
+/** RT5.4: in the test of the reveal side a is the author's and side b the model's, whatever the order a voter sees. */
+const revealPairs: MockPair[] = pairs.map((pair) => ({
+  ...pair,
+  a: { condition: 'C', label: 'Автор', paragraphs: pair.a.paragraphs },
+  b: { condition: 'O', label: 'Модель gpt-6.2-astra', paragraphs: pair.b.paragraphs },
+}));
+
+const tests: Record<string, MockPair[]> = { [mockReadingTestSlug]: pairs, [mockRevealReadingTestSlug]: revealPairs };
+
 function hashOf(text: string) {
   let hash = 2166136261;
   for (const character of text) {
@@ -95,7 +113,9 @@ function hashOf(text: string) {
 /** The public page of the blind comparison: the same order, choice and answers as the backend, on a simpler hash. */
 export function createReadingTestOperations(context: MockRepositoryContext) {
   function open(operation: Operation, slug: string) {
-    if (slug !== mockReadingTestSlug) throw new MockApiError(404, 'this test is not available', operation, 'reading_test.unavailable');
+    const test = tests[slug];
+    if (!test) throw new MockApiError(404, 'this test is not available', operation, 'reading_test.unavailable');
+    return test;
   }
 
   function checkVoter(operation: Operation, voterId: string) {
@@ -104,11 +124,11 @@ export function createReadingTestOperations(context: MockRepositoryContext) {
 
   const turned = (voterId: string, number: number) => hashOf(`${voterId}:${number}`) % 2 === 1;
 
-  function stepOf(voterId: string, keep?: number): Step {
+  function stepOf(slug: string, test: MockPair[], voterId: string, keep?: number): Step {
     const votes = context.state.readingTestVotes;
-    const mine = new Set(votes.filter((vote) => vote.voterId === voterId).map((vote) => vote.number));
-    const unread = pairs.filter((pair) => !mine.has(pair.number));
-    const step = { read: mine.size, total: pairs.length };
+    const mine = new Set(votes.filter((vote) => vote.slug === slug && vote.voterId === voterId).map((vote) => vote.number));
+    const unread = test.filter((pair) => !mine.has(pair.number));
+    const step = { read: mine.size, total: test.length };
     if (unread.length === 0) return { ...step, pair: null };
     // RT2.5: each voter reads in a random order of his own, the order of the hashes of him and the pairs.
     const kept = unread.find((pair) => pair.number === keep);
@@ -119,23 +139,35 @@ export function createReadingTestOperations(context: MockRepositoryContext) {
     return { ...step, pair: { number: chosen.number, context: chosen.context, sketch, shown, first: first.paragraphs, second: second.paragraphs } };
   }
 
-  async function takeReadingTestPair(slug: string, body: OperationRequest<'takeReadingTestPair'>): Promise<Step> {
-    checkVoter('takeReadingTestPair', body.voterId);
-    open('takeReadingTestPair', slug);
-    return stepOf(body.voterId, body.keep);
+  /** RT5.2: the labels in the order this voter saw the sides and the side the kept vote chose; nothing without labels. */
+  function revealOf(pair: MockPair, voterId: string, kept: string): Voted['reveal'] {
+    if (!pair.a.label || !pair.b.label) return undefined;
+    const isTurned = turned(voterId, pair.number);
+    const [first, second] = isTurned ? [pair.b, pair.a] : [pair.a, pair.b];
+    return { first: first.label!, second: second.label!, chosen: first.condition === kept ? 'first' : 'second' };
   }
 
-  async function voteReadingTestPair(slug: string, body: OperationRequest<'voteReadingTestPair'>): Promise<Step> {
+  async function takeReadingTestPair(slug: string, body: OperationRequest<'takeReadingTestPair'>): Promise<Step> {
+    checkVoter('takeReadingTestPair', body.voterId);
+    const test = open('takeReadingTestPair', slug);
+    return stepOf(slug, test, body.voterId, body.keep);
+  }
+
+  async function voteReadingTestPair(slug: string, body: OperationRequest<'voteReadingTestPair'>): Promise<Voted> {
     checkVoter('voteReadingTestPair', body.voterId);
-    open('voteReadingTestPair', slug);
-    const pair = pairs.find((candidate) => candidate.number === body.pairNumber);
+    const test = open('voteReadingTestPair', slug);
+    const pair = test.find((candidate) => candidate.number === body.pairNumber);
     if (!pair) throw new MockApiError(400, 'validation failed', 'voteReadingTestPair', 'request.validation');
     const votes = context.state.readingTestVotes;
-    if (!votes.some((vote) => vote.number === pair.number && vote.voterId === body.voterId)) {
+    // RT2.6: the first vote stays, and a repeat reveals what it chose.
+    let kept = votes.find((vote) => vote.slug === slug && vote.number === pair.number && vote.voterId === body.voterId);
+    if (!kept) {
       const chosen = (body.choice === 'first') !== turned(body.voterId, pair.number) ? pair.a : pair.b;
-      votes.push({ number: pair.number, voterId: body.voterId, chosen: chosen.condition, note: body.note ?? '' });
+      kept = { slug, number: pair.number, voterId: body.voterId, chosen: chosen.condition, note: body.note ?? '' };
+      votes.push(kept);
     }
-    return stepOf(body.voterId);
+    const reveal = revealOf(pair, body.voterId, kept.chosen);
+    return { ...stepOf(slug, test, body.voterId), ...(reveal ? { reveal } : {}) };
   }
 
   return { takeReadingTestPair, voteReadingTestPair };

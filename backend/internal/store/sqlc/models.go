@@ -215,6 +215,12 @@ type BookCoverArtifact struct {
 	ObjectDeletedAt         pgtype.Timestamptz `json:"object_deleted_at"`
 }
 
+type BookLoad struct {
+	BookID      pgtype.UUID        `json:"book_id"`
+	OwnerUserID pgtype.UUID        `json:"owner_user_id"`
+	LoadedAt    pgtype.Timestamptz `json:"loaded_at"`
+}
+
 type BookSourceMember struct {
 	ProjectID                  pgtype.UUID `json:"project_id"`
 	SourceView                 string      `json:"source_view"`
@@ -1049,6 +1055,7 @@ type PlatformQuotaDefault struct {
 	AppReturnsPerDay             pgtype.Int4        `json:"app_returns_per_day"`
 	AppTokensPerQuestion         pgtype.Int4        `json:"app_tokens_per_question"`
 	AppReadingTokensPerCharacter pgtype.Int4        `json:"app_reading_tokens_per_character"`
+	BookReloads                  pgtype.Int4        `json:"book_reloads"`
 }
 
 type Project struct {
@@ -1485,6 +1492,8 @@ type SubscriptionTier struct {
 	DraftTurnsPerDay      int32              `json:"draft_turns_per_day"`
 	DraftRewritesPerDay   int32              `json:"draft_rewrites_per_day"`
 	ChaptersPerWindow     pgtype.Int4        `json:"chapters_per_window"`
+	BookReloads           int32              `json:"book_reloads"`
+	TrialProofreads       int32              `json:"trial_proofreads"`
 }
 
 type SubscriptionUsage struct {
@@ -1538,6 +1547,7 @@ type WriterQuotaOverride struct {
 	AppReturnsPerDay             pgtype.Int4        `json:"app_returns_per_day"`
 	AppTokensPerQuestion         pgtype.Int4        `json:"app_tokens_per_question"`
 	AppReadingTokensPerCharacter pgtype.Int4        `json:"app_reading_tokens_per_character"`
+	BookReloads                  pgtype.Int4        `json:"book_reloads"`
 }
 
 type WriterUsageDay struct {

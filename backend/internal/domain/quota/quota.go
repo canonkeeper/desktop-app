@@ -52,6 +52,10 @@ const (
 	// keys: no tier sets them.
 	KeyAppTokensPerQuestion         Key = "app_tokens_per_question"
 	KeyAppReadingTokensPerCharacter Key = "app_reading_tokens_per_character"
+	// KeyBookReloads says whether a book of the owner's sagas loads again (specs/2026-11-18-free-tier.md FT1.1): 1 — as
+	// ever; 0 — a book is loaded once: no new version of it from a file, no book without text, and the books of the
+	// account are every book that ever came into its sagas, so a deleted book or saga gives no place back. Not of a day.
+	KeyBookReloads Key = "book_reloads"
 )
 
 // Keys lists every limit in the order the operator command and the reports show them.
@@ -61,7 +65,7 @@ func Keys() []Key {
 		KeyProjectBooks, KeyProjectChapters, KeyProjectCharacters,
 		KeyAccountBooks, KeyAccountChapters, KeyAccountCharacters, KeyImagesPerDay, KeyImageUploadsPerDay, KeyChapterDraftsPerDay,
 		KeyDrawingTurnsPerDay, KeyDraftTurnsPerDay, KeyDraftRewritesPerDay, KeyAppReturnsPerDay,
-		KeyAppTokensPerQuestion, KeyAppReadingTokensPerCharacter,
+		KeyAppTokensPerQuestion, KeyAppReadingTokensPerCharacter, KeyBookReloads,
 	}
 }
 
@@ -97,6 +101,8 @@ type Limits struct {
 	// AppTokensPerQuestion and AppReadingTokensPerCharacter are the fences of the work of apps (PX3.2, PX3.3).
 	AppTokensPerQuestion         int64
 	AppReadingTokensPerCharacter int64
+	// BookReloads is 0 or 1 (FT1.1).
+	BookReloads int64
 }
 
 // Defaults are the limits of every writer without an override; changing them is a release.
@@ -126,6 +132,8 @@ func Defaults() Limits {
 		// for a character of the text by the measure of production: eight leave it free, and the characters of the tier
 		// stop it first (specs/2026-11-13-desk-account-ai.md AI5.3).
 		AppReadingTokensPerCharacter: 8,
+		// A book loads again by the code: the desktop and a build without a plan are as before (FT1.1).
+		BookReloads: 1,
 	}
 }
 
@@ -169,6 +177,8 @@ func (limits *Limits) field(key Key) *int64 {
 		return &limits.AppTokensPerQuestion
 	case KeyAppReadingTokensPerCharacter:
 		return &limits.AppReadingTokensPerCharacter
+	case KeyBookReloads:
+		return &limits.BookReloads
 	default:
 		return nil
 	}
@@ -310,6 +320,9 @@ const (
 	MeasureBooks Measures = 1 << iota
 	MeasureChapters
 	MeasureCharacters
+	// MeasureLoads is the books that ever came into the sagas of the owner against his books when a book is loaded once
+	// (specs/2026-11-18-free-tier.md FT1.3): the write of a new book grows it, a return from the trash never does.
+	MeasureLoads
 )
 
 // Has says whether the write grows the measure.
@@ -337,6 +350,8 @@ type Account struct {
 	DraftRewrites int64
 	Projects      int64
 	Sources       Sources
+	// BooksLoaded is every book that ever came into the sagas of the writer (specs/2026-11-18-free-tier.md FT1.5).
+	BooksLoaded   int64
 	OwnedProjects []ProjectSources
 	// Places is who holds the places of ActiveTurns (specs/2026-11-15-desk-turns-here.md TH2.1): only the desktop app with the
 	// helper of the account tells it, from what its site said; nil everywhere else.

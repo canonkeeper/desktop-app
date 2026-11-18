@@ -12,8 +12,10 @@
 #   postgres       — the PostgreSQL 18 set built from the source pinned in desktop/release.json (desktop/postgres), cached;
 #   app            — the core of the shell (cargo test, clippy), on Windows the copy of the Codex homes on a real Windows
 #                    (backend/internal/adapters/codex), the set (scripts/desktop-app.mjs: the backend with the web,
-#                    PostgreSQL, codex-app-server by its pinned sha256), the files of the bundler by their sums, tauri
-#                    build, the mark of its kind in the program of each package, a smoke run of the installed app —
+#                    PostgreSQL, codex-app-server by its pinned sha256), on Windows a question of the chat to a stub model
+#                    under the codex-app-server of the set, the files of the bundler by their sums, tauri build, the mark
+#                    of its kind in the program of each package, on Windows the imports of every PE file of the installer
+#                    (scripts/desktop-app-imports.mjs: the package and Windows only), a smoke run of the installed app —
 #                    start, the window gets the page of the backend, stop with no process left — and the installers as
 #                    artifacts; read only, no secret;
 #   smoke-update   — the smoke run of an update in a directory of its own: N and N+1 of the smoke build (a key of one run,
@@ -172,6 +174,19 @@ jobs:
           echo "CODEX_ARCHIVE=codex-download/$asset" >> "$GITHUB_ENV"
       - name: The set — the backend with the web, PostgreSQL, codex-app-server — checked against the pins
         run: node scripts/desktop-app.mjs --target ${{ matrix.target }} --postgres pg-set.tar --codex "$CODEX_ARCHIVE"
+      - name: A question of the chat on a real Windows — a thread starts and the stub model answers (specs/2026-11-18-desk-windows-chat.md WC1.4)
+        if: runner.os == 'Windows'
+        working-directory: backend
+        env:
+          # The codex-app-server of the set: the package of the release, checked against its pin by the step before.
+          CK_CODEX_RUNTIME_TEST_BINARY: ${{ github.workspace }}/desktop/bundle/codex/codex-app-server.exe
+        run: |
+          test -f "$CK_CODEX_RUNTIME_TEST_BINARY" || { echo "the set has no codex-app-server" >&2; exit 1; }
+          go test ./internal/adapters/codex -count=1 -v \
+            -run '^(TestTheAppServerOfWindowsAloneReadsTheWholeDisk|TestRuntimeProfileInitializesWithPinnedSDK|TestRuntimeRunsResumesAndDeletesChatAgainstStubModel|TestRuntimeTheProfileOfWindowsReadsTheWholeDiskAndNothingMore|TestRuntimeAHomeCopiedFromAMovedBundleKeepsItsThreads)$' \
+            | tee "$RUNNER_TEMP/codex-runtime-tests.log"
+          # A runtime test without its binary is skipped, and a skip is no answer of the chat.
+          if grep -q -- '--- SKIP' "$RUNNER_TEMP/codex-runtime-tests.log"; then echo "a runtime test was skipped" >&2; exit 1; fi
       - name: Files of the Tauri bundler by their sums (desktop/release.json bundler), through the API of the release assets
         if: runner.os == 'Linux'
         env:
@@ -221,6 +236,9 @@ jobs:
             unpack nsis 7z x -y -o"$work/nsis" "$(ls "$bundle"/nsis/*-setup.exe)" >/dev/null
             "$tool.exe" marks --kind nsis "$work/nsis"
           fi
+      - name: Every program and library of the installer of Windows imports only the package and Windows — no Visual C++ Redistributable (specs/2026-11-18-desk-windows-chat.md WC2.2)
+        if: runner.os == 'Windows'
+        run: node scripts/desktop-app-imports.mjs "$RUNNER_TEMP/marks/nsis" "$(ls desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)"
       - name: The .desktop of the .deb and the .rpm opens the links canonkeeper:// (specs/2026-11-16-desk-app-links.md AL2.2)
         if: runner.os == 'Linux'
         run: |

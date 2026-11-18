@@ -11,7 +11,7 @@ function quota(used: number, limit = 30, active = 2): AccountQuota {
     day: '2026-10-28', resetsAt: '2026-10-28T21:00:00Z', chatTurns: counter(used, limit),
     activeTurns: counter(0, active), imports: counter(0, 30), images: counter(0, 30),
     imageUploads: counter(0, 30), chapterDrafts: counter(0, 20), drawingTurns: counter(0, 60), draftTurns: counter(0, 60), draftRewrites: counter(0, 200),
-    projects: counter(1, 3), account: sources, ownedProjects: [],
+    projects: counter(1, 3), account: sources, ownedProjects: [], bookReloads: true, booksLoaded: 0,
   };
 }
 

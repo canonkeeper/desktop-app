@@ -26,8 +26,8 @@ func New(db *storedb.DB, fence Fence) *Store {
 }
 
 // AccountQuota is getAccountQuota (R5.1): limits, the day's use, active questions — with his turns elsewhere, as the
-// fence counts them (specs/2026-11-13-desk-permits.md PM3.2) — and the text of the projects the writer owns. Only the
-// writer's own rows are read.
+// fence counts them (specs/2026-11-13-desk-permits.md PM3.2) —, the text of the projects the writer owns and the books
+// that ever came into them (specs/2026-11-18-free-tier.md FT1.5). Only the writer's own rows are read.
 func (store *Store) AccountQuota(ctx context.Context, userID string, at time.Time) (quota.Account, error) {
 	return store.AccountQuotaInTx(ctx, store.db.Pool, userID, at)
 }
@@ -58,6 +58,9 @@ func (store *Store) AccountQuotaInTx(ctx context.Context, db Querier, userID str
 	}
 	account.Projects = int64(len(account.OwnedProjects))
 	account.Sources = quota.Sum(account.OwnedProjects)
+	if account.BooksLoaded, err = booksLoaded(ctx, db, userID); err != nil {
+		return quota.Account{}, err
+	}
 	return account, nil
 }
 

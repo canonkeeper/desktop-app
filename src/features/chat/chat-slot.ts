@@ -49,6 +49,20 @@ export interface ChatAttachmentHost {
   openDraft?: (draftId: string) => void;
 }
 
+/**
+ * «Вычитать» of the chapter at the field: the press, and why it waits or what is left of it — the trial proofreading of the
+ * account on a tier of the site without a window (specs/2026-11-18-free-tier.md FT3.4), said by the slot.
+ */
+export interface ChapterProofread {
+  start: () => void;
+  pending: boolean;
+  problem: ReactNode;
+  /** Why «Вычитать» waits: the button stays in place, dimmed, and says it. */
+  unavailable?: string | null | undefined;
+  /** A line beside the button: «Пробная вычитка: 1». */
+  note?: string | null | undefined;
+}
+
 /** «Вычитать и вернуть .docx» of an attached chapter on the site (specs/2026-11-07-chat-attach-chapter.md CA5). */
 export interface ChatProofreadSlot {
   /** The button among the actions of the card and the problem under them. */
@@ -58,7 +72,7 @@ export interface ChatProofreadSlot {
    * or text goes to the proofreading of «Письмо», the chat spends no question; none for a reader.
    */
   useProofreadChapter: (host: Pick<ChatAttachmentHost, 'projectId' | 'canEdit' | 'openDraft'>, chapter: { input: ChapterFileInput; key: string } | null) =>
-    { start: () => void; pending: boolean; problem: ReactNode } | undefined;
+    ChapterProofread | undefined;
 }
 
 /** What the questions of the demo saga need of the panel: the question field and the way a question goes into it. */

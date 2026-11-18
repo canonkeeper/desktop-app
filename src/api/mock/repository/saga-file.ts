@@ -3,6 +3,7 @@ import { bytesOf, zipFiles, zipText } from '../../../shared/files/zip';
 import { MockApiError } from '../scenarios';
 import { clone, now } from './common';
 import type { MockRepositoryContext } from './context';
+import { mockLoadBook } from './quota';
 import { chapterId as templateChapterId, createProjectMembershipForUser } from './fixtures';
 import { chapterKey, chapterPlaces } from './places';
 
@@ -156,6 +157,7 @@ function openedSaga(context: MockRepositoryContext, title: string): Project {
     coverUrl: null, status: 'ready', chapterCount: 2, wordCount: (template?.wordCount ?? 0) * 2, createdAt: now, updatedAt: now,
   };
   context.state.books.push(book);
+  mockLoadBook(context, book.id);
   const chapters: Chapter[] = template ? [{ order: 12, title: 'Белый порт' }, { order: 14, title: 'Колокол' }].map(({ order, title: chapterTitle }) => ({
     ...clone(template), id: `${bookId}-chapter-${order}`, bookId, title: chapterTitle, order, status: 'published', publishedAt: now,
     paragraphs: template.paragraphs.map((paragraph) => ({ ...clone(paragraph), id: `${bookId}-${order}-p-${paragraph.order}` })),

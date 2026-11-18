@@ -289,14 +289,16 @@ func TestPatchChangesWhatItNames(t *testing.T) {
 
 // newChaptersStub answers what the tiers say of a draft, and counts the drafts it was asked of.
 type newChaptersStub struct {
-	answer bool
-	err    error
-	asked  []string
+	answer  bool
+	trial   *domain.Trial
+	err     error
+	asked   []string
+	viewers []string
 }
 
-func (stub *newChaptersStub) NewChapter(_ context.Context, draft domain.Draft) (bool, error) {
-	stub.asked = append(stub.asked, draft.ID)
-	return stub.answer, stub.err
+func (stub *newChaptersStub) NewChapter(_ context.Context, viewer string, draft domain.Draft) (bool, *domain.Trial, error) {
+	stub.asked, stub.viewers = append(stub.asked, draft.ID), append(stub.viewers, viewer)
+	return stub.answer, stub.trial, stub.err
 }
 
 // newChapterOf is the newChapter of an answered draft: nil when the answer carries none.
@@ -318,21 +320,21 @@ func TestADraftSaysWhetherItsScenesCountAsANewChapter(t *testing.T) {
 	draft := testDraftValue()
 	for _, answer := range []bool{true, false} {
 		chapters := &newChaptersStub{answer: answer}
-		view := DraftAnswer(context.Background(), chapters, draft)
+		view := DraftAnswer(context.Background(), chapters, "user-1", draft)
 		if view.NewChapter == nil || *view.NewChapter != answer || len(chapters.asked) != 1 || chapters.asked[0] != testDraft {
 			t.Fatalf("a draft of a build with tiers = %v, asked %v; want %t", view.NewChapter, chapters.asked, answer)
 		}
 	}
-	if view := DraftAnswer(context.Background(), nil, draft); view.NewChapter != nil {
+	if view := DraftAnswer(context.Background(), nil, "user-1", draft); view.NewChapter != nil {
 		t.Fatalf("a build without tiers says %v", *view.NewChapter)
 	}
 	added := draft
 	added.AddedChapterID = "chapter-in-book"
 	chapters := &newChaptersStub{answer: true}
-	if view := DraftAnswer(context.Background(), chapters, added); view.NewChapter != nil || len(chapters.asked) != 0 {
+	if view := DraftAnswer(context.Background(), chapters, "user-1", added); view.NewChapter != nil || len(chapters.asked) != 0 {
 		t.Fatalf("a chapter in the book says %v, asked %v", view.NewChapter, chapters.asked)
 	}
-	if view := DraftAnswer(context.Background(), &newChaptersStub{answer: true, err: context.DeadlineExceeded}, draft); view.NewChapter != nil || view.ID != testDraft {
+	if view := DraftAnswer(context.Background(), &newChaptersStub{answer: true, err: context.DeadlineExceeded}, "user-1", draft); view.NewChapter != nil || view.ID != testDraft {
 		t.Fatalf("a failed read = %+v", view)
 	}
 
@@ -349,6 +351,38 @@ func TestADraftSaysWhetherItsScenesCountAsANewChapter(t *testing.T) {
 	}
 	if got := newChapterOf(t, call(t, router(stub), http.MethodGet, base+"/"+testDraft, "", nil)); got != nil {
 		t.Fatalf("a read without tiers = %v", *got)
+	}
+}
+
+// specs/2026-11-18-free-tier.md FT2.4: an answer with a draft says the trial of «Письмо» of the tier of the writer who reads
+// it, by the port of the build, asked with him; the end of its day is a moment or null, the works a list; a tier with a
+// window — the port says none — and a build without tiers carry no field.
+func TestADraftSaysTheTrialOfItsReader(t *testing.T) {
+	until := time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		trial *domain.Trial
+		want  string
+	}{
+		{&domain.Trial{Kind: "chapter", Until: &until, Allows: []string{"scenes", "check", "rewrite", "turn"}},
+			`{"kind":"chapter","until":"2026-11-19T10:00:00Z","allows":["scenes","check","rewrite","turn"]}`},
+		{&domain.Trial{Kind: "none"}, `{"kind":"none","until":null,"allows":[]}`},
+		{nil, ""},
+	} {
+		chapters := &newChaptersStub{answer: true, trial: test.trial}
+		stub := &storeStub{}
+		mux := chi.NewRouter()
+		NewHandlers(UseCases{Get: service.Get{Store: stub}}, userStub{}, []string{"http://app.test"}).WithNewChapters(chapters).Mount(mux)
+		recorder := call(t, mux, http.MethodGet, base+"/"+testDraft, "", nil)
+		var body map[string]json.RawMessage
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: %v", recorder.Body.String(), err)
+		}
+		if got := string(body["trial"]); got != test.want || len(chapters.viewers) != 1 || chapters.viewers[0] != "user-1" {
+			t.Fatalf("trial = %s asked of %v; want %s of the reader", got, chapters.viewers, test.want)
+		}
+	}
+	if view := DraftAnswer(context.Background(), nil, "user-1", testDraftValue()); view.Trial != nil {
+		t.Fatalf("a build without tiers says a trial %+v", view.Trial)
 	}
 }
 

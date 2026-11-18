@@ -1,9 +1,10 @@
 import { BookCheck, FileCheck2, FilePlus2, FileText, Library, SearchCheck, X } from 'lucide-react';
-import { useRef, type ReactNode } from 'react';
+import { useRef } from 'react';
 import { Button } from '../../ui/controls/Button';
 import { IconButton } from '../../ui/controls/IconButton';
 import { formatCount } from '../../ui/copy';
 import { chapterLabel, chapterSize, chatChapterAccept, signs, type ChatChapterState } from './chat-chapter';
+import type { ChapterProofread } from './chat-slot';
 import styles from './ChatChapter.module.css';
 
 /**
@@ -40,7 +41,7 @@ export interface ChapterQuickActions {
   /** What a question costs, by the rule of «Спросить»: one line under the buttons. */
   price?: string | undefined;
   /** «Вычитать» of the site: the chapter goes to the proofreading of «Письмо», no question of the chat. */
-  proofread?: { start: () => void; pending: boolean; problem: ReactNode } | undefined;
+  proofread?: ChapterProofread | undefined;
 }
 
 /** The questions of the actions, as the author would ask them. */
@@ -79,13 +80,15 @@ export function ChatChapterStrip({ actions, chapter, onOpenBooks }: { actions?: 
                 </Button>
               </> : null}
               {actions?.proofread ? (
-                <Button data-voice-consent="yes" loading={actions.proofread.pending} onClick={actions.proofread.start} size="sm" variant="outline">
+                <Button data-voice-consent="yes" disabledReason={actions.proofread.unavailable} loading={actions.proofread.pending} onClick={actions.proofread.start}
+                  size="sm" variant="outline">
                   <FileCheck2 aria-hidden="true" size={15} />Вычитать
                 </Button>
               ) : null}
             </div>
           ) : null}
           {actions?.price ? <p className={styles.price}>{actions.price}</p> : null}
+          {actions?.proofread?.note ? <p className={styles.price}>{actions.proofread.note}</p> : null}
           {actions?.proofread?.problem}
         </div>
       ) : null}

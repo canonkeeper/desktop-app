@@ -16,6 +16,10 @@ var ErrProjectNotFound = errors.New("quota: project not found")
 // all projects of its owner over the book limit, and, when text comes with them, the owner's text
 // is not already at its limit. The exact text is checked after the write (CheckOwnerSourcesInTx).
 //
+// When a book of the owner loads once (specs/2026-11-18-free-tier.md FT1.3) the books that ever came into his sagas are
+// compared with his books first: they are never fewer than the live ones, and a place a deleted book held is not free.
+// A book without text is refused then: no text can come into it later.
+//
 // The demo saga takes no book (specs/2026-11-09-demo-saga.md DS3.3): it is refused before any limit.
 func (fence Fence) CheckNewBooksInTx(ctx context.Context, tx pgx.Tx, projectID string, books int64, withText bool) error {
 	owner, demo, err := lockProjectOwnerQuotaInTx(ctx, tx, projectID)
@@ -28,6 +32,18 @@ func (fence Fence) CheckNewBooksInTx(ctx context.Context, tx pgx.Tx, projectID s
 	limits, project, account, err := fence.ownerTotals(ctx, tx, owner, projectID)
 	if err != nil {
 		return err
+	}
+	if limits.BookReloads == 0 {
+		if !withText {
+			return &quota.Exceeded{Key: quota.KeyBookReloads, Limit: limits.AccountBooks}
+		}
+		loaded, err := booksLoaded(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		if loaded+books > limits.AccountBooks {
+			return &quota.Exceeded{Key: quota.KeyBookReloads, Limit: limits.AccountBooks}
+		}
 	}
 	switch {
 	case project.Books+books > limits.ProjectBooks:
@@ -59,7 +75,9 @@ func (fence Fence) CheckOwnerSourcesInTx(ctx context.Context, tx pgx.Tx, project
 // CheckAdmittedSourcesInTx checks the same totals for text whose way into the saga was admitted before: the book of
 // an import whose staging passed (R3.3), a book or a chapter restored from the trash (R3.4). In the demo saga such
 // text is its seed and what was deleted from it — not the author's and out of the totals of its owner — so there it
-// checks nothing (DS3.3, DS3.4).
+// checks nothing (DS3.3, DS3.4). A new book written grows quota.MeasureLoads too (specs/2026-11-18-free-tier.md FT1.3):
+// under the quota lock the book of another upload that committed first is counted, and two uploads at once on a tier
+// where a book loads once do not both pass.
 func (fence Fence) CheckAdmittedSourcesInTx(ctx context.Context, tx pgx.Tx, projectID string, grows quota.Measures) error {
 	return fence.checkSourcesInTx(ctx, tx, projectID, grows, nil)
 }
@@ -102,7 +120,45 @@ func (fence Fence) checkSourcesInTx(ctx context.Context, tx pgx.Tx, projectID st
 	if err != nil {
 		return err
 	}
+	if grows.Has(quota.MeasureLoads) && limits.BookReloads == 0 {
+		loaded, err := booksLoaded(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		if loaded > limits.AccountBooks {
+			return &quota.Exceeded{Key: quota.KeyBookReloads, Limit: limits.AccountBooks}
+		}
+	}
 	return sourcesExceeded(limits, project, account, grows)
+}
+
+// CheckBookUpdateInTx refuses a new version of a live book of the saga from a file when a book of its owner loads once
+// (specs/2026-11-18-free-tier.md FT1.4); nothing is counted, and an upload of a day is not spent by the caller after it.
+func (fence Fence) CheckBookUpdateInTx(ctx context.Context, tx pgx.Tx, projectID string) error {
+	var owner string
+	err := tx.QueryRow(ctx, `SELECT owner_user_id::text FROM projects WHERE id = $1::uuid AND deleted_at IS NULL`, projectID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrProjectNotFound
+	}
+	if err != nil {
+		return err
+	}
+	limits, err := fence.EffectiveLimitsInTx(ctx, tx, owner)
+	if err != nil {
+		return err
+	}
+	if limits.BookReloads == 0 {
+		return &quota.Exceeded{Key: quota.KeyBookReloads, Limit: limits.BookReloads}
+	}
+	return nil
+}
+
+// booksLoaded is every book that ever came into the sagas of the owner (specs/2026-11-18-free-tier.md FT1.2): the
+// journal the insert of a book writes, and nothing deletes but the deletion of the account.
+func booksLoaded(ctx context.Context, db Querier, owner string) (int64, error) {
+	var loaded int64
+	err := db.QueryRow(ctx, `SELECT count(*) FROM book_loads WHERE owner_user_id = $1::uuid`, owner).Scan(&loaded)
+	return loaded, err
 }
 
 func sourcesExceeded(limits quota.Limits, project, account quota.Sources, grows quota.Measures) error {

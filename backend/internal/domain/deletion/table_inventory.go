@@ -107,6 +107,9 @@ func DeletionTableInventory() []TableDisposition {
 		// The new chapters charged against a writer's tier (0120): they outlive the draft and the project, so a deletion
 		// never resets the window (TR7.5), and go with the account (TR10.1).
 		{"subscription_chapter_charges", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
+		// The books that ever came into the sagas of an account (specs/2026-11-18-free-tier.md FT1.2): a deletion of a book
+		// or a saga gives no place back, so neither touches them; they go with the account.
+		{"book_loads", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},
 		// The codes of the link of the app and the linked apps of an account (specs/2026-11-13-desk-link.md LK4.4): the
 		// deletion of a saga does not touch them; they go with the account.
 		{"app_link_codes", TableActionRetainGlobal, TableActionRetainGlobal, TableActionRetainGlobal},

@@ -1,6 +1,7 @@
 import { pluralize } from '../../ui/copy';
 import { isApiStatusFailure } from '../api-errors';
 import type { AccountQuota, QuotaCounter } from './api';
+import { bookLoadsRefusal, fewerBooksWords } from './book-loads';
 
 /**
  * A refusal by a limit in the words of the work (specs/2026-11-10-ux2-patterns-refusals.md PR2.1, PR2.3; П-12): what
@@ -29,7 +30,11 @@ export function formatCharacters(value: number) {
 
 const midnight = 'Новые — после 00:00 по Москве.';
 const otherSaga = 'Книги саги на месте. Новую книгу можно загрузить в другую сагу.';
-const ownBooks = 'Ваши книги на месте. Новые поместятся, когда книг станет меньше.';
+/**
+ * The books of the author stay; fewer books make room only where a book loads again — the one rule of a book loaded once
+ * (specs/2026-11-18-free-tier.md FT3.1, `book-loads.ts`).
+ */
+const ownBooks = fewerBooksWords;
 
 /**
  * « — 5 из 5» by the counter of the account; nothing when the counter is not read, or not yet read again after the
@@ -91,15 +96,17 @@ const table: Record<string, Words> = {
     const room = !books ? 'Книги не поместились: во всех сагах больше нет места для книг'
       : books.used < books.limit ? `Книги не поместились: во всех сагах стало бы больше ${books.limit} ${pluralize(books.limit, 'книги', 'книг', 'книг')}`
         : `Место для книг закончилось${count(books, ' во всех сагах')}`;
-    return { ended: room, returns: ownBooks };
+    return { ended: room, returns: ownBooks(quota) };
   },
+  // A book of a tier where it is loaded once (specs/2026-11-18-free-tier.md FT3.2): the one rule of the entity says its two cases.
+  'quota.book_reloads': bookLoadsRefusal,
   'quota.account_chapters': (quota) => {
     const chapters = quota?.account.chapters.limit;
-    return { ended: chapters === undefined ? 'Книга не поместилась: во всех сагах больше нет места для глав' : `Книга не поместилась: во всех сагах стало бы больше ${chapters} ${pluralize(chapters, 'главы', 'глав', 'глав')}`, returns: ownBooks };
+    return { ended: chapters === undefined ? 'Книга не поместилась: во всех сагах больше нет места для глав' : `Книга не поместилась: во всех сагах стало бы больше ${chapters} ${pluralize(chapters, 'главы', 'глав', 'глав')}`, returns: ownBooks(quota) };
   },
   'quota.account_characters': (quota) => {
     const characters = quota?.account.characters.limit;
-    return { ended: characters === undefined ? 'Книга не поместилась: во всех сагах больше нет места для текста' : `Книга не поместилась: текст всех саг стал бы больше ${formatCharacters(characters)} знаков`, returns: ownBooks };
+    return { ended: characters === undefined ? 'Книга не поместилась: во всех сагах больше нет места для текста' : `Книга не поместилась: текст всех саг стал бы больше ${formatCharacters(characters)} знаков`, returns: ownBooks(quota) };
   },
   'quota.images_daily': (quota, counter) => ({ ended: `Рисунки на сегодня закончились${count(counter ?? quota?.images)}`, returns: `${midnight} Описание можно подготовить уже сейчас.` }),
   'quota.image_uploads_daily': (quota) => ({ ended: `Картинки на сегодня закончились${count(quota?.imageUploads)}`, returns: `${midnight} Загруженные остаются в «Моих картинках».` }),

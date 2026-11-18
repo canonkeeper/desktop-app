@@ -123,5 +123,5 @@ func (handlers Handlers) takeVersion(w http.ResponseWriter, r *http.Request) {
 		take.Place = &domain.Scene{Place: body.Place.Quote, From: body.Place.From, To: body.Place.To}
 	}
 	draft, err := handlers.useCases.TakeVersion.Execute(r.Context(), actor, DraftID(r), number, body.ExpectedRevision, take)
-	handlers.respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, actor.UserID, draft, err)
 }

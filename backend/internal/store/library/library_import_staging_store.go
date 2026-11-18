@@ -177,6 +177,12 @@ func (s *Store) createImportStagingForActor(ctx context.Context, input library.C
 			if err := s.quota.CheckNewBooksInTx(ctx, tx, projectUUID.String(), 1, true); err != nil {
 				return err
 			}
+		default:
+			// A new version of a book from a file, its preview too, when a book of the owner loads once
+			// (specs/2026-11-18-free-tier.md FT1.4): refused before the upload of the day and before the file is read.
+			if err := s.quota.CheckBookUpdateInTx(ctx, tx, projectUUID.String()); err != nil {
+				return err
+			}
 		}
 		// «Обновить из файла» costs one upload: the preview counts it, and the update of the same book by the
 		// same author with the file the preview read does not count it again (specs/2026-10-27-update-book-from-file.md, R6.4).

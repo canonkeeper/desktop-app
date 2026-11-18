@@ -112,9 +112,10 @@ func (s *Store) FinalizeImport(ctx context.Context, input library.FinalizeImport
 		// The written text is checked against the owner's quotas before anything else commits:
 		// a refusal rolls the book back and the import Job fails with the quota code (R3.3). A preview
 		// writes no text; «Обновить из файла» grows no book (specs/2026-11-08-subscription-tiers.md TR2.5). The one
-		// import of the demo saga is its seed, admitted at staging and out of the limits (DS3.4).
+		// import of the demo saga is its seed, admitted at staging and out of the limits (DS3.4). A new book grows the
+		// books that ever came into the sagas of the owner too (specs/2026-11-18-free-tier.md FT1.3).
 		if !previewsBook {
-			grows := quota.MeasureBooks | quota.MeasureChapters | quota.MeasureCharacters
+			grows := quota.MeasureBooks | quota.MeasureChapters | quota.MeasureCharacters | quota.MeasureLoads
 			if updatesBook {
 				grows = quota.MeasureChapters | quota.MeasureCharacters
 			}

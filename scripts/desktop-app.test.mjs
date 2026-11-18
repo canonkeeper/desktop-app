@@ -11,6 +11,7 @@ import yaml from 'js-yaml';
 import { JSDOM } from 'jsdom';
 
 import { assemble, codexHomes, codexPin, postgresPrograms, sha256, targets } from './desktop-app.mjs';
+import { importProblems, peImports, UCRT_DLLS, windowsDll } from './desktop-app-imports.mjs';
 import { codexPackageVersion } from './codex-package.mjs';
 import { changed, pinsOf } from '../desktop/ci/bundler-tools.mjs';
 import { BACK, releaseBody } from '../desktop/ci/release-body.mjs';
@@ -990,4 +991,188 @@ test('the pages of the app and the page of the start name one page of the releas
   assert.ok(ofPage, 'update-words.ts names no releasesUrl');
   assert.equal(ofPage[1], ofShell[1]);
   assert.match(ofPage[1], /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases$/u);
+});
+
+/**
+ * A PE file as a linker writes one: the headers, one section with the import table, the table of delayed imports and
+ * the names of the DLLs. `plus` — PE32+ (x64) or PE32; `byAddress` — the delayed imports of a PE32 named by an address,
+ * as an old linker names them.
+ */
+function peFile({ imports = [], delayed = [], plus = true, byAddress = false }) {
+  const imageBase = plus ? 0x140000000n : 0x400000n;
+  const optionalSize = plus ? 240 : 224;
+  const sectionTable = 0x58 + optionalSize;
+  const raw = 0x200;
+  const address = 0x1000;
+  const importAt = 0;
+  const delayAt = (imports.length + 1) * 20;
+  let namesAt = delayAt + (delayed.length + 1) * 32;
+  const section = Buffer.alloc(namesAt + [...imports, ...delayed].reduce((sum, name) => sum + name.length + 1, 0) + 16);
+  const nameRva = (name) => {
+    const rva = address + namesAt;
+    section.write(name, namesAt, 'latin1');
+    namesAt += name.length + 1;
+    return rva;
+  };
+  imports.forEach((name, index) => {
+    const at = importAt + index * 20;
+    section.writeUInt32LE(address + section.length - 8, at);
+    section.writeUInt32LE(nameRva(name), at + 12);
+    section.writeUInt32LE(address + section.length - 8, at + 16);
+  });
+  delayed.forEach((name, index) => {
+    const at = delayAt + index * 32;
+    const rva = nameRva(name);
+    section.writeUInt32LE(byAddress ? 0 : 1, at);
+    section.writeUInt32LE(byAddress ? Number(imageBase) + rva : rva, at + 4);
+  });
+  const file = Buffer.alloc(raw + section.length);
+  file.write('MZ', 0, 'latin1');
+  file.writeUInt32LE(0x40, 0x3c);
+  file.write('PE\0\0', 0x40, 'latin1');
+  file.writeUInt16LE(plus ? 0x8664 : 0x14c, 0x44);
+  file.writeUInt16LE(1, 0x46);
+  file.writeUInt16LE(optionalSize, 0x54);
+  const optional = 0x58;
+  file.writeUInt16LE(plus ? 0x20b : 0x10b, optional);
+  if (plus) file.writeBigUInt64LE(imageBase, optional + 24);
+  else file.writeUInt32LE(Number(imageBase), optional + 28);
+  const directories = optional + (plus ? 112 : 96);
+  file.writeUInt32LE(16, directories - 4);
+  if (imports.length > 0) file.writeUInt32LE(address + importAt, directories + 8);
+  if (delayed.length > 0) file.writeUInt32LE(address + delayAt, directories + 13 * 8);
+  file.write('.idata', sectionTable, 'latin1');
+  file.writeUInt32LE(section.length, sectionTable + 8);
+  file.writeUInt32LE(address, sectionTable + 12);
+  file.writeUInt32LE(section.length, sectionTable + 16);
+  file.writeUInt32LE(raw, sectionTable + 20);
+  section.copy(file, raw);
+  return file;
+}
+
+// specs/2026-11-18-desk-windows-chat.md WC2.2: the reader of the imports of a PE file — the import table and the table of
+// delayed imports, of x64 and of x86, delayed imports named by an address too — and no PE in a file of another kind.
+test('the imports of a PE file are its import table and its delayed imports', () => {
+  const imports = ['libpq.dll', 'KERNEL32.dll', 'VCRUNTIME140.dll', 'api-ms-win-crt-runtime-l1-1-0.dll'];
+  const delayed = ['SHLWAPI.dll', 'VERSION.dll'];
+  for (const plus of [true, false]) assert.deepEqual(peImports(peFile({ imports, delayed, plus })), { imports, delayed });
+  assert.deepEqual(peImports(peFile({ imports, delayed, plus: false, byAddress: true })), { imports, delayed });
+  assert.deepEqual(peImports(peFile({ imports: ['kernel32.dll'] })), { imports: ['kernel32.dll'], delayed: [] });
+  assert.deepEqual(peImports(peFile({})), { imports: [], delayed: [] });
+  assert.equal(peImports(Buffer.from('max_connections = 20\n'.repeat(8))), null);
+  const notPe = peFile({ imports });
+  notPe.write('NE', 0x40, 'latin1');
+  assert.equal(peImports(notPe), null);
+  const cut = peFile({ imports, delayed });
+  assert.throws(() => peImports(cut.subarray(0, 0x210)), /points outside itself|cut short/);
+});
+
+// WC2.2: every PE file of the installer imports only a file of the package or a DLL of a clean Windows 10 and 11 — the
+// UCRT among them; VCRUNTIME140.dll of Visual C++ Redistributable is a refusal while the package does not carry it.
+test('a PE file of the installer imports only the package and Windows, never Visual C++ Redistributable', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'canonkeeper-imports-'));
+  try {
+    const crt = [...UCRT_DLLS].slice(0, 3);
+    writeFile(path.join(root, 'postgres', 'bin', 'initdb.exe'), peFile({ imports: ['LIBPQ.dll', 'WS2_32.dll', 'KERNEL32.dll', 'VCRUNTIME140.dll', ...crt] }));
+    writeFile(path.join(root, 'postgres', 'bin', 'libpq.dll'), peFile({ imports: ['Secur32.dll', 'KERNEL32.dll', ...crt] }));
+    writeFile(path.join(root, 'postgres', 'bin', 'postgres.exe'), peFile({ imports: ['KERNEL32.dll', ...crt], delayed: ['vcruntime140_1.dll'] }));
+    writeFile(path.join(root, 'postgres', 'lib', 'postgresql', 'plpgsql.dll'), peFile({ imports: ['postgres.exe', 'KERNEL32.dll'] }));
+    writeFile(path.join(root, 'canonkeeper-backend.exe'), peFile({ imports: ['kernel32.dll'] }));
+    writeFile(path.join(root, 'codex', 'codex-app-server.exe'), peFile({ imports: ['combase.dll', 'api-ms-win-core-synch-l1-2-0.dll'], delayed: ['tdh.dll'] }));
+    writeFile(path.join(root, 'postgres', 'share', 'postgres.bki'), 'MZ is not a program\n');
+
+    const before = importProblems([root]);
+    assert.equal(before.checked, 6);
+    assert.deepEqual(before.problems, [
+      `${path.join('postgres', 'bin', 'initdb.exe')}: imports VCRUNTIME140.dll — a DLL of Visual C++ Redistributable, which a clean Windows has not`,
+      `${path.join('postgres', 'bin', 'postgres.exe')}: imports late vcruntime140_1.dll — a DLL of Visual C++ Redistributable, which a clean Windows has not`,
+    ]);
+
+    writeFile(path.join(root, 'postgres', 'bin', 'VCRUNTIME140.dll'), peFile({ imports: ['KERNEL32.dll'] }));
+    writeFile(path.join(root, 'postgres', 'bin', 'vcruntime140_1.dll'), peFile({ imports: ['KERNEL32.dll'] }));
+    assert.deepEqual(importProblems([root]).problems, [], 'a DLL the package carries is not missing');
+
+    writeFile(path.join(root, 'canonkeeper.exe'), peFile({ imports: ['WebView2Loader.dll', 'user32.dll'] }));
+    const setup = path.join(root, 'CanonKeeper_0.1.4_x64-setup.exe');
+    writeFile(setup, peFile({ imports: ['MSVCP140.dll'] }));
+    assert.deepEqual(importProblems([path.join(root, 'canonkeeper.exe'), setup]).problems, [
+      'canonkeeper.exe: imports WebView2Loader.dll, which is neither in the package nor a DLL of a clean Windows',
+      'CanonKeeper_0.1.4_x64-setup.exe: imports MSVCP140.dll — a DLL of Visual C++ Redistributable, which a clean Windows has not',
+    ]);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+  for (const name of ['KERNEL32.dll', 'api-ms-win-crt-stdio-l1-1-0.dll', 'combase.dll']) assert.ok(windowsDll(name), name);
+  for (const name of ['VCRUNTIME140.dll', 'vcruntime140_1.dll', 'MSVCP140.dll', 'CONCRT140.dll', 'VCOMP140.DLL', 'api-ms-win-crt-other-l1-1-0.dll']) {
+    assert.ok(!windowsDll(name), name);
+  }
+});
+
+// specs/2026-11-18-desk-windows-chat.md WC2.1: the programs of the PostgreSQL set of Windows carry the C runtime of Visual
+// C++ in themselves and take the Universal C Runtime of Windows, so none imports VCRUNTIME140.dll; the set of Linux is built
+// with the options it was built with, to the option. The cache of the set is keyed by desktop/postgres/**: a new option
+// builds the set anew.
+test('the PostgreSQL set of Windows needs no Visual C++ Redistributable, the set of Linux is built as it was', () => {
+  const build = path.join(repositoryRoot, 'desktop', 'postgres', 'build.py');
+  const read = [
+    'import importlib.util, json, sys',
+    'spec = importlib.util.spec_from_file_location("build", sys.argv[1])',
+    'build = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(build)',
+    'print(json.dumps({"linux": build.meson_options(False), "windows": build.meson_options(True)}))',
+  ].join('\n');
+  const result = spawnSync('python3', ['-I', '-B', '-c', read, build], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const options = JSON.parse(result.stdout);
+  assert.deepEqual(options.linux, [
+    '-Dicu=disabled', '-Dssl=none', '-Dllvm=disabled', '-Dzlib=disabled', '-Dlz4=disabled', '-Dzstd=disabled',
+    '-Dreadline=disabled', '-Dnls=disabled', '-Duuid=none', '-Dlibxml=disabled', '-Dlibxslt=disabled',
+    '-Dgssapi=disabled', '-Dldap=disabled', '-Dpam=disabled', '-Dbsd_auth=disabled', '-Dsystemd=disabled',
+    '-Dbonjour=disabled', '-Dselinux=disabled', '-Dlibcurl=disabled', '-Dliburing=disabled', '-Dlibnuma=disabled',
+    '-Dplperl=disabled', '-Dplpython=disabled', '-Dpltcl=disabled', '-Dtap_tests=disabled', '-Ddocs=disabled',
+    '-Ddocs_pdf=disabled',
+  ]);
+  assert.deepEqual(options.windows, [...options.linux, '-Db_vscrt=mt', '-Dc_link_args=/NODEFAULTLIB:libucrt.lib ucrt.lib']);
+  assert.match(readFileSync(build, 'utf8'), /options = meson_options\(package\.is_windows\(\)\)\n.*"--buildtype=release", \*options\]/u);
+  const workflow = yaml.load(readFileSync(path.join(repositoryRoot, 'desktop', 'ci', 'desktop-build.yml'), 'utf8'));
+  const cache = workflow.jobs.postgres.steps.find((step) => step.id === 'cache');
+  assert.equal(cache.with.key, "pg-set-${{ matrix.os }}-${{ hashFiles('desktop/postgres/**', 'desktop/release.json') }}");
+});
+
+// specs/2026-11-18-desk-windows-chat.md WC1.4, WC2.2: on a real Windows, with the codex-app-server of the set — the package
+// the release pins, checked by its sum —, the runtime tests of the Codex adapter start a thread of the chat under the
+// profile of the repository and get the answer of the stub model; none of them may be skipped. After the installer is
+// built, every PE file of it, unpacked, and the installer itself import only the package and Windows.
+test('CI asks the chat a question on a real Windows and checks what the programs of the installer import', () => {
+  const app = yaml.load(readFileSync(path.join(repositoryRoot, 'desktop', 'ci', 'desktop-build.yml'), 'utf8')).jobs.app.steps;
+  const at = (pattern) => app.findIndex((step) => pattern.test(step.run ?? ''));
+  const set = at(/node scripts\/desktop-app\.mjs --target/u);
+  const chat = at(/go test \.\/internal\/adapters\/codex [\s\S]*-run '\^\(/u);
+  assert.ok(chat > set && set >= 0, 'the runtime tests run after the set is laid out');
+  assert.equal(app[chat].if, "runner.os == 'Windows'");
+  assert.equal(app[chat]['working-directory'], 'backend');
+  assert.equal(app[chat].env.CK_CODEX_RUNTIME_TEST_BINARY, '${{ github.workspace }}/desktop/bundle/codex/codex-app-server.exe');
+  const named = /-run '\^\(([^)]+)\)\$'/u.exec(app[chat].run)?.[1].split('|') ?? [];
+  for (const test of [
+    'TestTheAppServerOfWindowsAloneReadsTheWholeDisk', 'TestRuntimeProfileInitializesWithPinnedSDK',
+    'TestRuntimeRunsResumesAndDeletesChatAgainstStubModel', 'TestRuntimeTheProfileOfWindowsReadsTheWholeDiskAndNothingMore',
+  ]) {
+    assert.ok(named.includes(test), test);
+  }
+  const tests = readdirSync(path.join(repositoryRoot, 'backend', 'internal', 'adapters', 'codex'))
+    .filter((name) => name.endsWith('_test.go'))
+    .map((name) => readFileSync(path.join(repositoryRoot, 'backend', 'internal', 'adapters', 'codex', name), 'utf8'))
+    .join('\n');
+  for (const test of named) assert.match(tests, new RegExp(`^func ${test}\\(t \\*testing\\.T\\)`, 'mu'), `no test ${test}`);
+  assert.match(app[chat].run, /test -f "\$CK_CODEX_RUNTIME_TEST_BINARY"/u, 'the step does not check the binary is there');
+  assert.match(app[chat].run, /--- SKIP/u, 'the step lets a runtime test be skipped');
+
+  const marks = at(/canonkeeper-release" marks|\$tool\.exe" marks --kind nsis/u);
+  const imports = at(/node scripts\/desktop-app-imports\.mjs/u);
+  assert.ok(imports > marks && marks >= 0, 'the imports are read in the installer unpacked for its marks');
+  assert.equal(app[imports].if, "runner.os == 'Windows'");
+  assert.equal(app[imports].run, 'node scripts/desktop-app-imports.mjs "$RUNNER_TEMP/marks/nsis" "$(ls desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)"');
+  assert.ok(imports < app.findIndex((step) => /^Install \(Windows/u.test(step.name ?? '')), 'the imports are read before the install');
+  const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, 'open-source', 'manifest.json'), 'utf8'));
+  assert.ok(manifest.include.includes('scripts/desktop-app-imports.mjs'), 'the public repository has not the reader of the imports');
 });

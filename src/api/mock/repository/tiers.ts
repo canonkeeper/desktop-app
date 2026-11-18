@@ -44,7 +44,7 @@ export function mockPlanSettings(state: MockState, userId: string): Partial<Reco
     projects: limits.projects, project_books: limits.projectBooks, project_chapters: limits.accountChapters, project_characters: limits.accountCharacters,
     account_books: limits.books, account_chapters: limits.accountChapters, account_characters: limits.accountCharacters,
     images_per_day: limits.imagesPerDay, chapter_drafts_per_day: limits.chapterDraftsPerDay, drawing_turns_per_day: limits.drawingTurnsPerDay,
-    draft_turns_per_day: limits.draftTurnsPerDay, draft_rewrites_per_day: limits.draftRewritesPerDay,
+    draft_turns_per_day: limits.draftTurnsPerDay, draft_rewrites_per_day: limits.draftRewritesPerDay, book_reloads: limits.bookReloads,
   };
 }
 
@@ -82,8 +82,10 @@ function countedChapters(state: MockState, userId: string) {
   const counted = state.chapterCharges.filter((charge) => charge.userId === userId && !charge.returned && charge.job !== 'none');
   return {
     trials: counted.filter((charge) => charge.kind === 'trial').length,
+    proofreads: counted.filter((charge) => charge.kind === 'proofread').length,
     window: counted.filter((charge) => charge.kind === 'window').map((charge) => Date.parse(charge.chargedAt)),
-    last: counted.reduce<number | null>((last, charge) => Math.max(last ?? 0, Date.parse(charge.chargedAt)), null),
+    last: counted.filter((charge) => charge.kind !== 'proofread')
+      .reduce<number | null>((last, charge) => Math.max(last ?? 0, Date.parse(charge.chargedAt)), null),
   };
 }
 
@@ -169,6 +171,7 @@ export function mockAccountPlan(state: MockState, userId: string): Schema<'Accou
       imagesLeft: Math.max(0, tier.limits.trialImages - (state.trialImagesUsed[userId] ?? 0)),
       chaptersLeft: Math.max(0, tier.limits.trialChapters - chapters.trials),
       voiceCallsLeft: Math.max(0, tier.limits.trialVoiceCalls - (state.trialVoiceCallsUsed[userId] ?? 0)),
+      proofreadsLeft: Math.max(0, tier.limits.trialProofreads - chapters.proofreads),
     },
     chapter: {
       perWindow: tier.limits.chaptersPerWindow, windowDays: tier.limits.chapterEveryDays, used: window.used, nextAt: iso(window.frees),
@@ -219,13 +222,13 @@ export function createTierOperations(context: MockRepositoryContext) {
     const { limits, lotUrl } = body;
     const counts = [limits.projects, limits.projectBooks, limits.books, limits.chatTurnsPerDay, limits.imagesPerDay, limits.trialImages,
       limits.trialChapters, limits.chapterDraftsPerDay, limits.voiceMinutesPerDay, limits.trialVoiceCalls, limits.accountChapters,
-      limits.drawingTurnsPerDay, limits.draftTurnsPerDay, limits.draftRewritesPerDay];
+      limits.drawingTurnsPerDay, limits.draftTurnsPerDay, limits.draftRewritesPerDay, limits.trialProofreads];
     const window = [limits.chaptersPerWindow, limits.chapterEveryDays];
     if (counts.some((value) => !validCount(value)) || !Number.isSafeInteger(limits.accountCharacters) || limits.accountCharacters < 0
       || !validCount(limits.trialVoiceCallMinutes, 1) || !validCount(limits.importsPerDay, 1) || !validCount(limits.activeTurns, 1)
       || (window.some((value) => value === null) ? window.some((value) => value !== null) : window.some((value) => !validCount(value, 1)))
       || (lotUrl !== null && (!lotUrl.startsWith('https://funpay.com/') || lotUrl.length > 300))
-      || (code === 'free' && lotUrl !== null)) {
+      || (code === 'free' && lotUrl !== null) || (limits.bookReloads !== 0 && limits.bookReloads !== 1)) {
       throw invalid('setAdminSubscriptionTier');
     }
     Object.assign(tier, { lotUrl, limits: { ...limits } });
@@ -279,7 +282,7 @@ export function createTierOperations(context: MockRepositoryContext) {
   ): Promise<OperationResponse<'resetAdminWriterTrials', '200'>> {
     adminOperation('resetAdminWriterTrials');
     const kinds = Object.entries(body ?? {});
-    if (kinds.length === 0 || kinds.some(([kind, value]) => value !== true || !['images', 'chapters', 'voiceCalls'].includes(kind))) {
+    if (kinds.length === 0 || kinds.some(([kind, value]) => value !== true || !['images', 'chapters', 'voiceCalls', 'proofreads'].includes(kind))) {
       throw invalid('resetAdminWriterTrials');
     }
     if (body.images) delete context.state.trialImagesUsed[userId];
@@ -287,6 +290,9 @@ export function createTierOperations(context: MockRepositoryContext) {
       for (const charge of context.state.chapterCharges) if (charge.userId === userId && charge.kind === 'trial') charge.returned = true;
     }
     if (body.voiceCalls) delete context.state.trialVoiceCallsUsed[userId];
+    if (body.proofreads) {
+      for (const charge of context.state.chapterCharges) if (charge.userId === userId && charge.kind === 'proofread') charge.returned = true;
+    }
     return mockAccountPlan(context.state, userId);
   }
 

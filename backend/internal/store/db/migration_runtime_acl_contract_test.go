@@ -94,6 +94,12 @@ var productRuntimeTableContract = roleTableContract{
 			tables:     []string{"chat_turn_attachments", "deletion_hard_purge_predecessors"},
 		},
 		{
+			// The books that ever came into the sagas of an account (0161, specs/2026-11-18-free-tier.md FT1.2): the trigger of
+			// a book writes them, the fence counts them and the deletion of the account takes them; never updated.
+			privileges: []string{"DELETE", "SELECT"},
+			tables:     []string{"book_loads"},
+		},
+		{
 			// The memory of the voice co-author about a draft (0093): written whole, never updated. A message of
 			// feedback (0113) and a row of the journal of what went to the AI (0114) are written once too.
 			privileges: []string{"DELETE", "INSERT", "SELECT"},
@@ -118,6 +124,11 @@ var governanceOwnerTableContract = roleTableContract{
 			// The outcome counter trigger of 0059 (specs/2026-10-28-owner-tools-and-counters.md UC1).
 			privileges: []string{"INSERT", "SELECT", "UPDATE"},
 			tables:     []string{"writer_usage_days"},
+		},
+		{
+			// The trigger of the books that came into the sagas of an account (0161, FT1.2): it inserts, its ON CONFLICT reads.
+			privileges: []string{"INSERT", "SELECT"},
+			tables:     []string{"book_loads"},
 		},
 		{
 			privileges: []string{"SELECT", "UPDATE"},

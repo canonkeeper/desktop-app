@@ -50,6 +50,7 @@ import {
 } from './ShelfHeader';
 import { ShelfQuotaHints } from './ShelfQuotaHints';
 import { useAccountQuota } from '../../../entities/account-quota/api';
+import { bookLoadsOf } from '../../../entities/account-quota/book-loads';
 import { useBookNavigation } from '../../../entities/manuscript/useBookNavigation';
 import { readerHrefOf, useShelfBookActions } from './useShelfBookActions';
 import { useBookMove } from './useBookMove';
@@ -190,10 +191,12 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
   // The books of all sagas at their limit: the zone of a drop says so instead of calling for a file (PR2.7).
   const quota = useAccountQuota(api, canEditManuscript).data;
   const uploadRunning = Boolean(upload.queue) || upload.sending || Boolean(activeImportJob);
-  // Why «Добавить книги» and a drop on the page wait now (UP1.1, UP3.5).
+  // A book of the author's own saga on a tier where it is loaded once (specs/2026-11-18-free-tier.md FT1.5, FT3.1).
+  const bookLoads = canEditManuscript ? bookLoadsOf(quota, project?.id ?? null) : null;
+  // Why «Добавить книги» and a drop on the page wait now (UP1.1, UP3.5); the books of the account reached their limit (FT3.1).
   const importReason = emailUnverified ? emailUnverifiedShort
     : upload.blockedReason
-      ?? (activeImportJob || bookUpdate.busy ? updateWords.updating.wait : null);
+      ?? (activeImportJob || bookUpdate.busy ? updateWords.updating.wait : null) ?? bookLoads?.newBook ?? null;
   const importBlocked = Boolean(importReason);
   // «Переставить…» and the drag of a card (specs/2026-11-11-ux7-reorder.md RK2): not while books are read or uploaded.
   const bookMove = useBookMove({
@@ -413,7 +416,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
       <PageFileDropOverlay blockedReason={importReason} book={books.find((book) => book.id === drop.overBook)?.title} over={drop.over} />
       {upload.order ? (
         <UploadOrderDialog books={books} busy={upload.sending} onClose={upload.closeOrder} onReplaceRefused={upload.replaceRefused}
-          onRows={upload.setOrderRows} onSend={(rows) => void upload.sendRows(rows)} refused={upload.order.refused}
+          loadsOnce={upload.loadsOnce} onRows={upload.setOrderRows} onSend={(rows) => void upload.sendRows(rows)} refused={upload.order.refused}
           room={upload.room} rows={upload.order.rows} />
       ) : null}
       {upload.question ? (
@@ -441,7 +444,7 @@ function ManuscriptShelfProjectRoute({ api, navigate, route }: ManuscriptShelfPa
       ) : null}
 
       <ShelfBookMenu
-        actions={bookActions} canEdit={canEditManuscript} demo={demo} emailUnverified={emailUnverified} move={bookMove} navigate={navigate}
+        actions={bookActions} bookLoads={bookLoads} canEdit={canEditManuscript} demo={demo} emailUnverified={emailUnverified} move={bookMove} navigate={navigate}
         onChanges={openChanges} onDownload={setDownloading} onSummary={(book) => setSummary([book.id])} projectId={project?.id ?? ''}
         update={bookUpdate} upload={{ running: uploadRunning, live: Boolean(upload.queue), sending: upload.sending, updating: Boolean(activeImportJob) }}
       />

@@ -1,6 +1,6 @@
 import { FileText, FileUp, SkipForward } from 'lucide-react';
 import type { AccountQuota } from '../../../entities/account-quota/api';
-import { refusalWords } from '../../../entities/account-quota/refusal-words';
+import { refusalLine, refusalWords } from '../../../entities/account-quota/refusal-words';
 import { QuotaRefusal } from '../../../entities/account-quota/ui/QuotaRefusal';
 import type { ManuscriptApiClient } from '../../../entities/manuscript/api';
 import { Button } from '../../../ui/controls/Button';
@@ -33,16 +33,19 @@ export function UploadCard({ api, onFile, onSkip, quota, shape, skipping, volume
   const job = useManuscriptJobQuery(api, volume.failedJobId ?? '', Boolean(volume.failedJobId)).data;
   const jobCode = job?.error?.code ?? null;
   const code = volume.reasonCode ?? jobCode;
-  const limit = code?.startsWith('quota.') ? refusalWords(code, quota) : null;
+  // A volume refused because a book is loaded once (specs/2026-11-18-free-tier.md FT1.3; board 35·31): another file meets the
+  // same refusal, so the reason is one line and «Пропустить» the only way on.
+  const loadedOnce = volume.state === 'failed' && code === 'quota.book_reloads';
+  const limit = code?.startsWith('quota.') && !loadedOnce ? refusalWords(code, quota) : null;
+  const failed = () => importFailureMessage(code) ?? (limit ? null : volume.reasonCode
+    ? 'Файл не прошёл проверку. Выберите другой файл книги.'
+    : 'Не удалось загрузить книгу — это сбой на нашей стороне. Замените файл тем же, чтобы повторить; не поможет — напишите нам.');
   const reason = volume.state === 'lost'
     ? 'Файл не дошёл до сервера. Выберите его снова — он встанет на это же место.'
-    : volume.state === 'failed'
-      ? importFailureMessage(code) ?? (limit ? null : volume.reasonCode
-        ? 'Файл не прошёл проверку. Выберите другой файл книги.'
-        : 'Не удалось загрузить книгу — это сбой на нашей стороне. Замените файл тем же, чтобы повторить; не поможет — напишите нам.')
-      : null;
+    : loadedOnce ? refusalLine(code, quota) ?? null
+      : volume.state === 'failed' ? failed() : null;
   const word = volumeWord(volume);
-  const fileInput = volume.itemId && (volume.state === 'failed' || volume.state === 'lost') ? (
+  const fileInput = volume.itemId && !loadedOnce && (volume.state === 'failed' || volume.state === 'lost') ? (
     <label className={styles.file}>
       <FileUp aria-hidden="true" size={15} />{volume.state === 'lost' ? 'Выбрать файл' : 'Заменить файл'}
       <input
@@ -64,7 +67,7 @@ export function UploadCard({ api, onFile, onSkip, quota, shape, skipping, volume
     ) : null}
     {limit && code ? <QuotaRefusal code={code} place="shelf" words={limit} /> : null}
     {reason ? <p className={styles.reason}>{reason}</p> : null}
-    {volume.state === 'failed' && !importFailureMessage(code) && !limit && !volume.reasonCode
+    {volume.state === 'failed' && !importFailureMessage(code) && !limit && !loadedOnce && !volume.reasonCode
       ? <SupportReference code={job?.error?.requestId ?? null} /> : null}
     {fileInput || volume.state === 'failed' ? (
       <div className={styles.actions}>

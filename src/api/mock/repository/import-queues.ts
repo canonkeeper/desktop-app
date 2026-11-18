@@ -15,6 +15,7 @@ import {
   rejectUnknownKeys,
 } from './common';
 import type { MockRepositoryContext } from './context';
+import { mockRefuseBookLoads } from './quota';
 import type { MockState } from './state';
 import { importFileDetails, importQueuePreflightError, nextShelfOrder } from './books';
 import { MockApiError, type MockActorRole } from '../scenarios';
@@ -172,6 +173,8 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
         throw new MockApiError(409, 'An active import queue already exists.', 'createImportQueue', 'active_import_queue_exists');
       }
       nextOrder(context, projectId, 'createImportQueue');
+      // A book loaded once: the books of the queue must fit the books that ever came into the sagas (FT1.3).
+      mockRefuseBookLoads(context, 'createImportQueue', request.items.length);
       const queueId = `import-queue-${context.state.nextImportQueueId}`;
       const queue: ImportQueue = {
         id: queueId,
@@ -247,6 +250,8 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
         if (!waits(item)) {
           throw new MockApiError(409, 'Only a volume that waits takes a new file.', 'uploadImportQueueItem', 'conflict');
         }
+        // «Заменить файл» is one more new book: a book loaded once refuses it once the books of the account are reached (FT1.3).
+        mockRefuseBookLoads(context, 'uploadImportQueueItem', 1);
         Object.assign(item, {
           sourceFileName: details.name,
           preflightStatus: preflightError ? 'invalid' : 'ready',
@@ -319,6 +324,8 @@ export function createImportQueueOperations(context: MockRepositoryContext) {
       if (queue.items.some((item) => item.preflightStatus === 'uploading')) {
         throw invalid('startImportQueue', 'Every file of the queue must be received.');
       }
+      // A book loaded once: the volumes that start must fit the books that ever came into the sagas (FT1.3).
+      mockRefuseBookLoads(context, 'startImportQueue', queue.items.filter((item) => item.preflightStatus === 'ready').length);
       // The order of the volumes is the order of the rows, after the books of the shelf (UP2.3).
       const first = nextOrder(context, projectId, 'startImportQueue');
       for (const item of [...queue.items].sort((left, right) => left.position - right.position)) {

@@ -62,11 +62,12 @@ type Handlers struct {
 	newChapters    NewChapters
 }
 
-// NewChapters says whether the first scenes written in a draft would count as a new chapter of the writer's tier
-// (specs/2026-11-10-ux1-writing.md UW1.2): the build with tiers answers it; a build without them passes none, and its
-// drafts say nothing of it.
+// NewChapters says to the writer who reads a draft whether its first scenes would count as a new chapter of a writer's
+// tier (specs/2026-11-10-ux1-writing.md UW1.2) and, when «Письмо» of his tier is a trial, what the model may start in it
+// (specs/2026-11-18-free-tier.md FT2.4) — nil on a tier with a window: the build with tiers answers it; a build without
+// them passes none, and its drafts say nothing of it.
 type NewChapters interface {
-	NewChapter(ctx context.Context, draft domain.Draft) (bool, error)
+	NewChapter(ctx context.Context, viewer string, draft domain.Draft) (bool, *domain.Trial, error)
 }
 
 // WithNewChapters makes every draft these handlers answer say whether its scenes would count as a new chapter.
@@ -192,7 +193,7 @@ func (handlers Handlers) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.Get.Execute(r.Context(), actor, DraftID(r))
-	handlers.respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, actor.UserID, draft, err)
 }
 
 type placeBody struct {
@@ -222,7 +223,7 @@ func (handlers Handlers) create(w http.ResponseWriter, r *http.Request) {
 		input.Place = domain.Place{BookID: body.Place.BookID, AfterChapterID: body.Place.AfterChapterID}
 	}
 	draft, err := handlers.useCases.Create.Execute(r.Context(), actor, input, request)
-	handlers.respondDraft(w, r, http.StatusCreated, draft, err)
+	handlers.respondDraft(w, r, http.StatusCreated, actor.UserID, draft, err)
 }
 
 func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +289,7 @@ func (handlers Handlers) update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	draft, err := handlers.useCases.Update.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision, change)
-	handlers.respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, actor.UserID, draft, err)
 }
 
 func (handlers Handlers) delete(w http.ResponseWriter, r *http.Request) {
@@ -327,32 +328,56 @@ func (handlers Handlers) addToBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	draft, err := handlers.useCases.AddToBook.Execute(r.Context(), actor, DraftID(r), body.ExpectedRevision)
-	handlers.respondDraft(w, r, http.StatusOK, draft, err)
+	handlers.respondDraft(w, r, http.StatusOK, actor.UserID, draft, err)
 }
 
-func (handlers Handlers) respondDraft(w http.ResponseWriter, r *http.Request, status int, draft domain.Draft, err error) {
+func (handlers Handlers) respondDraft(w http.ResponseWriter, r *http.Request, status int, viewer string, draft domain.Draft, err error) {
 	if err != nil {
 		WriteError(w, r.Context(), err)
 		return
 	}
-	WriteJSON(w, status, DraftAnswer(r.Context(), handlers.newChapters, draft))
+	WriteJSON(w, status, DraftAnswer(r.Context(), handlers.newChapters, viewer, draft))
 }
 
-// DraftAnswer is a draft as every operation answers it (specs/2026-11-10-ux1-writing.md UW1.2): the draft of the
-// contract and, in a build with tiers, whether its first scenes would count as a new chapter of the writer's tier. A
-// chapter in the book writes no scenes and says nothing. A read of the tiers that failed is reported and leaves the
-// sign out: what the operation did stands, the page names no price, and the start of the scenes decides as ever.
-func DraftAnswer(ctx context.Context, chapters NewChapters, draft domain.Draft) DraftView {
+// DraftAnswer is a draft as every operation answers it to the writer who reads it (specs/2026-11-10-ux1-writing.md UW1.2):
+// the draft of the contract and, in a build with tiers, whether its first scenes would count as a new chapter of the
+// writer's tier and, when «Письмо» of the reader's tier is a trial, what the model may start in it
+// (specs/2026-11-18-free-tier.md FT2.4). A chapter in the book writes no scenes and says nothing. A read of the tiers that
+// failed is reported and leaves both out: what the operation did stands, the page names no price, and the start of the
+// work decides as ever.
+func DraftAnswer(ctx context.Context, chapters NewChapters, viewer string, draft domain.Draft) DraftView {
 	view := draftDTO(draft)
 	if chapters == nil || draft.AddedChapterID != "" {
 		return view
 	}
-	counts, err := chapters.NewChapter(ctx, draft)
+	counts, trial, err := chapters.NewChapter(ctx, viewer, draft)
 	if err != nil {
 		observability.ReportUnexpectedError(ctx, err)
 		return view
 	}
 	view.NewChapter = &counts
+	if trial != nil {
+		view.Trial = trialDTO(*trial)
+	}
+	return view
+}
+
+// trialView is ChapterDraftTrial of the contract (FT2.4).
+type trialView struct {
+	Kind   string   `json:"kind"`
+	Until  *string  `json:"until"`
+	Allows []string `json:"allows"`
+}
+
+func trialDTO(trial domain.Trial) *trialView {
+	view := &trialView{Kind: trial.Kind, Allows: trial.Allows}
+	if view.Allows == nil {
+		view.Allows = []string{}
+	}
+	if trial.Until != nil {
+		until := trial.Until.UTC().Format(time.RFC3339)
+		view.Until = &until
+	}
 	return view
 }
 
@@ -444,6 +469,10 @@ type DraftView struct {
 	// NewChapter says the first scenes written in the draft would count as a new chapter of the writer's tier; nil in a
 	// build without tiers and for a chapter in the book (specs/2026-11-10-ux1-writing.md UW1.1). DraftAnswer sets it.
 	NewChapter *bool `json:"newChapter,omitempty"`
+	// Trial is what the model may start in the draft for the writer who reads it when «Письмо» of his tier is a trial; nil
+	// on a tier with a window, in a build without tiers and for a chapter in the book (specs/2026-11-18-free-tier.md
+	// FT2.4). DraftAnswer sets it.
+	Trial *trialView `json:"trial,omitempty"`
 }
 
 type originalView struct {

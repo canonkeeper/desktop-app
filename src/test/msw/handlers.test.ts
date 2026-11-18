@@ -1414,6 +1414,7 @@ function bodyFor(operationId: OperationId): unknown {
           projects: 3, projectBooks: 12, books: 36, chatTurnsPerDay: 30, imagesPerDay: 15, trialImages: 0, chaptersPerWindow: 7, chapterEveryDays: 7,
           trialChapters: 0, chapterDraftsPerDay: 30, voiceMinutesPerDay: 60, trialVoiceCalls: 0, trialVoiceCallMinutes: 5, accountCharacters: 40_000_000,
           accountChapters: 8000, drawingTurnsPerDay: 60, draftTurnsPerDay: 80, draftRewritesPerDay: 200, importsPerDay: 30, activeTurns: 2,
+          bookReloads: 1, trialProofreads: 0,
         },
       };
     case 'grantAdminWriterTier':

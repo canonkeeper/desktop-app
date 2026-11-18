@@ -17,6 +17,11 @@ export interface UploadOrderDialogProps {
   books: readonly Pick<Book, 'title' | 'place'>[];
   /** What the counters of the account still take (UP1.3); null — the server decides alone. */
   room: UploadRoom | null;
+  /**
+   * On a tier where a book is loaded once, what the window says before the files go (specs/2026-11-18-free-tier.md FT3.1;
+   * board 35·29): a book will not take a new version from a file, so no row is sent to «Новая версия из файла…».
+   */
+  loadsOnce?: string | null | undefined;
   busy: boolean;
   onRows: (rows: OrderRow[]) => void;
   onReplaceRefused: (key: string, file: File) => void;
@@ -25,12 +30,13 @@ export interface UploadOrderDialogProps {
 }
 
 /**
- * «Порядок томов» (specs/2026-11-11-ux7-upload.md UP2.3–UP2.5; board 35·21): two files and more. The order of the rows is
+ * «Порядок томов» (specs/2026-11-11-ux7-upload.md UP2.3–UP2.5; board 35·21): two files and more, and one file on a tier where a
+ * book is loaded once (specs/2026-11-18-free-tier.md FT3.1; board 35·29). The order of the rows is
  * the order of the volumes — by dragging a row with the mouse or a finger, or «Выше» and «Ниже» of its «⋯»; there is no
  * number to type. Each row says where it will stand on the shelf; all the remarks stand at once, each with its file, and
  * none of them holds the other files back. Esc and a click beside the window ask before a gathered list is dropped.
  */
-export function UploadOrderDialog({ books, busy, onClose, onReplaceRefused, onRows, onSend, refused, room, rows }: UploadOrderDialogProps) {
+export function UploadOrderDialog({ books, busy, loadsOnce = null, onClose, onReplaceRefused, onRows, onSend, refused, room, rows }: UploadOrderDialogProps) {
   const [askClose, setAskClose] = useState(false);
   const [dragged, setDragged] = useState<string | null>(null);
   const list = useRef<HTMLOListElement>(null);
@@ -42,8 +48,9 @@ export function UploadOrderDialog({ books, busy, onClose, onReplaceRefused, onRo
     else onClose();
   };
   const remarks = [
+    ...(loadsOnce && rows.length > 0 ? [{ key: 'loads-once', text: loadsOnce }] : []),
     ...rows.filter((row) => row.check).map((row) => ({ key: `check-${row.key}`, text: `«${row.file.name}» — в имени нет номера тома: проверьте его место.` })),
-    ...rows.flatMap((row) => {
+    ...(loadsOnce ? [] : rows).flatMap((row) => {
       const like = similarBook(row.file.name, books);
       return like ? [{
         key: `like-${row.key}`,

@@ -61,8 +61,11 @@ export interface BookActionMenuProps {
   /** Rewrites the book from a new file of the same volume (specs/2026-10-27-update-book-from-file.md); none in the example. */
   onUpdateFromFile?: (() => void) | undefined;
   state: PresenceStatus;
-  /** Why «Новая версия из файла…» waits now, or null. */
-  updateReason: string | null;
+  /**
+   * Why «Новая версия из файла…» waits now, or null: on a tier where a book is loaded once with the tail of the tier
+   * (specs/2026-11-18-free-tier.md FT3.1; board 30·52).
+   */
+  updateReason: ReactNode;
   /**
    * The last update of the book from a file for the 7 days its previous version can come back (specs/2026-11-11-ux7-trash.md
    * TB4.1, specs/2026-11-12-ux10-book-revert.md BR3.1): «Что изменилось» with when it was.
@@ -149,7 +152,7 @@ export function BookActionMenu({
   );
 }
 
-function MenuItem({ icon, label, onClick, reason = null }: { icon: ReactNode; label: string; onClick: () => void; reason?: string | null }) {
+function MenuItem({ icon, label, onClick, reason = null }: { icon: ReactNode; label: string; onClick: () => void; reason?: ReactNode }) {
   const id = useId();
   const reasonId = reason ? id : undefined;
   return (

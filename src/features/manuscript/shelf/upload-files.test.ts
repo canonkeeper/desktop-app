@@ -109,6 +109,19 @@ describe('what the tier takes before any transfer (UP1.3)', () => {
     expect(fitWords({ room: 1, code: 'quota.imports_daily' }, 3).ended).toBe('Сегодня можно загрузить ещё 1 книгу из 3');
     expect(uploadRoom(undefined, 'project-1')).toBeNull();
   });
+
+  // specs/2026-11-18-free-tier.md FT1.5, FT3.1: on a tier where a book is loaded once the books of all the sagas are every book
+  // that came into them, said first on a tie, and fewer books promise no room.
+  it('counts every book that came into the sagas where a book is loaded once', () => {
+    const once = { ...quota, bookReloads: false, booksLoaded: 28 } as AccountQuota;
+    expect(uploadRoom(once, 'project-1')).toEqual({ room: 2, code: 'quota.book_reloads' });
+    expect(fitWords(uploadRoom(once, 'project-1')!, 5)).toEqual({
+      ended: 'Во всех ваших сагах поместится 2 из 5 книг', returns: 'На вашем тарифе книга загружается один раз — удалённая место не освобождает.',
+    });
+    expect(uploadRoom({ ...once, booksLoaded: 4 } as AccountQuota, 'project-1')).toEqual({ room: 2, code: 'quota.project_books' });
+    // A saga of another owner: the key is the owner's, and the account counts its live books as before.
+    expect(uploadRoom(once, 'project-2')).toEqual({ room: 26, code: 'quota.account_books' });
+  });
 });
 
 describe('the upload on the shelf (UP3.1, UP3.2)', () => {
@@ -129,6 +142,20 @@ describe('the upload on the shelf (UP3.1, UP3.2)', () => {
     expect(sent.map(volumeWord)).toEqual(['Загружается · 40 %', 'Ждёт загрузки']);
     // After a reload this tab has no file: the volume says so on its card.
     expect(volumeViews(sending, {}, new Set()).map(volumeWord)).toEqual(['Файл не дошёл', 'Файл не дошёл']);
+  });
+
+  // specs/2026-11-18-free-tier.md FT1.3 (board 35·31): a volume refused because a book is loaded once takes no other file.
+  it('asks only to skip a volume refused because a book is loaded once', () => {
+    const running = queue([
+      item(1, { processingStatus: 'succeeded', bookId: 'book-1' }),
+      item(2, { processingStatus: 'failed', failedStep: 'import', sourceFileName: 'Последний свет.epub' }),
+    ]);
+    const views = volumeViews(running, {}, new Set(['book-1']));
+    expect(uploadLine(running, views, false, new Set(['client-2']))).toMatchObject({
+      title: 'Загружаю книги: 1 из 2 готово · «Последний свет» ждёт вашего решения',
+      detail: 'Пропустите его — книга на вашем тарифе загружается один раз',
+    });
+    expect(uploadLine(running, views, false).detail).toBe('Замените файл или пропустите — на карточке книги');
   });
 
   it('keeps a volume that waits at its place between the books of the upload', () => {

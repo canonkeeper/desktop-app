@@ -19,6 +19,10 @@ func startInOwnGroup(command *exec.Cmd) {
 	parentDeathSignal(command.SysProcAttr)
 }
 
+// platformOverrides: on Linux and macOS a thread keeps the profile of the repository as it is — it reads only its
+// workspace (specs/2026-11-18-desk-windows-chat.md WC1.1).
+func platformOverrides() []string { return nil }
+
 // processGroup is the group the started app-server leads.
 func processGroup(command *exec.Cmd) (int, error) {
 	pgid, err := syscall.Getpgid(command.Process.Pid)

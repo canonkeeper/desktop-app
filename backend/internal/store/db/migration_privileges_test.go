@@ -322,6 +322,30 @@ func TestMigrationObjectsHaveExactRuntimePrivileges(t *testing.T) {
 	assertFunctionPrivilege(t, db.Pool, "canonkeeper_product_runtime", deletionProjectionFunction, true)
 	assertFunctionPrivilege(t, db.Pool, "canonkeeper_worker_discovery", deletionProjectionFunction, false)
 	assertFunctionPublicPrivilege(t, db.Pool, deletionProjectionFunction, false)
+	// The books that ever came into the sagas of an account (0161, specs/2026-11-18-free-tier.md FT1.2): the runtime reads and
+	// deletes them with the account, never writes or updates one; the trigger of a book writes them as the governance owner,
+	// and nobody calls the trigger function.
+	bookLoads := fmt.Sprintf("%s.book_loads", quoteIdentifier(schema))
+	for privilege, runtime := range map[string]bool{"SELECT": true, "DELETE": true, "INSERT": false, "UPDATE": false} {
+		assertTablePrivilege(t, db.Pool, "canonkeeper_product_runtime", bookLoads, privilege, runtime)
+		assertTablePrivilege(t, db.Pool, "canonkeeper_worker_discovery", bookLoads, privilege, false)
+		assertTablePublicPrivilege(t, db.Pool, bookLoads, privilege, false)
+	}
+	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", bookLoads, "INSERT", true)
+	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", bookLoads, "UPDATE", false)
+	assertTablePrivilege(t, db.Pool, "canonkeeper_governance_owner", bookLoads, "DELETE", false)
+	countBookLoad := fmt.Sprintf("%s.ck_count_book_load()", quoteIdentifier(schema))
+	assertFunctionPrivilege(t, db.Pool, "canonkeeper_product_runtime", countBookLoad, false)
+	assertFunctionPrivilege(t, db.Pool, "canonkeeper_worker_discovery", countBookLoad, false)
+	assertFunctionPublicPrivilege(t, db.Pool, countBookLoad, false)
+	var definer string
+	if err := db.Pool.QueryRow(context.Background(), `
+		SELECT owner.rolname FROM pg_catalog.pg_proc AS procedure
+		JOIN pg_catalog.pg_roles AS owner ON owner.oid = procedure.proowner
+		WHERE procedure.oid = $1::regprocedure AND procedure.prosecdef
+	`, countBookLoad).Scan(&definer); err != nil || definer != "canonkeeper_governance_owner" {
+		t.Fatalf("the trigger of the books of an account runs as %q (%v), want the governance owner as its definer", definer, err)
+	}
 	// The owner's days, made again by 0158 (specs/2026-11-16-desk-admin-apps.md AA3.2), keep the grants of 0059: «Сводка» and
 	// stats read them as the runtime role.
 	ownerDays := fmt.Sprintf("%s.ck_owner_days(date,date)", quoteIdentifier(schema))

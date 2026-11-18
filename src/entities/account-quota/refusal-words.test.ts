@@ -20,6 +20,8 @@ const quota: AccountQuota = {
   projects: { used: 3, limit: 3 },
   account: { books: { used: 12, limit: 12 }, chapters: { used: 900, limit: 5000 }, characters: { used: 1_000_000, limit: 25_000_000 } },
   ownedProjects: [{ projectId: 'p1', sources: { books: { used: 60, limit: 60 }, chapters: { used: 10, limit: 3000 }, characters: { used: 10, limit: 15_000_000 } } }],
+  bookReloads: true,
+  booksLoaded: 12,
 };
 
 /**

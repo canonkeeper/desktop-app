@@ -15,6 +15,8 @@ function files(value: number) {
 const shelfCodes = new Set([
   'quota.imports_daily', 'quota.project_books', 'quota.project_chapters', 'quota.project_characters',
   'quota.account_books', 'quota.account_chapters', 'quota.account_characters', 'quota.projects',
+  // A book loaded once (specs/2026-11-18-free-tier.md FT3.2): a new version of a book and a book in place of a deleted one.
+  'quota.book_reloads',
 ]);
 
 /**

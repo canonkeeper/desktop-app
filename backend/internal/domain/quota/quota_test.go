@@ -58,3 +58,28 @@ func TestCodesAndKeys(t *testing.T) {
 		t.Fatal("plain error read as quota refusal")
 	}
 }
+
+// specs/2026-11-18-free-tier.md FT1.1: book_reloads is 0 or 1 and not of a day — 1 by the code, so a build without a plan
+// loads books again as before; its refusal is quota.book_reloads. The check after a write of a new book counts the books
+// that ever came into the sagas of the owner as a measure of its own.
+func TestBookReloadsIsZeroOrOneAndNotOfADay(t *testing.T) {
+	if Defaults().BookReloads != 1 || Defaults().Value(KeyBookReloads) != 1 {
+		t.Fatalf("book_reloads by the code = %d, want 1", Defaults().BookReloads)
+	}
+	if KeyBookReloads.Max() != 1 || KeyBookReloads.Daily() || Code(KeyBookReloads) != "quota.book_reloads" {
+		t.Fatalf("book_reloads: max %d, daily %v, code %s", KeyBookReloads.Max(), KeyBookReloads.Daily(), Code(KeyBookReloads))
+	}
+	if parsed, ok := ParseKey("book_reloads"); !ok || parsed != KeyBookReloads {
+		t.Fatal("book_reloads is not a key")
+	}
+	two, zero := int64(2), int64(0)
+	if err := CheckOverrides([]OverrideChange{{Key: KeyBookReloads, Value: &two}}); err == nil {
+		t.Fatal("book_reloads took 2")
+	}
+	if err := CheckOverrides([]OverrideChange{{Key: KeyBookReloads, Value: &zero}}); err != nil {
+		t.Fatalf("book_reloads refused 0: %v", err)
+	}
+	if MeasureLoads.Has(MeasureBooks) || !(MeasureBooks | MeasureLoads).Has(MeasureLoads) {
+		t.Fatal("the books of an account are not a measure of their own")
+	}
+}

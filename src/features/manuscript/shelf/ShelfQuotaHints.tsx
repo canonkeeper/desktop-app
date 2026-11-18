@@ -1,4 +1,5 @@
 import { useAccountQuota, type AccountQuotaClient, type QuotaCounter } from '../../../entities/account-quota/api';
+import { bookLoadsOf } from '../../../entities/account-quota/book-loads';
 import { refusalWords } from '../../../entities/account-quota/refusal-words';
 import { QuotaRefusal } from '../../../entities/account-quota/ui/QuotaRefusal';
 import { SpaceLimitLine, spaceTaken } from '../../../entities/account-quota/ui/SpaceLimitLine';
@@ -18,7 +19,8 @@ export function ShelfQuotaHints({ api, projectId }: { api: AccountQuotaClient; p
   const quota = useAccountQuota(api, Boolean(projectId)).data;
   const day = spent(quota?.imports) ? refusalWords('quota.imports_daily', quota) : null;
   if (day) return <QuotaRefusal className={styles.limit} code="quota.imports_daily" place="shelf" words={day} />;
-  if (spaceTaken('quota.project_books', quota, projectId)) return <SpaceLimitLine className={styles.limit} code="quota.project_books" place="shelf" projectId={projectId} quota={quota} />;
+  // A book loaded once that closes «Добавить книги» is said by the button itself (specs/2026-11-18-free-tier.md FT3.1; board 30·53).
+  if (spaceTaken('quota.project_books', quota, projectId) && !bookLoadsOf(quota, projectId)?.newBook) return <SpaceLimitLine className={styles.limit} code="quota.project_books" place="shelf" projectId={projectId} quota={quota} />;
   const hints = [uploadsQuotaHint(quota), projectTextQuotaHint(quota, projectId)].filter(Boolean);
   if (hints.length === 0) return null;
   return (

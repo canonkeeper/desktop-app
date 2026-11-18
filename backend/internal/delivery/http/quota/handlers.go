@@ -80,6 +80,10 @@ type accountQuota struct {
 	Projects      counter        `json:"projects"`
 	Account       sources        `json:"account"`
 	OwnedProjects []projectQuota `json:"ownedProjects"`
+	// BookReloads says whether a book of the writer's sagas loads again and BooksLoaded every book that ever came into
+	// them (specs/2026-11-18-free-tier.md FT1.5): a page decides by them and the books of the account before a refusal.
+	BookReloads bool  `json:"bookReloads"`
+	BooksLoaded int64 `json:"booksLoaded"`
 }
 
 func (handlers Handlers) getAccountQuota(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +133,8 @@ func response(account domain.Account) accountQuota {
 		Account: sourcesOf(account.Sources,
 			limits.AccountBooks, limits.AccountChapters, limits.AccountCharacters),
 		OwnedProjects: owned,
+		BookReloads:   limits.BookReloads == 1,
+		BooksLoaded:   account.BooksLoaded,
 	}
 }
 

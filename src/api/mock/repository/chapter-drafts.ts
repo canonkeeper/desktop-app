@@ -13,7 +13,7 @@ import type { MockRepositoryContext } from './context';
 import { momentTitle } from './moment-sections';
 import { chapterKey, chapterPlace, chapterRefOf, placeInBook } from './places';
 import type { MockState } from './state';
-import { mockChargeNewChapter, mockDraftChapterCounts, mockSettleChapter } from './tiers';
+import { mockAdmitTurn, mockDraftTier, mockSeamsAllowed, mockSettleWork, mockStartWork } from './writing-trial';
 
 type ChapterDraftOperations = Pick<CanonKeeperApiClient,
   'listChapterDrafts' | 'createChapterDraft' | 'getChapterDraft' | 'getChapterDraftPlan' | 'getChapterDraftMoment' | 'updateChapterDraft' | 'deleteChapterDraft' | 'startChapterDraftJob' | 'addChapterDraftToBook'
@@ -99,13 +99,11 @@ export function mockOpening(idea: string, text: string) {
 }
 
 /**
- * The scenes of a draft are a new chapter of the writer's tier (specs/2026-11-08-subscription-tiers.md TR7.1): it edits
- * no chapter of the book and is not nearly done by the author's own words — not by the case he chose
- * (specs/2026-11-09-quota-accounting.md Q3.3). The start of the scenes and what a draft says of itself read this one.
+ * What «Письмо» says of a draft to the tier (specs/2026-11-08-subscription-tiers.md TR7.1; specs/2026-11-18-free-tier.md FT2.3): its
+ * scenes are a new chapter — it edits no chapter of the book and is not nearly done by the author's own words, not by the case he
+ * chose (specs/2026-11-09-quota-accounting.md Q3.3) — and it edits one. The start of a work and what a draft says read this one.
  */
-function newChapterDraft(draft: Draft) {
-  return !draft.edits && caseByWords(draft) !== 'nearly_done';
-}
+const factsOf = (draft: Draft) => ({ newChapter: !draft.edits && caseByWords(draft) !== 'nearly_done', edits: Boolean(draft.edits) });
 
 /** The kinds of the findings of «Сверка» (WS7.1), apart from the corrections of the proofreading. */
 const findingKinds: ReadonlySet<string> = new Set(['canon', 'new', 'style', 'craft', 'seam', 'plan_follow', 'meaning', 'repeat', 'machine']);
@@ -117,12 +115,12 @@ const planIdeas = new WeakMap<Draft, string>();
  * A draft as every operation answers it: with whether its first scenes would count as a new chapter of the tier, until
  * the chapter is in the book (specs/2026-11-10-ux1-writing.md UW1.1).
  */
-function answered(draft: Draft, state: MockState): Draft {
+function answered(draft: Draft, state: MockState, reader: string): Draft {
   const plan = draft.plan ? { ...draft.plan, stale: planIdeas.get(draft) !== undefined && planIdeas.get(draft) !== draft.idea } : undefined;
   const opening = mockOpening(draft.idea, draft.text);
   return clone({
     ...draft, case: caseOf(draft), ...(plan ? { plan } : {}), ...(opening ? { opening } : {}),
-    ...(draft.added ? {} : { newChapter: newChapterDraft(draft) && !mockDraftChapterCounts(state, draft.id) }),
+    ...(draft.added ? {} : mockDraftTier(state, reader, draft.id, factsOf(draft))),
     // The revisions of the file with corrections now (specs/2026-11-11-ux5-proofread-mode.md PM1.4).
     ...(draft.original ? { original: { ...draft.original, revisions: mockRevisions(draft) } } : {}),
   });
@@ -140,7 +138,7 @@ export function createChapterDraftOperations(
   const drafts = new Map<string, Draft[]>();
   let nextId = 1;
   // Whether the book holds an edit is read with every answer: the text of the draft changes by every save (WA4.1).
-  const shown = (draft: Draft) => answered(sameOf(draft), context.state);
+  const shown = (draft: Draft) => answered(sameOf(draft), context.state, context.currentPrincipalId());
   // A new scenario of the mock starts with a clean saga, so with no drafts of it either.
   let draftsOwner = context.state;
   const ofProject = (projectId: string) => {
@@ -192,13 +190,14 @@ export function createChapterDraftOperations(
     // A proofreading replaces the open corrections of the one before when it ends (specs/2026-11-07-writing-proofread.md, PR3.8).
     const proofread = advanceProofread(draft);
     if (proofread !== null) {
+      mockSettleWork(context.state, job);
       if (job.status === 'succeeded') {
         draft.notes = [...draft.notes.filter((note) => !(note.kind === 'proofread' && note.status === 'open')), ...proofread.map((note) => numbered(draft, note))];
       }
       return;
     }
     const added = advanceAgentRun(draft);
-    mockSettleChapter(context.state, job);
+    mockSettleWork(context.state, job);
     if (!added.length) return;
     const checking = added.some((note) => checkKinds.has(note.kind) && note.kind !== 'new') || job.mode === 'check';
     draft.notes = [
@@ -392,9 +391,10 @@ export function createChapterDraftOperations(
         place: placeOf(input.bookId, input.afterChapterId), typicalWords: mockTypicalWords, notes: [], revision: 1, case: 'nearly_done', caseChoice: 'nearly_done',
         author: context.state.user.displayName, createdAt: at, updatedAt: at,
       };
+      const job = mockStartWork(context, created.id, factsOf(created), 'proofread', 'startChapterProofread', `draft-job-${nextId++}`);
       keepOriginal(created, original);
       tieToAttachment(created, fromChat);
-      startProofread(created, `draft-job-${nextId++}`);
+      startProofread(created, job);
       drafts.set(projectId, [created, ...ofProject(projectId)]);
       return shown(created);
     },
@@ -404,13 +404,14 @@ export function createChapterDraftOperations(
       const draft = found(projectId, draftId, 'loadChapterDraftFile');
       open(draft, input.expectedRevision, 'loadChapterDraftFile');
       const original = await readChapterFile(input, 'loadChapterDraftFile');
+      const job = mockStartWork(context, draft.id, factsOf(draft), 'proofread', 'loadChapterDraftFile', `draft-job-${nextId++}`);
       if (wordsOf(draft.text.replace(/[⟦⟧]/gu, '')).length) keepVersion(draft, 'before_upload', draft.text);
       Object.assign(draft, { text: original.text, caseChoice: 'nearly_done', revision: draft.revision + 1, updatedAt: new Date().toISOString() });
       draft.notes = draft.notes.filter((note) => !(note.kind === 'proofread' && note.status === 'open'));
       keepOriginal(draft, original);
       // A file loaded later is another chapter: the tie to the chat goes (PM3.3).
       tieToAttachment(draft, null);
-      startProofread(draft, `draft-job-${nextId++}`);
+      startProofread(draft, job);
       return shown(draft);
     },
     // «Взять оформление из файла Word» (PR9): the Word file of the same text becomes the original, the text and the notes stay.
@@ -647,14 +648,11 @@ export function createChapterDraftOperations(
       if ((body.mode === 'check' || body.mode === 'selection' || body.mode === 'proofread') && !draft.text.replace(/[⟦⟧]/gu, '').trim()) {
         throw new MockApiError(422, 'Nothing to work on.', 'startChapterDraftJob', 'chapter_draft.no_text');
       }
+      // The trial, the day and the new chapter of the tier, before anything changes (TR7.1, TR7.2; FT2.3).
+      mockStartWork(context, draft.id, factsOf(draft), body.mode, 'startChapterDraftJob', jobId);
       if (body.mode === 'proofread') {
         startProofread(draft, jobId);
         return shown(draft);
-      }
-      // The first scenes of a draft the writing agent writes are a new chapter of the writer's tier, however they were
-      // started, decided before anything changes (specs/2026-11-08-subscription-tiers.md TR7.1, TR7.2).
-      if (body.mode === 'scenes' && newChapterDraft(draft)) {
-        mockChargeNewChapter(context.state, context.currentPrincipalId(), draft.id, jobId);
       }
       if (body.mode === 'scenes') approvePlan(draft, body.plan!);
       draft.case = caseOf(draft);
@@ -786,8 +784,8 @@ export function createChapterDraftOperations(
       keepVersion(draft, body.whole ? 'before_restore' : 'before_take', draft.text, null, undefined, body.whole ? undefined : text);
       draft.text = text;
       draft.revision += 1;
-      // A piece taken in checks its seams (WA7.5).
-      if (!body.whole) startSeams(draft, `draft-job-${nextId++}`);
+      // A piece taken in checks its seams (WA7.5), by the trial and the rewrites of the day (FT2.3).
+      if (!body.whole && mockSeamsAllowed(context, draft.id, factsOf(draft))) startSeams(draft, `draft-job-${nextId++}`);
       return shown(draft);
     },
     async updateChapterDraftNote(projectId, draftId, noteId, body) {
@@ -843,7 +841,7 @@ export function createChapterDraftOperations(
       if (activeStatuses.has(draft.job.status)) draft.job.status = 'canceled';
       // A stopped writing keeps no scene in writing: the scene not finished is not kept (ux10-scene-stream ST2.3).
       delete draft.job.writing;
-      mockSettleChapter(context.state, draft.job);
+      mockSettleWork(context.state, draft.job);
       return undefined;
     },
     async submitDraftTurn(projectId, draftId, body: OperationRequest<'submitDraftTurn'>, options: RequiredIdempotencyOptions) {
@@ -853,6 +851,7 @@ export function createChapterDraftOperations(
       if (draft.added) throw new MockApiError(409, 'Already in the book.', 'submitDraftTurn', 'chapter_draft.added');
       if (!body.text.trim()) throw new MockApiError(400, 'Write to the helper.', 'submitDraftTurn', 'request.validation');
       if (body.place && !draft.text.includes(body.place)) throw new MockApiError(400, 'The place is not in the draft.', 'submitDraftTurn', 'request.validation');
+      mockAdmitTurn(context, draft.id, factsOf(draft));
       if (!draft.chatId) {
         const session = await chat.createChatSession(projectId, {
           sourceView: 'published', scope: 'project', title: `Письмо: ${draft.title || 'черновик'}`.slice(0, 180),

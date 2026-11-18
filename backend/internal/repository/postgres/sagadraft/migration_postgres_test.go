@@ -27,8 +27,9 @@ import (
 )
 
 // todaysProjects gives a schema older than 0124 the sign of the demo saga (specs/2026-11-09-demo-saga.md DS3.1), one older
-// than 0144 the limit of the returns on the word of an app (specs/2026-11-13-desk-permits.md PM2.4) and one older than 0145
-// the fences of the work of apps (specs/2026-11-13-desk-proxy.md PX3.2, PX3.3): today's
+// than 0144 the limit of the returns on the word of an app (specs/2026-11-13-desk-permits.md PM2.4), one older than 0145
+// the fences of the work of apps (specs/2026-11-13-desk-proxy.md PX3.2, PX3.3) and one older than 0161 whether a book
+// loads again (specs/2026-11-18-free-tier.md FT1.1): today's
 // project, library and quota code, which makes the rows of these tests, reads and writes them. None of the migrations
 // applied here touches them, so they stay to the end of a test.
 func todaysProjects(t *testing.T, db *storedb.DB) {
@@ -36,9 +37,9 @@ func todaysProjects(t *testing.T, db *storedb.DB) {
 	if _, err := db.Pool.Exec(context.Background(), `
 		ALTER TABLE projects ADD COLUMN demo boolean NOT NULL DEFAULT false;
 		ALTER TABLE writer_quota_overrides ADD COLUMN app_returns_per_day integer, ADD COLUMN app_tokens_per_question integer,
-		  ADD COLUMN app_reading_tokens_per_character integer;
+		  ADD COLUMN app_reading_tokens_per_character integer, ADD COLUMN book_reloads integer;
 		ALTER TABLE platform_quota_defaults ADD COLUMN app_returns_per_day integer, ADD COLUMN app_tokens_per_question integer,
-		  ADD COLUMN app_reading_tokens_per_character integer`); err != nil {
+		  ADD COLUMN app_reading_tokens_per_character integer, ADD COLUMN book_reloads integer`); err != nil {
 		t.Fatal(err)
 	}
 }

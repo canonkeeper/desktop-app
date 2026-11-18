@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -44,6 +45,10 @@ func runtimeTestProfile(t *testing.T, flow string) string {
 	return profile
 }
 
+// copiedHomes: on Windows the runtime tests put the profile into the home as the app does there, by copy — a link needs a
+// privilege of Windows (specs/2026-11-13-desk-home.md HM1); elsewhere they link it, as the site does.
+var copiedHomes = runtime.GOOS == "windows"
+
 // The binary and the SDK go only as a pair: the strict handshake checks the initialize digests of the runtime, so a
 // binary of another release fails here (specs/2026-11-12-desk-codex.md CX1.3).
 func TestRuntimeProfileInitializesWithPinnedSDK(t *testing.T) {
@@ -58,6 +63,7 @@ func TestRuntimeProfileInitializesWithPinnedSDK(t *testing.T) {
 		CodexSQLiteHome: filepath.Join(root, "sqlite"),
 		PrivateHome:     filepath.Join(root, "home"),
 		TempDir:         filepath.Join(root, "tmp"),
+		HomeCopies:      copiedHomes,
 	})
 	if err != nil {
 		t.Fatalf("native initialize: %v", err)
@@ -288,6 +294,7 @@ func runtimeFlowConfig(t *testing.T, flow, binary, root, modelURL string) Client
 		CodexSQLiteHome: filepath.Join(root, "sqlite"),
 		PrivateHome:     filepath.Join(root, "home"),
 		TempDir:         filepath.Join(root, "tmp"),
+		HomeCopies:      copiedHomes,
 		ConfigOverrides: []string{
 			`model="gpt-6.1-sol"`,
 			`model_provider="codex-lb"`,

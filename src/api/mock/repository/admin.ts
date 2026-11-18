@@ -29,7 +29,8 @@ const maxInteger = 2_147_483_647;
 
 function validLimit(key: AdminQuotaKey, value: number | 'default') {
   if (value === 'default') return true;
-  const max = key === 'project_characters' || key === 'account_characters' ? Number.MAX_SAFE_INTEGER : maxInteger;
+  // A book that loads again or not is 0 or 1 (specs/2026-11-18-free-tier.md FT1.1), as the server checks it.
+  const max = key === 'book_reloads' ? 1 : key === 'project_characters' || key === 'account_characters' ? Number.MAX_SAFE_INTEGER : maxInteger;
   return Number.isInteger(value) && value >= 0 && value <= max;
 }
 
@@ -125,6 +126,9 @@ export function createAdminOperations(context: MockRepositoryContext) {
           used: used[key] ?? null,
         })),
         ownedProjects: [],
+        // Every book that came into the sagas of the writer (specs/2026-11-18-free-tier.md FT1.2): the journal of the mock, else
+        // the books of the fixture.
+        booksLoaded: Math.max(writer.books, context.state.bookLoads.filter((load) => load.ownerUserId === userId).length),
       },
       impersonations: [],
       illustrations: illustrationsOf(userId),

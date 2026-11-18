@@ -99,3 +99,29 @@ func TestTheActiveTurnsNameTheirPlacesOnlyWhenTold(t *testing.T) {
 		t.Fatalf("«разом» with places = %v", app)
 	}
 }
+
+// specs/2026-11-18-free-tier.md FT1.5: the answer says whether a book of the writer loads again and how many books ever came
+// into his sagas — a book loaded once says false, the code and the desktop true.
+func TestTheAnswerSaysWhetherABookLoadsAgainAndTheBooksLoaded(t *testing.T) {
+	for _, reloads := range []int64{1, 0} {
+		account := accountFunc(func() domain.Account {
+			return domain.Account{Limits: domain.Defaults().With(domain.KeyBookReloads, reloads), BooksLoaded: 3,
+				Sources: domain.Sources{Books: 1}}
+		})
+		router := chi.NewRouter()
+		Handlers{AccountQuota: account, Auth: fakeUser{}}.Mount(router)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/account/quota", nil))
+		var body map[string]json.RawMessage
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+			t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+		}
+		want := `true`
+		if reloads == 0 {
+			want = `false`
+		}
+		if string(body["bookReloads"]) != want || string(body["booksLoaded"]) != "3" {
+			t.Fatalf("book_reloads %d: bookReloads %s, booksLoaded %s", reloads, body["bookReloads"], body["booksLoaded"])
+		}
+	}
+}

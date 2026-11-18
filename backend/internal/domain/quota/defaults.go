@@ -10,11 +10,15 @@ import (
 // are the writer limits, in the order of the tab «Лимиты»: the trial drawings of an account are its tier's
 // (specs/2026-11-08-subscription-tiers.md TR6.6).
 
-// Max is the largest value the column of the key keeps: bigint for the characters, integer
-// otherwise (R7.5).
+// Max is the largest value the column of the key keeps: bigint for the characters, 1 for whether a book loads again,
+// integer otherwise (R7.5).
 func (key Key) Max() int64 {
-	if key == KeyProjectCharacters || key == KeyAccountCharacters {
+	switch key {
+	case KeyProjectCharacters, KeyAccountCharacters:
 		return math.MaxInt64
+	case KeyBookReloads:
+		// 0 or 1 (specs/2026-11-18-free-tier.md FT1.1).
+		return 1
 	}
 	return math.MaxInt32
 }

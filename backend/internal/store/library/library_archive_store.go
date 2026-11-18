@@ -186,14 +186,14 @@ func (s *Store) WriteArchiveChaptersInTx(ctx context.Context, tx pgx.Tx, book Ar
 }
 
 // FinishArchiveTextInTx ends the text of an open: the written text is checked against the quotas of the owner as an
-// admitted book is, the catalogs of the texts move and the text index of each is asked for (SF3.3). The wave «Сага
-// готова» is not opened (SF3.11).
+// admitted book is, the books that came into his sagas with it (specs/2026-11-18-free-tier.md FT1.3), the catalogs of the
+// texts move and the text index of each is asked for (SF3.3). The wave «Сага готова» is not opened (SF3.11).
 func (s *Store) FinishArchiveTextInTx(ctx context.Context, tx pgx.Tx, projectID string, projectGeneration int64, published bool) error {
 	project, err := storedb.ParseUUID(projectID)
 	if err != nil {
 		return library.ErrValidation
 	}
-	if err := s.quota.CheckAdmittedSourcesInTx(ctx, tx, projectID, quota.MeasureBooks|quota.MeasureChapters|quota.MeasureCharacters); err != nil {
+	if err := s.quota.CheckAdmittedSourcesInTx(ctx, tx, projectID, quota.MeasureBooks|quota.MeasureChapters|quota.MeasureCharacters|quota.MeasureLoads); err != nil {
 		return err
 	}
 	revision, err := bumpProjectSourceView(ctx, tx, project, projectGeneration, governance.SourceViewDraft)

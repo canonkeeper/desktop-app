@@ -24,7 +24,7 @@ describe('mock right to draw', () => {
       await api.createProjectImageVariant(projectId, 1, {}, { idempotencyKey: `idem-mock-trial-${index}` });
     }
     expect(await api.getIllustrationAccess()).toMatchObject({ state: 'none', trialLeft: 0, images: { used: 3 } });
-    expect((await api.getAccountPlan()).trials).toEqual({ imagesLeft: 0, chaptersLeft: 1, voiceCallsLeft: 3 });
+    expect((await api.getAccountPlan()).trials).toEqual({ imagesLeft: 0, chaptersLeft: 1, voiceCallsLeft: 3, proofreadsLeft: 1 });
     await expect(api.createProjectImageVariant(projectId, 1, {}, { idempotencyKey: 'idem-mock-trial-4' }))
       .rejects.toMatchObject({ status: 403, code: 'illustrations.locked' });
     const drawing = await api.createDrawing(projectId, { idea: 'Мара на причале' }, { idempotencyKey: 'idem-mock-trial-drawing' });

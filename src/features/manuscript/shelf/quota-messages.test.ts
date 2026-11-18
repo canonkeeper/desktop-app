@@ -22,6 +22,8 @@ const quota: AccountQuota = {
     projectId: 'project-1',
     sources: { books: counter(13, 60), chapters: counter(641, 3000), characters: counter(12_400_000, 15_000_000) },
   }],
+  bookReloads: true,
+  booksLoaded: 13,
 };
 
 describe('shelf quota texts (quota spec UC5)', () => {
@@ -49,6 +51,15 @@ describe('shelf quota texts (quota spec UC5)', () => {
       expect(sourceQuotaMessage(code, quota)).not.toMatch(/лимит|Удалите ненужное|предел/u);
     }
     expect(sourceQuotaMessage('import.too_large', quota)).toBeUndefined();
+  });
+
+  // specs/2026-11-18-free-tier.md FT3.2: a refusal of a book loaded once is a refusal of the shelf — the window of a new
+  // version, the line of the upload — in the two cases of the live books.
+  it('says a book loaded once by its code', () => {
+    const once = { ...quota, bookReloads: false, account: { ...quota.account, books: counter(0, 1) }, booksLoaded: 1 };
+    expect(sourceQuotaMessage('quota.book_reloads', once)).toBe('Книга на вашем тарифе загружается один раз. Новую версию из файла и книгу вместо удалённой загрузить нельзя. Удалённую книгу можно вернуть в «Недавно удалённых» в течение 7 дней.');
+    expect(sourceQuotaMessage('quota.book_reloads', { ...once, account: { ...once.account, books: counter(1, 1) } }))
+      .toBe('На вашем тарифе одна книга, и загружается она один раз. Ваша книга на месте: читать, спрашивать и править главы можно.');
   });
 
   it('hints from 80 % of a limit', () => {

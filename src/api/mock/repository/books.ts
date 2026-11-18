@@ -26,6 +26,7 @@ import {
 } from './common';
 import type { MockRepositoryContext } from './context';
 import { draftBookId } from './fixtures';
+import { mockLoadBook, mockRefuseBookLoads } from './quota';
 import { scrubAgentWorkflows } from './workflow-scrub';
 import { MockApiError } from '../scenarios';
 
@@ -231,6 +232,8 @@ export function createBookOperations(context: MockRepositoryContext) {
     if (context.scenario.preset === 'failed-create') {
       throw new MockApiError(500, 'Не удалось создать книгу.', 'createBook');
     }
+    // A book loaded once takes no book without text (specs/2026-11-18-free-tier.md FT1.3).
+    mockRefuseBookLoads(context, 'createBook', 'empty');
     const nextOrder = body.afterBookId === undefined
       ? nextImportBookOrder(id, 'createBook')
       : context.state.books.length + 1;
@@ -251,6 +254,7 @@ export function createBookOperations(context: MockRepositoryContext) {
       updatedAt: now,
     };
     context.state.books.push(book);
+    mockLoadBook(context, book.id);
     reorderProjectBook(id, book.id, body.afterBookId, 'createBook');
     return out(book);
   }
@@ -480,6 +484,9 @@ export function createBookOperations(context: MockRepositoryContext) {
       || (updatedBookId && input.metadata?.expectedBookOrder !== undefined)) {
       throw new MockApiError(422, 'An update names its book and nothing else.', 'importBookFile', 'request.validation');
     }
+    // A book loaded once takes no new version from a file, before the file is read; a new book only while the books of
+    // the account have room (specs/2026-11-18-free-tier.md FT1.3, FT1.4).
+    mockRefuseBookLoads(context, 'importBookFile', updatedBookId ? 'version' : 1);
     if (updatedBookId) return createBookUpdateJob(id, updatedBookId, input, input.options?.importMode === 'update_preview');
     const nextOrder = nextImportBookOrder(id, 'importBookFile');
     const expectedOrder = input.metadata?.expectedBookOrder;

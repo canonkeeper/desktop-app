@@ -105,6 +105,9 @@ func TestTableInventoryCoversEveryRetainedBaselineTable(t *testing.T) {
 	// Added by forward migration 0160: the requests and the codes of the transfer of a saga of the site to the linked app,
 	// account data removed with the saga too.
 	want = append(want, "app_saga_transfers")
+	// Added by forward migration 0161: the books that ever came into the sagas of an account (specs/2026-11-18-free-tier.md
+	// FT1.2), account data that outlives the deletion of a book and a saga.
+	want = append(want, "book_loads")
 	removed := map[string]struct{}{
 		"audit_logs":                            {}, // Dropped by forward migration 0046.
 		"canon_book_enrichment_steps":           {},

@@ -1039,7 +1039,7 @@ export interface paths {
         put?: never;
         /**
          * Keep the choice of a pair and take the next one
-         * @description The browser sends the opaque number of the pair and the side as it was shown; the server translates it into what it counts. A repeat of one voter for one pair changes nothing: the first choice stays. A test that closed or filled up meanwhile is the same 404 reading_test.unavailable. Cache-Control: no-store, X-Robots-Tag: noindex, nofollow.
+         * @description The browser sends the opaque number of the pair and the side as it was shown; the server translates it into what it counts. A repeat of one voter for one pair changes nothing: the first choice stays. In a test whose sides carry labels the answer also reveals the voted pair: the labels in the order this voter saw the sides and his choice, the first one for a repeat; a test without labels answers with the step alone, as takeReadingTestPair does. A test that closed or filled up meanwhile is the same 404 reading_test.unavailable. Cache-Control: no-store, X-Robots-Tag: noindex, nofollow.
          */
         post: operations["voteReadingTestPair"];
         delete?: never;
@@ -1147,7 +1147,7 @@ export interface paths {
         };
         /**
          * Read the signed-in writer's quotas
-         * @description Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store.
+         * @description Returns only the signed-in writer's own limits (an operator override or the default), questions, uploads, drawings, own images, the work of «Письмо» and the messages to the helpers of the current Moscow day (specs/2026-11-10-ux2-tariff-account.md TA2.3), questions in work, live projects and the text of the projects the writer owns. Questions and uploads over a limit are refused with 429 quota.chat_turns_daily, quota.imports_daily, quota.images_daily (Retry-After until 00:00 Moscow time) or quota.active_turns; projects, books, chapters and text over a limit with 409 quota.projects, quota.project_books, quota.project_chapters, quota.project_characters, quota.account_books, quota.account_chapters or quota.account_characters. Cache-Control: no-store. A book of a tier where it is loaded once (specs/2026-11-18-free-tier.md FT1) is refused with 409 quota.book_reloads: bookReloads and booksLoaded say it before.
          */
         get: operations["getAccountQuota"];
         put?: never;
@@ -2153,7 +2153,10 @@ export interface paths {
          */
         get: operations["listBooks"];
         put?: never;
-        /** Create a book inside a project. */
+        /**
+         * Create a book inside a project.
+         * @description On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a book without text is refused with 409 quota.book_reloads: no text can come into it later.
+         */
         post: operations["createBook"];
         delete?: never;
         options?: never;
@@ -2343,7 +2346,10 @@ export interface paths {
         /** List durable import queues for a project. */
         get: operations["listImportQueues"];
         put?: never;
-        /** Create or replay a durable import queue draft. */
+        /**
+         * Create or replay a durable import queue draft.
+         * @description On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a queue whose books would take the books that ever came into the sagas of the owner over account_books is refused with 409 quota.book_reloads.
+         */
         post: operations["createImportQueue"];
         delete?: never;
         options?: never;
@@ -2380,7 +2386,7 @@ export interface paths {
         put?: never;
         /**
          * Upload or replace one durable queue item and run full preflight.
-         * @description A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409.
+         * @description A queue being prepared (uploading, draft) takes the files of its volumes. A queue whose every file is received is a draft, the files that did not pass the check included: they wait at their places. A running queue takes a new file only for a volume that waits — its import Job did not read its file or its file did not pass the check («Заменить файл», specs/2026-11-11-ux7-upload.md UP3.2): the file passes the same preflight, and a file that passes is one more new book and one more upload and gets a new import Job at the same place, which the queue takes in its turn; a file that does not pass keeps the volume waiting with its reason. Any other volume of a running queue is 409. On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) a new file of a waiting volume is refused with 409 quota.book_reloads once the books that ever came into the sagas of the owner reach account_books.
          */
         post: operations["uploadImportQueueItem"];
         delete?: never;
@@ -2420,7 +2426,7 @@ export interface paths {
         put?: never;
         /**
          * Atomically validate, reserve, and start an import queue.
-         * @description An actor whose email is not verified gets 403 auth.email_unverified and nothing is created.
+         * @description An actor whose email is not verified gets 403 auth.email_unverified and nothing is created. On a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.3) the volumes that would take the books that ever came into the sagas of the owner over account_books are refused with 409 quota.book_reloads; a volume refused so by its import Job waits with that code and only «Пропустить» helps it.
          */
         post: operations["startImportQueue"];
         delete?: never;
@@ -2440,7 +2446,7 @@ export interface paths {
         put?: never;
         /**
          * Import manuscript file
-         * @description Direct multipart upload with file plus metadata/options. URL-fetch and uploaded-file-id imports are out of scope; upload controls require server-generated storage key, filename non-use as path, content sniffing, archive bounds and parser quarantine. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created.
+         * @description Direct multipart upload with file plus metadata/options. URL-fetch and uploaded-file-id imports are out of scope; upload controls require server-generated storage key, filename non-use as path, content sniffing, archive bounds and parser quarantine. An actor whose email is not verified gets 403 auth.email_unverified and nothing is created. A book of a tier that loads it once (specs/2026-11-18-free-tier.md FT1, book_reloads 0 of the owner of the saga): a new version of a book (update_preview, update_book) is refused with 409 quota.book_reloads before the file is read and before the upload of the day is spent; a new book is refused with 409 quota.book_reloads once the books that ever came into the sagas of the owner reach account_books — a deleted book or saga gives no place back — and the import Job of a new book that would go over them under the quota lock fails with the same code.
          */
         post: operations["importBookFile"];
         delete?: never;
@@ -3582,7 +3588,7 @@ export interface paths {
         put?: never;
         /**
          * Take a version of the text into a chapter in writing.
-         * @description specs/2026-11-06-writing-agent.md WA7.5: «Вернуть эту версию» puts the version whole in place of the working text; «Взять в главу» puts a piece of it, named by its first and last phrases, in place of a place of the working text, after it, or at the end of the text. The text before goes into a version first, at the revision the page saw. A piece starts the run that checks its seams (the job of the draft), unless the daily limit of rewrites is spent: then the piece stays unchecked. 409 chapter_draft.busy while a run works, 409 chapter_draft.added, conflict at another revision; 400 for a piece or a place that does not stand in its text once.
+         * @description specs/2026-11-06-writing-agent.md WA7.5: «Вернуть эту версию» puts the version whole in place of the working text; «Взять в главу» puts a piece of it, named by its first and last phrases, in place of a place of the working text, after it, or at the end of the text. The text before goes into a version first, at the revision the page saw. A piece starts the run that checks its seams (the job of the draft), unless the daily limit of rewrites is spent: then the piece stays unchecked. 409 chapter_draft.busy while a run works, 409 chapter_draft.added, conflict at another revision; 400 for a piece or a place that does not stand in its text once. The same holds when the tier of the writer starts no work of the model in the draft (specs/2026-11-18-free-tier.md FT2.3, tiers.writing_none): a piece is taken by hand on every tier, without the check of its seams.
          */
         post: operations["takeChapterDraftVersion"];
         delete?: never;
@@ -3630,7 +3636,7 @@ export interface paths {
         put?: never;
         /**
          * Write the chapter of a draft.
-         * @description specs/2026-11-04-writing-plain-path.md P3, P5. A run brings the helper's block to prose and leaves the rest of the text to the sign; with rework it writes the whole text the author sees; a plan not yet written goes through a rough sketch. Without a block and without rework no Job starts: the working text is the chapter as it stands, outcome says there is nothing to write. A turn of the helper that wrote a block starts its run by itself at its end; this operation is the author's retry and the rework. What a Job makes reaches the draft when it ends. A Job counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After until 00:00 Moscow time; a replay of the same request under the Idempotency-Key spends nothing and answers the draft as it stands, another one is 409. The first Job of scenes of a draft is a new chapter of the tier of the author who starts it (specs/2026-11-08-subscription-tiers.md TR7) unless the draft edits a chapter of the book, its case is nearly_done or its plan is from_here or reverse: a tier with a window of N new chapters in K days (specs/2026-11-11-tier-limits.md TL3.1) refuses one while N of the window began in the last K days with 429 tiers.chapter_wait and Retry-After until a place frees; a tier without a window refuses it once its trial new chapters count with 403 tiers.chapter_none. A refusal leaves nothing: the plan is not approved, nothing is spent. A new chapter whose Job ends without a scene is given back by itself. The other scenes of a draft, selection, seams, check and proofread are no new chapter.
+         * @description specs/2026-11-04-writing-plain-path.md P3, P5. A run brings the helper's block to prose and leaves the rest of the text to the sign; with rework it writes the whole text the author sees; a plan not yet written goes through a rough sketch. Without a block and without rework no Job starts: the working text is the chapter as it stands, outcome says there is nothing to write. A turn of the helper that wrote a block starts its run by itself at its end; this operation is the author's retry and the rework. What a Job makes reaches the draft when it ends. A Job counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After until 00:00 Moscow time; a replay of the same request under the Idempotency-Key spends nothing and answers the draft as it stands, another one is 409. The first Job of scenes of a draft is a new chapter of the tier of the author who starts it (specs/2026-11-08-subscription-tiers.md TR7) unless the draft edits a chapter of the book, its case is nearly_done or its plan is from_here or reverse: a tier with a window of N new chapters in K days (specs/2026-11-11-tier-limits.md TL3.1) refuses one while N of the window began in the last K days with 429 tiers.chapter_wait and Retry-After until a place frees; a tier without a window refuses it once its trial new chapters count with 403 tiers.chapter_none. A refusal leaves nothing: the plan is not approved, nothing is spent. A new chapter whose Job ends without a scene is given back by itself. The other scenes of a draft, selection, seams, check and proofread are no new chapter. On a tier without a window «Письмо» is a trial (specs/2026-11-18-free-tier.md FT2.2), decided by the tier and the charges of the writer who starts it, before the limit of the day: scenes start in a new chapter whose trial is not spent (the trial new chapter) and in his trial new chapter for a day from its start; check — in his trial chapter in its day; selection and seams — in his trial chapter or trial proofreading in its day; proofread — while his trial proofreadings are not spent. Any other work of the model is refused with 403 tiers.writing_none without Retry-After and nothing is spent; ChapterDraft.trial says it before.
          */
         post: operations["startChapterDraftJob"];
         delete?: never;
@@ -3790,7 +3796,7 @@ export interface paths {
         put?: never;
         /**
          * Start the proofreading of a chapter of the author from a file or a text.
-         * @description specs/2026-11-07-writing-proofread.md PR2.1: one operation — a new draft with the text of the file, its original kept parsed (paragraphs with italic and bold, never the file), the case «почти готова», and the Job of the proofreading (mode proofread) — in one transaction; a refusal leaves nothing. The chat and the voice call it as it is. A chapter attached in the chat (chatId with attachment) is remembered by its draft (specs/2026-11-11-ux5-proofread-mode.md PM3.3): the same attachment again answers that draft and starts no second proofreading, nothing is spent. A .docx, .txt or .md up to 10 MiB (413 chapter_draft.file_too_large), read by the extension of its name (422 chapter_draft.file_format), or a text; 422 chapter_draft.file_unreadable, chapter_draft.no_text, chapter_draft.text_too_long (past 400 000 signs or 30 000 words). The text of the saga need not be ready: its names are read if they are. Counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After; a replay of the same request under the Idempotency-Key answers the same draft and spends nothing, another one is 409.
+         * @description specs/2026-11-07-writing-proofread.md PR2.1: one operation — a new draft with the text of the file, its original kept parsed (paragraphs with italic and bold, never the file), the case «почти готова», and the Job of the proofreading (mode proofread) — in one transaction; a refusal leaves nothing. The chat and the voice call it as it is. A chapter attached in the chat (chatId with attachment) is remembered by its draft (specs/2026-11-11-ux5-proofread-mode.md PM3.3): the same attachment again answers that draft and starts no second proofreading, nothing is spent. A .docx, .txt or .md up to 10 MiB (413 chapter_draft.file_too_large), read by the extension of its name (422 chapter_draft.file_format), or a text; 422 chapter_draft.file_unreadable, chapter_draft.no_text, chapter_draft.text_too_long (past 400 000 signs or 30 000 words). The text of the saga need not be ready: its names are read if they are. Counts against chapter_drafts_per_day: 429 quota.chapter_drafts_daily with Retry-After; a replay of the same request under the Idempotency-Key answers the same draft and spends nothing, another one is 409. On a tier without a window (specs/2026-11-18-free-tier.md FT2.1, FT2.2) the proofreading is a trial one: it is charged while the trial proofreadings are not spent and counts once its corrections reached the author, a proofreading that failed before them gives the trial back; once spent, 403 tiers.writing_none and nothing is left.
          */
         post: operations["startChapterProofread"];
         delete?: never;
@@ -3830,7 +3836,7 @@ export interface paths {
         put?: never;
         /**
          * Load a chapter from a file into a draft and proofread it.
-         * @description specs/2026-11-07-writing-proofread.md PR2.2: the working text before goes into a version before_upload, the file takes its place, its original that of the one before, the open corrections of the proofreading go, the case is «почти готова», and the proofreading starts — in one transaction. 409 chapter_draft.busy while a Job works, chapter_draft.added once in the book, conflict at another revision. Refusals of the file and the quota as startChapterProofread.
+         * @description specs/2026-11-07-writing-proofread.md PR2.2: the working text before goes into a version before_upload, the file takes its place, its original that of the one before, the open corrections of the proofreading go, the case is «почти готова», and the proofreading starts — in one transaction. 409 chapter_draft.busy while a Job works, chapter_draft.added once in the book, conflict at another revision. Refusals of the file and the quota as startChapterProofread. On a tier without a window (specs/2026-11-18-free-tier.md FT2.2) another file is a new proofreading: once the trial proofreadings are spent, 403 tiers.writing_none and the draft stays as it was.
          */
         post: operations["loadChapterDraftFile"];
         delete?: never;
@@ -3890,7 +3896,7 @@ export interface paths {
         put?: never;
         /**
          * Write to the helper of a chapter draft.
-         * @description specs/2026-11-02-writer-workshop.md W1.2, W1.4, W1.5: the first message opens the session of the helper of the draft — a chat session of its own kind, not in the list of chats — and the next ones go on in it; chatId of the draft names it. The question is the author's words with the place of the draft he showed (a quote of it) and one line of the draft's state. An editor or above; the turns count draft_turns_per_day (429 quota.draft_turns_daily) and, with the questions of the chat, active_turns (429 quota.active_turns); 409 chapter_draft.text_not_ready while the text of the saga is not indexed, 409 chapter_draft.added once the chapter is in the book. The feed, stream, cancellation and correction of the turn are those of every chat turn, by chatId and jobId. A replay under the Idempotency-Key answers the first turn.
+         * @description specs/2026-11-02-writer-workshop.md W1.2, W1.4, W1.5: the first message opens the session of the helper of the draft — a chat session of its own kind, not in the list of chats — and the next ones go on in it; chatId of the draft names it. The question is the author's words with the place of the draft he showed (a quote of it) and one line of the draft's state. An editor or above; the turns count draft_turns_per_day (429 quota.draft_turns_daily) and, with the questions of the chat, active_turns (429 quota.active_turns); 409 chapter_draft.text_not_ready while the text of the saga is not indexed, 409 chapter_draft.added once the chapter is in the book. The feed, stream, cancellation and correction of the turn are those of every chat turn, by chatId and jobId. A replay under the Idempotency-Key answers the first turn. On a tier without a window (specs/2026-11-18-free-tier.md FT2.2) the helper answers only in the writer's trial new chapter and trial proofreading for a day from their start, and in a draft of a new chapter while his trial new chapters are not spent; otherwise 403 tiers.writing_none, decided under the lock of the draft before the turn is submitted. A correction of a running turn (steerChatTurn) is not asked again.
          */
         post: operations["submitDraftTurn"];
         delete?: never;
@@ -5532,6 +5538,10 @@ export interface components {
             importsPerDay: number;
             /** @description Answers of the chat and of the helpers being prepared at once. */
             activeTurns: number;
+            /** @description specs/2026-11-18-free-tier.md FT1.1 (book_reloads): 1 — a book of the sagas loads again: a new version from a file, a book in place of a deleted one; 0 — a book is loaded once: no new version from a file, no book without text, and the books of the account are every book that ever came into its sagas, so a deleted book or saga gives no place back. */
+            bookReloads: number;
+            /** @description specs/2026-11-18-free-tier.md FT2.1: trial proofreadings of a chapter for the life of the account on a tier without a window of new chapters; each works in its draft for a day from its start. */
+            trialProofreads: number;
         };
         /**
          * @description A tier: «Бесплатно», «Художник», «Писатель», «Профи».
@@ -5589,6 +5599,8 @@ export interface components {
             imagesLeft: number;
             chaptersLeft: number;
             voiceCallsLeft: number;
+            /** @description specs/2026-11-18-free-tier.md FT2.1: the trial proofreadings of the tier in force less those that count — their Job lives or their corrections reached the author. */
+            proofreadsLeft: number;
         };
         /** @description The new chapters of «Письмо» on the tier in force (specs/2026-11-08-subscription-tiers.md TR7.4–TR7.6; specs/2026-11-11-tier-limits.md TL3.1, TL3.3): a new chapter is the first Job of scenes of a draft the writing agent writes. A page shows it as a hint before the author presses anything; only startChapterDraftJob decides. */
         AccountPlanChapter: {
@@ -5634,6 +5646,11 @@ export interface components {
              * @constant
              */
             voiceCalls?: true;
+            /**
+             * @description The trial proofreadings of «Письмо» (specs/2026-11-18-free-tier.md FT2.1): their charges are returned.
+             * @constant
+             */
+            proofreads?: true;
         };
         /** @description Every value of a tier at once (TR1.7). */
         SetAdminSubscriptionTierRequest: {
@@ -6065,6 +6082,26 @@ export interface components {
             total: number;
             /** @description The pair to read; null when this voter has read them all. */
             pair: components["schemas"]["ReadingTestPair"] | null;
+        };
+        /** @description The voted pair after the choice was kept: the labels the operator wrote for the reader, in the order this voter saw the sides, and the side he chose. It names no condition. */
+        ReadingTestReveal: {
+            /** @description The label of the side shown first. */
+            first: string;
+            /** @description The label of the side shown second. */
+            second: string;
+            /**
+             * @description The side the kept vote chose, as it was shown.
+             * @enum {string}
+             */
+            chosen: "first" | "second";
+        };
+        /** @description The step after a vote; a test with labels adds the reveal of the voted pair. The step of takeReadingTestPair has no place for it: before a choice nothing is revealed. */
+        ReadingTestVoteResult: {
+            read: number;
+            total: number;
+            /** @description The pair to read; null when this voter has read them all. */
+            pair: components["schemas"]["ReadingTestPair"] | null;
+            reveal?: components["schemas"]["ReadingTestReveal"];
         };
         PromoLinkRequest: {
             token: string;
@@ -7593,7 +7630,7 @@ export interface components {
          * @description One writer limit; the order of the card is the order of this list.
          * @enum {string}
          */
-        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "app_returns_per_day" | "app_tokens_per_question" | "app_reading_tokens_per_character";
+        AdminQuotaKey: "chat_turns_per_day" | "active_turns" | "imports_per_day" | "projects" | "project_books" | "project_chapters" | "project_characters" | "account_books" | "account_chapters" | "account_characters" | "images_per_day" | "image_uploads_per_day" | "chapter_drafts_per_day" | "drawing_turns_per_day" | "draft_turns_per_day" | "draft_rewrites_per_day" | "app_returns_per_day" | "app_tokens_per_question" | "app_reading_tokens_per_character" | "book_reloads";
         /** @description One limit in force with its use. */
         AdminQuotaLimit: {
             key: components["schemas"]["AdminQuotaKey"];
@@ -7621,6 +7658,8 @@ export interface components {
             resetsAt: string;
             limits: components["schemas"]["AdminQuotaLimit"][];
             ownedProjects: components["schemas"]["AdminProjectSources"][];
+            /** @description specs/2026-11-18-free-tier.md FT3.6: every book that ever came into the sagas of the writer; by it the administrator decides his own book_reloads. */
+            booksLoaded: number;
         };
         /** @description One session the administrator opened on the writer's behalf. */
         AdminImpersonation: {
@@ -7669,6 +7708,7 @@ export interface components {
             app_returns_per_day?: components["schemas"]["AdminQuotaValue"];
             app_tokens_per_question?: components["schemas"]["AdminQuotaValue"];
             app_reading_tokens_per_character?: components["schemas"]["AdminQuotaValue"];
+            book_reloads?: components["schemas"]["AdminQuotaValue"];
         };
         /** @description Every changed limit with the writer's own value before and after; null is the default. */
         AdminQuotaChanges: {
@@ -7879,6 +7919,10 @@ export interface components {
             projects: components["schemas"]["QuotaCounter"];
             account: components["schemas"]["QuotaSources"];
             ownedProjects: components["schemas"]["ProjectQuota"][];
+            /** @description specs/2026-11-18-free-tier.md FT1.5: false — a book of the writer's sagas is loaded once (book_reloads 0): no new version of it from a file, and a new book only while booksLoaded is below account.books.limit. True in the desktop app. */
+            bookReloads: boolean;
+            /** @description specs/2026-11-18-free-tier.md FT1.5: every book that ever came into the sagas the writer owns — live, in the trash, in a deleted saga —, the example saga aside. */
+            booksLoaded: number;
         };
         /** @description «Разом»: the questions being answered at once and their limit. specs/2026-11-15-desk-turns-here.md TH2.1: places — who holds them — only the desktop app with the helper of the account tells, from what its site said; the site never sends it. */
         ActiveTurnsQuota: {
@@ -10343,6 +10387,16 @@ export interface components {
             original?: components["schemas"]["ChapterDraftOriginal"];
             /** @description specs/2026-11-10-ux1-writing.md UW1.1: true — the first Job of scenes of this draft would count as a new chapter of the writer's tier (specs/2026-11-08-subscription-tiers.md TR7.1: it edits no chapter of the book, is not nearly done by the author's own words, and no new chapter of it counts yet, TR7.3); false — its scenes are not charged. Absent in a build without tiers and once the chapter is in the book. A page names the price of the chapter by it before the author presses; whether the tier allows a new chapter now is getAccountPlan, and only startChapterDraftJob decides. */
             newChapter?: boolean;
+            trial?: components["schemas"]["ChapterDraftTrial"];
+        };
+        /** @description specs/2026-11-18-free-tier.md FT2.2, FT2.4: what the model may start in the draft for the writer who reads it when «Письмо» of his tier is a trial — a tier without a window of new chapters —, by the same rule as the start of the work: before — a new chapter whose trial is not spent, chapter — his trial new chapter in its day, proofread — his trial proofreading in its day, none — no trial in the draft; until — the end of that day, null for before and none; allows — the works the model may start now. A page makes the button of a work not in allows unavailable with the reason and reads the draft again at until. Absent on a tier with a window, in a build without tiers and once the chapter is in the book. */
+        ChapterDraftTrial: {
+            /** @enum {string} */
+            kind: "before" | "chapter" | "proofread" | "none";
+            /** Format: date-time */
+            until: string | null;
+            /** @description scenes — «Писать» and «Переписать отсюда до конца»; check — «Проверить главу по саге»; rewrite — a rewrite of a place and the seams of a piece taken from a version; proofread — a proofreading, «Вычитать заново» and another file; turn — a message to the helper. */
+            allows: ("scenes" | "check" | "rewrite" | "proofread" | "turn")[];
         };
         /** @description A draft in the list without its text. The fields after the dates are what names its step in the words of the strip over the chapter (specs/2026-11-11-ux5-writing-path.md WP1.2): the page counts nothing by a guess. */
         ChapterDraftSummary: {
@@ -13505,7 +13559,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The next step after the choice was kept. */
+            /** @description The next step after the choice was kept, with the reveal of the voted pair in a test with labels. */
             200: {
                 headers: {
                     "Cache-Control"?: "no-store";
@@ -13513,7 +13567,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReadingTestStep"];
+                    "application/json": components["schemas"]["ReadingTestVoteResult"];
                 };
             };
             400: components["responses"]["BadRequest"];

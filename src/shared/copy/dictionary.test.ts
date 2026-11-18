@@ -197,6 +197,9 @@ const exceptions: readonly Exception[] = [
   { file: 'src/features/auth/AdminImpersonation.tsx', says: '«рабочее место», «рабочая область»', reason: 'подсказка администратору: видна только при входе от имени автора' },
   // The page of a reset link before the product (specs/2026-11-10-ux3-auth.md): the server checks the link.
   { file: 'src/features/auth/PasswordResetForm.tsx', says: '«Загружаем», «Загрузка…», «Проверяем»', saying: 'Проверяем ссылку', reason: 'страница ссылки до входа в продукт — сервер проверяет ссылку, формы содержимого нет (ux3-auth)' },
+  // The public page of the blind comparison is read by people who do not know the saga, and after the choice the owner's
+  // button takes them to the next piece of text (specs/2026-11-05-reading-test.md RT5.3).
+  { file: 'src/features/compare/ComparePage.tsx', says: '«фрагмент» как адрес', saying: 'К следующему фрагменту', reason: 'слово владельца на странице слепого сравнения для читателей, не автора: кусок текста, который читают дальше, а не адрес места (RT5.3)' },
   // The message the page sends the helper for the first description: words for the model, never shown.
   { file: 'src/entities/drawings/prepare-message.ts', says: '«художник» как действующее лицо', saying: 'описание для художника', reason: 'сообщение помощнику для первого описания рисунка: слова для модели, автор их не видит' },
   // The disclosures of the guest page quote the documents: who prepares the answers and where the text goes.

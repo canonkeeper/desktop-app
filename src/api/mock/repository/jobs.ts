@@ -9,6 +9,7 @@ import {
   type ProjectJobsQuery,
 } from './common';
 import type { MockRepositoryContext } from './context';
+import { mockLoadBook, mockRefuseBookLoads } from './quota';
 import { draftBookId } from './fixtures';
 import { importFileTitle, nextShelfOrder } from './books';
 import { canProcessImportQueueJob, reconcileImportQueueAfterJob } from './import-queues';
@@ -106,8 +107,18 @@ export function createJobOperations(context: MockRepositoryContext) {
         const shelfOrder = nextShelfOrder(context.state.books, job.subject.projectId);
         const expectedOrder = job.subject.expectedBookOrder ?? shelfOrder;
         const taken = context.state.books.some((book) => book.projectId === job.subject.projectId && book.order === expectedOrder);
-        if (shelfOrder === null || expectedOrder === null || taken) {
-          const conflictCode = shelfOrder === null
+        // A book loaded once: the finalization of a new book under the lock of the quota counts every book that came into the
+        // sagas (specs/2026-11-18-free-tier.md FT1.3) — the volume then waits with the code, and only «Пропустить» helps it.
+        const loadedOnce = (() => {
+          try {
+            mockRefuseBookLoads(context, 'getJob', 1);
+            return false;
+          } catch {
+            return true;
+          }
+        })();
+        if (shelfOrder === null || expectedOrder === null || taken || loadedOnce) {
+          const conflictCode = loadedOnce ? 'quota.book_reloads' : shelfOrder === null
             ? 'import_sequence_conflict'
             : 'import_expected_order_conflict';
           Object.assign(job, {
@@ -157,6 +168,7 @@ export function createJobOperations(context: MockRepositoryContext) {
           createdAt: now,
           updatedAt: now,
         });
+        mockLoadBook(context, result.bookId);
         if (importedChapter) context.state.chapters.push(importedChapter);
         openSagaWave(context.state, job.subject.projectId, context.jobCreators.get(job.id)?.principalId ?? null);
       }

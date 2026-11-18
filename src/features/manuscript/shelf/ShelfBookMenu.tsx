@@ -1,4 +1,6 @@
 import { useRef } from 'react';
+import type { BookLoads } from '../../../entities/account-quota/book-loads';
+import { useQuotaNote } from '../../../entities/account-quota/quota-note';
 import type { Book } from '../../../entities/manuscript/api';
 import type { RouteNavigate } from '../../../shared/navigation/app-route';
 import { emailUnverifiedShort } from '../../../shared/session/account-session';
@@ -13,6 +15,8 @@ import type { useShelfBookActions } from './useShelfBookActions';
 
 interface ShelfBookMenuProps {
   actions: ReturnType<typeof useShelfBookActions>;
+  /** The books of the author's own saga on a tier where a book is loaded once (specs/2026-11-18-free-tier.md FT1.5); null elsewhere. */
+  bookLoads?: BookLoads | null | undefined;
   canEdit: boolean;
   demo: boolean;
   emailUnverified: boolean;
@@ -32,8 +36,10 @@ interface ShelfBookMenuProps {
  * (specs/2026-11-10-ux2-patterns-refusals.md PR1.1) in the words of the edition (specs/2026-11-15-desk-obsidian-book-web.md OU3.2),
  * and the items of the edition after «Новая версия из файла…» with the windows they open (OU1).
  */
-export function ShelfBookMenu({ actions, canEdit, demo, emailUnverified, move, navigate, onChanges, onDownload, onSummary, projectId, update, upload }: ShelfBookMenuProps) {
+export function ShelfBookMenu({ actions, bookLoads = null, canEdit, demo, emailUnverified, move, navigate, onChanges, onDownload, onSummary, projectId, update, upload }: ShelfBookMenuProps) {
   const shelfSlot = useShelfSlot();
+  // The tail of the tier of a book loaded once: «· больше — на „Художнике“» (FT3.1, board 30·52); a word in a menu.
+  const tierLine = useQuotaNote()('quota.book_reloads')?.line;
   const words = useBookUpdateWords();
   const presence = usePresence(actions.menuBook);
   const lastAnchor = useRef(actions.menuAnchor);
@@ -46,7 +52,9 @@ export function ShelfBookMenu({ actions, canEdit, demo, emailUnverified, move, n
   // Why «Новая версия из файла…» and «Удалить книгу…» of a book wait now.
   const updateReasonOf = (book: Book) => actions.isBookUpdating(book.id) ? words.updating.already
     : emailUnverified ? emailUnverifiedShort
-      : upload.running || update.busy ? 'Пока идёт загрузка книг — новую версию можно будет выбрать после неё.' : null;
+      : upload.running || update.busy ? 'Пока идёт загрузка книг — новую версию можно будет выбрать после неё.'
+        // A book of a tier where it is loaded once takes no new version from a file (specs/2026-11-18-free-tier.md FT3.1).
+        : bookLoads ? <>{bookLoads.newVersion}{tierLine}</> : null;
   // UP3.5: while books are uploaded no book of the saga is deleted — the server holds the places of the volumes.
   const deleteReasonOf = (book: Book) => actions.isBookUpdating(book.id) ? words.updating.noDelete
     : upload.live ? 'Пока идёт загрузка книг, удалить книгу нельзя — дождитесь её конца.' : null;

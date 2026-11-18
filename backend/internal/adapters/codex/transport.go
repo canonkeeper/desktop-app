@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -103,12 +104,7 @@ func startTransport(ctx context.Context, config transportConfig) (*processTransp
 			return nil, err
 		}
 	}
-	args := appServerArgs(config.CodexPath)
-	for _, override := range config.ConfigOverrides {
-		args = append(args, "-c", override)
-	}
-	args = append(args, "--listen", "stdio://")
-	command := exec.Command(config.CodexPath, args...)
+	command := exec.Command(config.CodexPath, appServerCommand(config.CodexPath, config.ConfigOverrides)...)
 	command.Dir = config.CWD
 	command.Env = processEnvironment(config)
 	if config.CodeModeHostPath != "" {
@@ -178,6 +174,16 @@ func appServerArgs(codexPath string) []string {
 		return nil
 	}
 	return []string{"app-server"}
+}
+
+// appServerCommand is the command line of the app-server after its program: its first arguments, a -c for each override
+// of the build, then for each of the system (platformOverrides, specs/2026-11-18-desk-windows-chat.md WC1.1), and stdio.
+func appServerCommand(codexPath string, overrides []string) []string {
+	args := appServerArgs(codexPath)
+	for _, override := range slices.Concat(overrides, platformOverrides()) {
+		args = append(args, "-c", override)
+	}
+	return append(args, "--listen", "stdio://")
 }
 
 // reportStartFailure closes an app-server that never became ready and logs its stderr tail.

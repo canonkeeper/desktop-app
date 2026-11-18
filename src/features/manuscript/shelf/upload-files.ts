@@ -1,4 +1,5 @@
 import type { AccountQuota } from '../../../entities/account-quota/api';
+import { bookLoadsOf, noRoomByDeleting } from '../../../entities/account-quota/book-loads';
 import type { Book, ImportQueue, ImportQueueItem } from '../../../entities/manuscript/api';
 import { formatCount, pluralize } from '../../../ui/copy';
 import { oversizedFileMessage, unsupportedFileMessage, type ImportFileConstraints } from './import-failure';
@@ -126,20 +127,24 @@ export function similarBook<B extends Pick<Book, 'title' | 'place'> & { opening?
 }
 
 /** How many new books the counters of the account still take, and the limit that says so (UP1.3). */
-export type UploadRoom = Readonly<{ room: number; code: 'quota.project_books' | 'quota.account_books' | 'quota.imports_daily' }>;
+export type UploadRoom = Readonly<{ room: number; code: 'quota.project_books' | 'quota.account_books' | 'quota.book_reloads' | 'quota.imports_daily' }>;
 
 /**
  * UP1.3: the room of the saga, of all the sagas and of the uploads of the day — the same counters the quiet line of the
- * shelf reads. Null while the counters are not read or nothing is limited: then the server decides alone.
+ * shelf reads. Null while the counters are not read or nothing is limited: then the server decides alone. On a tier where a
+ * book is loaded once the books of all the sagas are every book that ever came into them (specs/2026-11-18-free-tier.md
+ * FT1.5), and that room is said first when it is no larger: a deleted book or saga gives no place back.
  */
 export function uploadRoom(quota: AccountQuota | undefined, projectId: string | null): UploadRoom | null {
   if (!quota) return null;
   const left = (counter: { used: number; limit: number } | undefined) => counter && counter.limit > 0
     ? Math.max(0, counter.limit - counter.used) : null;
   const limits: UploadRoom[] = [];
+  const loads = bookLoadsOf(quota, projectId);
+  if (loads) limits.push({ room: loads.room, code: 'quota.book_reloads' });
   const saga = left(quota.ownedProjects.find((project) => project.projectId === projectId)?.sources.books);
   if (saga !== null) limits.push({ room: saga, code: 'quota.project_books' });
-  const account = left(quota.account.books);
+  const account = loads ? null : left(quota.account.books);
   if (account !== null) limits.push({ room: account, code: 'quota.account_books' });
   const day = left(quota.imports);
   if (day !== null) limits.push({ room: day, code: 'quota.imports_daily' });
@@ -172,7 +177,10 @@ export function fitWords(room: UploadRoom, chosen: number) {
   const where = room.code === 'quota.project_books' ? 'В этой саге' : 'Во всех ваших сагах';
   return {
     ended: `${where} поместится ${room.room} из ${formatCount(chosen, 'книги', 'книг', 'книг')}`,
-    returns: room.code === 'quota.project_books' ? 'Остальные можно загрузить в другую сагу.' : 'Новые поместятся, когда книг станет меньше.',
+    returns: room.code === 'quota.project_books' ? 'Остальные можно загрузить в другую сагу.'
+      // A book loaded once (FT3.1): fewer books make no room.
+      : room.code === 'quota.book_reloads' ? noRoomByDeleting
+        : 'Новые поместятся, когда книг станет меньше.',
   };
 }
 
@@ -302,7 +310,7 @@ export type UploadLineView = Readonly<{
  * «Загружаю книги: 3 из 12 готово, идёт „Том 8“» (UP3.1): ready — the volumes whose books are on the shelf; the one that
  * goes — the file this tab sends or the volume the server reads; a volume that waits is named. No word of the machinery.
  */
-export function uploadLine(queue: ImportQueue, views: readonly VolumeView[], sendingHere: boolean): UploadLineView {
+export function uploadLine(queue: ImportQueue, views: readonly VolumeView[], sendingHere: boolean, skipOnly: ReadonlySet<string> = new Set()): UploadLineView {
   const items = liveItems(queue);
   const total = items.length;
   const onShelf = total - views.length;
@@ -320,13 +328,17 @@ export function uploadLine(queue: ImportQueue, views: readonly VolumeView[], sen
     title = total === 1 ? 'Загружаю книгу…' : `Загружаю книги: ${onShelf} из ${total} готово`;
   }
   const lost = views.some((view) => view.state === 'lost');
+  // A volume refused because a book is loaded once takes no other file (specs/2026-11-18-free-tier.md FT1.3; board 35·31).
+  const onlySkip = waiting.length > 0 && waiting.every((view) => skipOnly.has(view.key));
   const detail = lost
     ? 'Файл не дошёл до сервера: выберите его на карточке книги снова'
-    : waiting.length > 0
-      ? `Замените файл или пропустите — ${pluralize(waiting.length, 'на карточке книги', 'на карточках книг', 'на карточках книг')}`
-      : sendingHere
-        ? 'Не закрывайте вкладку, пока файлы уходят — дальше загрузка пойдёт сама'
-        : 'Страницу можно закрыть — загрузка продолжится';
+    : onlySkip
+      ? `Пропустите ${waiting.length === 1 ? 'его' : 'их'} — книга на вашем тарифе загружается один раз`
+      : waiting.length > 0
+        ? `Замените файл или пропустите — ${pluralize(waiting.length, 'на карточке книги', 'на карточках книг', 'на карточках книг')}`
+        : sendingHere
+          ? 'Не закрывайте вкладку, пока файлы уходят — дальше загрузка пойдёт сама'
+          : 'Страницу можно закрыть — загрузка продолжится';
   return { title, detail, progress: total > 0 ? onShelf / total : null, remaining };
 }
 

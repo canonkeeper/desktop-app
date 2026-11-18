@@ -47,7 +47,7 @@ export type MockBookCoverState = {
   active: boolean;
 };
 
-export type MockReadingTestVote = { number: number; voterId: string; chosen: string; note: string };
+export type MockReadingTestVote = { slug: string; number: number; voterId: string; chosen: string; note: string };
 
 type MockUnreadReason = NonNullable<Schema<'ReadingUnreadReason'>>;
 
@@ -135,6 +135,13 @@ export type MockState = {
   trialImagesUsed: Record<string, number>;
   /** The new chapters of «Письмо» charged against the tiers (TR7.2). */
   chapterCharges: MockChapterCharge[];
+  /**
+   * The journal of the books of an account (specs/2026-11-18-free-tier.md FT1.2): a row for every book that came into a saga
+   * of its owner, the example aside; deleting a book or a saga leaves its row.
+   */
+  bookLoads: Array<{ bookId: string; ownerUserId: string }>;
+  /** The work of «Письмо» each writer spent on a Moscow day, by `writer:day:key` (specs/2026-11-09-quota-accounting.md). */
+  writingDays: Record<string, number>;
   /** The trial calls of the voice each account used in its life (TR8.1); the mock runs no call, so its minutes stay whole. */
   trialVoiceCallsUsed: Record<string, number>;
   /**
@@ -248,7 +255,7 @@ export type MockLinkedApp = {
  * then it does not count; returned — given back by the administrator.
  */
 export type MockChapterCharge = {
-  userId: string; draftId: string; jobId: string; kind: 'window' | 'trial'; chargedAt: string; job: 'working' | 'scene' | 'none'; returned: boolean;
+  userId: string; draftId: string; jobId: string; kind: 'window' | 'trial' | 'proofread'; chargedAt: string; job: 'working' | 'scene' | 'none'; returned: boolean;
 };
 /** A period of a writer's tier with the account it belongs to. */
 export type MockTierPeriod = Schema<'SubscriptionPeriod'> & { userId: string };
@@ -694,6 +701,9 @@ function createInitialState(): MockState {
     keyFailures: {},
     trialImagesUsed: {},
     chapterCharges: [],
+    // The books of the sagas of the author came into them before (FT1.2: the migration counts the books there are).
+    bookLoads: [bookOne, book, bookThree, bookFour].map((one) => ({ bookId: one.id, ownerUserId: user.id })),
+    writingDays: {},
     trialVoiceCallsUsed: {},
     sagaWaves: {},
     sagaMapsPending: [],

@@ -1,4 +1,5 @@
-import type { OperationResponse, Schema } from '../../../shared/api';
+import type { OperationId, OperationResponse, Schema } from '../../../shared/api';
+import { MockApiError } from '../scenarios';
 import { clone } from './common';
 import type { MockRepositoryContext } from './context';
 import { desktopLinked } from './desktop-account';
@@ -29,11 +30,57 @@ export const mockCodeDefaults: Readonly<Record<DefaultKey, number>> = {
   app_returns_per_day: 5,
   app_tokens_per_question: 360_000,
   app_reading_tokens_per_character: 8,
+  // A book loads again by the code (specs/2026-11-18-free-tier.md FT1.1): «Бесплатно» sets 0 by its tier.
+  book_reloads: 1,
 };
 
 /** A limit by default in force: the platform's value, else the code's (R7.2). */
 export function mockDefault(platform: MockQuotaDefaults, key: DefaultKey) {
   return platform[key] ?? mockCodeDefaults[key];
+}
+
+/**
+ * A book of the sagas of the signed-in writer that came into one (specs/2026-11-18-free-tier.md FT1.2): the journal of the
+ * books of his account takes its row — the trigger of the server writes it on every insert of a book, the example aside.
+ */
+export function mockLoadBook(context: MockRepositoryContext, bookId: string) {
+  const ownerUserId = context.currentPrincipalId();
+  if (!context.state.bookLoads.some((load) => load.bookId === bookId)) context.state.bookLoads.push({ bookId, ownerUserId });
+}
+
+/**
+ * The key book_reloads of the writer and the books of his account as the fence of the server reads them (FT1.3, FT1.4):
+ * while a book loads once, a new version of a book and a book without text are refused with 409 quota.book_reloads
+ * (`books` — 'version', 'empty'), and new books once every book that came into his sagas would pass the books of the
+ * account — the mock is not kinder than the server.
+ */
+export function mockRefuseBookLoads(context: MockRepositoryContext, operationId: OperationId, books: number | 'version' | 'empty') {
+  const plan = mockPlanSettings(context.state, context.currentPrincipalId());
+  const limit = (key: DefaultKey) => plan[key] ?? mockDefault(context.state.quotaDefaults, key);
+  if (limit('book_reloads') === 1) return;
+  const loaded = context.state.bookLoads.filter((load) => load.ownerUserId === context.currentPrincipalId()).length;
+  if (typeof books !== 'number' || loaded + books > limit('account_books')) {
+    throw new MockApiError(409, 'A book of the tier is loaded once.', operationId, 'quota.book_reloads');
+  }
+}
+
+/** The key of the day of «Письмо» of the signed-in writer (specs/2026-11-09-quota-accounting.md): the writing, the rewrites. */
+type WritingDayKey = 'chapter_drafts_per_day' | 'draft_rewrites_per_day';
+const writingDay = (context: MockRepositoryContext, key: WritingDayKey) => `${context.currentPrincipalId()}:${moscowDay(new Date())}:${key}`;
+
+/**
+ * The limit of a day a work of the model in «Письмо» spends (`ReserveDailyInTx`): 429 quota.chapter_drafts_daily or
+ * quota.draft_rewrites_daily once the Moscow day of the writer is spent, else one more of it.
+ */
+export function mockSpendWritingDay(context: MockRepositoryContext, key: WritingDayKey, operationId: OperationId) {
+  const plan = mockPlanSettings(context.state, context.currentPrincipalId());
+  const limit = plan[key] ?? mockDefault(context.state.quotaDefaults, key);
+  const day = writingDay(context, key);
+  if ((context.state.writingDays[day] ?? 0) >= limit) {
+    const code = key === 'chapter_drafts_per_day' ? 'quota.chapter_drafts_daily' : 'quota.draft_rewrites_daily';
+    throw new MockApiError(429, 'The work of «Письмо» of the day is spent.', operationId, code);
+  }
+  context.state.writingDays[day] = (context.state.writingDays[day] ?? 0) + 1;
 }
 
 /** Mock text has no characters of its own: a word counts as six characters. */
@@ -115,13 +162,13 @@ export function createQuotaOperations(context: MockRepositoryContext) {
       },
       imports: counter(imports.filter((job) => moscowDay(new Date(job.createdAt)) === day).length, limits.importsPerDay),
       images: counter(drawingsToday(day), limits.imagesPerDay),
-      // The mock keeps no day of «Письмо» and of the helpers: their counters stand at nothing used
+      // The mock keeps the day of the writing and the rewrites of «Письмо»; the turns of the helpers stand at nothing used
       // (specs/2026-11-10-ux2-tariff-account.md TA2.3).
       imageUploads: counter(uploadsToday, limit('image_uploads_per_day')),
-      chapterDrafts: counter(0, limit('chapter_drafts_per_day')),
+      chapterDrafts: counter(context.state.writingDays[writingDay(context, 'chapter_drafts_per_day')] ?? 0, limit('chapter_drafts_per_day')),
       drawingTurns: counter(0, limit('drawing_turns_per_day')),
       draftTurns: counter(0, limit('draft_turns_per_day')),
-      draftRewrites: counter(0, limit('draft_rewrites_per_day')),
+      draftRewrites: counter(context.state.writingDays[writingDay(context, 'draft_rewrites_per_day')] ?? 0, limit('draft_rewrites_per_day')),
       projects: counter(owned.length, limits.projects),
       account: {
         books: counter(sum('books'), limits.accountBooks),
@@ -129,6 +176,9 @@ export function createQuotaOperations(context: MockRepositoryContext) {
         characters: counter(sum('characters'), limits.accountCharacters),
       },
       ownedProjects,
+      // The books that ever came into the sagas (specs/2026-11-18-free-tier.md FT1.5): the journal of the account.
+      bookReloads: limit('book_reloads') === 1,
+      booksLoaded: context.state.bookLoads.filter((load) => load.ownerUserId === principal).length,
     });
   }
 

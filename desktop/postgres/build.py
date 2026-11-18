@@ -4,10 +4,12 @@
 
   python3 -I desktop/postgres/build.py <work dir> <out dir>
 
-No ICU, OpenSSL, LLVM, compression libraries, readline or NLS: the server needs nothing beyond the C library (and the
-C runtime on Windows). Needs meson, ninja, bison, flex, perl and a C compiler (MSVC on Windows, from a developer
-command prompt environment); patchelf on Linux. Writes <out dir>/pg (the set) and <out dir>/build.json (the source
-sha256, timings and sizes). A source archive whose sha256 differs from the pin is refused.
+No ICU, OpenSSL, LLVM, compression libraries, readline or NLS: the server needs nothing beyond the C library. On
+Windows that is the Universal C Runtime of Windows itself (api-ms-win-crt-*, a part of Windows since 10): the C runtime
+of Visual C++ is linked into every program and library of the set, which so needs no Visual C++ Redistributable
+(specs/2026-11-18-desk-windows-chat.md WC2.1). Needs meson, ninja, bison, flex, perl and a C compiler (MSVC on Windows,
+from a developer command prompt environment); patchelf on Linux. Writes <out dir>/pg (the set) and <out dir>/build.json
+(the source sha256, timings and sizes). A source archive whose sha256 differs from the pin is refused.
 """
 import json
 import os
@@ -26,6 +28,17 @@ MESON_OPTIONS = [
     "-Dplperl=disabled", "-Dplpython=disabled", "-Dpltcl=disabled", "-Dtap_tests=disabled", "-Ddocs=disabled",
     "-Ddocs_pdf=disabled",
 ]
+
+# On Windows the C runtime of Visual C++ goes into each program and library of the set (b_vscrt=mt), and the Universal C
+# Runtime stays the one of Windows (ucrt.lib in place of the static libucrt.lib): no program imports VCRUNTIME140.dll,
+# which a clean Windows has not, and postgres.exe and the libraries it loads still share one C runtime — its files, errno,
+# locale and heap — as they did when the runtime was a DLL. The set of Linux is built with MESON_OPTIONS alone.
+WINDOWS_MESON_OPTIONS = ["-Db_vscrt=mt", "-Dc_link_args=/NODEFAULTLIB:libucrt.lib ucrt.lib"]
+
+
+def meson_options(windows):
+    return MESON_OPTIONS + (WINDOWS_MESON_OPTIONS if windows else [])
+
 
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
@@ -55,7 +68,8 @@ def main():
         stream.extractall(work, filter="data")
 
     started = time.time()
-    subprocess.run(["meson", "setup", build, source, f"--prefix={prefix}", "--buildtype=release", *MESON_OPTIONS], check=True)
+    options = meson_options(package.is_windows())
+    subprocess.run(["meson", "setup", build, source, f"--prefix={prefix}", "--buildtype=release", *options], check=True)
     configured = time.time()
     subprocess.run(["ninja", "-C", build], check=True)
     subprocess.run(["ninja", "-C", build, "install"], check=True, stdout=subprocess.DEVNULL)
