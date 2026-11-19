@@ -22,6 +22,21 @@ describe('«Данные» of «Настройки»', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('reveal_data_dir', undefined));
   });
 
+  // specs/2026-11-19-desk-trust.md TW3.1, TW3.3: the files are not encrypted, the removal of the program leaves them, and the
+  // copies keep what was deleted later.
+  it('say the files are not encrypted, what the removal of the program leaves and what the copies keep', async () => {
+    noShell();
+    renderPart(DataPart, appOnTheComputer);
+    const where = await screen.findByRole('group', { name: 'Где лежат данные' });
+    expect([...where.querySelectorAll('p')].map((line) => line.textContent).slice(-3)).toEqual([
+      'Занято на диске: 1,2 ГБ',
+      'Файлы здесь не шифруются. Чтобы их не прочли с потерянного или украденного компьютера, включите шифрование диска',
+      'Удаление программы эти данные оставляет — в Windows, если не отметить «Удалить данные приложения». Чтобы убрать всё, сначала нажмите «Стереть все данные…»',
+    ]);
+    const copies = screen.getByRole('list', { name: 'Копии перед обновлением' });
+    expect(copies.nextElementSibling?.textContent).toBe('В копии — саги, книги и чаты такими, какими они были в день обновления, и то, что вы удалили позже. Копий не больше двух: новая вытесняет самую старую');
+  });
+
   it('have no block of copies before the first update', async () => {
     shellOfTheWindow();
     renderPart(DataPart, { ...appOnTheComputer, backups: [] });
@@ -54,6 +69,55 @@ describe('«Данные» of «Настройки»', () => {
     renderPart(DataPart, appOnTheComputer);
     fireEvent.click(await screen.findByRole('button', { name: 'Открыть папку' }));
     expect(await screen.findByText('Не удалось открыть папку')).toBeTruthy();
+  });
+});
+
+// specs/2026-11-19-desk-trust.md TW3.4: «Удалить копии…» — the last item of the «⋯» of the copies — asks the one question of a
+// deletion; the copies go, the line says so, the block goes with its «⋯» and the focus stands on «Где лежат данные». A refusal
+// keeps the question open with its words.
+describe('«Удалить копии…» of «Данные»', () => {
+  const problem = (status: number, code: string) => new ApiStatusError(status, {
+    type: 'about:blank', title: 'Refused', status, detail: 'refused', code, requestId: 'request-of-the-test',
+  }, new Response());
+
+  async function openTheQuestion(deleteDesktopBackups: () => Promise<void>) {
+    noShell();
+    const asked = renderPartWith(DataPart, { deleteDesktopBackups }, appOnTheComputer, { ...appOnTheComputer, backups: [] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Действия с копиями' }));
+    const items = within(screen.getByRole('menu', { name: 'Действия с копиями' })).getAllByRole('menuitem');
+    expect(items.at(-1)?.textContent).toBe('Удалить копии…');
+    fireEvent.click(items.at(-1)!);
+    return { asked, dialog: await screen.findByRole('dialog', { name: 'Удалить копии перед обновлением?' }) };
+  }
+
+  it('asks, deletes the copies and stands the focus on «Где лежат данные»', async () => {
+    const deleteDesktopBackups = vi.fn(async () => undefined);
+    const { dialog } = await openTheQuestion(deleteDesktopBackups);
+    expect(within(dialog).getByText('Вернуть будет нельзя.')).toBeTruthy();
+    expect(within(dialog).getByText('Саги и книги останутся, но вернуться на прежнюю версию с прежними данными будет нельзя')).toBeTruthy();
+    const action = within(dialog).getByRole('button', { name: 'Удалить копии' });
+    expect(action.getAttribute('data-variant')).toBe('danger');
+    expect(within(dialog).getByRole('button', { name: 'Отмена' })).toBeTruthy();
+    fireEvent.click(action);
+    expect(await screen.findByText('Копии удалены')).toBeTruthy();
+    expect(deleteDesktopBackups).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Копии перед обновлением')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Действия с копиями' })).toBeNull();
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('Где лежат данные'));
+  });
+
+  it.each([
+    ['an update is installed', problem(409, 'desktop.updating'), 'Сейчас ставится обновление — удалите копии после него'],
+    ['the copies did not go', problem(500, 'server.error'), 'Копии не удалились. Попробуйте ещё раз'],
+  ])('keeps the question open when %s', async (_case, refused, words) => {
+    const deleteDesktopBackups = vi.fn(async () => { throw refused; });
+    const { dialog } = await openTheQuestion(deleteDesktopBackups);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить копии' }));
+    expect(await within(dialog).findByText(words)).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Копии перед обновлением' })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
 

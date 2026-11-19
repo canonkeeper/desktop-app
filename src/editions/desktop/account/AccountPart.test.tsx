@@ -16,6 +16,21 @@ afterEach(() => {
 type Account = OperationResponse<'getAccount', '200'>;
 
 const intro = 'С аккаунтом CanonKeeper помощник отвечает на вопросы по книгам и читает их — по вашему тарифу. Настраивать нечего. Книги лежат на этом компьютере';
+// specs/2026-11-19-desk-trust.md TW2.5, TW1.1: what goes through the server, and with whom the helper works.
+const serverLine = 'Через сервер CanonKeeper к помощнику проходят: разговор чата с каждым вопросом — ваши вопросы, ответы помощника и места книг, которые он прочитал, а когда он ищет по всей саге — главы целиком, — и приложенные главы; при чтении книг — их текст; ваши материалы, когда вы их загружаете. Книги, главы и чаты лежат на этом компьютере';
+const provider = 'Помощник работает у OpenAI (ChatGPT) или другого крупного облачного поставщика. Обучение на ваших текстах выключено';
+
+/** «Что проходит через сервер» opens what goes through the server and with whom the helper works. */
+function expectServerLines() {
+  const server = screen.getByRole('button', { name: 'Что проходит через сервер' });
+  expect(server.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.getByText(provider).closest('[hidden]')).not.toBeNull();
+  fireEvent.click(server);
+  expect(server.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByText(provider).closest('[hidden]')).toBeNull();
+  const note = screen.getByText(serverLine).closest('[role="note"]') as HTMLElement;
+  expect([...note.querySelectorAll('p')].map((line) => line.textContent)).toEqual([serverLine, provider]);
+}
 const time = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
 function renderPart(api: TheApp) {
@@ -38,10 +53,7 @@ describe('«Аккаунт» not linked', () => {
     renderPart(await theApp());
     expect(await screen.findByText(intro)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Связать с аккаунтом' })).toBeTruthy();
-    const server = screen.getByRole('button', { name: 'Что проходит через сервер' });
-    expect(server.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(server);
-    expect(screen.getByRole('note').textContent).toBe('Через сервер CanonKeeper к помощнику проходят: разговор чата с каждым вопросом — ваши вопросы, ответы помощника и места книг, которые он прочитал, — и приложенные главы; при чтении книг — их текст; ваши материалы, когда вы их загружаете. Книги, главы и чаты лежат на этом компьютере');
+    expectServerLines();
     // The build without the workshops promises none of them.
     expect(document.body.textContent).not.toMatch(/Письм|Рисун|голос/u);
   });
@@ -102,6 +114,7 @@ describe('«Аккаунт» linked', () => {
     expect(screen.getByText('Этот компьютер на сайте: «Рабочий стол»')).toBeTruthy();
     expect(screen.getByText('Связь с аккаунтом лежит в хранилище паролей системы')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/пропуск/u);
+    expectServerLines();
     fireEvent.click(screen.getByRole('link', { name: 'Тарифы' }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('open_external', { url: 'https://canonkeeper.example.test/tariffs' }));
     fireEvent.click(screen.getByRole('link', { name: 'Приложения на компьютере' }));
@@ -117,7 +130,7 @@ describe('«Аккаунт» linked', () => {
     expect(await screen.findByText('Тариф «Бесплатно»')).toBeTruthy();
     expect(screen.queryByText(/Вопросы сегодня/u)).toBeNull();
     expect(screen.getByText(`Сведения от 13 ноября, ${time.format(new Date(answer.account!.at))}`)).toBeTruthy();
-    expect(screen.getByText('Связь с аккаунтом лежит в файле в папке данных: в системе нет хранилища паролей')).toBeTruthy();
+    expect(screen.getByText('Связь с аккаунтом лежит в файле в папке данных без шифрования: в системе нет хранилища паролей')).toBeTruthy();
   });
 
   it('changes its words when a value of the server changes', async () => {
@@ -147,6 +160,7 @@ describe('«Аккаунт» linked', () => {
       renderPart(api);
       expect(await screen.findByText('Приложение связано. Сведения об аккаунте появятся, когда будет связь с сервером')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Обновить сведения' })).toBeTruthy();
+      expectServerLines();
       cleanup();
     }
   });

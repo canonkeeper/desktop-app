@@ -42,15 +42,18 @@ export function bringTogetherWords(names: boolean, threads: boolean) {
   return `Свести ${restWords(names, threads, 'short')}`;
 }
 
+/** With whom the helper of the account works, after «…к помощнику» of both kinds of the consent (specs/2026-11-19-desk-trust.md TW1.2). */
+const providerTail = ' — он работает у OpenAI (ChatGPT) или другого крупного облачного поставщика, обучение на ваших текстах выключено';
+
 /** What the helper does and where the text goes (AW5.2): it reads the chapters, or only brings the names and the threads together. */
 export function accountConsentMessage(estimate: Pick<ReadingEstimate, 'chapters' | 'namesWait' | 'threadsWait'>) {
   if (estimate.chapters === 0) {
     return estimate.namesWait || estimate.threadsWait
-      ? `Главы прочитаны. Помощнику осталось свести ${restWords(estimate.namesWait, estimate.threadsWait)}. Текст пройдёт через сервер CanonKeeper к помощнику`
+      ? `Главы прочитаны. Помощнику осталось свести ${restWords(estimate.namesWait, estimate.threadsWait)}. Текст пройдёт через сервер CanonKeeper к помощнику${providerTail}`
       : accountReadingWords.nothingToRead;
   }
   return `Помощник прочитает ${formatCount(estimate.chapters, 'главу', 'главы', 'глав')} и узнает, кто есть кто, что произошло и где это в книге. `
-    + 'Текст книг пройдёт через сервер CanonKeeper к помощнику. Книги, которые вы добавите позже, помощник прочитает так же — остановить '
+    + `Текст книг пройдёт через сервер CanonKeeper к помощнику${providerTail}. Книги, которые вы добавите позже, помощник прочитает так же — остановить `
     + 'можно кнопкой «Пауза»';
 }
 

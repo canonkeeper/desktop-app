@@ -26,7 +26,7 @@ describe('«Помощник» of «Настройки»: «Свой ИИ»', ()
   it('says what its own AI gives and begins with the choice of the provider', async () => {
     await renderHelper(await theApp());
     expect(await screen.findByText('Помощник будет отвечать в чате и читать книги саги через вашего провайдера ИИ — по вашему ключу.')).toBeTruthy();
-    expect(screen.getByText('Вопросы чата и текст глав, которые он читает, уйдут этому провайдеру.')).toBeTruthy();
+    expect(screen.getByText('Вопросы чата и текст глав, которые он читает, уйдут этому провайдеру. Учится ли он на ваших текстах и хранит ли их, решают его правила.')).toBeTruthy();
     expect(listOf('Провайдер').textContent).toBe('Выберите провайдера');
     expect(screen.queryByLabelText('Ключ')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Сохранить' })).toBeNull();
@@ -77,6 +77,28 @@ describe('«Помощник» of «Настройки»: «Свой ИИ»', ()
     expect(screen.getByText('Нужен, если провайдер его просит. Сохранится в хранилище паролей системы')).toBeTruthy();
   });
 
+  // specs/2026-11-19-desk-trust.md TW4.2: an address of http to another computer says the text goes without encryption; this
+  // computer and https say nothing; the address is saved all the same — http in the home network is a lawful case.
+  it('says an address of http to another computer goes without encryption, and saves it', async () => {
+    const plain = 'Адрес без https: текст пойдёт по сети без шифрования. Так можно только в своей домашней сети';
+    const api = await theApp();
+    await renderHelper(api);
+    choose('Провайдер', 'Другой, совместимый с OpenAI');
+    const address = screen.getByLabelText<HTMLInputElement>('Адрес провайдера');
+    expect(screen.queryByText(plain)).toBeNull();
+    for (const local of ['http://localhost:11434/v1', 'http://127.0.0.1:1234/v1', 'http://[::1]:11434/v1', 'https://192.168.1.10/v1']) {
+      type('Адрес провайдера', local);
+      expect(screen.queryByText(plain)).toBeNull();
+    }
+    type('Адрес провайдера', 'http://192.168.1.10:11434/v1');
+    const hint = screen.getByText(plain);
+    expect(address.getAttribute('aria-describedby')?.split(' ')).toContain(hint.id);
+    type('Модель для чата', 'north-large');
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    expect(await screen.findByText('Настройки помощника сохранены')).toBeTruthy();
+    expect((await api.getAiSettings()).settings.own).toMatchObject({ baseUrl: 'http://192.168.1.10:11434/v1' });
+  });
+
   it('needs no key for the local model', async () => {
     await renderHelper(await theApp());
     choose('Провайдер', 'Локальная модель (Ollama)');
@@ -100,7 +122,7 @@ describe('«Помощник» of «Настройки»: «Свой ИИ»', ()
 
   it('says the key lies in a file where the computer has no store of keys', async () => {
     const api = await theApp({ aiSecretsStore: 'file' });
-    await deepSeekWithKeyIn(api, 'Хранится в файле в папке данных: в системе нет хранилища паролей');
+    await deepSeekWithKeyIn(api, 'Хранится в файле в папке данных без шифрования: в системе нет хранилища паролей');
   });
 
   it('keeps the typed key in the field when the shell did not keep it, and «Сохранить ещё раз» saves it', async () => {

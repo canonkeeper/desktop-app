@@ -270,8 +270,10 @@ func placeOf(root string) int64 {
 const backupVersionLength = 64
 
 // backupList lists the complete copies of backups/ (ST2.1, ST2.3): the newest first by the time in their names, as
-// many as the start keeps.
+// many as the start keeps; «Удалить копии…» removes them all (specs/2026-11-19-desk-trust.md TW3.5).
 type backupList struct{ directory string }
+
+func (list backupList) Remove() error { return removeBackups(list.directory) }
 
 func (list backupList) List() ([]service.Backup, error) {
 	entries, err := os.ReadDir(list.directory)

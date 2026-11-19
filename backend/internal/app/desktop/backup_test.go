@@ -165,3 +165,69 @@ func TestTheCopyBeforeTheMigrationsLeavesTheProfileOut(t *testing.T) {
 		t.Fatalf("the copy of the homes = %v; want %v", copied, want)
 	}
 }
+
+// specs/2026-11-19-desk-trust.md TW3.5: «Удалить копии…» removes every copy of backups/ — the complete ones and one an earlier
+// removal left without its mark — and nothing else lying there; the list of the copies is empty after it, and a data directory
+// without backups/ has nothing to remove.
+func TestTheRemovalOfTheCopiesTakesOnlyTheCopies(t *testing.T) {
+	backups := t.TempDir()
+	makeCopy(t, backups, "pre-140-20261111T080000.000Z", true)
+	makeCopy(t, backups, "pre-141-20261112T080000.000Z", true)
+	makeCopy(t, backups, "pre-142-20261113T080000.000Z", false)
+	writeFile(t, filepath.Join(backups, "notes.txt"), "the author's")
+	if err := os.Mkdir(filepath.Join(backups, "pre-manual"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	list := backupList{directory: backups}
+	if copies, err := list.List(); err != nil || len(copies) != 2 {
+		t.Fatalf("the copies before = %v, %v", copies, err)
+	}
+	if err := list.Remove(); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, backups); !slices.Equal(got, []string{"notes.txt", "pre-manual"}) {
+		t.Fatalf("backups after «Удалить копии…» = %v", got)
+	}
+	if copies, err := list.List(); err != nil || len(copies) != 0 {
+		t.Fatalf("the copies after = %v, %v", copies, err)
+	}
+	if err := (backupList{directory: filepath.Join(t.TempDir(), "backups")}).Remove(); err != nil {
+		t.Fatalf("no backups/ = %v", err)
+	}
+}
+
+// TW3.5: the mark of a copy goes before its folder — a removal cut short leaves an unfinished copy, which the list does not
+// show and the next start removes, never a complete copy without its db.dump.
+func TestTheMarkOfACopyGoesBeforeItsFolder(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("a folder without the right to write keeps its files only for a user of Unix")
+	}
+	backups := t.TempDir()
+	name := "pre-140-20261111T080000.000Z"
+	makeCopy(t, backups, name, true)
+	held := filepath.Join(backups, name, "codex", "home")
+	writeFile(t, filepath.Join(held, "thread"), "a thread")
+	if err := os.Chmod(held, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(held, 0o700) })
+	if err := removeBackups(backups); err == nil {
+		t.Fatal("a removal cut short said nothing")
+	}
+	copy := filepath.Join(backups, name)
+	if _, err := os.Stat(copy); err != nil || backupFinished(copy) {
+		t.Fatalf("the copy cut short: %v, complete %v", err, backupFinished(copy))
+	}
+	if copies, err := (backupList{directory: backups}).List(); err != nil || len(copies) != 0 {
+		t.Fatalf("the list after a removal cut short = %v, %v", copies, err)
+	}
+	if err := os.Chmod(held, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeUnfinishedBackups(backups); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, backups); len(got) != 0 {
+		t.Fatalf("backups after the next start = %v", got)
+	}
+}

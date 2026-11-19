@@ -1,0 +1,31 @@
+{
+  "about": "Which host of an address of «Свой ИИ» is this computer (specs/2026-11-19-desk-trust.md TW4.1): localhost in any case, an address of the loopback 127.0.0.0/8 and ::1, in brackets or not — yes; an address of the home network, a name and anything else — no. The server (domain/aisettings LocalHost, which Own.Local reads for an address) and the page (src/editions/desktop/settings/helper/this-computer.test.ts) are held to the same rows.",
+  "hosts": [
+    { "host": "localhost", "local": true, "why": "the name of this computer" },
+    { "host": "LocalHost", "local": true, "why": "the name in another case" },
+    { "host": "LOCALHOST", "local": true, "why": "the name in capitals" },
+    { "host": "127.0.0.1", "local": true, "why": "the loopback" },
+    { "host": "127.1.2.3", "local": true, "why": "an address of 127.0.0.0/8" },
+    { "host": "127.255.255.255", "local": true, "why": "the last address of 127.0.0.0/8" },
+    { "host": "::1", "local": true, "why": "the loopback of IPv6" },
+    { "host": "[::1]", "local": true, "why": "the loopback of IPv6 in the brackets of an address" },
+    { "host": "0:0:0:0:0:0:0:1", "local": true, "why": "the loopback of IPv6 written in full" },
+    { "host": "::ffff:127.0.0.1", "local": true, "why": "the loopback of IPv4 in IPv6" },
+    { "host": "192.168.1.10", "local": false, "why": "a computer of the home network" },
+    { "host": "10.0.0.5", "local": false, "why": "a computer of the home network" },
+    { "host": "172.16.0.1", "local": false, "why": "a computer of the home network" },
+    { "host": "0.0.0.0", "local": false, "why": "no address of the loopback" },
+    { "host": "192.0.2.1", "local": false, "why": "another computer in the network (an address of the documentation: the open tree holds no public address)" },
+    { "host": "127.0.0.01", "local": false, "why": "no address: a zero before a number" },
+    { "host": "fe80::1", "local": false, "why": "an address of the network of IPv6" },
+    { "host": "::2", "local": false, "why": "another address of IPv6" },
+    { "host": "[::2]", "local": false, "why": "another address of IPv6 in brackets" },
+    { "host": "localhost.localdomain", "local": false, "why": "a name" },
+    { "host": "localhost.", "local": false, "why": "a name" },
+    { "host": "nas.local", "local": false, "why": "a name of the home network" },
+    { "host": "ollama", "local": false, "why": "a name" },
+    { "host": "127.0.0.1.nip.io", "local": false, "why": "a name that begins with the loopback" },
+    { "host": "api.deepseek.com", "local": false, "why": "a provider in the network" },
+    { "host": "", "local": false, "why": "no host" }
+  ]
+}

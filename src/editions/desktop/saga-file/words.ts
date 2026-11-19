@@ -142,12 +142,13 @@ export function openedWords({ name, renamed, report }: SagaArchiveOpened, from: 
 }
 
 /**
- * What a transfer from the site left out, in the words of the site: chapters at work and drawings — with the sections of the
- * workshops, which the app does not open — one line; what of «Недавно удалённые» and the questions of the other members.
+ * What a transfer from the site left out, in the words of the site: first, that the saga stayed on the site
+ * (specs/2026-11-19-desk-trust.md TW6.1); chapters at work and drawings — with the sections of the workshops, which the app
+ * does not open — one line; what of «Недавно удалённые» and the questions of the other members.
  */
 function siteNotes({ leftOut, sections }: SagaArchiveOpened['report']): OpenedNote[] {
   const { drafts, drawings, trashedBooks, trashedChapters, othersTurns } = leftOut;
-  const notes: OpenedNote[] = [];
+  const notes: OpenedNote[] = [{ key: 'site', text: 'Сага на сайте осталась как была — удалить её можно на сайте' }];
   if (drafts > 0 || drawings > 0 || sections.length > 0) {
     notes.push({ key: 'workshops', text: 'Главы в работе и рисунки остались на сайте — приложение их не открывает' });
   }

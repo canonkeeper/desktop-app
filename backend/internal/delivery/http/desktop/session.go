@@ -51,6 +51,8 @@ type Handlers struct {
 	Account Account
 	// Log is the journal of what went out (specs/2026-11-14-desk-journal.md JR2).
 	Log SendLog
+	// Backups removes the copies before an update (specs/2026-11-19-desk-trust.md TW3.5).
+	Backups DeleteBackups
 	// Programs are the reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3).
 	Programs       Programs
 	CSRF           func(http.Handler) http.Handler
@@ -94,6 +96,7 @@ func (handlers Handlers) Mount(router chi.Router) {
 		router.Delete("/desktop/account/link", handlers.cancelLink)
 		router.Delete("/desktop/account", handlers.unlinkAccount)
 		router.Delete("/desktop/log", handlers.clearSendLog)
+		router.Delete("/desktop/backups", handlers.deleteBackups)
 		router.Put("/desktop/programs", handlers.updateProgramAccess)
 	})
 }

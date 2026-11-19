@@ -67,7 +67,11 @@ function WelcomeWindow({ api, checkUpdates, dataDir, reading }: { api: WelcomeCl
           </li>
           <li className={styles.welcomeItem}>
             <Send aria-hidden="true" className={styles.welcomeIcon} size={18} />
-            <div className={styles.welcomeText}><span>{words.welcomeOut}</span><span className={styles.welcomeNote}>{words.welcomeLog}</span></div>
+            <div className={styles.welcomeText}>
+              <span>{words.welcomeOut}</span>
+              <span>{words.welcomeReadOnly}</span>
+              <span className={styles.welcomeNote}>{words.welcomeLog}</span>
+            </div>
           </li>
           {/* The place of the switch waits for the kind of the build; a read that failed leaves the switch (UW1.2). */}
           {update.isPending ? (

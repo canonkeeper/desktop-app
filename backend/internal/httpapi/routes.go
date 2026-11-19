@@ -68,6 +68,7 @@ func RouteCatalog() []RouteSpec {
 		{OperationID: "streamAppResponses", Method: "post", Path: "/app/ai/responses"},
 		{OperationID: "runAppStep", Method: "post", Path: "/app/ai/steps/{step}"},
 		{OperationID: "eraseDesktopData", Method: "post", Path: "/desktop/erase"},
+		{OperationID: "deleteDesktopBackups", Method: "delete", Path: "/desktop/backups"},
 		{OperationID: "dismissWelcome", Method: "post", Path: "/desktop/welcome"},
 		{OperationID: "listSendLog", Method: "get", Path: "/desktop/log"},
 		{OperationID: "clearSendLog", Method: "delete", Path: "/desktop/log"},

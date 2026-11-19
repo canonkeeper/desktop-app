@@ -5976,6 +5976,46 @@
         "x-authz": "The session of the window of the one local author of the computer; no project is involved."
       }
     },
+    "/desktop/backups": {
+      "delete": {
+        "tags": [
+          "Desktop"
+        ],
+        "operationId": "deleteDesktopBackups",
+        "summary": "Delete the copies before an update.",
+        "description": "Mounted only by the desktop build (specs/2026-11-19-desk-trust.md TW3.5): «Удалить копии…» of «Настройки → Данные». Every copy of backups/ of the data directory goes — the mark of each copy first, then its folder, so a removal cut short leaves an unfinished copy, which the next start removes; whatever else lies in backups/ and the folders before-restore-* stay. The sagas, the books and the chats are not touched; getDesktopState lists no copy after it. While an update is installed it is 409 desktop.updating and nothing is removed. The strict Origin of the window, the CSRF token and its session; ten a minute.",
+        "security": [
+          {
+            "sessionAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The copies before an update are deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        },
+        "x-strict-origin-required": true,
+        "x-backend-purpose": "resource/command",
+        "x-authz": "The session of the window of the one local author of the computer deletes the copies of its own app; no project is involved."
+      }
+    },
     "/projects/{projectId}/reading/estimate": {
       "get": {
         "tags": [

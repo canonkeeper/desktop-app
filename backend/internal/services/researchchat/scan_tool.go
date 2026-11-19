@@ -298,8 +298,16 @@ func renderScan(saga *sagaScope, chunks []*scanChunk, places []scanPlace) string
 		saga.show(place.chapter, disclosure.Excerpts, 0, 0)
 	}
 	var out strings.Builder
+	// The numbers stand first: the feed reads the first line cut to 240 signs, and the chapters read are what the author is
+	// told went whole (specs/2026-11-19-desk-trust.md TW2.1).
 	if done := chunkRanges(chunks, scanDone); len(done) > 0 {
-		fmt.Fprintf(&out, "Просмотрены главы: %s. Найдено: %d (мест: %d). Порядок — по первому появлению.\n", strings.Join(done, ", "), len(order), len(seen))
+		read := 0
+		for _, chunk := range chunks {
+			if chunk.state == scanDone {
+				read += len(chunk.chapters)
+			}
+		}
+		fmt.Fprintf(&out, "Просмотрено глав: %d. Найдено: %d (мест: %d). Главы: %s. Порядок — по первому появлению.\n", read, len(order), len(seen), strings.Join(done, ", "))
 	} else {
 		out.WriteString("Ни одна глава не просмотрена.\n")
 	}

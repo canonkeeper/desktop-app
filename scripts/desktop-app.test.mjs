@@ -170,11 +170,12 @@ test('the workflow builds both systems with pinned actions and a secret only whe
   assert.ok(!existsSync(path.join(repositoryRoot, '.github', 'workflows', 'desktop-build.yml')));
 });
 
-// specs/2026-11-13-desk-export.md EX2.2, EX2.3: the workflows of the public repository run on a push to main or to a
-// branch export/**, the build also on a tag v*, both by hand; a pull request runs nothing — the merge commit GitHub makes
+// specs/2026-11-13-desk-export.md EX2.2, EX2.3: the check of the content runs on a push to main or to a branch export/**,
+// the build on a push to a branch export/** and on a tag v* — main only fast-forwards to a branch whose run built the same
+// commit —, both by hand; a pull request runs nothing — the merge commit GitHub makes
 // carries the identity of the account that opened it. The Windows job tests the copy of the Codex homes on a real
 // Windows before it builds the installer. actionlint finds nothing.
-test('the workflows run on a push to main and to export/** and by hand, never on a pull request', () => {
+test('the build runs on export/** and a tag, the check also on main, both by hand, never on a pull request', () => {
   const directory = path.join(repositoryRoot, 'desktop', 'ci');
   const workflows = readdirSync(directory).filter((name) => name.endsWith('.yml')).sort();
   assert.deepEqual(workflows, ['desktop-build.yml', 'forbidden.yml']);
@@ -183,7 +184,7 @@ test('the workflows run on a push to main and to export/** and by hand, never on
     const workflow = yaml.load(text);
     const triggers = workflow.on;
     assert.deepEqual(Object.keys(triggers).sort(), ['push', 'workflow_dispatch'], name);
-    assert.deepEqual(triggers.push.branches, ['main', 'export/**'], name);
+    assert.deepEqual(triggers.push.branches, name === 'desktop-build.yml' ? ['export/**'] : ['main', 'export/**'], name);
     assert.deepEqual(triggers.push.tags, name === 'desktop-build.yml' ? ['v*'] : undefined, name);
     assert.deepEqual(workflow.permissions, { contents: 'read' }, name);
     const steps = Object.values(workflow.jobs).flatMap((job) => job.steps);

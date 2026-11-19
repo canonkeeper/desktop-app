@@ -104,6 +104,10 @@ type ShellUpdate struct {
 // without a version to install, a cancel of what cannot be canceled.
 var ErrUpdateState = errors.New("desktop: the update is in another phase")
 
+// ErrUpdating refuses the removal of the copies before an update while an update is installed and has closed the app to
+// new work (specs/2026-11-19-desk-trust.md TW3.5): a rule of consistency, as the start of a transfer.
+var ErrUpdating = errors.New("desktop: an update of the app is installed")
+
 // UpdateOf is what the page reads of the update the shell reported (UB1.7): the file downloaded and checked waits for the
 // turns of the chat until the backend asked to install it, then it installs.
 func UpdateOf(shell ShellUpdate, kind UpdateKind, installing bool) (UpdatePhase, UpdateFound) {

@@ -269,6 +269,8 @@ func (desktop *build) compose(core app.Core) (app.Modules, error) {
 			},
 		},
 		Erase: service.EraseData{Shell: desktop.shell, Account: desktop.account.parts.Unlink},
+		// specs/2026-11-19-desk-trust.md TW3.5: «Удалить копии…» removes the copies before an update, not while one is installed.
+		Backups: service.DeleteBackups{Backups: backupList{directory: DataDir{Root: desktop.state.DataDir}.Backups()}, Gate: desktop.updates.gate},
 		// specs/2026-11-14-desk-journal.md JR2: the journal of what went out, read, saved and cleared by «Настройки → Журнал».
 		Log:     service.SendLog{Store: journal, Clears: desktop.settings, Checks: checks, Now: time.Now},
 		Account: desktop.account.handlers(),
@@ -503,4 +505,6 @@ var windowRateLimits = map[string]ratelimit.Rule{
 	// the whole choice, the heaviest read of the window.
 	"clearSendLog":   {Limit: 10, Window: time.Minute},
 	"getSendLogFile": {Limit: 10, Window: time.Minute},
+	// The copies before an update are removed by a button (specs/2026-11-19-desk-trust.md TW3.5).
+	"deleteDesktopBackups": {Limit: 10, Window: time.Minute},
 }

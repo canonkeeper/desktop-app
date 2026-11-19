@@ -201,14 +201,35 @@ const describers: Record<SagaKind, (args: Record<string, unknown>, summary: stri
   scan(args, summary, places) {
     const task = text(args.task);
     const sought = task ? `: «${shorten(task, 80)}»` : '';
-    const found = summary ? /Найдено: (\d+)/u.exec(summary) : null;
-    const count = found ? Number(found[1]) : undefined;
     return withOptional({
       label: join(`${plainWords.scan[0]}${sought}`, range(args, places), books(args, 'книга', 'книги')),
       activity: `${plainWords.scan[1]}${task ? `: «${shorten(task, 60)}»` : ''}`,
-    }, { detail: count === undefined ? undefined : count === 0 ? 'ничего не нашёл' : `${count} ${plural(count, ['место', 'места', 'мест'])}` });
+    }, { detail: scanDetail(summary) });
   },
 };
+
+/**
+ * «40 глав · 7 мест»: the chapters a reading through read and the places it found, from the head of its first line
+ * (specs/2026-11-19-desk-trust.md TW2.2) — a place is M of «(мест: M)», never N of «Найдено: N». A line of the former
+ * kind, without the chapters, keeps its former detail.
+ */
+function scanDetail(summary: string | undefined) {
+  const head = summary?.split('\n', 1)[0] ?? '';
+  const counted = /^Просмотрено глав: (\d+)\. Найдено: (\d+) \(мест: (\d+)\)/u.exec(head);
+  if (counted) {
+    const chapters = Number(counted[1]);
+    const found = Number(counted[3]);
+    return `${chapters} ${plural(chapters, ['глава', 'главы', 'глав'])} · ${found === 0 ? 'ничего не нашёл' : placesWord(found)}`;
+  }
+  const former = /Найдено: (\d+)(?: \(мест: (\d+)\))?/u.exec(head);
+  if (!former) return undefined;
+  const found = Number(former[2] ?? former[1]);
+  return found === 0 ? 'ничего не нашёл' : placesWord(found);
+}
+
+function placesWord(count: number) {
+  return `${count} ${plural(count, ['место', 'места', 'мест'])}`;
+}
 
 function readSpan(args: Record<string, unknown>): { from: number; to: number } | null {
   const from = integer(args.from);

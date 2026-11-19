@@ -44,7 +44,7 @@ describe('the choice of the helper in «Помощник»', () => {
     await screen.findByRole('button', { name: /^Провайдер/u });
     expect(option('Свой ИИ').checked).toBe(true);
     fireEvent.click(option('Аккаунт CanonKeeper'));
-    expect(await screen.findByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего')).toBeTruthy();
+    expect(await screen.findByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего. Обучение на ваших текстах выключено')).toBeTruthy();
     expect(await screen.findByText('Модель для чата: gpt-north-chat')).toBeTruthy();
     expect(screen.getByText('Модель для чтения книг: gpt-north-cards')).toBeTruthy();
     // Nothing to set up: no check of the link, no list of models, no provider.
@@ -200,7 +200,7 @@ describe('the choice of the helper in «Помощник»', () => {
     const applies = await screen.findByText('Применится после ответа помощника');
     const choice = screen.getByRole('group', { name: 'Откуда помощник' });
     expect(choice.compareDocumentPosition(applies) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(applies.compareDocumentPosition(screen.getByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(applies.compareDocumentPosition(screen.getByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего. Обучение на ваших текстах выключено')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   // Board 44·9 «Аккаунт, не связано»: the helper of the account of an app not linked says to link it first, beside the button.
@@ -214,7 +214,7 @@ describe('the choice of the helper in «Помощник»', () => {
     const first = await screen.findByText('Сначала свяжите приложение с аккаунтом');
     const link = await screen.findByRole('button', { name: 'Связать с аккаунтом' });
     expect(first.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего')).toBeNull();
+    expect(screen.queryByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего. Обучение на ваших текстах выключено')).toBeNull();
   });
 });
 
@@ -242,7 +242,7 @@ describe('the window «Подключить помощника»', () => {
     }
     renderWithLink(api, <Page />);
     const account = await screen.findByRole('region', { name: 'Аккаунт CanonKeeper' });
-    expect(within(account).getByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего')).toBeTruthy();
+    expect(within(account).getByText('Помощник CanonKeeper по вашему тарифу. Настраивать нечего. Обучение на ваших текстах выключено')).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Свой ИИ' })).getByText('Ключ и адрес вашего провайдера. Тариф не тратится')).toBeTruthy();
     fireEvent.click(await within(account).findByRole('button', { name: 'Связать с аккаунтом' }));
     await waitFor(() => expect(started).toHaveBeenCalledWith({ chooseHelper: true }));

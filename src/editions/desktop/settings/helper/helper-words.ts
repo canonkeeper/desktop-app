@@ -15,10 +15,12 @@ export type Verdict = Schema<'AiVerdict'>;
  */
 export const helperWords = {
   intro: 'Помощник будет отвечать в чате и читать книги саги через вашего провайдера ИИ — по вашему ключу.',
-  introSends: 'Вопросы чата и текст глав, которые он читает, уйдут этому провайдеру.',
+  introSends: 'Вопросы чата и текст глав, которые он читает, уйдут этому провайдеру. Учится ли он на ваших текстах и хранит ли их, решают его правила.',
   provider: 'Провайдер',
   providerChoose: 'Выберите провайдера',
   address: 'Адрес провайдера',
+  // specs/2026-11-19-desk-trust.md TW4.2: an address of http to another computer.
+  addressPlain: 'Адрес без https: текст пойдёт по сети без шифрования. Так можно только в своей домашней сети',
   protocol: 'Протокол',
   protocolHint: '«Определить» — приложение само узнает, как говорить с провайдером',
   key: 'Ключ',
@@ -152,6 +154,8 @@ export const fieldWords: Record<string, string> = {
 
 /** «Хранится в хранилище паролей системы» and the file of the data directory (44·25, «Ключ в файле»); before the key is kept — where it goes. */
 export function keyStoreWords(store: Schema<'AiSettingsState'>['secretsStore'], kept: boolean) {
-  if (store === 'file') return kept ? 'Хранится в файле в папке данных: в системе нет хранилища паролей' : 'Сохранится в файле в папке данных: в системе нет хранилища паролей';
+  if (store === 'file') {
+    return kept ? 'Хранится в файле в папке данных без шифрования: в системе нет хранилища паролей' : 'Сохранится в файле в папке данных без шифрования: в системе нет хранилища паролей';
+  }
   return kept ? 'Хранится в хранилище паролей системы' : 'Сохранится в хранилище паролей системы';
 }

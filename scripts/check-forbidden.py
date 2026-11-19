@@ -146,7 +146,11 @@ def published_objects(repo):
 def public_ip(octets):
     if any(int(octet) > 255 for octet in octets):
         return False
-    address = ipaddress.ip_address(".".join(octets))
+    try:
+        address = ipaddress.ip_address(".".join(octets))
+    except ValueError:
+        # «127.0.0.01»: a zero before a number is no address.
+        return False
     if address.is_loopback or address.is_private or address.is_unspecified or address.is_reserved:
         return False
     if address.is_multicast or address.is_link_local or any(address in net for net in DOC_NETWORKS):

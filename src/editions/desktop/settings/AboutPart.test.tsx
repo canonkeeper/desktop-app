@@ -32,6 +32,19 @@ describe('«О программе» of «Настройки»', () => {
     expect(screen.queryByText(/закрытый модуль|Лицензии/u)).toBeNull();
   });
 
+  // specs/2026-11-19-desk-trust.md TW5: the license covers the code, not the books — under the open core; what stays if the site
+  // closes — a block after the network.
+  it('says the license covers the code and not the books, and what stays if the site closes', async () => {
+    shellOfTheWindow();
+    renderPart(AboutPart, appOnTheComputer);
+    const core = (await screen.findByText('Ядро CanonKeeper открыто')).parentElement!;
+    expect(core.nextElementSibling?.textContent).toBe('Лицензия касается кода программы, а не ваших книг: права на тексты остаются у вас');
+    const network = screen.getByRole('group', { name: 'Куда приложение ходит в сеть' });
+    const site = screen.getByRole('group', { name: 'Если сайт CanonKeeper закроется' });
+    expect(network.nextElementSibling).toBe(site);
+    expect(within(site).getByText('Книги, чтение, поиск, заметки и правка глав останутся: они работают на этом компьютере без сайта. Помощник через вашего провайдера тоже продолжит работать. Перестанут работать помощник по аккаунту и перенос саг с сайта; обновления будут приходить с GitHub, пока CanonKeeper там')).toBeTruthy();
+  });
+
   // specs/2026-11-14-desk-journal.md JR4.3: the empty list says when addresses appear, and no line of a proxy stands without one.
   it('says the app goes nowhere while the list of the server is empty, and when addresses appear', async () => {
     shellOfTheWindow();

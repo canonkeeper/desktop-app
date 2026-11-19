@@ -48,22 +48,37 @@ export function AccountPart({ api }: SettingsPartProps) {
 
 /** Not linked, waiting or failed (AW2.1, AW2.4): the words of the build, the place of «Связать…», what goes through the server. */
 function NotLinked({ account }: { account: DesktopAccount }) {
-  const [open, setOpen] = useState(false);
-  const server = useId();
   return (
     <div className={styles.part}>
       <p className={styles.text}>{accountWords.intro}</p>
       {account.state === 'failed' && account.failure ? <Alert role="note" tone="error">{failureLine(account.failure, account.passStore)}</Alert> : null}
+      <ServerDisclosure><LinkStart account={account} chooseHelper={false} /></ServerDisclosure>
+    </div>
+  );
+}
+
+/**
+ * «Что проходит через сервер» (AW2.1; specs/2026-11-19-desk-trust.md TW1.1): what goes through the server and with whom the
+ * helper works — the same disclosure linked or not, after the actions beside it.
+ */
+function ServerDisclosure({ children }: { children?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const server = useId();
+  return (
+    <>
       <div className={styles.actions}>
-        <LinkStart account={account} chooseHelper={false} />
+        {children}
         <Button aria-controls={server} aria-expanded={open} onClick={() => setOpen((shown) => !shown)} size="sm" variant="ghost">
           {open ? <ChevronDown aria-hidden="true" size={14} /> : <ChevronRight aria-hidden="true" size={14} />}{accountWords.server}
         </Button>
       </div>
       <div hidden={!open} id={server}>
-        <Alert role="note" tone="info">{accountWords.serverLine}</Alert>
+        <Alert className={styles.serverLines} role="note" tone="info">
+          <p>{accountWords.serverLine}</p>
+          <p>{accountWords.provider}</p>
+        </Alert>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -105,10 +120,13 @@ function Linked({ account, api }: { account: DesktopAccount; api: SettingsPartPr
   return (
     <div className={styles.part}>
       {info === null ? (
-        <Alert className={styles.offline} role="note" tone="info">
-          <span>{accountWords.offlineEmpty}</span>
-          <span className={styles.offlineActions}>{refreshButton}{more}</span>
-        </Alert>
+        <>
+          <Alert className={styles.offline} role="note" tone="info">
+            <span>{accountWords.offlineEmpty}</span>
+            <span className={styles.offlineActions}>{refreshButton}{more}</span>
+          </Alert>
+          <ServerDisclosure />
+        </>
       ) : (
         <>
           {account.unreachable ? (
@@ -124,6 +142,7 @@ function Linked({ account, api }: { account: DesktopAccount; api: SettingsPartPr
             <Lock aria-hidden="true" className={styles.factIcon} size={16} />
             <span className={styles.note}>{account.passStore === 'file' ? accountWords.storeFile : accountWords.storeSystem}</span>
           </p>
+          <ServerDisclosure />
         </>
       )}
       {asking ? (

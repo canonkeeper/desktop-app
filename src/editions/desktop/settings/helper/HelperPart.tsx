@@ -25,6 +25,7 @@ import { KeyField } from './KeyField';
 import { ModelFields, type ModelRole, type NoList } from './ModelFields';
 import { ProgramsBlock } from './ProgramsBlock';
 import { SourceChoice } from './SourceChoice';
+import { plainToTheNetwork } from './this-computer';
 import styles from './Helper.module.css';
 
 /** Both models are named: the check asks them. */
@@ -241,6 +242,7 @@ function OwnAi({ api, onUnsaved, state }: { api: HelperClient; onUnsaved: (held:
               <Field
                 autoComplete="url"
                 error={refused === '/own/baseUrl' ? fieldWords['/own/baseUrl'] : undefined}
+                hint={plainToTheNetwork(chosen.baseUrl) ? helperWords.addressPlain : undefined}
                 id={addressId}
                 inputMode="url"
                 label={helperWords.address}

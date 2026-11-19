@@ -51,11 +51,14 @@ export function restWords(names: boolean, threads: boolean, form: 'full' | 'shor
   return `${heroes} и ${plot}`;
 }
 
-/** What the helper does and where the text goes (RW2.1): the host of the provider, or the program on this computer. */
+/**
+ * What the helper does and where the text goes (RW2.1): the host of the provider, whose rules decide whether it learns on the
+ * texts and keeps them (specs/2026-11-19-desk-trust.md TW1.4), or the program on this computer.
+ */
 export function consentMessage(estimate: ReadingEstimate) {
   const where = estimate.local
     ? `Текст книг получит программа на этом компьютере (${estimate.host}) — не провайдер в сети.`
-    : `Текст книг уйдёт вашему провайдеру ${estimate.host}`;
+    : `Текст книг уйдёт вашему провайдеру ${estimate.host}. Учится ли провайдер на ваших текстах и хранит ли их, решают его правила — проверьте их до чтения`;
   if (estimate.chapters === 0) {
     return estimate.namesWait || estimate.threadsWait
       ? `Главы прочитаны. Помощнику осталось свести ${restWords(estimate.namesWait, estimate.threadsWait)}. ${where}`

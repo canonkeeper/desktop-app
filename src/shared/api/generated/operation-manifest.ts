@@ -64,6 +64,7 @@ export const operationManifest = {
   "deleteChapter": { method: "DELETE", path: "/chapters/{chapterId}", pathParams: ["chapterId"] },
   "deleteChapterDraft": { method: "DELETE", path: "/projects/{projectId}/chapter-drafts/{draftId}", pathParams: ["projectId", "draftId"] },
   "deleteChatSession": { method: "DELETE", path: "/chats/{chatId}", pathParams: ["chatId"] },
+  "deleteDesktopBackups": { method: "DELETE", path: "/desktop/backups", pathParams: [] },
   "deleteDrawing": { method: "DELETE", path: "/projects/{projectId}/drawings/{drawingId}", pathParams: ["projectId", "drawingId"] },
   "deletePersonalNote": { method: "DELETE", path: "/personal-notes/{noteId}", pathParams: ["noteId"] },
   "deleteProject": { method: "DELETE", path: "/projects/{projectId}", pathParams: ["projectId"] },

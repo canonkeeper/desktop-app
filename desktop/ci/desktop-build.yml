@@ -5,7 +5,8 @@
 # Windows: NSIS for the current user; Linux (built on ubuntu-24.04): .deb, .rpm and AppImage. Every third-party action is
 # pinned by its commit, every file the bundler takes from outside by its sum (desktop/release.json).
 #
-# It runs on a push to main, to a branch of an export (export/<date>) and on a tag v*, and by hand. Not on a pull
+# It runs on a push to a branch of an export (export/<date>) and on a tag v*, and by hand. Not on a push to main: main
+# only fast-forwards to a branch of an export whose run already built and checked the same commit. Not on a pull
 # request: the merge commit GitHub makes for one carries the identity of the account that opened it, and the public
 # repository takes no such commit (specs/2026-11-13-desk-export.md EX2.2).
 #
@@ -35,7 +36,7 @@ name: Desktop installers
 
 on:
   push:
-    branches: [main, "export/**"]
+    branches: ["export/**"]
     tags: ["v*"]
   workflow_dispatch:
 

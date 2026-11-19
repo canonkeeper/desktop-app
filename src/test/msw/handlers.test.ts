@@ -1795,6 +1795,7 @@ const expectedSuccessStatuses: Partial<Record<OperationId, number>> = {
   startReadingSample: 202,
   cancelReadingSample: 204,
   eraseDesktopData: 202,
+  deleteDesktopBackups: 204,
   dismissWelcome: 204,
   cancelAccountLink: 204,
   beginObsidianVaultChoice: 202,

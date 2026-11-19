@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { canonKeeperQueryKeys } from '../../../entities/session/api';
 import type { CanonKeeperApiClient, OperationResponse } from '../../../shared/api';
 
@@ -31,6 +31,18 @@ export function useDesktopState(api: DesktopStateClient) {
     queryFn: ({ meta, signal }) => stateApi(meta).getDesktopState({ signal }),
     meta: { canonKeeperApi: api, outageScope: 'local' },
     refetchInterval: (query) => (query.state.data?.usage.counting ? countingPollMs : false),
+  });
+}
+
+/**
+ * «Удалить копии…» (specs/2026-11-19-desk-trust.md TW3.4, TW3.5): one operation, then the state is read again — the block of
+ * the copies goes by the new read of the server, and the operation is done once that read came.
+ */
+export function useDeleteBackups(api: Pick<CanonKeeperApiClient, 'deleteDesktopBackups'>) {
+  const queries = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteDesktopBackups(),
+    onSuccess: () => queries.invalidateQueries({ queryKey: desktopStateQueryKey }),
   });
 }
 

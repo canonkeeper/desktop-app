@@ -58,7 +58,14 @@ describe('«Добро пожаловать» of the app', () => {
     expect(within(window).getByRole('heading', { name: 'CanonKeeper на вашем компьютере' })).toBeTruthy();
     expect(within(window).getByText('Книги и всё, что вы создадите, лежат на этом компьютере')).toBeTruthy();
     expect(within(window).getByText(appOnTheComputer.dataDir)).toBeTruthy();
-    expect(within(window).getByText('Из ваших книг и чатов наружу уходит только то, что нужно помощнику, — когда вы спрашиваете или он читает книги')).toBeTruthy();
+    // specs/2026-11-19-desk-trust.md TW2.3, TW2.4: what goes out — the whole chapters of a search of the whole saga too —, then
+    // that the helper only reads, then the journal.
+    const out = within(window).getByText('Наружу уходит то, что нужно помощнику: ваш вопрос, прежний разговор чата, места книг и главы, которые вы приложили, ваши материалы, когда вы их загружаете, а когда он ищет по всей саге или читает книги — главы целиком');
+    expect([...out.parentElement!.children].map((line) => line.textContent)).toEqual([
+      'Наружу уходит то, что нужно помощнику: ваш вопрос, прежний разговор чата, места книг и главы, которые вы приложили, ваши материалы, когда вы их загружаете, а когда он ищет по всей саге или читает книги — главы целиком',
+      'Текст ваших книг помощник не меняет — он только читает его',
+      'Журнал в «Настройках» показывает каждую отправку вашего текста',
+    ]);
     const check = await within(window).findByRole('switch', { name: 'При запуске и раз в день приложение спрашивает, есть ли новая версия' });
     expect(check.getAttribute('aria-checked')).toBe('true');
     const start = within(window).getByRole('button', { name: 'Начать' });

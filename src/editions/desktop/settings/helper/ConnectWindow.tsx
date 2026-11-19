@@ -19,7 +19,7 @@ export const connectWords = {
   title: 'Подключить помощника',
   close: 'Закрыть',
   account: 'Аккаунт CanonKeeper',
-  accountLine: 'Помощник CanonKeeper по вашему тарифу. Настраивать нечего',
+  accountLine: 'Помощник CanonKeeper по вашему тарифу. Настраивать нечего. Обучение на ваших текстах выключено',
   choose: 'Выбрать',
   own: 'Свой ИИ',
   ownLine: 'Ключ и адрес вашего провайдера. Тариф не тратится',

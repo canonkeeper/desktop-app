@@ -307,6 +307,8 @@ export interface CanonKeeperApiClient {
   getCurrentUser(options?: ApiRequestOptions): Promise<OperationResponse<'getCurrentUser', '200'>>;
   getDesktopState(options?: ApiRequestOptions): Promise<OperationResponse<'getDesktopState', '200'>>;
   eraseDesktopData(body: OperationRequest<'eraseDesktopData'>): Promise<void>;
+  /** «Удалить копии…» of «Настройки → Данные» (specs/2026-11-19-desk-trust.md TW3.5). */
+  deleteDesktopBackups(): Promise<void>;
   dismissWelcome(body: OperationRequest<'dismissWelcome'>): Promise<void>;
   listSendLog(query: SendLogQuery<'listSendLog'>, options?: ApiRequestOptions): Promise<OperationResponse<'listSendLog', '200'>>;
   listSendLogSendings(query: SendLogQuery<'listSendLogSendings'>, options?: ApiRequestOptions): Promise<OperationResponse<'listSendLogSendings', '200'>>;

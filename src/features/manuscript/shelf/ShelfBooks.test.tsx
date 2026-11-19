@@ -198,6 +198,12 @@ describe('a large shelf', () => {
     expect(screen.getAllByRole('article')).toHaveLength(13);
   });
 
+  it('says nothing of a search on a shelf with no books', () => {
+    renderShelf({ books: [] });
+    expect(screen.queryByText(/Ничего не нашлось/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Сбросить поиск' })).toBeNull();
+  });
+
   it('shows the books as a list with the same links and words, and the browser keeps the choice', () => {
     const view = renderShelf({ books: many(14) });
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Вид книг' })).getByRole('radio', { name: 'Списком' }));

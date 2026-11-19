@@ -28,17 +28,26 @@ export const networkWords = {
   programs: 'Чтение саг вашим Claude или Codex включено — куда они отправляют прочитанное, решают они',
 } as const;
 
+/** What the license covers and what stays without the site (specs/2026-11-19-desk-trust.md TW5). */
+export const aboutWords = {
+  license: 'Лицензия касается кода программы, а не ваших книг: права на тексты остаются у вас',
+  withoutSite: 'Если сайт CanonKeeper закроется',
+  withoutSiteText: 'Книги, чтение, поиск, заметки и правка глав останутся: они работают на этом компьютере без сайта. Помощник через вашего провайдера тоже продолжит работать. Перестанут работать помощник по аккаунту и перенос саг с сайта; обновления будут приходить с GitHub, пока CanonKeeper там',
+} as const;
+
 /**
  * «О программе» (specs/2026-11-13-desk-settings.md ST4.1–ST4.3; board 44·16, `Pattern/Desktop/Settings About`): the version
- * the backend names, the open core and its code, where the app goes in the network by the list of the server and the proxy of
- * the environment (specs/2026-11-14-desk-journal.md JR4.3), «Сообщить о проблеме» and «Написать нам». No line of a work not
- * done yet.
+ * the backend names, the open core and its code — the license covers the code, not the books —, where the app goes in the
+ * network by the list of the server and the proxy of the environment (specs/2026-11-14-desk-journal.md JR4.3), what stays if
+ * the site closes (specs/2026-11-19-desk-trust.md TW5), «Сообщить о проблеме» and «Написать нам». No line of a work not done
+ * yet.
  */
 export function AboutPart({ api }: SettingsPartProps) {
   const state = useDesktopState(api);
   const toasts = useToasts();
   const shell = desktopShell();
   const network = useId();
+  const withoutSite = useId();
   return (
     <>
       {state.isPending ? <SkeletonArea count={1} shape="lines" /> : state.data?.version ? <p className={styles.text}>{`Версия ${state.data.version}`}</p> : null}
@@ -46,6 +55,7 @@ export function AboutPart({ api }: SettingsPartProps) {
         <span className={styles.text}>Ядро CanonKeeper открыто</span>
         <LinkAction {...external(sourceUrl, shell, toasts)} className={styles.source}>Исходный код</LinkAction>
       </p>
+      <p className={styles.note}>{aboutWords.license}</p>
       <div aria-labelledby={network} className={styles.section} role="group">
         <p className={styles.label} id={network}>Куда приложение ходит в сеть</p>
         {state.isPending ? <SkeletonArea count={2} shape="lines" /> : state.isError ? (
@@ -68,6 +78,10 @@ export function AboutPart({ api }: SettingsPartProps) {
             {state.data.proxy ? <p className={styles.note}>{networkWords.proxy(state.data.proxy)}</p> : null}
           </>
         )}
+      </div>
+      <div aria-labelledby={withoutSite} className={styles.section} role="group">
+        <p className={styles.label} id={withoutSite}>{aboutWords.withoutSite}</p>
+        <p className={styles.text}>{aboutWords.withoutSiteText}</p>
       </div>
       <div className={styles.actions}>
         <ButtonLink {...external(issuesUrl, shell, toasts)} variant="outline"><Bug aria-hidden="true" size={16} />Сообщить о проблеме</ButtonLink>

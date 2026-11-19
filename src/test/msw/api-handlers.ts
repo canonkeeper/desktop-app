@@ -281,6 +281,10 @@ export function createApiHandlers(options: ApiHandlersOptions = {}) {
       async () => repository.eraseDesktopData((await readJson(request)) as OperationRequest<'eraseDesktopData'>),
       { csrfState, operationId: 'eraseDesktopData', request, repository }, { status: 202 },
     )),
+    // «Удалить копии…» of the desktop app (specs/2026-11-19-desk-trust.md TW3.5).
+    http.delete(mswPath('deleteDesktopBackups'), ({ request }) => emptyResponse(
+      () => repository.deleteDesktopBackups(), { csrfState, operationId: 'deleteDesktopBackups', request, repository },
+    )),
     // «Добро пожаловать» of the desktop app (specs/2026-11-13-desk-upgrade.md UG5.1).
     http.post(mswPath('dismissWelcome'), async ({ request }) => emptyResponse(
       async () => repository.dismissWelcome((await readJson(request)) as OperationRequest<'dismissWelcome'>),

@@ -314,8 +314,8 @@ export function createSessionOperations(context: MockRepositoryContext) {
 
   /**
    * getDesktopState (specs/2026-11-13-desk-settings.md ST2.1): the app on the computer of the local author — its version,
-   * where its data lie and the place they take, two copies before an update (the older one made before the copies named
-   * their version), where it goes — one line of the site while linked, which names the questions to the helper and the
+   * where its data lie and the place they take, the copies before an update (two, the older one made before the copies named
+   * their version, until «Удалить копии…»), where it goes — one line of the site while linked, which names the questions to the helper and the
    * reading of the books while the source is the account (specs/2026-11-13-desk-account-ai.md AI1.7) — and whether «Добро
    * пожаловать» is still to be shown.
    */
@@ -328,10 +328,7 @@ export function createSessionOperations(context: MockRepositoryContext) {
       version: '1.2.0',
       dataDir: '/home/author/.local/share/canonkeeper',
       usage: { bytes: 1_288_490_188, counting: false },
-      backups: [
-        { madeAt: '2026-11-12T09:15:00.000Z', version: '1.1.4' },
-        { madeAt: '2026-11-02T08:00:00.000Z', version: null },
-      ],
+      backups: clone(context.state.desktopBackups),
       network: networkOf(),
       welcome: context.state.desktopWelcome.shown,
       checkUpdates: context.state.desktopWelcome.checkUpdates,
@@ -450,6 +447,21 @@ export function createSessionOperations(context: MockRepositoryContext) {
     }
   }
 
+  /**
+   * deleteDesktopBackups (specs/2026-11-19-desk-trust.md TW3.5): the copies before an update go; while an update is installed
+   * — the gate of the turns is closed — 409 desktop.updating and nothing goes.
+   */
+  async function deleteDesktopBackups(): Promise<void> {
+    context.applyOperation('deleteDesktopBackups');
+    if (!context.state.session) {
+      throw new MockApiError(401, 'Сессия отсутствует.', 'deleteDesktopBackups', 'auth.session_required');
+    }
+    if (context.state.appUpdate.phase === 'installing') {
+      throw new MockApiError(409, 'an update of the app is installed', 'deleteDesktopBackups', 'desktop.updating');
+    }
+    context.state.desktopBackups = [];
+  }
+
   async function getCurrentUser(): Promise<OperationResponse<'getCurrentUser', '200'>> {
     context.applyOperation('getCurrentUser');
     if (!context.state.session) {
@@ -492,6 +504,7 @@ export function createSessionOperations(context: MockRepositoryContext) {
     cancelAppUpdate,
     updateAppUpdateSettings,
     eraseDesktopData,
+    deleteDesktopBackups,
     getCurrentUser,
   };
 }

@@ -503,7 +503,7 @@ func (own Own) Host() string {
 }
 
 // Local says the model works on the computer of the author (specs/2026-11-13-desk-consent.md CN1.3): the variant Ollama or
-// an address on the loopback — the text of the books does not leave the computer.
+// an address whose host is this computer — the text of the books does not leave the computer.
 func (own Own) Local() bool {
 	if own.Preset == PresetOllama {
 		return true
@@ -512,8 +512,17 @@ func (own Own) Local() bool {
 	if err != nil {
 		return false
 	}
-	host := parsed.Hostname()
-	if host == "localhost" {
+	return LocalHost(parsed.Hostname())
+}
+
+// LocalHost says a host is this computer (specs/2026-11-19-desk-trust.md TW4.1): localhost in any case or an address of the
+// loopback — 127.0.0.0/8, ::1 —, in the brackets of an address or not; an address of the home network, a name and anything
+// else are not. One table holds the rule for the server and the page: testdata/local-hosts.json.
+func LocalHost(host string) bool {
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	if strings.EqualFold(host, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(host)

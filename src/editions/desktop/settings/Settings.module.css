@@ -78,6 +78,14 @@
   padding-top: 18px;
 }
 
+/* A heading of a block with its «⋯»: the copies before an update (specs/2026-11-19-desk-trust.md TW3.4). */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .label {
   margin: 0;
   color: var(--ck-foreground);

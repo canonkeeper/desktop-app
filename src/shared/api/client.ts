@@ -475,6 +475,11 @@ export class OpenApiCanonKeeperClient extends OpenApiClientTransport implements 
     await this.request<'eraseDesktopData', '202'>('eraseDesktopData', { body });
   }
 
+  /** «Удалить копии…»: the copies before an update go (specs/2026-11-19-desk-trust.md TW3.5). */
+  async deleteDesktopBackups() {
+    await this.request<'deleteDesktopBackups', '204'>('deleteDesktopBackups');
+  }
+
   /**
    * The link of the desktop app with an account of the site (specs/2026-11-13-desk-account.md AC2.1); `fresh` asks the site
    * now (specs/2026-11-15-desk-account-link-web.md AW2.2 «Обновить сведения»).

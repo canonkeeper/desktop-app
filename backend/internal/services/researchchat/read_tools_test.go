@@ -302,7 +302,7 @@ func TestScanGroupsFindingsByItemAcrossChunks(t *testing.T) {
 	if len(model.inputs) != 3 {
 		t.Fatalf("scan inputs = %q, want one chunk per chapter", model.inputs)
 	}
-	want := "Просмотрены главы: гл. 1–3. Найдено: 1 (мест: 3). Порядок — по первому появлению.\n" +
+	want := "Просмотрено глав: 3. Найдено: 1 (мест: 3). Главы: гл. 1–3. Порядок — по первому появлению.\n" +
 		"- вьюжница — мест: 3; впервые гл. 1 (¶2): «Вьюжница ждала у ворот.»; также: гл. 2, гл. 3 (¶1)\n"
 	if output != want {
 		t.Fatalf("scan output = %q, want %q", output, want)
@@ -395,7 +395,7 @@ func TestScanStopsAtItsBudgetAndNamesTheNextChapter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(model.inputs) != 2 || !strings.HasPrefix(output, "Просмотрены главы: гл. 1–2.") ||
+	if len(model.inputs) != 2 || !strings.HasPrefix(output, "Просмотрено глав: 2. Найдено: 1 (мест: 2). Главы: гл. 1–2.") ||
 		!strings.Contains(output, "Не успел за один вызов: гл. 3. Продолжите scan с from=3 и тем же task.\n") {
 		t.Fatalf("scan output = %q after %d model calls", output, len(model.inputs))
 	}
@@ -565,7 +565,7 @@ func TestScanSkipsAChapterLongerThanFourChunks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Просмотрены главы: гл. 1, гл. 3. Найдено: 1 (мест: 2). Порядок — по первому появлению.\n" +
+	want := "Просмотрено глав: 2. Найдено: 1 (мест: 2). Главы: гл. 1, гл. 3. Порядок — по первому появлению.\n" +
 		"Глава 2 слишком длинная для scan (219 знаков): ищите в ней через search или читайте read с from/to по абзацам.\n" +
 		"- вьюжница — мест: 2; впервые гл. 1 (¶2): «Вьюжница ждала у ворот.»; также: гл. 3 (¶1)\n"
 	if output != want {

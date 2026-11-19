@@ -307,7 +307,7 @@ describe('the line of the reading by «Свой ИИ»', () => {
     [{ namesWait: true, threadsWait: true }, 'имена героев и сюжетные нити'],
   ])('says in the windows what is left: %o', (signs, words) => {
     const estimate = { chapters: 0, host: 'api.deepseek.com', local: false, amount: 4_000_000, unit: 'RUB', inputTokens: 1, outputTokens: 1, ...signs } as ReadingEstimate;
-    expect(plain(consentMessage(estimate))).toBe(`Главы прочитаны. Помощнику осталось свести ${words}. Текст книг уйдёт вашему провайдеру api.deepseek.com`);
+    expect(plain(consentMessage(estimate))).toBe(`Главы прочитаны. Помощнику осталось свести ${words}. Текст книг уйдёт вашему провайдеру api.deepseek.com. Учится ли провайдер на ваших текстах и хранит ли их, решают его правила — проверьте их до чтения`);
     expect(plain(noSumMessage(estimate))).toMatch(new RegExp(`^Помощник сведёт ${words} и прочитает книги, которые вы добавите позже`, 'u'));
   });
 

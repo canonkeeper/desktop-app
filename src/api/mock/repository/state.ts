@@ -199,6 +199,11 @@ export type MockState = {
    * computer of the mock has said its welcome, so the scenarios open without the window (specs/2026-11-15-desk-updates-web.md).
    */
   desktopWelcome: { shown: boolean; checkUpdates: boolean };
+  /**
+   * The copies before an update of getDesktopState, the newest first — the older one made before the copies named their
+   * version —, until «Удалить копии…» (specs/2026-11-19-desk-trust.md TW3.5).
+   */
+  desktopBackups: Schema<'DesktopState'>['backups'];
   /** The journal of what went out of the app and when it was cleared (specs/2026-11-14-desk-journal.md JR2). */
   sendLog: { rows: MockSendLogRow[]; clearedAt: string | null };
   /** The reading of the sagas by the programs of the author (specs/2026-11-15-desk-mcp.md MC3.1). */
@@ -726,6 +731,10 @@ function createInitialState(): MockState {
     aiKeyRefused: false,
     aiWindowWaits: false,
     desktopWelcome: { shown: false, checkUpdates: true },
+    desktopBackups: [
+      { madeAt: '2026-11-12T09:15:00.000Z', version: '1.1.4' },
+      { madeAt: '2026-11-02T08:00:00.000Z', version: null },
+    ],
     sendLog: { rows: mockSendLog(), clearedAt: null },
     programs: { enabled: false, ever: false },
     appUpdate: { phase: 'idle', found: 'never', available: null, percent: null, checkedAt: null },

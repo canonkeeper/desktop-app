@@ -1409,7 +1409,7 @@ export interface paths {
         put?: never;
         /**
          * Run a request of a turn of the chat of the app on the models of the site.
-         * @description specs/2026-11-13-desk-proxy.md PX1: the proxy of the Responses API for a turn of the chat of a linked app. Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of a turn (chat_turn) of this app: no pass is 401 app.pass_invalid; no permit, one of another app or none is 404 app.permit_not_found; one that ended is 409 app.permit_closed; one of another kind is 400 app.permit_kind — before any request to the provider. The body is a request of a turn of Codex, as it is or compressed by gzip (Content-Encoding: gzip), up to 64 MiB after its decompression: over it 413 app.request_too_large. The site trusts nothing of it: it streams and the provider keeps nothing (stream true, store false), the model and the effort of the reasoning are those of the chat of the site whatever the app names, the fields of a state, of the client, of a price, of a cache and of saved prompts are removed, the key of the cache is bound to the app, a field the site does not know is 400 request.validation, and a built-in tool of the provider, a choice of one or an item of its call in the input is 400 app.unsupported_capability; no header of the app goes to the provider. The turns of an account are bounded by the tokens of its Moscow day — the questions of a day of its tier times the tokens of a question (app_tokens_per_question, 360 000 by default), counted as the input the provider did not cache and the output of its requests and of its scan —: over it 403 ai.daily_fence, which Codex does not repeat, and the permit stays live (specs/2026-11-13-desk-proxy.md PX3.3). The requests of all apps take places of their own, apart from those of the site, and an app has two at once: over them 429 ai.busy with Retry-After 1. The answer is the stream of events of the provider as it comes; a refusal of the provider comes with its status and its Retry-After as 4xx or 5xx ai.provider_refused — a refusal of the key of the site for apps as 502 —, a provider out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. The site reads of the stream only its usage and whether it ended in an answer without a call of a tool, which keeps the unit of the turn spent; every request that went is activity of the permit. Counted per app. Responses are no-store.
+         * @description specs/2026-11-13-desk-proxy.md PX1: the proxy of the Responses API for a turn of the chat of a linked app. Only the pass of a live app and the header X-CanonKeeper-Permit naming a live permit of a turn (chat_turn) of this app: no pass is 401 app.pass_invalid; no permit, one of another app or none is 404 app.permit_not_found; one that ended is 409 app.permit_closed; one of another kind is 400 app.permit_kind — before any request to the provider. The body is a request of a turn of Codex, as it is or compressed by gzip (Content-Encoding: gzip), up to 64 MiB after its decompression: over it 413 app.request_too_large. The site trusts nothing of it: it streams and the request goes to the provider with stream true and store false, the model and the effort of the reasoning are those of the chat of the site whatever the app names, the fields of a state, of the client, of a price, of a cache and of saved prompts are removed, the key of the cache is bound to the app, a field the site does not know is 400 request.validation, and a built-in tool of the provider, a choice of one or an item of its call in the input is 400 app.unsupported_capability; no header of the app goes to the provider. The turns of an account are bounded by the tokens of its Moscow day — the questions of a day of its tier times the tokens of a question (app_tokens_per_question, 360 000 by default), counted as the input the provider did not cache and the output of its requests and of its scan —: over it 403 ai.daily_fence, which Codex does not repeat, and the permit stays live (specs/2026-11-13-desk-proxy.md PX3.3). The requests of all apps take places of their own, apart from those of the site, and an app has two at once: over them 429 ai.busy with Retry-After 1. The answer is the stream of events of the provider as it comes; a refusal of the provider comes with its status and its Retry-After as 4xx or 5xx ai.provider_refused — a refusal of the key of the site for apps as 502 —, a provider out of reach is 502 ai.provider_failed, a site without the models of apps 503 ai.unavailable. The site reads of the stream only its usage and whether it ended in an answer without a call of a tool, which keeps the unit of the turn spent; every request that went is activity of the permit. Counted per app. Responses are no-store.
          */
         post: operations["streamAppResponses"];
         delete?: never;
@@ -2762,6 +2762,26 @@ export interface paths {
          */
         post: operations["eraseDesktopData"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/desktop/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete the copies before an update.
+         * @description Mounted only by the desktop build (specs/2026-11-19-desk-trust.md TW3.5): «Удалить копии…» of «Настройки → Данные». Every copy of backups/ of the data directory goes — the mark of each copy first, then its folder, so a removal cut short leaves an unfinished copy, which the next start removes; whatever else lies in backups/ and the folders before-restore-* stay. The sagas, the books and the chats are not touched; getDesktopState lists no copy after it. While an update is installed it is 409 desktop.updating and nothing is removed. The strict Origin of the window, the CSRF token and its session; ten a minute.
+         */
+        delete: operations["deleteDesktopBackups"];
         options?: never;
         head?: never;
         patch?: never;
@@ -16968,6 +16988,31 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    deleteDesktopBackups: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Opaque CSRF token from GET /auth/csrf. Examples never contain real token values. */
+                "X-CSRF-Token": components["parameters"]["CsrfToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The copies before an update are deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             429: components["responses"]["TooManyRequests"];
         };
     };

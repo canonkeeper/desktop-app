@@ -103,10 +103,30 @@ func removeUnfinishedBackups(directory string) error {
 	for _, entry := range entries {
 		path := filepath.Join(directory, entry.Name())
 		if _, _, ok := backupOf(entry.Name()); ok && entry.IsDir() && !backupFinished(path) {
-			failed = errors.Join(failed, os.RemoveAll(path))
+			failed = errors.Join(failed, removeBackup(path))
 		}
 	}
 	return failed
+}
+
+// removeBackup removes one copy: its mark complete first, then the directory. A removal a stop or an error cut leaves an
+// unfinished copy, which the next start removes (removeUnfinishedBackups) and which is never a complete copy without its
+// db.dump (specs/2026-11-19-desk-trust.md TW3.5).
+func removeBackup(path string) error {
+	if err := os.Remove(filepath.Join(path, backupComplete)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return os.RemoveAll(path)
+}
+
+// removeBackups removes every copy of backups/ by «Удалить копии…» of «Настройки → Данные» (specs/2026-11-19-desk-trust.md
+// TW3.5): the complete copies by the prune that keeps none, and the copies an earlier removal left without their mark;
+// whatever else lies in backups/ stays, and the folders before-restore-* of the root of the data are not in it.
+func removeBackups(directory string) error {
+	if _, err := os.Stat(directory); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return errors.Join(pruneBackups(directory, 0, ""), removeUnfinishedBackups(directory))
 }
 
 // pruneBackups keeps keep complete copies (PR3.2, DT13.6): current — the copy of this start, which a fatal migrate
@@ -141,7 +161,7 @@ func pruneBackups(directory string, keep int, current string) error {
 	})
 	var failed error
 	for _, old := range found[min(keep, len(found)):] {
-		failed = errors.Join(failed, os.RemoveAll(filepath.Join(directory, old.name)))
+		failed = errors.Join(failed, removeBackup(filepath.Join(directory, old.name)))
 	}
 	return failed
 }

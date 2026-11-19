@@ -81,7 +81,7 @@ describe('the window of the consent', () => {
   it('with prices: what the helper does, where the text goes, the estimate, the stop the server offers, the sample first', async () => {
     renderWindow(serverOf(priced));
     const window = await windowOpen();
-    expect(plain(window.textContent)).toContain('Помощник прочитает 612 глав и узнает, кто есть кто, что произошло и где это в книге. Текст книг уйдёт вашему провайдеру api.deepseek.com');
+    expect(plain(window.textContent)).toContain('Помощник прочитает 612 глав и узнает, кто есть кто, что произошло и где это в книге. Текст книг уйдёт вашему провайдеру api.deepseek.com. Учится ли провайдер на ваших текстах и хранит ли их, решают его правила — проверьте их до чтения');
     expect(plain(window.textContent)).toContain('Оценка: ≈ 14 млн токенов на вход и ≈ 5 млн на выход · ≈ 680 ₽ · около 5 часов');
     expect(plain(window.textContent)).toContain('Оценка грубая. После пробы на трёх главах она станет точной');
     expect(field(window).value).toBe('1 000');
@@ -108,6 +108,8 @@ describe('the window of the consent', () => {
     const window = await windowOpen();
     expect(window.textContent).toContain('Текст книг получит программа на этом компьютере (127.0.0.1:11434) — не провайдер в сети.');
     expect(window.textContent).not.toContain('не уходит');
+    // specs/2026-11-19-desk-trust.md TW1.4: the rules of a provider are not a word of the program on this computer.
+    expect(window.textContent).not.toContain('решают его правила');
     expect(within(window).queryByText(/Укажите цены/u)).toBeNull();
   });
 

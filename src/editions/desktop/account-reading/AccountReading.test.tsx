@@ -43,6 +43,8 @@ afterEach(() => {
 const plain = (text: string | null | undefined) => (text ?? '').replace(/\u00a0/gu, ' ');
 /** The words of «Свой ИИ» the reading through the account never says (AW5.1). */
 const ownWords = /провайдер|токен|потрачен|сумм|цен[аыу]|проб[аеу]|своим ИИ/iu;
+/** With whom the helper of the account works, in both kinds of the consent (specs/2026-11-19-desk-trust.md TW1.2). */
+const providerTail = ' — он работает у OpenAI (ChatGPT) или другого крупного облачного поставщика, обучение на ваших текстах выключено';
 
 /** The mock app linked with an account, its helper chosen, in the scenario of the test. */
 async function theAccount(scenario: Partial<MockScenarioControl> = {}) {
@@ -98,7 +100,7 @@ describe('the window of the consent of the account', () => {
     const sample = vi.spyOn(api, 'getReadingSample');
     const window = await theWindow(api);
     await waitFor(() => expect(plain(window.textContent)).toContain('Помощник прочитает 612 глав и узнает, кто есть кто, что произошло и где это в книге. '
-      + 'Текст книг пройдёт через сервер CanonKeeper к помощнику. Книги, которые вы добавите позже, помощник прочитает так же — остановить можно кнопкой «Пауза»'));
+      + `Текст книг пройдёт через сервер CanonKeeper к помощнику${providerTail}. Книги, которые вы добавите позже, помощник прочитает так же — остановить можно кнопкой «Пауза»`));
     // 6 120 000 characters up — 6,2; 3 200 000 used down — 3,2.
     expect(plain(window.textContent)).toContain('Это займёт до 6,2 млн знаков тарифа · около 11 часов. За 30 дней использовано 3,2 из 40 млн');
     expect(within(window).queryByRole('textbox')).toBeNull();
@@ -137,7 +139,7 @@ describe('the window of the consent of the account', () => {
     [{ threadsWait: true }, 'сюжетные нити', 'Свести нити'],
   ] as const)('only the names and the threads left: %o', async (left, words, button) => {
     const again = await theWindow(await theAccount({ readingEstimateLeft: { chapters: 0, ...left } }));
-    await waitFor(() => expect(plain(again.textContent)).toContain(`Главы прочитаны. Помощнику осталось свести ${words}. Текст пройдёт через сервер CanonKeeper к помощнику`));
+    await waitFor(() => expect(plain(again.textContent)).toContain(`Главы прочитаны. Помощнику осталось свести ${words}. Текст пройдёт через сервер CanonKeeper к помощнику${providerTail}`));
     expect(plain(again.textContent)).not.toContain('знаков тарифа');
     expect(within(again).getByRole('button', { name: button })).toBeTruthy();
   });
@@ -147,7 +149,7 @@ describe('the window of the consent of the account', () => {
     ['the characters are spent', { characters: { used: 40_000_000, limit: 40_000_000 }, work: { used: 319_500_000, limit: 320_000_000 } }],
   ] as const)('only the names left and %s: no word of reading the books, only what is left to bring together', async (_case, readingLimits) => {
     const window = await theWindow(await theAccount({ readingEstimateLeft: { chapters: 0, namesWait: true }, readingLimits }));
-    await waitFor(() => expect(plain(window.textContent)).toContain('Главы прочитаны. Помощнику осталось свести имена героев. Текст пройдёт через сервер CanonKeeper к помощнику'));
+    await waitFor(() => expect(plain(window.textContent)).toContain(`Главы прочитаны. Помощнику осталось свести имена героев. Текст пройдёт через сервер CanonKeeper к помощнику${providerTail}`));
     expect(within(window).queryByRole('note')).toBeNull();
     expect(plain(window.textContent)).not.toMatch(/прочитает|все книги|знаков тарифа/u);
     expect(within(window).getAllByRole('button').map((button) => button.textContent)).toEqual(['', 'Не сейчас', 'Свести имена']);

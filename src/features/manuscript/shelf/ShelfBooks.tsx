@@ -142,7 +142,8 @@ export function ShelfBooks(props: ShelfBooksProps) {
         </div>
       ) : null}
       {entries.length === 0 ? (
-        <EmptyFilter onReset={() => setWords('')} reset="Сбросить поиск" words={`Ничего не нашлось по «${words.trim()}»`} />
+        // An empty shelf is no search: the first steps over it say what to do.
+        words.trim() ? <EmptyFilter onReset={() => setWords('')} reset="Сбросить поиск" words={`Ничего не нашлось по «${words.trim()}»`} /> : null
       ) : list ? (
         <ul aria-label="Книги саги списком" className={styles.booksList}>
           {entries.map((entry) => entry.kind === 'book'

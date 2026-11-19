@@ -31,6 +31,15 @@
   font-size: var(--ck-font-size-body-sm);
 }
 
+.serverLines {
+  display: grid;
+  gap: 6px;
+}
+
+.serverLines p {
+  margin: 0;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
